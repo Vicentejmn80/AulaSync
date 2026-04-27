@@ -346,6 +346,15 @@ class AIController extends Controller
             'payload' => $plan,
         ]);
 
+        Log::debug('PLAN_CREATED', [
+            'teacher_id' => Auth::id(),
+            'course_id' => data_get($plan, 'course_id'),
+            'start_date' => data_get($plan, 'start_date'),
+            'end_date' => data_get($plan, 'end_date'),
+            'planificacion_id' => $planificacion->id,
+            'source' => 'ai_controller.save',
+        ]);
+
         $payload = [
             'success' => true,
             'message' => 'Planificación guardada en tu historial.',
@@ -367,6 +376,15 @@ class AIController extends Controller
             ->withCount('activities')
             ->latest()
             ->get();
+
+        Log::debug('MY_PLANS_QUERY', [
+            'teacher_id' => $user?->id,
+            'source' => 'AIController@historial',
+            'filters' => [
+                'user_id' => $user?->id,
+            ],
+            'count' => $plans->count(),
+        ]);
 
         return view('historial', compact('plans'));
     }

@@ -73,6 +73,7 @@
             font-weight: 600;
         }
     </style>
+    @pwaHead
     @stack('styles')
 </head>
 <body>
@@ -135,5 +136,9 @@
             @include('components.ai-assistant-bubble')
         @endif
     @endauth
+
+    @laravelPwa
+    @pwaUpdateNotifier
+    @pwaInstallButton
 </body>
 </html>

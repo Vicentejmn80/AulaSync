@@ -141,7 +141,7 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
                 'type' => 'function',
                 'function' => [
                     'name'        => 'deleteActivities',
-                    'description' => 'Elimina actividades dentro de un rango de fechas para un curso.',
+                    'description' => 'BORRADO OBLIGATORIO en backend. Elimina múltiples actividades dentro de un rango de fechas para un curso. Úsalo cuando el usuario pida borrar varias clases/actividades en un mes o semana.',
                     'parameters'  => [
                         'type'       => 'object',
                         'properties' => [
@@ -158,12 +158,19 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
                 'type' => 'function',
                 'function' => [
                     'name'        => 'deleteResource',
-                    'description' => 'Elimina recursos (actividades, alumnos, cursos).',
+                    'description' => 'BORRADO OBLIGATORIO en backend. Elimina un recurso específico por ID (actividad, curso, alumno). Úsalo cuando el usuario pide borrar UNA actividad específica y ya identificaste su activity_id del calendario. Ejemplo: "borra la clase de matemáticas del jueves" → busca en calendario → encuentra "actividad_id 42" → llama deleteResource.',
                     'parameters'  => [
                         'type'       => 'object',
                         'properties' => [
-                            'resource_type' => ['type' => 'string', 'enum' => ['activity', 'student', 'course', 'all_in_course']],
-                            'resource_id'   => ['type' => 'integer'],
+                            'resource_type' => [
+                                'type' => 'string', 
+                                'enum' => ['activity', 'student', 'course'],
+                                'description' => 'Tipo de recurso a eliminar. Usa "activity" para borrar una actividad específica por ID.',
+                            ],
+                            'resource_id'   => [
+                                'type' => 'integer',
+                                'description' => 'ID único del recurso a eliminar. Para actividades, usa el activity_id que ves en el calendario inyectado (formato: "actividad_id 42").',
+                            ],
                         ],
                         'required' => ['resource_type', 'resource_id'],
                     ],
@@ -347,6 +354,31 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
         $hasDeleteIntent = $this->hasDeleteIntent($intentText);
         $hasModifyIntent = $this->hasModifyIntent($intentText);
         $hasPlanningIntent = $this->hasPlanningIntent($intentText);
+        $explicitProceed = $this->hasProceedIntent($intentText);
+        $deleteRange = $this->extractDateRangeFromText($intentText);
+
+        Log::debug('AI_DELETE_ENTRY', [
+            'teacher_id' => $teacher->id,
+            'raw_message' => $rawMessage,
+            'prompt' => $prompt,
+            'intent_text' => $intentText,
+            'has_delete_intent' => $hasDeleteIntent,
+            'explicit_proceed' => $explicitProceed,
+            'delete_range' => $deleteRange,
+            'screen_course_id' => $screenContext['id'] ?? null,
+        ]);
+
+        if ($hasDeleteIntent && $deleteRange) {
+            session()->put('nova_last_delete_args', array_filter([
+                'course_id' => ! empty($screenContext['id']) ? (int) $screenContext['id'] : null,
+                'start_date' => $deleteRange['start_date'],
+                'end_date' => $deleteRange['end_date'],
+            ], fn ($value) => $value !== null));
+            Log::debug('AI_DELETE_SESSION', [
+                'teacher_id' => $teacher->id,
+                'nova_last_delete_args' => session('nova_last_delete_args'),
+            ]);
+        }
 
         if ($confirmed && session()->has('nova_pending_actions')) {
             $pendingToolCalls = session()->pull('nova_pending_actions');
@@ -402,7 +434,27 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             ], fn ($v) => $v !== null));
         }
 
-        if ($confirmed && ! session()->has('nova_pending_actions')) {
+        if (($confirmed || $explicitProceed) && ! session()->has('nova_pending_actions')) {
+            $pendingDelete = session()->pull('nova_last_delete_args');
+            Log::debug('AI_DELETE_PROCEED', [
+                'teacher_id' => $teacher->id,
+                'confirmed' => $confirmed,
+                'explicit_proceed' => $explicitProceed,
+                'pending_delete' => $pendingDelete,
+            ]);
+            if (is_array($pendingDelete) && isset($pendingDelete['start_date'], $pendingDelete['end_date'])) {
+                $deleteArgs = array_merge([
+                    'course_id' => $pendingDelete['course_id'] ?? null,
+                ], $pendingDelete);
+                $results = [$this->doDeleteActivities($deleteArgs, $teacher->id)];
+                Log::debug('AI_DELETE_EXECUTED', [
+                    'teacher_id' => $teacher->id,
+                    'source' => 'proceed',
+                    'delete_args' => $deleteArgs,
+                    'result' => $results[0] ?? null,
+                ]);
+                return response()->json($this->buildActionResponsePayload($results));
+            }
             return response()->json([
                 'success' => false,
                 'message' => '⚠️ No hay acción pendiente de confirmar (quizá la sesión expiró o ya se aplicó). Vuelve a pedir la planificación o el borrado.',
@@ -449,7 +501,7 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             "CONTEXTO DE CALENDARIO (inyectado automáticamente en cada mensaje):",
             "- Antes de responder sobre planificación, borrados o qué hay agendado, asume que ya tienes el bloque «Estado actual del calendario» más abajo. No digas que no ves el calendario.",
             "- El bloque de próximas 2 semanas es SOLO para lectura/estado. Para crear contenido (createActivity/bulkPlan), el horizonte temporal es ilimitado (cualquier mes y año).",
-            "- Si el usuario pide borrar por mes o rango (ej.: «borra las clases de abril»), cruza primero las fechas con las actividades listadas en los datos inyectados; identifica activity_id y course_id antes de pedir confirmación.",
+            "- Si el usuario pide borrar por mes o rango (ej.: «borra las clases de abril»), cruza primero las fechas con las actividades listadas en los datos inyectados; identifica activity_id y course_id antes de ejecutar.",
             "- Si los datos inyectados no cubren el mes pedido, entonces sí puedes llamar getCalendarContext con el rango necesario.",
             "",
             "RESOLUCIÓN DE CURSOS (evita preguntas redundantes):",
@@ -461,7 +513,7 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             "- Lecturas (getCalendarContext, getGradebookContext, findStudent, getPedagogicalHistory) puedes llamarlas si el usuario pidió consultar y el rango o filtros están claros o se deducen del contexto sin adivinar cursos.",
             "- Si este prompt ya incluye «Calendario extendido» (borrar/modificar), no llames getCalendarContext para repetir el mismo rango; solo si necesitas otro rango o course_id distinto.",
             "- Escrituras de creación/modificación: ejecuta en el mismo turno cuando tengas intención clara + curso resoluble (por historial/contexto). Usa defaults en campos no críticos.",
-            "- Escrituras destructivas (borrar): cuando haya intención clara y rango detectado, llama deleteActivities y deja que el backend maneje requires_confirmation.",
+            "- Escrituras destructivas (borrar): cuando haya intención clara y objetivo identificable, ejecuta deleteActivities o deleteResource inmediatamente. NO pidas confirmación adicional.",
             "- bulkPlan mensual: SIEMPRE pasa el target_month con el nombre del mes que el usuario mencionó (ej: si dice 'mayo' o 'april', pasa 'mayo' o 'april' tal cual). NUNCA lo omitas ni uses la fecha actual.",
             "- Mapping pedagógico obligatorio en bulkPlan: Lunes = Teoría/Cuaderno, Jueves = Práctica/Lúdica.",
             "- EJECUCIÓN DIRECTA DE bulkPlan: si el usuario da una instrucción completa con mes, curso, temas y días (ej. «planifica abril para primer grado con colors, numbers y sports los lunes y jueves»), pasa 'confirmed': true en el primer llamado a bulkPlan para crear todo directamente sin pedir confirmación previa.",
@@ -488,7 +540,12 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             "- leer historial pedagógico → getPedagogicalHistory",
             "- ver qué tengo esta semana / qué hay esta semana / mi agenda semanal → getCurrentWeek",
             "",
-            "REGLA DE BORRADO: deleteResource o deleteActivities solo si el usuario pidió explícitamente borrar/eliminar/limpiar/vaciar.",
+            "REGLAS CRÍTICAS DE BORRADO:",
+            "1. IDENTIFICACIÓN DE ID: Cada línea del calendario inyectado incluye 'actividad_id XXXX'. Cuando el usuario pida borrar una actividad específica (ej: 'borra la clase del jueves' o 'elimina la actividad de números'), primero localiza su activity_id en el calendario inyectado.",
+            "2. BORRADO POR ID (preferido para actividades específicas): Si identificaste un activity_id único, usa deleteResource con resource_type='activity' y resource_id=<el_id>. Ejemplo: usuario dice 'borra la clase de matemáticas del 15 de abril' → busca en calendario inyectado esa fecha → encuentra 'actividad_id 42' → llama deleteResource(resource_type='activity', resource_id=42).",
+            "3. BORRADO POR RANGO (para múltiples actividades): Si el usuario pide borrar varias actividades (ej: 'borra todas las clases de marzo', 'elimina la semana completa'), usa deleteActivities con course_id, start_date y end_date.",
+            "4. EJECUCIÓN DIRECTA: Si el calendario inyectado muestra claramente qué actividades se borrarán, ejecuta la herramienta de borrado de inmediato (sin pedir confirmación).",
+            "5. SOLO SI EL USUARIO LO PIDIÓ: deleteResource o deleteActivities ÚNICAMENTE si el usuario explícitamente pidió borrar/eliminar/limpiar/vaciar.",
             "",
             "Fecha actual: $today.",
             "Cursos del profesor:",
@@ -525,12 +582,13 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             $chatMessages[] = ['role' => 'user', 'content' => $prompt !== '' ? $prompt : $rawMessage];
         }
 
+        $toolChoice = $hasDeleteIntent ? 'required' : 'auto';
         $response = Http::timeout(120)
             ->withToken(env('OPENAI_API_KEY'))
             ->post('https://api.openai.com/v1/chat/completions', [
                 'model'       => 'gpt-4o',
                 'temperature' => 0,
-                'tool_choice' => 'auto',
+                'tool_choice' => $toolChoice,
                 'tools'       => $this->toolDefinitions(),
                 'messages'    => $chatMessages,
             ]);
@@ -541,6 +599,14 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
 
         $message = $response->json('choices.0.message') ?? [];
         $toolCalls = $message['tool_calls'] ?? [];
+
+        Log::debug('AI_TOOL_CALLS', [
+            'teacher_id' => $teacher->id,
+            'tool_choice' => $toolChoice,
+            'tool_calls_count' => count($toolCalls ?? []),
+            'tool_calls' => $toolCalls,
+            'assistant_text' => $message['content'] ?? null,
+        ]);
 
         if (! $hasDeleteIntent) {
             $toolCalls = array_values(array_filter($toolCalls, function ($tc) {
@@ -559,6 +625,26 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
         }
 
         if (empty($toolCalls)) {
+            if ($hasDeleteIntent && $deleteRange) {
+                Log::warning('AICommandHandler: delete intent without tool_calls, forcing deleteActivities', [
+                    'teacher_id' => $teacher->id,
+                    'start_date' => $deleteRange['start_date'],
+                    'end_date' => $deleteRange['end_date'],
+                ]);
+                $forcedArgs = [
+                    'course_id' => ! empty($screenContext['id']) ? (int) $screenContext['id'] : null,
+                    'start_date' => $deleteRange['start_date'],
+                    'end_date' => $deleteRange['end_date'],
+                ];
+                $results = [$this->doDeleteActivities($forcedArgs, $teacher->id)];
+                Log::debug('AI_DELETE_EXECUTED', [
+                    'teacher_id' => $teacher->id,
+                    'source' => 'empty_tool_calls_fallback',
+                    'delete_args' => $forcedArgs,
+                    'result' => $results[0] ?? null,
+                ]);
+                return response()->json($this->buildActionResponsePayload($results));
+            }
             $fallback = $message['content'];
             if (empty($fallback)) {
                 $fallback = $hasDeleteIntent
@@ -568,9 +654,13 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             return response()->json(['message' => $fallback]);
         }
 
-        // Check de confirmación para acciones destructivas
+        // Check de confirmación para acciones destructivas (excepto borrado: se ejecuta directo)
         $destructiveFound = collect($toolCalls)->filter(fn($tc) => in_array($tc['function']['name'], self::DESTRUCTIVE));
-        if ($destructiveFound->isNotEmpty() && !$confirmed) {
+        $requiresDeleteConfirmation = $destructiveFound->contains(function ($tc) {
+            $fn = $tc['function']['name'] ?? '';
+            return ! in_array($fn, ['deleteActivities', 'deleteResource'], true);
+        });
+        if ($destructiveFound->isNotEmpty() && $requiresDeleteConfirmation && ! $confirmed) {
             $destructiveActions = $destructiveFound->map(function ($tc) {
                 $args = json_decode($tc['function']['arguments'] ?? '{}', true) ?? [];
                 return ['function' => $tc['function']['name'], 'args' => $args];
@@ -969,16 +1059,20 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
                     $mondayCount++;
                 }
                 $topic = $topics[count($plan) % count($topics)];
+                $sessionNum = $isThursday ? $thursdayCount + 1 : $mondayCount + 1;
+                $titleDescriptive = $this->generateSessionTitle($topic, $isThursday, $sessionNum);
+                
                 Log::info('bulkPlan.slot_generated', [
                     'date' => $cursor->format('Y-m-d'),
                     'day_of_week' => $cursor->dayOfWeek,
                     'is_thursday' => $isThursday,
                     'course_id' => $args['course_id'] ?? null,
                     'topic' => $topic,
+                    'title' => $titleDescriptive,
                 ]);
                 $plan[] = [
                     'date' => $cursor->format('Y-m-d'),
-                    'title' => $isThursday ? "Jueves práctico · {$topic}" : "Lunes teórico · {$topic}",
+                    'title' => $titleDescriptive,
                     'type' => $isThursday ? 'actividad' : 'clase',
                     'description' => $this->buildBulkPlanSessionDescription($topic, $isThursday),
                     'weight_percentage' => $isThursday ? 15 : 0,
@@ -1054,6 +1148,58 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             ];
         }
 
+        $monthLabel = ucfirst($startDate->copy()->locale('es')->isoFormat('MMMM'));
+        $yearLabel = $startDate->format('Y');
+        $course = Course::where('id', (int) ($args['course_id'] ?? 0))
+            ->where('teacher_id', $teacherId)
+            ->first();
+        $courseName = $course ? trim(($course->subject_name ?? '') . ' ' . ($course->grade ?? '')) : null;
+        $topicsCsv = implode(', ', array_map(fn ($topic) => trim((string) $topic), $topics));
+        $planTema = $courseName
+            ? "Plan mensual {$monthLabel} {$yearLabel} · {$courseName}"
+            : "Plan mensual {$monthLabel} {$yearLabel}";
+        $planObjetivo = "Planificación mensual generada por IA para {$monthLabel} {$yearLabel}. Temas: {$topicsCsv}.";
+        $slugBase = Str::slug("bulk-{$monthLabel}-{$yearLabel}-" . ($courseName ?: 'curso'));
+        if ($slugBase === '') {
+            $slugBase = 'bulk-plan';
+        }
+        $slug = $slugBase;
+        $slugSuffix = 1;
+        while (Planificacion::where('slug', $slug)->exists()) {
+            $slug = $slugBase . '-' . $slugSuffix;
+            $slugSuffix++;
+        }
+
+        $planificacion = Planificacion::create([
+            'user_id' => $teacherId,
+            'tema' => $planTema,
+            'objetivo' => $planObjetivo,
+            'slug' => $slug,
+            'payload' => [
+                'type' => 'bulk_plan',
+                'course_id' => $args['course_id'] ?? null,
+                'course_name' => $courseName,
+                'target_month' => $targetMonth,
+                'start_date' => $startDate->format('Y-m-d'),
+                'end_date' => $endDate->format('Y-m-d'),
+                'topics' => array_values($topics),
+                'sessions_total' => count($plan),
+                'monday_count' => $mondayCount,
+                'thursday_count' => $thursdayCount,
+                'plan_preview' => $planPreview,
+                'created_by' => 'ai_command_handler.bulk_plan',
+            ],
+        ]);
+
+        Log::debug('PLAN_CREATED', [
+            'teacher_id' => $teacherId,
+            'course_id' => $args['course_id'] ?? null,
+            'start_date' => $startDate->format('Y-m-d'),
+            'end_date' => $endDate->format('Y-m-d'),
+            'planificacion_id' => $planificacion->id,
+            'source' => 'bulk_plan',
+        ]);
+
         $created = [];
         foreach ($plan as $entry) {
             if (in_array($entry['date'], $conflicts, true) && ! ($args['override_conflicts'] ?? false)) {
@@ -1073,6 +1219,7 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
                 'weight_percentage' => $entry['weight_percentage'],
                 'max_score'         => $entry['max_score'],
                 'due_date'          => $entry['date'],
+                'plan_block_id'     => $planificacion->id,
             ];
 
             Log::info('bulkPlan.before_insert', $payload);
@@ -1109,6 +1256,7 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
         }
 
         if (count($created) === 0) {
+            $planificacion->delete();
             return [
                 'success' => false,
                 'status' => 'error',
@@ -1125,8 +1273,6 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             ];
         }
 
-        $monthLabel = ucfirst($startDate->copy()->locale('es')->isoFormat('MMMM'));
-        $yearLabel = $startDate->format('Y');
         $n = count($created);
         $assistantLine = "¡Listo! He creado las {$n} actividades de {$monthLabel} correctamente";
 
@@ -1138,6 +1284,7 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             'icon'        => '📅',
             'data'        => [
                 'course_id' => $args['course_id'],
+                'planificacion_id' => $planificacion->id,
                 'activities_created' => $n,
                 'month' => strtolower($monthLabel),
                 'year' => $yearLabel,
@@ -1411,20 +1558,138 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             'resource_id' => $args['resource_id'] ?? null,
         ]);
 
-        if ($args['resource_type'] === 'activity') {
-            $count = Activity::where('id', $args['resource_id'])->delete();
-            Log::info('doDeleteResource.activity_deleted', ['count' => $count]);
-        } elseif ($args['resource_type'] === 'course') {
-            $count = Course::where('id', $args['resource_id'])->delete();
-            Log::info('doDeleteResource.course_deleted', ['count' => $count]);
+        $resourceType = $args['resource_type'] ?? null;
+        $resourceId = $args['resource_id'] ?? null;
+
+        if (! $resourceType || ! $resourceId) {
+            return [
+                'success' => false,
+                'message' => '⚠️ No se especificó el recurso a eliminar.',
+                'action_type' => 'delete',
+                'icon' => '⚠️',
+            ];
         }
-        return [
-            'success'     => true,
-            'message'     => "✅ Recurso eliminado. ¿En qué más te ayudo?",
-            'action_type' => 'delete',
-            'icon'        => '🗑️',
-            'data'        => $args,
-        ];
+
+        try {
+            if ($resourceType === 'activity') {
+                $activity = Activity::where('id', $resourceId)
+                    ->where('teacher_id', $teacherId)
+                    ->first();
+
+                if (! $activity) {
+                    return [
+                        'success' => false,
+                        'message' => '⚠️ No encontré esa actividad o no tienes permiso para eliminarla.',
+                        'action_type' => 'delete',
+                        'icon' => '⚠️',
+                    ];
+                }
+
+                $title = $activity->title;
+                $date = $activity->due_date instanceof Carbon ? $activity->due_date->format('d/m/Y') : (string) $activity->due_date;
+                $activity->delete();
+
+                Log::info('doDeleteResource.activity_deleted', [
+                    'activity_id' => $resourceId,
+                    'title' => $title,
+                ]);
+
+                return [
+                    'success' => true,
+                    'message' => "✅ ¡Listo! Eliminé la actividad «{$title}» del {$date}. ¿En qué más te ayudo?",
+                    'action_type' => 'delete',
+                    'icon' => '🗑️',
+                    'data' => [
+                        'deleted_activity_id' => $resourceId,
+                        'title' => $title,
+                        'date' => $date,
+                    ],
+                ];
+            } elseif ($resourceType === 'course') {
+                $course = Course::where('id', $resourceId)
+                    ->where('teacher_id', $teacherId)
+                    ->first();
+
+                if (! $course) {
+                    return [
+                        'success' => false,
+                        'message' => '⚠️ No encontré ese curso o no tienes permiso para eliminarlo.',
+                        'action_type' => 'delete',
+                        'icon' => '⚠️',
+                    ];
+                }
+
+                $courseName = $course->subject_name . ' ' . $course->grade;
+                $course->delete();
+
+                Log::info('doDeleteResource.course_deleted', [
+                    'course_id' => $resourceId,
+                    'name' => $courseName,
+                ]);
+
+                return [
+                    'success' => true,
+                    'message' => "✅ ¡Listo! Eliminé el curso «{$courseName}». ¿En qué más te ayudo?",
+                    'action_type' => 'delete',
+                    'icon' => '🗑️',
+                    'data' => [
+                        'deleted_course_id' => $resourceId,
+                        'name' => $courseName,
+                    ],
+                ];
+            } elseif ($resourceType === 'student') {
+                $student = Student::where('id', $resourceId)
+                    ->where('teacher_id', $teacherId)
+                    ->first();
+
+                if (! $student) {
+                    return [
+                        'success' => false,
+                        'message' => '⚠️ No encontré ese alumno o no tienes permiso para eliminarlo.',
+                        'action_type' => 'delete',
+                        'icon' => '⚠️',
+                    ];
+                }
+
+                $studentName = $student->name;
+                $student->delete();
+
+                Log::info('doDeleteResource.student_deleted', [
+                    'student_id' => $resourceId,
+                    'name' => $studentName,
+                ]);
+
+                return [
+                    'success' => true,
+                    'message' => "✅ ¡Listo! Eliminé al alumno «{$studentName}». ¿En qué más te ayudo?",
+                    'action_type' => 'delete',
+                    'icon' => '🗑️',
+                    'data' => [
+                        'deleted_student_id' => $resourceId,
+                        'name' => $studentName,
+                    ],
+                ];
+            }
+
+            return [
+                'success' => false,
+                'message' => "⚠️ Tipo de recurso no soportado: {$resourceType}",
+                'action_type' => 'delete',
+                'icon' => '⚠️',
+            ];
+        } catch (\Throwable $e) {
+            Log::error('doDeleteResource.error', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return [
+                'success' => false,
+                'message' => '⚠️ Ocurrió un error al eliminar el recurso: ' . $e->getMessage(),
+                'action_type' => 'delete',
+                'icon' => '⚠️',
+            ];
+        }
     }
 
     /**
@@ -1955,6 +2220,34 @@ Exposición **ordenada para el cuaderno**: definición en negrita, **dos ejemplo
 MD;
     }
 
+    /**
+     * Genera título descriptivo para sesiones de bulkPlan (varía según tipo y secuencia).
+     */
+    private function generateSessionTitle(string $topic, bool $isThursday, int $sessionNum): string
+    {
+        $topicCapitalized = ucfirst(trim($topic));
+        
+        if ($isThursday) {
+            $patterns = [
+                "{$topicCapitalized}: Ejercicios prácticos",
+                "{$topicCapitalized}: Taller grupal",
+                "{$topicCapitalized}: Práctica guiada",
+                "{$topicCapitalized}: Actividad lúdica",
+                "{$topicCapitalized}: Laboratorio",
+            ];
+            return $patterns[($sessionNum - 1) % count($patterns)];
+        } else {
+            $patterns = [
+                "{$topicCapitalized}: Introducción",
+                "{$topicCapitalized}: Conceptos clave",
+                "{$topicCapitalized}: Teoría fundamental",
+                "{$topicCapitalized}: Profundización",
+                "{$topicCapitalized}: Repaso teórico",
+            ];
+            return $patterns[($sessionNum - 1) % count($patterns)];
+        }
+    }
+
     private function buildNeeAdaptation(string $neeType): string
     {
         return match (mb_strtolower($neeType)) {
@@ -1969,7 +2262,7 @@ MD;
     private function hasDeleteIntent(?string $text): bool
     {
         $value = mb_strtolower((string) $text);
-        return (bool) preg_match('/\b(borrar|eliminar|limpiar|vaciar|quitar)\b/u', $value);
+        return (bool) preg_match('/\b(borr\w*|elimin\w*|limpi\w*|vaci\w*|quit\w*)\b/u', $value);
     }
 
     private function hasPlanningIntent(?string $text): bool
@@ -1985,5 +2278,111 @@ MD;
     {
         $value = mb_strtolower((string) $text);
         return (bool) preg_match('/\b(modificar|cambiar|editar|actualizar|reemplazar)\b/u', $value);
+    }
+
+    private function hasProceedIntent(?string $text): bool
+    {
+        $value = mb_strtolower((string) $text);
+        return (bool) preg_match('/\b(procede|proceder|adelante|continua|continuar|confirmo|confirmar|ok|vale|sí|si)\b/u', $value);
+    }
+
+    private function extractDateRangeFromText(?string $text): ?array
+    {
+        $value = mb_strtolower((string) $text);
+        $year = (int) now()->format('Y');
+        $monthMap = [
+            'enero' => 1, 'febrero' => 2, 'marzo' => 3, 'abril' => 4, 'mayo' => 5, 'junio' => 6,
+            'julio' => 7, 'agosto' => 8, 'septiembre' => 9, 'setiembre' => 9, 'octubre' => 10,
+            'noviembre' => 11, 'diciembre' => 12,
+        ];
+        $monthRegex = implode('|', array_keys($monthMap));
+
+        if (preg_match('/(\d{4})-(\d{1,2})-(\d{1,2}).*?(?:al|a|-|hasta)\s*(\d{4})-(\d{1,2})-(\d{1,2})/u', $value, $m)) {
+            return $this->buildDateRange((int) $m[1], (int) $m[2], (int) $m[3], (int) $m[4], (int) $m[5], (int) $m[6]);
+        }
+
+        if (preg_match('/(?:del?\s+)?(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?.*?(?:al|a|-|hasta)\s*(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?/u', $value, $m)) {
+            $startYear = $this->normalizeYear($m[3] ?? $year);
+            $endYear = $this->normalizeYear($m[6] ?? $startYear);
+            return $this->buildDateRange($startYear, (int) $m[2], (int) $m[1], $endYear, (int) $m[5], (int) $m[4]);
+        }
+
+        if (preg_match('/\b(?:todo(?:\s+lo\s+que\s+hay)?\s+en|todo\s+el\s+mes\s+de|el\s+mes\s+de|mes\s+de|en)\s+(' . $monthRegex . ')(?:\s+de\s+(\d{4}))?\b/u', $value, $m)) {
+            $monthName = $m[1] ?? null;
+            $parsedYear = isset($m[2]) ? (int) $m[2] : $year;
+            $month = $monthMap[$monthName] ?? null;
+            if ($month) {
+                try {
+                    $start = Carbon::createFromDate($this->normalizeYear($parsedYear), $month, 1)->startOfMonth();
+                    return [
+                        'start_date' => $start->format('Y-m-d'),
+                        'end_date' => $start->copy()->endOfMonth()->format('Y-m-d'),
+                    ];
+                } catch (\Throwable) {
+                    return null;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private function buildDateRange(int $startYear, int $startMonth, int $startDay, int $endYear, int $endMonth, int $endDay): ?array
+    {
+        try {
+            $start = Carbon::createFromDate($startYear, $startMonth, $startDay)->startOfDay();
+            $end = Carbon::createFromDate($endYear, $endMonth, $endDay)->startOfDay();
+            if ($end->lt($start)) {
+                [$start, $end] = [$end, $start];
+            }
+            return [
+                'start_date' => $start->format('Y-m-d'),
+                'end_date' => $end->format('Y-m-d'),
+            ];
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    private function normalizeYear($value): int
+    {
+        $year = (int) $value;
+        if ($year < 100) {
+            $year += 2000;
+        }
+        return $year > 0 ? $year : (int) now()->format('Y');
+    }
+
+    private function buildActionResponsePayload(array $results): array
+    {
+        $actions = collect($results)->map(function ($result) {
+            $success = (bool) ($result['success'] ?? false);
+            $actionType = $result['action_type'] ?? 'info';
+            $message = $result['message'] ?? '';
+            if ($success && $actionType !== 'bulk_plan') {
+                $message = $this->withProactiveClose($message, $actionType);
+            }
+            return [
+                'success' => $success,
+                'status' => $result['status'] ?? ($success ? 'success' : 'error'),
+                'message' => $message,
+                'action_type' => $actionType,
+                'icon' => $result['icon'] ?? ($success ? '✅' : 'ℹ️'),
+                'data' => $result['data'] ?? [],
+            ];
+        })->toArray();
+
+        $anySuccess = collect($actions)->contains(fn ($action) => $action['success']);
+        $bulkMeta = $this->extractBulkPlanResponseMeta($results);
+
+        return array_filter([
+            'success' => true,
+            'status' => $bulkMeta ? 'success' : ($anySuccess ? 'success' : 'partial'),
+            'results' => $results,
+            'actions' => $actions,
+            'any_success' => $anySuccess,
+            'bulk_plan' => $bulkMeta,
+            'message' => $bulkMeta['assistant_message'] ?? null,
+        ], fn ($v) => $v !== null);
     }
 }

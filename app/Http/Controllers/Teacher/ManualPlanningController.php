@@ -8,6 +8,7 @@ use App\Models\Planificacion;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class ManualPlanningController extends Controller
 {
@@ -58,7 +59,7 @@ class ManualPlanningController extends Controller
                     'sessions'   => $data['sessions'],
                 ]);
 
-                Planificacion::create([
+                $planificacion = Planificacion::create([
                     'user_id' => $teacherId,
                     'tema'    => 'Planificación manual · ' . now()->format('d/m/Y'),
                     'objetivo'=> 'Sesiones institucionales generadas manualmente.',
@@ -68,6 +69,15 @@ class ManualPlanningController extends Controller
                         'sessions'  => $data['sessions'],
                         'manual_id' => $manual->id
                     ],
+                ]);
+
+                Log::debug('PLAN_CREATED', [
+                    'teacher_id' => $teacherId,
+                    'course_id' => null,
+                    'start_date' => collect($data['sessions'])->min('date'),
+                    'end_date' => collect($data['sessions'])->max('date'),
+                    'planificacion_id' => $planificacion->id,
+                    'source' => 'manual_planning.store',
                 ]);
 
                 return response()->json([

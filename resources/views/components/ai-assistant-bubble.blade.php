@@ -15,13 +15,13 @@
     .nova-ai-trigger {
         width: 56px;
         height: 56px;
-        background: linear-gradient(135deg, #6C4AE0 0%, #C455ED 100%);
-        border-radius: 28px;
+        background: transparent;
+        border-radius: 50%;
         display: flex;
         align-items: center;
         justify-content: center;
         cursor: pointer;
-        box-shadow: 0 8px 24px rgba(108, 74, 224, 0.4);
+        box-shadow: none;
         transition: all 0.3s cubic-bezier(0.2, 0.9, 0.4, 1.1);
         position: relative;
         overflow: hidden;
@@ -41,8 +41,8 @@
     }
 
     .nova-ai-trigger:hover {
-        transform: scale(1.08);
-        box-shadow: 0 12px 32px rgba(108, 74, 224, 0.6);
+        transform: scale(1.06);
+        filter: brightness(1.06);
     }
 
     .nova-ai-trigger:active {
@@ -50,8 +50,11 @@
     }
 
     .nova-ai-trigger.listening {
-        background: linear-gradient(135deg, #EF4444 0%, #DC2626 100%);
         animation: pulse-glow 1.2s ease-in-out infinite;
+    }
+
+    .nova-ai-trigger.listening .nova-monkey-avatar {
+        filter: drop-shadow(0 0 0 2px rgba(239, 68, 68, 0.9)) drop-shadow(0 6px 16px rgba(239, 68, 68, 0.45));
     }
 
     @keyframes pulse-glow {
@@ -59,14 +62,61 @@
         50% { box-shadow: 0 8px 32px rgba(239, 68, 68, 0.8), 0 0 0 8px rgba(239, 68, 68, 0.15); }
     }
 
-    .nova-ai-trigger i {
-        font-size: 24px;
-        color: white;
-        transition: transform 0.3s ease;
+    /*
+     * Avatar Nova con micro-interacción:
+     * - Cerrado: emoji leyendo (lector).
+     * - Abierto: emoji mirando fijamente (foco).
+     * Recorte circular para evitar burbuja redundante.
+     */
+    .nova-monkey-avatar {
+        --nova-avatar-size: 48px;
+        --nova-avatar-scale: 140%;
+        position: relative;
+        width: var(--nova-avatar-size);
+        height: var(--nova-avatar-size);
+        flex-shrink: 0;
+        border-radius: 50%;
+        overflow: hidden;
+        background: radial-gradient(circle at 30% 25%, #ff6db3 0%, #ff2d85 52%, #e11d74 100%);
+        filter: drop-shadow(0 6px 16px rgba(255, 45, 133, 0.35));
+        transition: transform 0.3s ease-in-out, filter 0.3s ease-in-out;
     }
 
-    .nova-ai-trigger:hover i {
-        transform: scale(1.05);
+    .nova-monkey-avatar--trigger {
+        --nova-avatar-size: 60px;
+        --nova-avatar-scale: 150%;
+    }
+
+    .nova-monkey-avatar__sprite {
+        position: absolute;
+        inset: -10%;
+        background-repeat: no-repeat;
+        background-size: var(--nova-avatar-scale);
+        background-position: center;
+        transition: opacity 0.3s ease-in-out, transform 0.3s ease-in-out;
+        transform: scale(1.02);
+        will-change: opacity, transform;
+        pointer-events: none;
+    }
+
+    .nova-monkey-avatar__sprite--closed {
+        background-image: url('/images/nova_avatar_lector.png');
+        opacity: 1;
+    }
+
+    .nova-monkey-avatar__sprite--open {
+        background-image: url('/images/nova_avatar_foco.png');
+        opacity: 0;
+    }
+
+    .nova-monkey-avatar--open .nova-monkey-avatar__sprite--closed {
+        opacity: 0;
+        transform: scale(1.04);
+    }
+
+    .nova-monkey-avatar--open .nova-monkey-avatar__sprite--open {
+        opacity: 1;
+        transform: scale(1.06);
     }
 
     /* Panel principal */
@@ -133,20 +183,15 @@
     }
 
     .nova-ai-avatar {
+        position: relative;
         width: 44px;
         height: 44px;
-        background: rgba(255,255,255,0.2);
-        border-radius: 16px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        backdrop-filter: blur(4px);
-        border: 1px solid rgba(255,255,255,0.3);
-    }
-
-    .nova-ai-avatar i {
-        font-size: 24px;
-        color: white;
+        flex-shrink: 0;
+        border-radius: 50%;
+        overflow: visible;
+        background: transparent;
+        border: none;
+        backdrop-filter: none;
     }
 
     .nova-ai-title h3 {
@@ -594,7 +639,10 @@
         <div class="nova-ai-header">
             <div class="nova-ai-header-content">
                 <div class="nova-ai-avatar">
-                    <i class="fa-solid fa-robot"></i>
+                    <div class="nova-monkey-avatar" :class="{ 'nova-monkey-avatar--open': open }" aria-hidden="true">
+                        <div class="nova-monkey-avatar__sprite nova-monkey-avatar__sprite--closed"></div>
+                        <div class="nova-monkey-avatar__sprite nova-monkey-avatar__sprite--open"></div>
+                    </div>
                 </div>
                 <div class="nova-ai-title">
                     <h3>Nova Assistant</h3>
@@ -715,8 +763,11 @@
     </div>
 
     <!-- Botón flotante -->
-    <button class="nova-ai-trigger" :class="{ 'listening': listening }" @click="togglePanel()">
-        <i class="fa-solid" :class="open ? 'fa-xmark' : (listening ? 'fa-microphone' : 'fa-robot')"></i>
+    <button type="button" class="nova-ai-trigger" :class="{ 'listening': listening }" @click="togglePanel()" aria-label="Abrir o cerrar Nova">
+        <div class="nova-monkey-avatar nova-monkey-avatar--trigger" :class="{ 'nova-monkey-avatar--open': open }" aria-hidden="true">
+            <div class="nova-monkey-avatar__sprite nova-monkey-avatar__sprite--closed"></div>
+            <div class="nova-monkey-avatar__sprite nova-monkey-avatar__sprite--open"></div>
+        </div>
     </button>
 </div>
 
@@ -903,6 +954,8 @@ function novaAIAssistant() {
                 return;
             }
 
+            let hasDeleteSuccess = false;
+
             if (Array.isArray(json.actions)) {
                 if (json.any_success || (json.status === 'success' && json.bulk_plan)) {
                     this.confirmation = null;
@@ -923,6 +976,7 @@ function novaAIAssistant() {
                             });
                         }
                         if (a.action_type === 'delete') {
+                            hasDeleteSuccess = true;
                             this.showToast('Actividades eliminadas correctamente', 'success', 'fa-trash-alt');
                         }
                     } else {
@@ -930,11 +984,13 @@ function novaAIAssistant() {
                     }
                 });
 
-                if (json.any_success) {
+                if (json.any_success || hasDeleteSuccess) {
                     const toastMsg = json.bulk_plan?.activities_created
                         ? `¡Listo! ${json.bulk_plan.activities_created} actividades creadas`
-                        : 'Cambios aplicados correctamente';
-                    this.showToast(toastMsg, 'success', 'fa-check-circle');
+                        : (hasDeleteSuccess ? null : 'Cambios aplicados correctamente');
+                    if (toastMsg) {
+                        this.showToast(toastMsg, 'success', 'fa-check-circle');
+                    }
                     window.dispatchEvent(new CustomEvent('ai-canvas-refresh'));
                 }
             }

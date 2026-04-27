@@ -1839,6 +1839,7 @@
             }
         })();
     </script>
+    @pwaHead
 </head>
 <body>
 
@@ -3318,5 +3319,8 @@ function teacherHub() {
     </div>
 </div>
 
+    @laravelPwa
+    @pwaUpdateNotifier
+    @pwaInstallButton
 </body>
 </html>
