@@ -6,24 +6,30 @@
     <title>NOVA ACADEMY · IA Educativa para Profesores</title>
     
     <!-- Fonts & Icons -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700;9..40,800&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     
     <style>
-        /* Design System Nova - Colores del Hub */
+        /* Design System Nova - Estilo Duolingo Premium con colores vibrantes */
         :root {
             --nova-deep: #0A0A1F;
             --nova-dark: #12122B;
             --nova-medium: #1E1A3A;
             --nova-light: #2D1F4A;
-            --nova-violet: #6C4AE0;
-            --nova-fuchsia: #C455ED;
-            --nova-cyan: #3BC9DB;
-            --nova-success: #22C55E;
-            --nova-warning: #F59E0B;
-            --nova-gradient: linear-gradient(135deg, #6C4AE0 0%, #C455ED 70%, #3BC9DB 100%);
-            --nova-glass: rgba(255, 255, 255, 0.03);
-            --nova-glass-border: rgba(108, 74, 224, 0.15);
+            --nova-violet: #8B5CF6;
+            --nova-violet-light: #A78BFA;
+            --nova-fuchsia: #C084FC;
+            --nova-pink: #EC4899;
+            --nova-cyan: #22D3EE;
+            --nova-cyan-light: #67E8F9;
+            --nova-green: #10B981;
+            --nova-success: #34D399;
+            --nova-warning: #FBBF24;
+            --nova-orange: #F59E0B;
+            --nova-gradient: linear-gradient(135deg, #8B5CF6 0%, #EC4899 30%, #22D3EE 60%, #F59E0B 100%);
+            --nova-gradient-warm: linear-gradient(135deg, #EC4899 0%, #F59E0B 50%, #22D3EE 100%);
+            --nova-glass: rgba(255, 255, 255, 0.04);
+            --nova-glass-border: rgba(139, 92, 246, 0.25);
             
             --text-primary: rgba(255, 255, 255, 1);
             --text-secondary: rgba(255, 255, 255, 0.7);
@@ -37,13 +43,13 @@
         }
 
         body {
-            font-family: 'Inter', sans-serif;
+            font-family: 'DM Sans', sans-serif;
             background: var(--nova-deep);
             color: var(--text-primary);
             overflow-x: hidden;
         }
 
-        /* Fondo dinámico Nova - Igual al hub */
+        /* Fondo dinámico Nova */
         .nova-bg {
             position: fixed;
             top: 0;
@@ -57,33 +63,35 @@
         .nova-bg-orb {
             position: absolute;
             border-radius: 50%;
-            filter: blur(80px);
+            filter: blur(100px);
             animation: glow-pulse 8s ease-in-out infinite;
         }
 
         .nova-bg-orb:nth-child(1) {
-            top: -10%;
-            left: -5%;
-            width: 500px;
-            height: 500px;
-            background: radial-gradient(circle, rgba(108, 74, 224, 0.4) 0%, transparent 70%);
+            top: -15%;
+            left: -10%;
+            width: 600px;
+            height: 600px;
+            background: radial-gradient(circle, rgba(139, 92, 246, 0.5) 0%, transparent 70%);
+            animation-delay: 0s;
         }
 
         .nova-bg-orb:nth-child(2) {
-            bottom: -10%;
-            right: -5%;
-            width: 600px;
-            height: 600px;
-            background: radial-gradient(circle, rgba(196, 85, 237, 0.3) 0%, transparent 70%);
+            bottom: -20%;
+            right: -15%;
+            width: 700px;
+            height: 700px;
+            background: radial-gradient(circle, rgba(236, 72, 153, 0.4) 0%, transparent 70%);
             animation-delay: 2s;
         }
 
         .nova-bg-orb:nth-child(3) {
-            top: 40%;
-            right: 20%;
-            width: 300px;
-            height: 300px;
-            background: radial-gradient(circle, rgba(59, 201, 219, 0.2) 0%, transparent 70%);
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 400px;
+            height: 400px;
+            background: radial-gradient(circle, rgba(34, 211, 238, 0.3) 0%, transparent 70%);
             animation-delay: 4s;
         }
 
@@ -93,75 +101,44 @@
             background-image: 
                 linear-gradient(var(--nova-glass-border) 1px, transparent 1px),
                 linear-gradient(90deg, var(--nova-glass-border) 1px, transparent 1px);
-            background-size: 50px 50px;
-            opacity: 0.3;
+            background-size: 60px 60px;
+            opacity: 0.2;
         }
 
         @keyframes glow-pulse {
-            0%, 100% { opacity: 0.3; filter: blur(80px); }
-            50% { opacity: 0.7; filter: blur(100px); }
+            0%, 100% { opacity: 0.4; transform: scale(1); }
+            50% { opacity: 0.8; transform: scale(1.05); }
         }
 
         .welcome-container {
             max-width: 1400px;
             margin: 0 auto;
-            padding: 2rem;
+            padding: 1.5rem 2rem;
             position: relative;
             z-index: 2;
         }
 
-        /* Header - Actualizado */
+        /* Header */
         .header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 1rem 0;
-            margin-bottom: 3rem;
+            padding: 0.5rem 0;
+            margin-bottom: 2rem;
         }
 
         .logo {
             display: flex;
             align-items: center;
-            gap: 12px;
-        }
-
-        .logo-icon {
-            width: 48px;
-            height: 48px;
-            background: var(--nova-gradient);
-            border-radius: 16px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            position: relative;
-            overflow: hidden;
-            box-shadow: 0 10px 20px -5px var(--nova-violet);
-        }
-
-        .logo-icon::before {
-            content: '';
-            position: absolute;
-            inset: 0;
-            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
-            transform: translateX(-100%);
-            transition: transform 0.5s ease;
-        }
-
-        .logo:hover .logo-icon::before {
-            transform: translateX(100%);
-        }
-
-        .logo-icon i {
-            font-size: 24px;
-            color: white;
-            position: relative;
-            z-index: 2;
+            gap: 14px;
         }
 
         .logo-text {
-            font-size: 1.8rem;
+            font-family: 'Outfit', sans-serif;
+            font-size: 1.85rem;
             font-weight: 800;
-            background: var(--nova-gradient);
+            letter-spacing: -0.5px;
+            background: linear-gradient(135deg, #fff 0%, #22D3EE 40%, #EC4899 70%, #F59E0B 100%);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
         }
@@ -169,7 +146,7 @@
         .nav-links {
             display: flex;
             align-items: center;
-            gap: 2.5rem;
+            gap: 2rem;
         }
 
         .nav-links a {
@@ -181,91 +158,79 @@
             position: relative;
         }
 
-        .nav-links a::after {
-            content: '';
-            position: absolute;
-            bottom: -4px;
-            left: 0;
-            width: 0;
-            height: 2px;
-            background: var(--nova-gradient);
-            transition: width 0.3s;
-        }
-
         .nav-links a:hover {
             color: white;
         }
 
-        .nav-links a:hover::after {
-            width: 100%;
-        }
-
         .nav-links a.highlight {
-            background: var(--nova-glass);
-            border: 1px solid var(--nova-glass-border);
-            padding: 0.5rem 1.5rem;
+            background: var(--nova-gradient);
+            padding: 0.6rem 1.6rem;
             border-radius: 30px;
             color: white;
+            font-weight: 600;
+            box-shadow: 0 4px 16px -4px rgba(139, 92, 246, 0.5);
         }
 
         .nav-links a.highlight:hover {
-            background: var(--nova-gradient);
-            border-color: transparent;
             transform: translateY(-2px);
-            box-shadow: 0 10px 20px -8px var(--nova-violet);
+            box-shadow: 0 8px 24px -8px rgba(139, 92, 246, 0.6);
         }
 
         /* Hero Section */
         .hero {
-            display: flex;
+            display: grid;
+            grid-template-columns: 1.1fr 0.9fr;
+            gap: 2.5rem;
             align-items: center;
-            gap: 4rem;
-            padding: 2rem 0 4rem;
+            padding: 2.5rem 0 4rem;
         }
 
         .hero-content {
-            flex: 1;
+            position: relative;
+            max-width: 720px;
+            text-align: left;
         }
 
         .hero-badge {
             display: inline-flex;
             align-items: center;
             gap: 8px;
-            background: var(--nova-glass);
-            border: 1px solid var(--nova-glass-border);
+            background: rgba(34, 211, 238, 0.1);
+            border: 1px solid rgba(34, 211, 238, 0.3);
             border-radius: 30px;
             padding: 0.5rem 1rem;
-            margin-bottom: 2rem;
+            margin-bottom: 1.5rem;
             font-size: 0.85rem;
             color: var(--nova-cyan);
-        }
-
-        .hero-badge i {
-            font-size: 0.75rem;
+            font-weight: 500;
         }
 
         .hero-title {
-            font-size: 3.8rem;
+            font-family: 'Outfit', sans-serif;
+            font-size: 4.2rem;
             font-weight: 800;
-            line-height: 1.1;
+            line-height: 1.05;
             margin-bottom: 1.5rem;
-            background: linear-gradient(135deg, white 0%, var(--nova-cyan) 50%, var(--nova-fuchsia) 100%);
+            letter-spacing: -1px;
+            background: var(--nova-gradient);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
+            background-clip: text;
         }
 
         .hero-subtitle {
-            font-size: 1.2rem;
+            font-size: 1.15rem;
             color: var(--text-secondary);
-            margin-bottom: 2.5rem;
-            max-width: 550px;
-            line-height: 1.6;
+            margin-bottom: 2rem;
+            max-width: 620px;
+            line-height: 1.7;
         }
 
         .hero-stats {
             display: flex;
-            gap: 3rem;
-            margin: 2.5rem 0;
+            gap: 2.5rem;
+            margin: 2rem 0;
+            justify-content: flex-start;
         }
 
         .stat-item {
@@ -274,9 +239,10 @@
         }
 
         .stat-number {
-            font-size: 2.2rem;
+            font-family: 'Outfit', sans-serif;
+            font-size: 2rem;
             font-weight: 800;
-            background: linear-gradient(135deg, white, var(--nova-cyan));
+            background: linear-gradient(135deg, #fff, var(--nova-cyan));
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             line-height: 1;
@@ -285,55 +251,42 @@
         .stat-label {
             font-size: 0.85rem;
             color: var(--text-tertiary);
-            margin-top: 0.5rem;
+            margin-top: 0.4rem;
         }
 
         .hero-cta {
             display: flex;
-            gap: 1.5rem;
+            gap: 1rem;
             align-items: center;
+            justify-content: flex-start;
         }
 
         .btn-primary {
             background: var(--nova-gradient);
             border: none;
-            padding: 1rem 2.5rem;
+            padding: 0.9rem 2rem;
             border-radius: 40px;
             color: white;
-            font-weight: 600;
+            font-weight: 700;
             font-size: 1rem;
             cursor: pointer;
-            transition: all 0.3s;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
             display: inline-flex;
             align-items: center;
             gap: 10px;
             text-decoration: none;
-            position: relative;
-            overflow: hidden;
-        }
-
-        .btn-primary::before {
-            content: '';
-            position: absolute;
-            inset: 0;
-            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
-            transform: translateX(-100%);
-            transition: transform 0.5s ease;
-        }
-
-        .btn-primary:hover::before {
-            transform: translateX(100%);
+            box-shadow: 0 8px 24px -8px rgba(139, 92, 246, 0.5);
         }
 
         .btn-primary:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 20px 30px -10px var(--nova-violet);
+            transform: translateY(-3px) scale(1.02);
+            box-shadow: 0 16px 32px -12px rgba(139, 92, 246, 0.6);
         }
 
         .btn-secondary {
             background: var(--nova-glass);
             border: 1px solid var(--nova-glass-border);
-            padding: 1rem 2rem;
+            padding: 0.9rem 2rem;
             border-radius: 40px;
             color: white;
             font-weight: 600;
@@ -347,71 +300,109 @@
         }
 
         .btn-secondary:hover {
-            background: var(--nova-glass);
-            border-color: var(--nova-violet);
-            transform: translateY(-3px);
+            background: rgba(255, 255, 255, 0.08);
+            border-color: var(--nova-cyan);
+            transform: translateY(-2px);
         }
 
         .hero-image {
-            flex: 1;
             position: relative;
-        }
-
-        .hero-image img {
-            width: 100%;
-            border-radius: 30px;
-            box-shadow: 0 30px 60px -15px rgba(108, 74, 224, 0.4);
-            border: 1px solid var(--nova-glass-border);
-        }
-
-        .floating-card {
-            position: absolute;
-            bottom: -20px;
-            left: -20px;
-            background: var(--nova-glass);
-            backdrop-filter: blur(10px);
-            border: 1px solid var(--nova-glass-border);
-            border-radius: 20px;
-            padding: 1.2rem 1.5rem;
             display: flex;
             align-items: center;
-            gap: 1rem;
+            justify-content: center;
+        }
+
+        .hero-image-container {
+            position: relative;
+            width: 100%;
+            max-width: 560px;
+            padding: 20px;
+        }
+
+        .nova-mascot {
+            width: 100%;
+            aspect-ratio: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
             animation: float 6s ease-in-out infinite;
+            position: relative;
+            background: radial-gradient(circle at center, rgba(139, 92, 246, 0.08) 0%, transparent 70%);
+            border-radius: 50%;
         }
 
-        .floating-card i {
-            font-size: 2rem;
-            color: var(--nova-cyan);
+        .nova-mascot::before {
+            content: '';
+            position: absolute;
+            inset: -20px;
+            background: radial-gradient(circle at center, rgba(236, 72, 153, 0.1) 0%, transparent 60%);
+            border-radius: 50%;
+            animation: pulse-ring 3s ease-in-out infinite;
+            z-index: -1;
         }
 
-        .floating-card p {
-            font-size: 0.9rem;
-            color: white;
+        @keyframes pulse-ring {
+            0%, 100% { transform: scale(1); opacity: 0.5; }
+            50% { transform: scale(1.05); opacity: 0.8; }
         }
 
-        .floating-card strong {
-            color: var(--nova-fuchsia);
+        .nova-mascot img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            filter: drop-shadow(0 30px 60px rgba(139, 92, 246, 0.5)) 
+                    drop-shadow(0 15px 30px rgba(236, 72, 153, 0.3));
+            transform: scale(1.05);
+            transition: transform 0.3s ease;
+        }
+
+        .nova-mascot:hover img {
+            transform: scale(1.15);
         }
 
         @keyframes float {
             0%, 100% { transform: translateY(0); }
-            50% { transform: translateY(-10px); }
+            50% { transform: translateY(-15px); }
+        }
+
+        .hero-glow {
+            position: absolute;
+            width: 140%;
+            height: 140%;
+            top: -20%;
+            left: -20%;
+            background: radial-gradient(circle, rgba(236, 72, 153, 0.28) 0%, rgba(34, 211, 238, 0.22) 35%, transparent 70%);
+            filter: blur(60px);
+            z-index: -1;
+            animation: pulse-glow-hero 4s ease-in-out infinite;
+        }
+
+        @keyframes pulse-glow-hero {
+            0%, 100% { 
+                opacity: 0.6; 
+                transform: scale(1);
+            }
+            50% { 
+                opacity: 0.9; 
+                transform: scale(1.08);
+            }
         }
 
         /* Features Section */
         .features {
-            padding: 5rem 0;
+            padding: 4rem 0;
         }
 
         .section-header {
             text-align: center;
-            margin-bottom: 4rem;
+            margin-bottom: 3.5rem;
         }
 
         .section-header h2 {
-            font-size: 2.5rem;
+            font-family: 'Outfit', sans-serif;
+            font-size: 2.6rem;
             font-weight: 800;
-            background: linear-gradient(135deg, white, var(--nova-cyan));
+            background: linear-gradient(135deg, #fff, var(--nova-pink), var(--nova-cyan));
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             margin-bottom: 1rem;
@@ -427,16 +418,16 @@
         .features-grid {
             display: grid;
             grid-template-columns: repeat(3, 1fr);
-            gap: 2rem;
+            gap: 1.5rem;
         }
 
         .feature-card {
-            background: var(--nova-glass);
+            background: rgba(255, 255, 255, 0.02);
             backdrop-filter: blur(10px);
             border: 1px solid var(--nova-glass-border);
-            border-radius: 30px;
-            padding: 2.5rem 2rem;
-            transition: all 0.3s;
+            border-radius: 24px;
+            padding: 2rem 1.75rem;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
             position: relative;
             overflow: hidden;
         }
@@ -447,221 +438,267 @@
             top: 0;
             left: 0;
             right: 0;
-            height: 2px;
-            background: var(--nova-gradient);
+            height: 3px;
+            background: linear-gradient(90deg, var(--nova-violet), var(--nova-pink), var(--nova-cyan));
             transform: translateX(-100%);
             transition: transform 0.5s ease;
         }
 
-        .feature-card:hover::before {
-            transform: translateX(100%);
+        .feature-card:hover {
+            transform: translateY(-8px);
+            border-color: rgba(236, 72, 153, 0.4);
+            box-shadow: 0 20px 40px -20px rgba(236, 72, 153, 0.3);
         }
 
-        .feature-card:hover {
-            transform: translateY(-10px);
-            border-color: var(--nova-violet);
-            box-shadow: 0 20px 40px -15px var(--nova-violet);
+        .feature-card:hover::before {
+            transform: translateX(0);
         }
 
         .feature-icon {
-            width: 60px;
-            height: 60px;
-            background: var(--nova-gradient);
-            border-radius: 20px;
+            width: 56px;
+            height: 56px;
+            background: linear-gradient(135deg, rgba(139, 92, 246, 0.2) 0%, rgba(236, 72, 153, 0.2) 100%);
+            border: 1px solid rgba(139, 92, 246, 0.3);
+            border-radius: 16px;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 1.8rem;
-            color: white;
-            margin-bottom: 1.5rem;
+            font-size: 1.5rem;
+            color: var(--nova-pink);
+            margin-bottom: 1.25rem;
         }
 
         .feature-card h3 {
-            font-size: 1.5rem;
+            font-family: 'Outfit', sans-serif;
+            font-size: 1.35rem;
             font-weight: 700;
-            margin-bottom: 1rem;
+            margin-bottom: 0.75rem;
             color: white;
         }
 
         .feature-card p {
             color: var(--text-secondary);
             line-height: 1.6;
+            font-size: 0.95rem;
         }
 
-        /* Pricing - Igual al estilo del hub */
+        /* Pricing */
         .pricing {
-            padding: 5rem 0;
+            padding: 4rem 0;
         }
 
         .pricing-grid {
             display: grid;
             grid-template-columns: repeat(3, 1fr);
-            gap: 2rem;
+            gap: 1.5rem;
+            max-width: 1000px;
+            margin: 0 auto;
         }
 
         .pricing-card {
             background: var(--nova-glass);
             backdrop-filter: blur(10px);
             border: 1px solid var(--nova-glass-border);
-            border-radius: 30px;
-            padding: 2.5rem 2rem;
-            position: relative;
+            border-radius: 24px;
+            padding: 2rem;
             transition: all 0.3s;
+            position: relative;
         }
 
         .pricing-card.popular {
-            transform: scale(1.05);
-            border-color: var(--nova-violet);
-            background: linear-gradient(135deg, rgba(108,74,224,0.1), rgba(196,85,237,0.1));
+            background: linear-gradient(135deg, rgba(139, 92, 246, 0.15) 0%, rgba(236, 72, 153, 0.15) 100%);
+            border-color: rgba(236, 72, 153, 0.5);
+            transform: scale(1.03);
         }
 
-        .popular-badge {
+        .pricing-card.popular::before {
+            content: 'Más Popular';
             position: absolute;
             top: -12px;
             left: 50%;
             transform: translateX(-50%);
-            background: var(--nova-gradient);
-            color: white;
-            font-size: 0.8rem;
+            background: var(--nova-gradient-warm);
+            padding: 0.35rem 1rem;
+            border-radius: 20px;
+            font-size: 0.75rem;
             font-weight: 600;
-            padding: 0.3rem 1rem;
-            border-radius: 30px;
-            white-space: nowrap;
+            color: white;
         }
 
         .pricing-card h3 {
-            font-size: 1.5rem;
+            font-family: 'Outfit', sans-serif;
+            font-size: 1.3rem;
             font-weight: 700;
+            margin-bottom: 0.5rem;
             color: white;
-            margin-bottom: 1rem;
         }
 
-        .pricing-price {
-            margin-bottom: 2rem;
-        }
-
-        .price {
-            font-size: 3rem;
+        .pricing-card .price {
+            font-family: 'Outfit', sans-serif;
+            font-size: 2.5rem;
             font-weight: 800;
             color: white;
+            margin-bottom: 0.25rem;
         }
 
-        .price span {
+        .pricing-card .price span {
             font-size: 1rem;
-            color: var(--text-tertiary);
+            color: var(--text-secondary);
             font-weight: 400;
         }
 
-        .pricing-features {
+        .pricing-card ul {
             list-style: none;
-            margin-bottom: 2rem;
+            margin: 1.5rem 0;
         }
 
-        .pricing-features li {
+        .pricing-card li {
             color: var(--text-secondary);
-            margin-bottom: 1rem;
+            padding: 0.5rem 0;
             display: flex;
             align-items: center;
-            gap: 0.8rem;
+            gap: 10px;
+            font-size: 0.9rem;
         }
 
-        .pricing-features i.fa-check {
-            color: var(--nova-success);
+        .pricing-card li i {
+            color: var(--nova-green);
         }
 
-        .pricing-features i.fa-times {
-            color: var(--text-tertiary);
-        }
-
-        .pricing-card .btn-secondary {
+        .pricing-card .btn-plan {
             width: 100%;
-            justify-content: center;
+            padding: 0.8rem;
+            border-radius: 30px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-decoration: none;
+            display: block;
+            text-align: center;
+        }
+
+        .pricing-card .btn-plan.primary {
+            background: var(--nova-gradient-warm);
+            color: white;
+            border: none;
+        }
+
+        .pricing-card .btn-plan.secondary {
+            background: transparent;
+            border: 1px solid var(--nova-glass-border);
+            color: white;
+        }
+
+        /* CTA Section */
+        .cta-section {
+            text-align: center;
+            padding: 5rem 0;
+        }
+
+        .cta-card {
+            background: linear-gradient(135deg, rgba(139, 92, 246, 0.2) 0%, rgba(236, 72, 153, 0.2) 100%);
+            border: 1px solid rgba(236, 72, 153, 0.3);
+            border-radius: 32px;
+            padding: 4rem 2rem;
+            max-width: 800px;
+            margin: 0 auto;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .cta-card::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle, rgba(236, 72, 153, 0.1) 0%, transparent 50%);
+            animation: rotate 20s linear infinite;
+        }
+
+        @keyframes rotate {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        .cta-card h2 {
+            font-family: 'Outfit', sans-serif;
+            font-size: 2.4rem;
+            font-weight: 800;
+            color: white;
+            margin-bottom: 1rem;
+            position: relative;
+            z-index: 1;
+        }
+
+        .cta-card p {
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+            margin-bottom: 2rem;
+            position: relative;
+            z-index: 1;
+        }
+
+        .cta-card .btn-primary {
+            position: relative;
+            z-index: 1;
+            padding: 1rem 2.5rem;
+            font-size: 1.1rem;
         }
 
         /* Footer */
         .footer {
-            padding: 4rem 0 2rem;
+            padding: 2rem 0;
             border-top: 1px solid var(--nova-glass-border);
-            margin-top: 4rem;
         }
 
         .footer-content {
-            display: grid;
-            grid-template-columns: 2fr 1fr 1fr 1fr;
-            gap: 3rem;
-            margin-bottom: 3rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
 
-        .footer-brand p {
+        .footer-logo {
+            display: flex;
+            align-items: center;
+            gap: 10px;
             color: var(--text-secondary);
             font-size: 0.9rem;
-            margin: 1rem 0;
-            line-height: 1.6;
         }
 
-        .footer-links h4 {
-            color: white;
-            font-weight: 600;
-            margin-bottom: 1.5rem;
-        }
-
-        .footer-links ul {
-            list-style: none;
-        }
-
-        .footer-links li {
-            margin-bottom: 0.8rem;
+        .footer-links {
+            display: flex;
+            gap: 2rem;
         }
 
         .footer-links a {
             color: var(--text-secondary);
             text-decoration: none;
-            transition: color 0.3s;
             font-size: 0.9rem;
+            transition: color 0.3s;
         }
 
         .footer-links a:hover {
             color: var(--nova-cyan);
         }
 
-        .footer-bottom {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding-top: 2rem;
-            border-top: 1px solid var(--nova-glass-border);
-            color: var(--text-tertiary);
-            font-size: 0.9rem;
-        }
-
-        .social-links {
-            display: flex;
-            gap: 1.5rem;
-        }
-
-        .social-links a {
-            color: var(--text-tertiary);
-            transition: color 0.3s;
-        }
-
-        .social-links a:hover {
-            color: var(--nova-cyan);
-        }
-
+        /* Responsive */
         @media (max-width: 1024px) {
             .hero {
-                flex-direction: column;
+                grid-template-columns: 1fr;
                 text-align: center;
             }
-            
+
+            .hero-content {
+                text-align: center;
+            }
+
             .hero-subtitle {
                 margin: 0 auto 2rem;
             }
-            
-            .hero-stats {
-                justify-content: center;
-            }
-            
+
+            .hero-stats,
             .hero-cta {
                 justify-content: center;
             }
@@ -670,13 +707,13 @@
             .pricing-grid {
                 grid-template-columns: repeat(2, 1fr);
             }
-            
-            .footer-content {
-                grid-template-columns: repeat(2, 1fr);
-            }
         }
 
         @media (max-width: 768px) {
+            .welcome-container {
+                padding: 1rem;
+            }
+            
             .header {
                 flex-direction: column;
                 gap: 1rem;
@@ -685,10 +722,15 @@
             .nav-links {
                 flex-wrap: wrap;
                 justify-content: center;
+                gap: 1rem;
             }
             
             .hero-title {
                 font-size: 2.5rem;
+            }
+            
+            .hero-stats {
+                gap: 1.5rem;
             }
             
             .features-grid,
@@ -701,19 +743,20 @@
             }
             
             .footer-content {
-                grid-template-columns: 1fr;
-            }
-            
-            .footer-bottom {
                 flex-direction: column;
                 gap: 1rem;
                 text-align: center;
+            }
+            
+            .footer-links {
+                flex-wrap: wrap;
+                justify-content: center;
             }
         }
     </style>
 </head>
 <body>
-    <!-- Fondo dinámico Nova (igual al hub) -->
+    <!-- Fondo dinámico Nova -->
     <div class="nova-bg">
         <div class="nova-bg-orb"></div>
         <div class="nova-bg-orb"></div>
@@ -725,9 +768,6 @@
         <!-- Header -->
         <header class="header">
             <div class="logo">
-                <div class="logo-icon">
-                    <i class="fa-solid fa-robot"></i>
-                </div>
                 <span class="logo-text">NOVA ACADEMY</span>
             </div>
             <nav class="nav-links">
@@ -780,14 +820,15 @@
                     </a>
                 </div>
             </div>
-
             <div class="hero-image">
-                <img src="https://images.unsplash.com/photo-1524178232363-1fb2b075b655?ixlib=rb-4.0.3&auto=format&fit=crop&w=1350&q=80" alt="Nova Academy Platform">
-                <div class="floating-card">
-                    <i class="fa-regular fa-clock"></i>
-                    <p><strong>+15 horas ahorradas</strong> esta semana</p>
+                <div class="hero-image-container animate-pulse">
+                    <div class="hero-glow"></div>
+                    <div class="nova-mascot">
+                        <img src="/images/emoji leyendo sin fondo.png" alt="NOVA - Tu Asistente de IA">
+                    </div>
                 </div>
             </div>
+
         </section>
 
         <!-- Features Section -->
@@ -862,11 +903,10 @@
                         <li><i class="fa-regular fa-check"></i> 1 curso activo</li>
                         <li><i class="fa-regular fa-times"></i> Exportación limitada</li>
                     </ul>
-                    <a href="{{ route('register') }}" class="btn-secondary">Comenzar</a>
+                    <a href="{{ route('register') }}" class="btn-plan secondary">Comenzar</a>
                 </div>
 
                 <div class="pricing-card popular">
-                    <div class="popular-badge">MÁS POPULAR</div>
                     <h3>Pro</h3>
                     <div class="pricing-price">
                         <span class="price">9.99€ <span>/mes</span></span>
@@ -878,7 +918,7 @@
                         <li><i class="fa-regular fa-check"></i> Exportación completa</li>
                         <li><i class="fa-regular fa-check"></i> Soporte prioritario</li>
                     </ul>
-                    <a href="{{ route('register') }}" class="btn-primary">Elegir Pro</a>
+                    <a href="{{ route('register') }}" class="btn-plan primary">Elegir Pro</a>
                 </div>
 
                 <div class="pricing-card">
@@ -893,7 +933,7 @@
                         <li><i class="fa-regular fa-check"></i> Formación incluida</li>
                         <li><i class="fa-regular fa-check"></i> Soporte 24/7</li>
                     </ul>
-                    <a href="#contacto" class="btn-secondary">Contactar</a>
+                    <a href="#contacto" class="btn-plan secondary">Contactar</a>
                 </div>
             </div>
         </section>
@@ -901,47 +941,14 @@
         <!-- Footer -->
         <footer class="footer">
             <div class="footer-content">
-                <div class="footer-brand">
-                    <div class="logo">
-                        <div class="logo-icon" style="width: 40px; height: 40px;">
-                            <i class="fa-solid fa-robot" style="font-size: 20px;"></i>
-                        </div>
-                        <span class="logo-text" style="font-size: 1.4rem;">NOVA ACADEMY</span>
-                    </div>
-                    <p>Transformando la educación con inteligencia artificial. Más tiempo para enseñar, menos para planificar.</p>
+                <div class="footer-logo">
+                    <span>© 2026 NOVA ACADEMY. Todos los derechos reservados.</span>
                 </div>
                 <div class="footer-links">
-                    <h4>Producto</h4>
-                    <ul>
-                        <li><a href="#features">Características</a></li>
-                        <li><a href="#pricing">Precios</a></li>
-                        <li><a href="#demo">Demo</a></li>
-                    </ul>
-                </div>
-                <div class="footer-links">
-                    <h4>Recursos</h4>
-                    <ul>
-                        <li><a href="#">Blog</a></li>
-                        <li><a href="#">Guías</a></li>
-                        <li><a href="#">Soporte</a></li>
-                    </ul>
-                </div>
-                <div class="footer-links">
-                    <h4>Legal</h4>
-                    <ul>
-                        <li><a href="#">Términos</a></li>
-                        <li><a href="#">Privacidad</a></li>
-                        <li><a href="#">Cookies</a></li>
-                    </ul>
-                </div>
-            </div>
-            <div class="footer-bottom">
-                <p>© 2026 NOVA ACADEMY. Todos los derechos reservados.</p>
-                <div class="social-links">
-                    <a href="#"><i class="fa-brands fa-x-twitter"></i></a>
-                    <a href="#"><i class="fa-brands fa-linkedin"></i></a>
-                    <a href="#"><i class="fa-brands fa-instagram"></i></a>
-                    <a href="#"><i class="fa-brands fa-youtube"></i></a>
+                    <a href="#features">Características</a>
+                    <a href="#pricing">Precios</a>
+                    <a href="#">Términos</a>
+                    <a href="#">Privacidad</a>
                 </div>
             </div>
         </footer>

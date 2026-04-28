@@ -93,6 +93,7 @@ class ActivitiesController extends Controller
             'max_score'          => ['required', 'integer', 'min:1', 'max:100'],
             'weight_percentage'  => ['required', 'numeric', 'min:0', 'max:100'],
             'due_date'           => ['nullable', 'date'],
+            'type'               => ['nullable', 'string', 'max:50'],
             'is_homework'        => ['sometimes', 'boolean'],
             'nee_type'           => ['nullable', 'string', 'max:80'],
         ]);
@@ -102,7 +103,8 @@ class ActivitiesController extends Controller
         abort_unless($course->teacher_id === auth()->id(), 403);
 
         $isHomework = $request->boolean('is_homework');
-        $resolvedType = $isHomework ? 'tarea' : ($request->input('type', 'actividad') ?? 'actividad');
+        $requestedType = trim((string) ($data['type'] ?? 'actividad'));
+        $resolvedType = $isHomework ? 'tarea' : ($requestedType !== '' ? $requestedType : 'actividad');
 
         $neeType = $data['nee_type'] ?? null;
         $neeAdaptation = $neeType ? $this->buildNeeAdaptation($neeType) : null;
@@ -154,7 +156,7 @@ class ActivitiesController extends Controller
     {
         $data = $request->validate([
             'title' => ['required', 'string', 'max:160'],
-            'type' => ['required', 'in:clase,actividad'],
+            'type' => ['required', 'string', 'max:50'],
         ]);
 
         $apiKey = config('services.openai.key', env('OPENAI_API_KEY'));

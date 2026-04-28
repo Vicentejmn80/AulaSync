@@ -13,40 +13,44 @@
 
     /* Botón flotante principal */
     .nova-ai-trigger {
-        width: 56px;
-        height: 56px;
+        width: 68px;
+        height: 68px;
         background: transparent;
         border-radius: 50%;
         display: flex;
         align-items: center;
         justify-content: center;
         cursor: pointer;
-        box-shadow: none;
+        box-shadow: 0 10px 30px -8px rgba(139, 92, 246, 0.4), 
+                    0 5px 15px -5px rgba(236, 72, 153, 0.3);
         transition: all 0.3s cubic-bezier(0.2, 0.9, 0.4, 1.1);
         position: relative;
-        overflow: hidden;
+        overflow: visible;
     }
 
     .nova-ai-trigger::before {
         content: '';
         position: absolute;
-        inset: 0;
-        background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
-        transform: translateX(-100%);
-        transition: transform 0.6s ease;
+        inset: -3px;
+        background: linear-gradient(135deg, rgba(139, 92, 246, 0.15), rgba(236, 72, 153, 0.15));
+        border-radius: 50%;
+        z-index: -1;
+        opacity: 0;
+        transition: opacity 0.3s ease;
     }
 
     .nova-ai-trigger:hover::before {
-        transform: translateX(100%);
+        opacity: 1;
     }
 
     .nova-ai-trigger:hover {
-        transform: scale(1.06);
-        filter: brightness(1.06);
+        transform: scale(1.08);
+        box-shadow: 0 15px 40px -10px rgba(139, 92, 246, 0.5), 
+                    0 8px 20px -6px rgba(236, 72, 153, 0.4);
     }
 
     .nova-ai-trigger:active {
-        transform: scale(0.95);
+        transform: scale(0.98);
     }
 
     .nova-ai-trigger.listening {
@@ -70,42 +74,43 @@
      */
     .nova-monkey-avatar {
         --nova-avatar-size: 48px;
-        --nova-avatar-scale: 140%;
+        --nova-avatar-scale: 130%;
         position: relative;
         width: var(--nova-avatar-size);
         height: var(--nova-avatar-size);
         flex-shrink: 0;
         border-radius: 50%;
-        overflow: hidden;
-        background: radial-gradient(circle at 30% 25%, #ff6db3 0%, #ff2d85 52%, #e11d74 100%);
-        filter: drop-shadow(0 6px 16px rgba(255, 45, 133, 0.35));
+        overflow: visible;
+        background: transparent;
+        filter: drop-shadow(0 6px 16px rgba(139, 92, 246, 0.4)) drop-shadow(0 3px 8px rgba(236, 72, 153, 0.3));
         transition: transform 0.3s ease-in-out, filter 0.3s ease-in-out;
     }
 
     .nova-monkey-avatar--trigger {
         --nova-avatar-size: 60px;
-        --nova-avatar-scale: 150%;
+        --nova-avatar-scale: 135%;
+        filter: drop-shadow(0 8px 20px rgba(139, 92, 246, 0.5)) drop-shadow(0 4px 10px rgba(236, 72, 153, 0.4));
     }
 
     .nova-monkey-avatar__sprite {
         position: absolute;
-        inset: -10%;
+        inset: -20%;
         background-repeat: no-repeat;
         background-size: var(--nova-avatar-scale);
-        background-position: center;
+        background-position: center center;
         transition: opacity 0.3s ease-in-out, transform 0.3s ease-in-out;
-        transform: scale(1.02);
+        transform: translate(0, 0) scale(1.05);
         will-change: opacity, transform;
         pointer-events: none;
     }
 
     .nova-monkey-avatar__sprite--closed {
-        background-image: url('/images/nova_avatar_lector.png');
+        background-image: url('/images/emoji leyendo sin fondo.png');
         opacity: 1;
     }
 
     .nova-monkey-avatar__sprite--open {
-        background-image: url('/images/nova_avatar_foco.png');
+        background-image: url('/images/emoji viendo fijo sin fondo.png');
         opacity: 0;
     }
 

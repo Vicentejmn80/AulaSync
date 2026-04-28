@@ -469,11 +469,21 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
 
         $contextJson = $screenContext ? json_encode($screenContext, JSON_UNESCAPED_UNICODE) : '{}';
 
+        $calendarMonth = isset($screenContext['month']) ? $screenContext['month'] : null;
+        $calStart = Carbon::today();
+        $calEnd = Carbon::today()->copy()->addDays(14);
+        
+        if ($calendarMonth && preg_match('/^\d{4}-\d{2}$/', $calendarMonth)) {
+            $calStart = Carbon::createFromFormat('Y-m', $calendarMonth)->startOfMonth();
+            $calEnd = Carbon::createFromFormat('Y-m', $calendarMonth)->endOfMonth();
+        }
+
         $calendarTwoWeeks = $this->buildCalendarSnapshotLines(
             $teacher->id,
-            Carbon::today(),
-            Carbon::today()->copy()->addDays(14)
+            $calStart,
+            $calEnd
         );
+        $calendarTwoWeeks = "📅 Mes actual del calendario: " . ($calendarMonth ?? 'próximas 2 semanas') . "\n" . $calendarTwoWeeks;
         $extendedBlock = '';
         if ($hasDeleteIntent || $hasModifyIntent) {
             $calendarExtended = $this->buildCalendarSnapshotLines(

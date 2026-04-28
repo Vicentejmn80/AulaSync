@@ -138,7 +138,6 @@
     @endauth
 
     @laravelPwa
-    @pwaUpdateNotifier
     @pwaInstallButton
 </body>
 </html>

@@ -275,7 +275,7 @@
             }
 
             #hub-canvas {
-                padding: 3.75rem 1rem 1.5rem;
+                padding: 3.75rem 0.75rem 1rem;
             }
 
             .stats-grid {
@@ -284,6 +284,123 @@
 
             .content-grid-2 {
                 grid-template-columns: 1fr !important;
+            }
+
+            /* ── Calendario Mobile ───────────────────────────────── */
+            .calendar-header {
+                flex-direction: column;
+                gap: 12px;
+                margin-bottom: 15px;
+            }
+
+            .calendar-title h2 {
+                font-size: 18px;
+                text-align: center;
+            }
+
+            .calendar-title p {
+                font-size: 12px;
+                text-align: center;
+            }
+
+            .calendar-nav {
+                width: 100%;
+                justify-content: center;
+                flex-wrap: wrap;
+                gap: 6px;
+            }
+
+            .calendar-nav-btn {
+                width: 36px;
+                height: 36px;
+                font-size: 14px;
+            }
+
+            .today-btn {
+                padding: 0 12px;
+                font-size: 12px;
+            }
+
+            .calendar-stats {
+                width: 100%;
+                text-align: center;
+                margin-left: 0;
+                margin-top: 8px;
+            }
+
+            .calendar-grid {
+                padding: 12px;
+                border-radius: 16px;
+            }
+
+            .weekdays {
+                gap: 4px;
+                margin-bottom: 8px;
+            }
+
+            .weekday {
+                font-size: 10px;
+            }
+
+            .calendar-days {
+                gap: 4px;
+            }
+
+            .calendar-day {
+                min-height: 60px;
+                padding: 6px;
+                border-radius: 10px;
+            }
+
+            .day-number {
+                top: 4px;
+                right: 5px;
+                font-size: 10px;
+            }
+
+            .day-content {
+                margin-top: 14px;
+                gap: 2px;
+            }
+
+            .cal-event {
+                font-size: 8px;
+                padding: 2px 4px;
+                border-radius: 4px;
+            }
+
+            /* AI hint oculto en mobile */
+            div:has(.ai-hint-cal) {
+                display: none;
+            }
+
+            /* Ajuste del modal de día */
+            .day-modal-content {
+                max-height: 70vh;
+                overflow-y: auto;
+            }
+
+            /* ── Scroll mobile ───────────────────────────────── */
+            body {
+                overflow-y: auto !important;
+                overflow-x: hidden;
+                position: relative;
+                height: auto;
+                min-height: 100vh;
+                min-height: 100dvh;
+            }
+
+            #hub-container {
+                flex-direction: column;
+                min-height: 100vh;
+                min-height: 100dvh;
+            }
+
+            #hub-canvas {
+                padding: 4rem 0.75rem 1.5rem;
+                overflow-y: visible;
+                min-height: calc(100vh - 60px);
+                min-height: calc(100dvh - 60px);
             }
         }
 
@@ -2381,7 +2498,7 @@
                 </div>
 
                 {{-- AI hint --}}
-                <div style="background: var(--nova-glass); border: 1px solid var(--nova-glass-border); border-radius: 20px; padding: 15px 20px; margin-bottom: 25px; display: flex; align-items: center; gap: 12px;">
+                <div class="ai-hint-cal" style="background: var(--nova-glass); border: 1px solid var(--nova-glass-border); border-radius: 20px; padding: 15px 20px; margin-bottom: 25px; display: flex; align-items: center; gap: 12px;">
                     <i class="fa-solid fa-robot" style="color: var(--nova-cyan); font-size: 18px;"></i>
                     <p style="color: var(--text-secondary); font-size: 13px;">
                         <strong>IA activa:</strong> Di <em>"Planifica Fracciones para Matemáticas 3ro"</em> y el calendario se llenará automáticamente.
@@ -2920,7 +3037,7 @@ function teacherHub() {
             this.courseData    = null;
             this.currentCourseId = null;
             this.calendarMonth = month || new Date().toISOString().slice(0, 7);
-            this.setNovaContext(null);
+            this.setNovaContext({ type: 'calendar', month: this.calendarMonth });
 
             try {
                 let url = `/teacher/api/calendar?month=${this.calendarMonth}`;
@@ -3320,7 +3437,6 @@ function teacherHub() {
 </div>
 
     @laravelPwa
-    @pwaUpdateNotifier
     @pwaInstallButton
 </body>
 </html>
