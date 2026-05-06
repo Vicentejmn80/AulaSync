@@ -278,8 +278,9 @@
             }
 
             #hub-canvas {
-                padding: 3.75rem 0.75rem 1rem;
+                padding: 4rem 0.75rem 1.5rem;
                 min-height: calc(100dvh - 56px);
+                overflow-y: auto;
             }
 
             .stats-grid {
@@ -375,7 +376,7 @@
             }
 
             /* AI hint oculto en mobile */
-            div:has(.ai-hint-cal) {
+            .ai-hint-cal {
                 display: none;
             }
 
@@ -385,28 +386,7 @@
                 overflow-y: auto;
             }
 
-            /* ── Scroll mobile ───────────────────────────────── */
-            body {
-                overflow-y: auto !important;
-                overflow-x: hidden;
-                position: relative;
-                height: auto;
-                min-height: 100vh;
-                min-height: 100dvh;
-            }
-
-            #hub-container {
-                flex-direction: column;
-                min-height: 100vh;
-                min-height: 100dvh;
-            }
-
-            #hub-canvas {
-                padding: 4rem 0.75rem 1.5rem;
-                overflow-y: visible;
-                min-height: calc(100vh - 60px);
-                min-height: calc(100dvh - 60px);
-            }
+            /* Scroll mobile: mantener flujo natural sin duplicar reglas */
         }
 
         @media (min-width: 768px) {
@@ -3407,7 +3387,7 @@ function teacherHub() {
     };
 }
 </script>
-<div id="ai-modal" class="fixed inset-0 z-[100] flex items-center justify-center hidden bg-black/60 backdrop-blur-sm animate__animated animate__fadeIn">
+<div id="ai-modal" class="fixed inset-0 z-[130] flex items-center justify-center hidden bg-black/60 backdrop-blur-sm animate__animated animate__fadeIn">
     <div class="bg-[#12122B] border border-[#6C4AE0]/30 w-full max-w-md rounded-3xl p-6 shadow-2xl relative overflow-hidden">
         <div class="absolute -top-24 -right-24 w-48 h-48 bg-[#6C4AE0]/20 blur-[60px] rounded-full"></div>
         

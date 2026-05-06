@@ -574,7 +574,8 @@
         align-items: center;
         gap: 8px;
         box-shadow: 0 10px 25px -5px rgba(0,0,0,0.2);
-        z-index: 10000;
+        z-index: 95;
+        pointer-events: none;
         animation: toast-in 0.3s ease;
     }
 

@@ -175,7 +175,7 @@
                     {{ strtoupper(substr($user->name, 0, 2)) }}
                 </div>
                 <div class="min-w-0 flex-1">
-                    <p class="text-xs font-semibold text-slate-700 truncate">{{ $user->name }}</p>
+                    <p class="text-xs font-semibold text-slate-700 break-words">{{ $user->name }}</p>
                     <p class="text-[10px] text-slate-400">Director</p>
                 </div>
             </div>
@@ -454,8 +454,8 @@
                                     {{ strtoupper(substr($student->name, 0, 2)) }}
                                 </div>
                                 <div class="flex-1 min-w-0">
-                                    <p class="text-sm font-semibold text-slate-700 truncate">{{ $student->name }}</p>
-                                    <p class="text-[11px] text-slate-400 truncate">
+                                    <p class="text-sm font-semibold text-slate-700 break-words leading-tight">{{ $student->name }}</p>
+                                    <p class="text-[11px] text-slate-400 break-words leading-tight">
                                         {{ $student->subject_name }} · {{ $student->grade }}
                                     </p>
                                 </div>
@@ -515,7 +515,7 @@
                                 {{ strtoupper(substr($student->student_name, 0, 2)) }}
                             </div>
                             <div class="flex-1 min-w-0">
-                                <p class="text-sm font-semibold text-slate-700 truncate">{{ $student->student_name }}</p>
+                                <p class="text-sm font-semibold text-slate-700 break-words leading-tight">{{ $student->student_name }}</p>
                                 <p class="text-[11px] text-slate-400">{{ $student->grade }}</p>
                             </div>
                             <span class="text-sm font-extrabold text-emerald-600">
@@ -539,7 +539,7 @@
                                 {{ strtoupper(substr($student->student_name, 0, 2)) }}
                             </div>
                             <div class="flex-1 min-w-0">
-                                <p class="text-sm font-semibold text-slate-700 truncate">{{ $student->student_name }}</p>
+                                <p class="text-sm font-semibold text-slate-700 break-words leading-tight">{{ $student->student_name }}</p>
                                 <p class="text-[11px] text-slate-400">{{ $student->grade }}</p>
                             </div>
                             <div class="text-right">
