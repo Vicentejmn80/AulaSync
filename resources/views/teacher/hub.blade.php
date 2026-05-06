@@ -3044,12 +3044,24 @@ function teacherHub() {
                 if (this.planBlockFilter) {
                     url += `&plan_block=${this.planBlockFilter}`;
                 }
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 12000);
                 const res = await fetch(url, {
-                    headers: { 'Accept': 'application/json' }
+                    headers: { 'Accept': 'application/json' },
+                    cache: 'no-store',
+                    signal: controller.signal,
                 });
-                this.calendarData = await res.json();
+                clearTimeout(timeoutId);
+                if (!res.ok) {
+                    throw new Error(`Calendar API ${res.status}`);
+                }
+                const json = await res.json();
+                this.calendarData = (json && json.days_in_month)
+                    ? json
+                    : this.buildEmptyCalendar(this.calendarMonth);
             } catch (e) {
                 console.warn('Calendar fetch failed', e);
+                this.calendarData = this.buildEmptyCalendar(this.calendarMonth);
             } finally {
                 this.canvasLoading = false;
                 this.closeSidebarMobile();
@@ -3265,6 +3277,25 @@ function teacherHub() {
             if (nm > 12) { nm = 1;  ny++; }
             if (nm < 1)  { nm = 12; ny--; }
             this.loadCalendar(`${ny}-${String(nm).padStart(2,'0')}`);
+        },
+
+        buildEmptyCalendar(monthStr) {
+            const [year, month] = (monthStr || new Date().toISOString().slice(0, 7)).split('-').map(Number);
+            const safeYear = Number.isFinite(year) ? year : new Date().getFullYear();
+            const safeMonth = Number.isFinite(month) ? month : (new Date().getMonth() + 1);
+            const firstDay = new Date(safeYear, safeMonth - 1, 1);
+            const daysInMonth = new Date(safeYear, safeMonth, 0).getDate();
+            const monthNames = ['','Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+
+            return {
+                month: `${safeYear}-${String(safeMonth).padStart(2, '0')}`,
+                month_name: `${monthNames[safeMonth] ?? ''} ${safeYear}`,
+                days_in_month: daysInMonth,
+                first_weekday: firstDay.getDay(),
+                activities_by_day: {},
+                total_activities: 0,
+                plan_block_filter: this.planBlockFilter ? Number(this.planBlockFilter) : null,
+            };
         },
 
         get calendarDays() {
