@@ -8,7 +8,13 @@
         position: fixed;
         bottom: 24px;
         right: 24px;
-        z-index: 9999;
+        z-index: 90;
+        pointer-events: none;
+    }
+
+    .nova-ai-container .nova-ai-trigger,
+    .nova-ai-container .nova-ai-panel {
+        pointer-events: auto;
     }
 
     /* Botón flotante principal */

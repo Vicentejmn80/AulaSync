@@ -76,7 +76,7 @@
     @pwaHead
     @stack('styles')
 </head>
-<body>
+<body class="min-h-screen overflow-y-auto overflow-x-hidden">
     <!-- Navbar simplified from dashboard.blade.php -->
     <nav class="navbar navbar-expand-lg navbar-light bg-white py-3 shadow-sm sticky-top">
         <div class="container">
@@ -117,7 +117,7 @@
     </nav>
 
     <!-- Main Content Slot -->
-    <main>
+    <main class="min-h-screen overflow-y-auto">
         {{ $slot }}
     </main>
 

@@ -88,7 +88,7 @@
 </head>
 <body class="min-h-screen">
 
-<div class="flex h-screen overflow-hidden relative" x-data="{ sidebarOpen: false }">
+<div class="flex min-h-screen overflow-y-auto overflow-x-hidden relative" x-data="{ sidebarOpen: false }">
 
     <div
         x-show="sidebarOpen"

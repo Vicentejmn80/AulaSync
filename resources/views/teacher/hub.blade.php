@@ -82,7 +82,8 @@
             font-family: 'Inter', system-ui, -apple-system, sans-serif;
             background: var(--bg-primary);
             color: var(--text-primary);
-            overflow: hidden;
+            overflow-x: hidden;
+            overflow-y: auto;
             transition: background-color 0.3s ease, color 0.2s ease;
         }
 
@@ -226,11 +227,13 @@
         /* ── Hub Root ───────────────────────────────────────── */
         #hub-root {
             display: flex;
-            height: 100vh;
-            width: 100vw;
+            min-height: 100vh;
+            min-height: 100dvh;
+            width: 100%;
             position: relative;
             backdrop-filter: blur(20px);
             background: rgba(0, 0, 0, 0.2);
+            overflow-x: hidden;
         }
 
         html.light #hub-root {
@@ -276,6 +279,7 @@
 
             #hub-canvas {
                 padding: 3.75rem 0.75rem 1rem;
+                min-height: calc(100dvh - 56px);
             }
 
             .stats-grid {
@@ -331,6 +335,7 @@
             .calendar-grid {
                 padding: 12px;
                 border-radius: 16px;
+                min-height: 320px;
             }
 
             .weekdays {
@@ -765,10 +770,13 @@
         #hub-canvas {
             flex: 1;
             min-width: 0;
+            min-height: 100vh;
+            min-height: 100dvh;
             overflow-y: auto;
             overflow-x: hidden;
             padding: 30px 35px;
             position: relative;
+            -webkit-overflow-scrolling: touch;
         }
 
         #hub-canvas::-webkit-scrollbar {
@@ -1722,6 +1730,7 @@
             border: 1px solid var(--nova-glass-border);
             border-radius: 24px;
             padding: 20px;
+            min-height: 420px;
         }
 
         .weekdays {
