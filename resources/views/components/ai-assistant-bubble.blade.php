@@ -636,6 +636,27 @@
         background: #EDE9FE;
         color: #6C4AE0;
     }
+
+    /* Mobile/tablet: mantener panel visible sin bloquear interacción */
+    @media (max-width: 767px) {
+        .nova-ai-container {
+            right: 12px;
+            bottom: calc(12px + env(safe-area-inset-bottom));
+        }
+
+        .nova-ai-panel {
+            width: min(92vw, 400px);
+            height: min(72dvh, 620px);
+            bottom: 76px;
+            right: 0;
+        }
+
+        .nova-toast {
+            right: 12px;
+            bottom: 88px;
+            max-width: calc(100vw - 24px);
+        }
+    }
 </style>
 
 <div class="nova-ai-container" x-data="novaAIAssistant()" x-init="init()">

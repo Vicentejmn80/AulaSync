@@ -88,7 +88,7 @@
 </head>
 <body class="min-h-screen">
 
-<div class="flex min-h-screen overflow-y-auto overflow-x-hidden relative" x-data="{ sidebarOpen: false }">
+<div class="flex min-h-screen overflow-x-hidden relative" x-data="{ sidebarOpen: false }">
 
     <div
         x-show="sidebarOpen"
@@ -202,8 +202,8 @@
                     <i class="fa-solid text-lg" :class="sidebarOpen ? 'fa-xmark' : 'fa-bars'"></i>
                 </button>
                 <div class="min-w-0">
-                <h1 class="truncate text-base font-bold text-slate-800 sm:text-lg">Panel de Gestión Institucional</h1>
-                <p class="mt-0.5 truncate text-xs text-slate-400">
+                <h1 class="text-base font-bold text-slate-800 sm:text-lg break-words whitespace-normal">Panel de Gestión Institucional</h1>
+                <p class="mt-0.5 text-xs text-slate-400 break-words whitespace-normal">
                     Última actualización: {{ now()->format('d/m/Y H:i') }}
                 </p>
                 </div>
