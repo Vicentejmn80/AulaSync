@@ -117,7 +117,7 @@ class DirectorAnalyticsService
                 COUNT(grades.id) as grade_count
             ')
             ->groupBy('students.id', 'students.name', 'students.grade', 'students.section')
-            ->having('grade_count', '>=', 1)
+            ->havingRaw('COUNT(grades.id) >= 1')
             ->orderByDesc('avg_pct')
             ->get();
 
