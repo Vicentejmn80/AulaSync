@@ -7,12 +7,13 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Grade extends Model
 {
-    protected $fillable = ['activity_id', 'student_id', 'score', 'feedback_text'];
+    protected $fillable = ['activity_id', 'student_id', 'score', 'status', 'published_at', 'feedback_text'];
 
     protected function casts(): array
     {
         return [
             'score' => 'decimal:2',
+            'published_at' => 'datetime',
         ];
     }
 

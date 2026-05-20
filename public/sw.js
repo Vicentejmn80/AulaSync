@@ -43,6 +43,12 @@ self.addEventListener('message', (event) => {
 self.addEventListener("fetch", (event) => {
 
     const request = event.request;
+    const requestUrl = new URL(request.url);
+
+    // Never cache browser-extension requests. Cache API only supports http(s).
+    if (requestUrl.protocol !== 'http:' && requestUrl.protocol !== 'https:') {
+        return;
+    }
 
     // ✅ Never cache non-GET requests (fix Cache.put POST error)
     if (request.method !== 'GET') {

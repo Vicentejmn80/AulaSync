@@ -263,7 +263,7 @@
                 height: 100vh;
                 height: 100dvh;
                 z-index: 110;
-                width: min(300px, 90vw);
+                width: min(280px, 80vw);
                 min-width: unset;
                 transform: translateX(-100%);
                 box-shadow: none;
@@ -784,8 +784,9 @@
             background: var(--bg-card);
             backdrop-filter: blur(10px);
             border: 1px solid var(--nova-glass-border);
-            border-radius: 24px;
-            padding: 20px;
+            border-radius: 16px;
+            padding: 16px;
+            height: auto;
             position: relative;
             overflow: hidden;
             transition: all 0.3s ease;
@@ -1922,6 +1923,249 @@
             overflow: hidden;
         }
 
+        .grades-slideover-wrap {
+            position: fixed;
+            inset: 0;
+            z-index: 1100;
+            display: flex;
+            justify-content: flex-end;
+        }
+
+        .grades-slideover-backdrop {
+            position: absolute;
+            inset: 0;
+            background: rgba(5, 8, 18, 0.72);
+            backdrop-filter: blur(5px);
+        }
+
+        .grades-slideover-panel {
+            position: relative;
+            width: min(720px, 100%);
+            height: 100%;
+            background: linear-gradient(160deg, rgba(18, 18, 43, 0.95), rgba(9, 12, 28, 0.96));
+            border-left: 1px solid var(--nova-glass-border);
+            box-shadow: -20px 0 60px rgba(0, 0, 0, 0.45);
+            display: flex;
+            flex-direction: column;
+            animation: slide-up 0.25s ease;
+        }
+
+        .grades-slideover-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            padding: 22px 24px 16px;
+            border-bottom: 1px solid var(--nova-glass-border);
+            background: rgba(108, 74, 224, 0.09);
+        }
+
+        .grades-slideover-eyebrow {
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--nova-cyan);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            margin: 0 0 6px;
+        }
+
+        .grades-slideover-header h3 {
+            margin: 0;
+            font-size: 20px;
+            color: var(--text-primary);
+        }
+
+        .grades-slideover-subtitle {
+            margin: 6px 0 0;
+            color: var(--text-secondary);
+            font-size: 13px;
+        }
+
+        .grades-slideover-meta {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            padding: 14px 24px;
+            border-bottom: 1px solid var(--nova-glass-border);
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        .meta-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            border: 1px solid var(--nova-glass-border);
+            border-radius: 999px;
+            padding: 7px 12px;
+            font-size: 12px;
+            color: var(--text-secondary);
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        .grades-slideover-body {
+            flex: 1;
+            overflow: auto;
+            padding: 18px 24px;
+        }
+
+        .grades-table-wrap {
+            border: 1px solid var(--nova-glass-border);
+            border-radius: 18px;
+            overflow: hidden;
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        .grades-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .grades-table th,
+        .grades-table td {
+            padding: 12px 14px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+            color: var(--text-primary);
+            font-size: 13px;
+            text-align: left;
+        }
+
+        .grades-table th {
+            background: rgba(108, 74, 224, 0.12);
+            color: var(--text-secondary);
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.07em;
+        }
+
+        .grades-table tbody tr:last-child td {
+            border-bottom: 0;
+        }
+
+        .student-grade-cell {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .student-avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 999px;
+            border: 1px solid rgba(59, 201, 219, 0.35);
+            color: #9be7f5;
+            background: linear-gradient(130deg, rgba(108, 74, 224, 0.35), rgba(59, 201, 219, 0.22));
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+
+        .grade-input-wrap {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .grade-input {
+            width: 96px;
+            background: var(--nova-glass);
+            border: 1px solid var(--nova-glass-border);
+            border-radius: 11px;
+            padding: 8px 10px;
+            color: var(--text-primary);
+            font-size: 13px;
+        }
+
+        .grade-input:focus {
+            outline: none;
+            border-color: var(--nova-cyan);
+            box-shadow: 0 0 0 3px rgba(59, 201, 219, 0.15);
+        }
+
+        .grade-saved-icon {
+            color: #2dd4bf;
+            font-size: 14px;
+            filter: drop-shadow(0 0 8px rgba(45, 212, 191, 0.5));
+        }
+
+        .grades-inline-error {
+            border: 1px solid rgba(248, 113, 113, 0.3);
+            color: #fecaca;
+            background: rgba(127, 29, 29, 0.25);
+            border-radius: 12px;
+            font-size: 13px;
+            padding: 12px 14px;
+        }
+
+        .publish-confirm-box {
+            border: 1px solid rgba(59, 201, 219, 0.25);
+            background: rgba(17, 94, 89, 0.15);
+            border-radius: 14px;
+            padding: 12px 14px;
+            margin-bottom: 14px;
+            color: var(--text-secondary);
+            font-size: 13px;
+        }
+
+        .publish-confirm-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .grade-status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            border-radius: 999px;
+            padding: 5px 10px;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: .03em;
+            border: 1px solid transparent;
+        }
+
+        .grade-status-pending {
+            color: #f59e0b;
+            background: rgba(245, 158, 11, 0.14);
+            border-color: rgba(245, 158, 11, 0.35);
+        }
+
+        .grade-status-saving {
+            color: #93c5fd;
+            background: rgba(59, 130, 246, 0.15);
+            border-color: rgba(59, 130, 246, 0.35);
+        }
+
+        .grade-status-saved {
+            color: #34d399;
+            background: rgba(16, 185, 129, 0.14);
+            border-color: rgba(45, 212, 191, 0.45);
+        }
+
+        .grade-status-published {
+            color: #67e8f9;
+            background: rgba(8, 145, 178, 0.15);
+            border-color: rgba(34, 211, 238, 0.45);
+        }
+
+        .grade-status-error {
+            color: #fca5a5;
+            background: rgba(220, 38, 38, 0.15);
+            border-color: rgba(248, 113, 113, 0.4);
+        }
+
+        .grades-slideover-footer {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            padding: 14px 24px 20px;
+            border-top: 1px solid var(--nova-glass-border);
+            background: rgba(255, 255, 255, 0.02);
+        }
+
         /* ── Skeleton ───────────────────────────────────────── */
         .skeleton-nova {
             background: linear-gradient(90deg, 
@@ -2103,7 +2347,7 @@
         <template x-if="!canvasLoading && view === 'welcome'">
             <div style="animation: slide-up 0.5s ease;">
                 {{-- Header --}}
-                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 30px;">
+                <div class="flex items-center justify-between mt-4 mb-6">
                     <div>
                         <h1 style="font-size: 32px; font-weight: 800; background: linear-gradient(135deg, var(--text-primary), var(--nova-violet)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 6px;">
                             ¡Hola, {{ auth()->user()->name }}!
@@ -2324,7 +2568,11 @@
                             <template x-for="(s, idx) in courseData.students" :key="s.id">
                                 <div class="student-item">
                                     <div class="student-index" x-text="idx + 1"></div>
-                                    <span class="student-name" x-text="s.name"></span>
+                                    <div style="display:flex; align-items:center; justify-content:space-between; width:100%; gap:10px;">
+                                        <span class="student-name" x-text="s.name"></span>
+                                        <span class="inline-flex items-center rounded-full border border-cyan-400/30 bg-cyan-500/10 px-2.5 py-1 text-[11px] font-semibold text-cyan-200"
+                                            x-text="`Acum: ${s.promedio_acumulado ?? s.nota_actual ?? s.avg_score ?? '—'}`"></span>
+                                    </div>
                                 </div>
                             </template>
                         </div>
@@ -2358,9 +2606,10 @@
                     <div class="activity-info">
                         <div class="activity-title" x-text="a.title"></div>
                         <div class="activity-meta">
-                            <span class="activity-type-badge" x-text="a.type === 'clase' ? 'CLASE' : 'ACTIVIDAD'"></span>
+                            <span class="activity-type-badge" x-text="a.type === 'clase' ? 'CLASE' : (a.is_homework || a.type === 'tarea' ? 'TAREA' : 'ACTIVIDAD')"></span>
                             <span class="activity-date" x-text="a.due_date || 'Sin fecha'"></span>
                             <span class="activity-weight" x-show="a.weight_percentage > 0" x-text="a.weight_percentage + '%'"></span>
+                            <span class="activity-weight" x-show="a.type !== 'clase' && a.total_students > 0" x-text="`${a.graded_count ?? 0}/${a.total_students} calificadas`"></span>
                         </div>
                     </div>
                     <i class="fa-solid fa-chevron-down activity-chevron" :class="{ 'fa-chevron-up': open }"></i>
@@ -2375,10 +2624,10 @@
                             </button>
                         </template>
                         <template x-if="a.type !== 'clase'">
-                            <a :href="a.grades_url" class="action-btn primary">
+                            <button @click.stop="openGradesSlideover(a)" class="action-btn primary">
                                 <i class="fa-solid fa-table-cells"></i>
                                 Cargar Notas
-                            </a>
+                            </button>
                         </template>
                         
                         {{-- BOTÓN MODIFICADO: Ahora abre la burbuja IA con contexto --}}
@@ -2632,10 +2881,10 @@
                 </button>
             </template>
             <template x-if="activityModal?.type !== 'clase'">
-                <a :href="activityModal?.grades_url" class="btn-primary">
+                <button @click="openGradesSlideover(activityModal)" class="btn-primary">
                     <i class="fa-solid fa-table-cells"></i>
                     Cargar Notas
-                </a>
+                </button>
             </template>
             <button @click="deleteActivity(activityModal?.id, activityModal?.title)" class="action-btn warning">
                 <i class="fa-solid fa-trash-alt"></i>
@@ -2647,6 +2896,130 @@
         </div>
     </div>
 </div>
+
+    {{-- Grade Slide-over --}}
+    <div x-show="gradesSlideover.open" x-cloak class="grades-slideover-wrap" @keydown.escape.window="closeGradesSlideover()">
+        <div class="grades-slideover-backdrop" @click="closeGradesSlideover()"></div>
+        <aside class="grades-slideover-panel" @click.stop>
+            <div class="grades-slideover-header">
+                <div>
+                    <p class="grades-slideover-eyebrow">Nova Academy · Cargar Notas</p>
+                    <h3 x-text="gradesSlideover.activity?.title || 'Cargar notas'"></h3>
+                    <p class="grades-slideover-subtitle" x-text="gradesSlideover.activity?.course_name || ''"></p>
+                </div>
+                <div style="display:flex; align-items:center; gap:10px;">
+                    <button class="btn-primary"
+                        style="padding: 10px 14px;"
+                        :disabled="gradesSlideover.loading || gradesSlideover.publishing"
+                        @click="gradesSlideover.confirmPublish = true">
+                        🚀 Publicar Notas
+                    </button>
+                    <button @click="closeGradesSlideover()" class="modal-close">
+                        <i class="fa-solid fa-times"></i>
+                    </button>
+                </div>
+            </div>
+
+            <div class="grades-slideover-meta">
+                <span class="meta-chip">
+                    <i class="fa-solid fa-star"></i>
+                    Máx: <strong x-text="gradesSlideover.activity?.max_score ?? 20"></strong>
+                </span>
+                <span class="meta-chip">
+                    <i class="fa-solid fa-chart-line"></i>
+                    Promedio act.: <strong x-text="gradesSlideover.activity?.avg_score ?? '—'"></strong>
+                </span>
+                <span class="meta-chip">
+                    <i class="fa-solid fa-users"></i>
+                    <strong x-text="`${gradesSlideover.activity?.graded_count ?? 0}/${gradesSlideover.activity?.total_students ?? 0}`"></strong> cargadas
+                </span>
+            </div>
+
+            <div class="grades-slideover-body">
+                <div x-show="gradesSlideover.confirmPublish" x-cloak class="publish-confirm-box">
+                    <p>¿Confirmas publicar las notas de esta actividad para que sean visibles por estudiantes?</p>
+                    <div class="publish-confirm-actions">
+                        <button class="btn-secondary" @click="gradesSlideover.confirmPublish = false">Cancelar</button>
+                        <button class="btn-primary" :disabled="gradesSlideover.publishing" @click="publishGrades()">
+                            <span x-show="!gradesSlideover.publishing">Sí, publicar</span>
+                            <span x-show="gradesSlideover.publishing">Publicando...</span>
+                        </button>
+                    </div>
+                </div>
+
+                <template x-if="gradesSlideover.loading">
+                    <div class="skeleton-nova" style="height: 240px;"></div>
+                </template>
+
+                <template x-if="!gradesSlideover.loading && gradesSlideover.error">
+                    <p class="grades-inline-error" x-text="gradesSlideover.error"></p>
+                </template>
+
+                <template x-if="!gradesSlideover.loading && !gradesSlideover.error">
+                    <div class="grades-table-wrap">
+                        <table class="grades-table">
+                            <thead>
+                                <tr>
+                                    <th>Alumno</th>
+                                    <th>Nota</th>
+                                    <th>Estado</th>
+                                    <th>Acumulado</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <template x-for="(student, idx) in gradesSlideover.students" :key="student.id">
+                                    <tr>
+                                        <td>
+                                            <div class="student-grade-cell">
+                                                <div class="student-avatar" x-text="initials(student.name)"></div>
+                                                <span x-text="student.name"></span>
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <div class="grade-input-wrap">
+                                                <input type="number"
+                                                    class="grade-input"
+                                                    :max="gradesSlideover.activity?.max_score ?? 20"
+                                                    min="0"
+                                                    step="0.01"
+                                                    x-model="student.score"
+                                                    :data-grade-index="idx"
+                                                    @blur="persistGrade(student)"
+                                                    @change="persistGrade(student)"
+                                                    @keydown="handleGradeInputKeydown($event, student, idx)">
+                                                <i x-show="gradesSlideover.savedPulse[student.id]"
+                                                   x-transition.opacity.duration.200ms
+                                                   class="fa-solid fa-circle-check grade-saved-icon"></i>
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <span class="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold"
+                                                :class="gradeStatusClass(student)">
+                                                <i class="fa-solid fa-spinner animate-spin"
+                                                    x-show="gradesSlideover.rowState?.[student.id] === 'saving'"></i>
+                                                <i class="fa-solid fa-circle text-[6px]"
+                                                    x-show="gradesSlideover.rowState?.[student.id] === 'draft'"></i>
+                                                <i class="fa-solid fa-circle-check"
+                                                    x-show="['saved','published'].includes(gradesSlideover.rowState?.[student.id])"></i>
+                                                <span x-text="gradeStatusLabel(student)"></span>
+                                            </span>
+                                        </td>
+                                        <td>
+                                            <span x-text="student.nota_actual ?? '—'"></span>
+                                        </td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                    </div>
+                </template>
+            </div>
+
+            <div class="grades-slideover-footer">
+                <button @click="closeGradesSlideover()" class="btn-secondary">Cerrar</button>
+            </div>
+        </aside>
+    </div>
 
     {{-- Mini modal: sugerencia de tarea --}}
     <div x-show="taskIdeaModalOpen" x-cloak class="modal-overlay" @click.self="taskIdeaModalOpen = false">
@@ -2854,6 +3227,17 @@ function teacherHub() {
         calendarMonth:   null,
         hiddenWidgets:   [],
         activityModal:   null,
+        gradesSlideover: {
+            open: false,
+            loading: false,
+            publishing: false,
+            confirmPublish: false,
+            error: null,
+            activity: null,
+            students: [],
+            savedPulse: {},
+            rowState: {},
+        },
         dayModal:        null,
         taskIdeaModalOpen: false,
         taskLoading:     false,
@@ -3063,6 +3447,297 @@ function teacherHub() {
                 }
             } catch (e) {
                 console.error('deleteActivity', e);
+            }
+        },
+
+        initials(name = '') {
+            return String(name)
+                .trim()
+                .split(/\s+/)
+                .slice(0, 2)
+                .map(part => part[0] || '')
+                .join('')
+                .toUpperCase();
+        },
+
+        showToast(message, type = 'success', icon = 'fa-circle-check') {
+            window.dispatchEvent(new CustomEvent('ai-toast', {
+                detail: { message, type, icon }
+            }));
+        },
+
+        async openGradesSlideover(activity) {
+            if (!activity?.id) return;
+
+            this.gradesSlideover.open = true;
+            this.gradesSlideover.loading = true;
+            this.gradesSlideover.publishing = false;
+            this.gradesSlideover.confirmPublish = false;
+            this.gradesSlideover.error = null;
+            this.gradesSlideover.activity = {
+                id: activity.id,
+                title: activity.title,
+                max_score: activity.max_score ?? 20,
+                avg_score: activity.avg_score ?? null,
+                graded_count: activity.graded_count ?? 0,
+                total_students: activity.total_students ?? this.courseData?.students?.length ?? 0,
+                course_name: activity.course_name ?? this.courseData?.name ?? '',
+            };
+            this.gradesSlideover.students = [];
+            this.gradesSlideover.savedPulse = {};
+            this.gradesSlideover.rowState = {};
+
+            try {
+                const res = await fetch(`/teacher/grades/activity/${activity.id}/panel`, {
+                    headers: { 'Accept': 'application/json' }
+                });
+                const json = await res.json();
+                if (!res.ok || !json.success) {
+                    this.gradesSlideover.error = json.error || 'No se pudo cargar la lista de notas.';
+                    return;
+                }
+
+                this.gradesSlideover.activity = {
+                    id: json.activity.id,
+                    title: json.activity.title,
+                    max_score: json.activity.max_score,
+                    avg_score: activity.avg_score ?? null,
+                    graded_count: activity.graded_count ?? 0,
+                    total_students: json.students.length,
+                    course_name: json.activity.course_name ?? '',
+                };
+
+                this.gradesSlideover.students = (json.students || []).map(student => ({
+                    id: student.id,
+                    name: student.name,
+                    score: student.score ?? '',
+                    avg_score: student.avg_score ?? null,
+                    nota_actual: student.nota_actual ?? 0,
+                    status: student.status ?? null,
+                }));
+
+                this.gradesSlideover.rowState = this.gradesSlideover.students.reduce((acc, student) => {
+                    const hasScore = student.score !== '' && student.score !== null && student.score !== undefined;
+                    if (!hasScore) {
+                        acc[student.id] = 'pending';
+                    } else if (student.status === 'published') {
+                        acc[student.id] = 'published';
+                    } else if (student.status === 'draft') {
+                        acc[student.id] = 'draft';
+                    } else {
+                        acc[student.id] = 'draft';
+                    }
+                    return acc;
+                }, {});
+
+                this.$nextTick(() => this.focusGradeInput(0));
+            } catch (e) {
+                console.error('openGradesSlideover', e);
+                this.gradesSlideover.error = 'Error al cargar el panel de notas.';
+            } finally {
+                this.gradesSlideover.loading = false;
+            }
+        },
+
+        closeGradesSlideover() {
+            this.gradesSlideover.open = false;
+            this.gradesSlideover.loading = false;
+            this.gradesSlideover.publishing = false;
+            this.gradesSlideover.confirmPublish = false;
+            this.gradesSlideover.error = null;
+            this.gradesSlideover.savedPulse = {};
+            this.gradesSlideover.rowState = {};
+
+            if (this.currentCourseId) {
+                this.loadCourse(this.currentCourseId);
+            }
+            if (this.view === 'calendar' && this.calendarMonth) {
+                this.loadCalendar(this.calendarMonth);
+            }
+            this.refreshCourseSidebar();
+        },
+
+        updateActivityGradeMeta(activityId, payload = {}) {
+            if (!this.courseData?.activities) return;
+            const idx = this.courseData.activities.findIndex(a => Number(a.id) === Number(activityId));
+            if (idx === -1) return;
+
+            if (payload.activity_avg_score !== undefined) {
+                this.courseData.activities[idx].avg_score = payload.activity_avg_score;
+            }
+            if (payload.graded_count !== undefined) {
+                this.courseData.activities[idx].graded_count = payload.graded_count;
+            }
+            if (payload.total_students !== undefined) {
+                this.courseData.activities[idx].total_students = payload.total_students;
+            }
+
+            if (this.activityModal && Number(this.activityModal.id) === Number(activityId)) {
+                this.activityModal = { ...this.activityModal, ...this.courseData.activities[idx] };
+            }
+        },
+
+        updateStudentAverage(studentId, avgScore) {
+            if (!this.courseData?.students) return;
+            const idx = this.courseData.students.findIndex(s => Number(s.id) === Number(studentId));
+            if (idx === -1) return;
+            this.courseData.students[idx].avg_score = avgScore;
+        },
+
+        updateStudentAccumulated(studentId, notaActual) {
+            if (!this.courseData?.students) return;
+            const idx = this.courseData.students.findIndex(s => Number(s.id) === Number(studentId));
+            if (idx === -1) return;
+            this.courseData.students[idx].nota_actual = notaActual;
+            this.courseData.students[idx].promedio_acumulado = notaActual;
+        },
+
+        setStudentRowState(studentId, state) {
+            this.gradesSlideover.rowState = {
+                ...this.gradesSlideover.rowState,
+                [studentId]: state,
+            };
+        },
+
+        gradeStatusLabel(student) {
+            const state = this.gradesSlideover.rowState?.[student.id] ?? 'pending';
+            if (state === 'saving') return 'Guardando...';
+            if (state === 'draft') return 'Borrador';
+            if (state === 'saved') return 'Guardado';
+            if (state === 'published') return 'Publicado';
+            if (state === 'error') return 'Error al guardar';
+            return 'Pendiente';
+        },
+
+        gradeStatusClass(student) {
+            const state = this.gradesSlideover.rowState?.[student.id] ?? 'pending';
+            if (state === 'saving') return 'border-blue-400/35 bg-blue-500/10 text-blue-200';
+            if (state === 'draft') return 'border-amber-400/45 bg-amber-500/10 text-amber-300';
+            if (state === 'saved') return 'border-cyan-400/45 bg-cyan-500/10 text-cyan-200';
+            if (state === 'published') return 'border-emerald-400/45 bg-emerald-500/10 text-emerald-200';
+            if (state === 'error') return 'border-red-400/45 bg-red-500/10 text-red-200';
+            return 'border-amber-400/35 bg-amber-500/10 text-amber-200';
+        },
+
+        focusGradeInput(index) {
+            const el = document.querySelector(`.grades-slideover-panel input[data-grade-index="${index}"]`);
+            if (!el) return;
+            el.focus();
+            el.select?.();
+        },
+
+        async handleGradeInputKeydown(event, student, index) {
+            if (event.key === 'ArrowDown') {
+                event.preventDefault();
+                this.focusGradeInput(index + 1);
+                return;
+            }
+            if (event.key === 'ArrowUp') {
+                event.preventDefault();
+                this.focusGradeInput(index - 1);
+                return;
+            }
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                await this.persistGrade(student);
+                this.focusGradeInput(index + 1);
+            }
+        },
+
+        async persistGrade(student) {
+            const activityId = this.gradesSlideover.activity?.id;
+            if (!activityId) return;
+
+            const raw = student?.score;
+            if (raw === '' || raw === null || raw === undefined) {
+                this.setStudentRowState(student.id, 'pending');
+                return;
+            }
+            const score = Number(raw);
+            if (Number.isNaN(score)) {
+                this.setStudentRowState(student.id, 'error');
+                return;
+            }
+
+            this.setStudentRowState(student.id, 'saving');
+
+            try {
+                const res = await fetch(`/teacher/grades/activity/${activityId}/quick-store`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').content,
+                    },
+                    body: JSON.stringify({
+                        student_id: student.id,
+                        score,
+                    }),
+                });
+                const json = await res.json();
+                if (!res.ok || !json.success) {
+                    this.setStudentRowState(student.id, 'error');
+                    this.showToast(json.error || 'No se pudo guardar la nota.', 'error', 'fa-exclamation-triangle');
+                    return;
+                }
+
+                student.score = json.score;
+                student.status = json.status ?? 'draft';
+                student.avg_score = json.student_avg_score;
+                student.nota_actual = json.nota_actual ?? student.nota_actual ?? 0;
+                this.updateStudentAverage(json.student_id, json.student_avg_score);
+                this.updateStudentAccumulated(json.student_id, json.nota_actual ?? 0);
+                this.updateActivityGradeMeta(json.activity_id, json);
+                this.setStudentRowState(student.id, student.status === 'published' ? 'published' : 'draft');
+
+                this.gradesSlideover.savedPulse = { ...this.gradesSlideover.savedPulse, [student.id]: true };
+                setTimeout(() => {
+                    this.gradesSlideover.savedPulse = { ...this.gradesSlideover.savedPulse, [student.id]: false };
+                }, 1000);
+            } catch (e) {
+                console.error('persistGrade', e);
+                this.setStudentRowState(student.id, 'error');
+                this.showToast('Error al guardar la nota.', 'error', 'fa-exclamation-triangle');
+            }
+        },
+
+        async publishGrades() {
+            const activityId = this.gradesSlideover.activity?.id;
+            if (!activityId || this.gradesSlideover.publishing) return;
+
+            this.gradesSlideover.publishing = true;
+            try {
+                const res = await fetch(`/teacher/grades/activity/${activityId}/publish`, {
+                    method: 'POST',
+                    headers: {
+                        'Accept': 'application/json',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').content,
+                    },
+                });
+                const json = await res.json();
+                if (!res.ok || !json.success) {
+                    this.showToast(json.error || 'No se pudieron publicar las notas.', 'error', 'fa-exclamation-triangle');
+                    return;
+                }
+
+                this.gradesSlideover.students = this.gradesSlideover.students.map(student => ({
+                    ...student,
+                    status: student.score === '' || student.score === null || student.score === undefined
+                        ? student.status
+                        : 'published',
+                }));
+                this.gradesSlideover.rowState = this.gradesSlideover.students.reduce((acc, student) => {
+                    const hasScore = student.score !== '' && student.score !== null && student.score !== undefined;
+                    acc[student.id] = hasScore ? 'published' : 'pending';
+                    return acc;
+                }, {});
+                this.gradesSlideover.confirmPublish = false;
+                this.showToast('Notas publicadas correctamente.', 'success', 'fa-cloud-arrow-up');
+            } catch (e) {
+                console.error('publishGrades', e);
+                this.showToast('Error al publicar notas.', 'error', 'fa-exclamation-triangle');
+            } finally {
+                this.gradesSlideover.publishing = false;
             }
         },
 

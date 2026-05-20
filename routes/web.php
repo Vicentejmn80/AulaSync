@@ -29,6 +29,10 @@ Route::middleware(['auth'])->group(function () {
     
     // A. EXCEPCIÓN: Rutas de Onboarding
     Route::get('/onboarding', [OnboardingController::class, 'show'])->name('onboarding');
+        // RUTA TEMPORAL: Para ver el diseño sin loguearse
+    Route::get('/debug-onboarding', function () {
+        return view('onboarding.wizard');
+    })->name('debug.onboarding');
     Route::post('/onboarding/save', [OnboardingController::class, 'save'])->name('onboarding.save');
     
     // B. RUTAS BLOQUEADAS HASTA COMPLETAR ONBOARDING
@@ -38,9 +42,12 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
 
         // Director — Centro de Mando
-        Route::middleware(['role.director'])->group(function () {
-            Route::get('/director/dashboard', [DirectorDashboardController::class, 'index'])
-                 ->name('director.dashboard');
+        Route::prefix('director')
+            ->name('director.')
+            ->middleware(['role.director'])
+            ->group(function () {
+                Route::get('/dashboard', [DirectorDashboardController::class, 'index'])
+                    ->name('dashboard');
         });
         
         // Generador de IA y Herramientas
@@ -108,11 +115,26 @@ Route::middleware(['auth'])->group(function () {
                 Route::get('/manual/pdf/{manualPlanning?}', [ManualPlanningController::class, 'pdf'])->name('pdf');
             });
 
+            // API: Crear estudiante
+            Route::post('/teacher/api/students', function (Illuminate\Http\Request $request) {
+                $name = $request->validate(['name' => 'required|string|max:255'])['name'];
+                $student = \App\Models\Student::create([
+                    'teacher_id' => \Auth::id(),
+                    'name' => $name,
+                    'grade' => \Auth::user()->grade ?? '1',
+                    'section' => \Auth::user()->section ?? 'A',
+                ]);
+                return response()->json(['success' => true, 'student' => $student]);
+            })->name('api.students.create');
+
             // Gestión Académica — Notas
             Route::prefix('teacher/grades')->name('teacher.grades.')->group(function () {
                 Route::get('/', [GradesController::class, 'index'])->name('index');
                 Route::get('/{activity}', [GradesController::class, 'create'])->name('show');
                 Route::get('/activity/{activity}/create', [GradesController::class, 'create'])->name('create');
+                Route::get('/activity/{activity}/panel', [GradesController::class, 'panel'])->name('panel');
+                Route::post('/activity/{activity}/quick-store', [GradesController::class, 'quickStore'])->name('quick_store');
+                Route::post('/activity/{activity}/publish', [GradesController::class, 'publish'])->name('publish');
                 Route::post('/activity/{activity}/store', [GradesController::class, 'store'])->name('store');
                 Route::post('/activity/{activity}/ai-parse', [GradesController::class, 'parseWithAI'])->name('ai_parse');
             });

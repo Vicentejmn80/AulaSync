@@ -91,13 +91,14 @@ class TareaController extends Controller
 
         $mirroredActivity = null;
         if ($request->boolean('mirror_activity')) {
+            $typeMeta = Activity::normalizeType('tarea', true);
             $mirroredActivity = Activity::create([
                 'teacher_id'        => auth()->id(),
                 'course_id'         => $activity->course_id,
                 'title'             => $data['titulo'],
                 'description'       => $data['descripcion'] ?? 'Tarea asignada desde el calendario.',
-                'type'              => 'tarea',
-                'is_homework'       => true,
+                'type'              => $typeMeta['type'],
+                'is_homework'       => $typeMeta['is_homework'],
                 'due_date'          => $data['fecha_entrega'],
                 'max_score'         => $data['puntos'],
                 'weight_percentage' => 0,

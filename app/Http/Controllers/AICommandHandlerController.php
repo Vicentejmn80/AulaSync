@@ -786,7 +786,9 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             return response()->json([
                 'success' => false,
                 'message' => 'Ocurrió un error al procesar el comando de IA.',
-                'error'   => $e->getMessage(),
+                'error'   => config('app.debug')
+                    ? $e->getMessage()
+                    : 'Error interno al procesar la solicitud.',
             ], 500);
         }
     }
@@ -814,7 +816,16 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
                 default           => ['success' => false, 'message' => "Acción $fn no definida."],
             };
         } catch (\Throwable $e) {
-            return ['success' => false, 'message' => $e->getMessage()];
+            Log::error('AICommandHandler executeAction failed', [
+                'function' => $fn,
+                'teacher_id' => $teacherId,
+                'args' => $args,
+                'error' => $e->getMessage(),
+            ]);
+            return [
+                'success' => false,
+                'message' => 'No se pudo completar esta acción en este momento. Inténtalo de nuevo.',
+            ];
         }
     }
 
@@ -862,26 +873,20 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             $normalizedArgs['title'] = Str::limit("Actividad: {$topicHint}", 120, '');
         }
 
-        $requestedType = strtolower($normalizedArgs['type'] ?? 'actividad');
-        $isHomework = filter_var($normalizedArgs['is_homework'] ?? false, FILTER_VALIDATE_BOOLEAN);
-
-        if ($requestedType === 'tarea') {
-            $isHomework = true;
-            $resolvedType = 'tarea';
-        } elseif ($requestedType === 'clase') {
-            $resolvedType = 'clase';
-        } else {
-            $resolvedType = 'actividad';
-            if ($isHomework) {
-                $resolvedType = 'tarea';
-            }
-        }
+        $requestedType = (string) ($normalizedArgs['type'] ?? 'actividad');
+        $isHomeworkInput = filter_var($normalizedArgs['is_homework'] ?? false, FILTER_VALIDATE_BOOLEAN);
+        $typeMeta = Activity::normalizeType($requestedType, $isHomeworkInput);
+        $resolvedType = $typeMeta['type'];
+        $isHomework = $typeMeta['is_homework'];
+        $semanticType = $typeMeta['semantic_type'];
+        $normalizedArgs['type'] = $resolvedType;
+        $normalizedArgs['is_homework'] = $isHomework;
 
         $neeType = $normalizedArgs['nee_type'] ?? null;
         $neeAdaptation = $neeType ? $this->buildNeeAdaptation($neeType) : null;
 
         $description = (string) ($normalizedArgs['description'] ?? '');
-        $descError = $this->validateLessonDescriptionForNova($description, $resolvedType);
+        $descError = $this->validateLessonDescriptionForNova($description, $semanticType);
         if ($descError !== null) {
             return [
                 'success'     => false,
@@ -893,13 +898,15 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
 
         Log::info('NOVA_SAVE_ATTEMPT', [
             'data_recibida' => $normalizedArgs,
+            'type_normalized' => $resolvedType,
+            'is_homework_normalized' => $isHomework,
             'course_id' => $normalizedArgs['course_id'] ?? 'NULL - NO VIENE',
             'fecha' => $normalizedArgs['date'] ?? $normalizedArgs['due_date'] ?? 'NULL - NO VIENE',
             'titulo' => $normalizedArgs['title'] ?? 'NULL - NO VIENE',
             'sql_que_ejecuta' => Activity::where('id', 0)->toSql(),
         ]);
 
-        $activity = Activity::create([
+        $payload = [
             'teacher_id'        => $teacherId,
             'course_id'         => $normalizedArgs['course_id'],
             'type'              => $resolvedType,
@@ -911,7 +918,17 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             'is_homework'       => $isHomework,
             'nee_type'          => $neeType,
             'nee_adaptation'    => $neeAdaptation,
-        ]);
+        ];
+
+        // Guardrail final: el tipo que llega a BD debe estar normalizado.
+        $payloadTypeMeta = Activity::normalizeType(
+            (string) ($payload['type'] ?? Activity::TYPE_ACTIVIDAD),
+            filter_var($payload['is_homework'] ?? false, FILTER_VALIDATE_BOOLEAN)
+        );
+        $payload['type'] = $payloadTypeMeta['type'];
+        $payload['is_homework'] = $payloadTypeMeta['is_homework'];
+
+        $activity = Activity::create($payload);
 
         $courseName = Course::where('id', $activity->course_id)->value('subject_name');
         return [
@@ -955,7 +972,17 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
     {
         $activity = Activity::where('id', $args['activity_id'])->first();
         if ($activity) {
-            $activity->update(array_filter($args));
+            $payload = array_filter($args, fn ($value) => $value !== null && $value !== '');
+            if (array_key_exists('type', $payload) || array_key_exists('is_homework', $payload)) {
+                $typeMeta = Activity::normalizeType(
+                    (string) ($payload['type'] ?? $activity->type),
+                    filter_var($payload['is_homework'] ?? $activity->is_homework, FILTER_VALIDATE_BOOLEAN)
+                );
+                $payload['type'] = $typeMeta['type'];
+                $payload['is_homework'] = $typeMeta['is_homework'];
+            }
+
+            $activity->update($payload);
             return [
                 'success'     => true,
                 'message'     => "Actividad '{$activity->title}' actualizada.",

@@ -25,6 +25,7 @@ class OnboardingController extends Controller
             'nivel_educativo' => 'nullable|string|max:120',
             'materias' => 'nullable|array',
             'materias.*' => 'string|max:120',
+            'otra_materia' => 'nullable|string|max:120',
             'materias_asignadas' => 'nullable|array',
             'materias_asignadas.*' => 'string|max:120',
             'cursos' => 'nullable|array',
@@ -32,6 +33,8 @@ class OnboardingController extends Controller
             'dias' => 'nullable|array',
             'dias.*' => 'string|max:20',
             'nombre_institucion' => 'nullable|string|max:255',
+            'cantidad_sedes' => 'nullable|integer|min:1|max:500',
+            'periodo_academico' => 'nullable|string|max:120',
             'modelo_pedagogico' => 'nullable|string|max:255',
             'cantidad_docentes' => 'nullable|integer|min:1|max:5000',
             'vision_pedagogica' => 'nullable|string|max:2000',
@@ -44,11 +47,26 @@ class OnboardingController extends Controller
                 'materias' => 'required|array|min:1',
                 'cursos' => 'required|array|min:1',
             ]);
+            
+            // Procesar materias: Si "otro" está presente, validar y reemplazar
+            $materias = $validated['materias'] ?? [];
+            
+            if (in_array('otro', $materias)) {
+                $request->validate([
+                    'otra_materia' => 'required|string|min:2|max:120',
+                ]);
+                
+                // Reemplazar 'otro' con el valor custom
+                $materias = array_filter($materias, fn($m) => $m !== 'otro');
+                $materias[] = trim($validated['otra_materia']);
+            }
+            
+            $validated['materias'] = $materias;
         } else {
             $request->validate([
                 'nombre_institucion' => 'required|string|max:255',
-                'modelo_pedagogico' => 'required|string|max:255',
-                'cantidad_docentes' => 'required|integer|min:1|max:5000',
+                'cantidad_sedes' => 'required|integer|min:1|max:500',
+                'periodo_academico' => 'required|string|max:120',
             ]);
         }
 
@@ -83,6 +101,9 @@ class OnboardingController extends Controller
                         'horarios' => $request->input('horarios', []),
                         'incluir' => $request->input('incluir', []),
                         'cantidad_docentes' => $validated['cantidad_docentes'] ?? null,
+                        'cantidad_sedes' => $validated['cantidad_sedes'] ?? null,
+                        'periodo_academico' => $validated['periodo_academico'] ?? null,
+                        'logo_placeholder' => 'nova-institution-placeholder',
                         'vision_pedagogica' => $validated['vision_pedagogica'] ?? null,
                     ],
                 ],
@@ -106,7 +127,8 @@ class OnboardingController extends Controller
             session()->forget('onboarding_status');
             Log::info('Onboarding completado para el usuario: ' . auth()->id());
 
-            return redirect()->to('/dashboard')->with('success', '¡Bienvenido!');
+            return redirect()->to($role === 'director' ? '/director/dashboard' : '/dashboard')
+                ->with('success', '¡Bienvenido!');
         } catch (\Throwable $e) {
             Log::error('Fallo crítico en onboarding', [
                 'user_id' => auth()->id(),

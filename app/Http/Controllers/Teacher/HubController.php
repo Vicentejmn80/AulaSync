@@ -134,13 +134,31 @@ class HubController extends Controller
 
         $activityIds = $course->activities->pluck('id');
         $gradeStats  = [];
+        $gradeCounts = [];
+        $studentAverages = [];
         if ($activityIds->isNotEmpty()) {
             $gradeStats = Grade::whereIn('activity_id', $activityIds)
                 ->selectRaw('activity_id, AVG(score) as avg_score, COUNT(*) as total')
                 ->groupBy('activity_id')
                 ->pluck('avg_score', 'activity_id')
                 ->toArray();
+
+            $gradeCounts = Grade::whereIn('activity_id', $activityIds)
+                ->selectRaw('activity_id, COUNT(*) as total')
+                ->groupBy('activity_id')
+                ->pluck('total', 'activity_id')
+                ->toArray();
+
+            $studentAverages = Grade::query()
+                ->join('activities', 'grades.activity_id', '=', 'activities.id')
+                ->where('activities.course_id', $course->id)
+                ->groupBy('grades.student_id')
+                ->selectRaw('grades.student_id, AVG(grades.score) as avg_score')
+                ->pluck('avg_score', 'grades.student_id')
+                ->toArray();
         }
+
+        $totalStudents = $course->students->count();
 
         return response()->json([
             'id'           => $course->id,
@@ -152,10 +170,12 @@ class HubController extends Controller
             'students'     => $course->students->map(fn ($s) => [
                 'id'   => $s->id,
                 'name' => $s->name,
+                'avg_score' => isset($studentAverages[$s->id]) ? round((float) $studentAverages[$s->id], 2) : null,
             ]),
             'activities'   => $course->activities->map(fn ($a) => [
                 'id'                => $a->id,
                 'type'              => $a->type ?? 'actividad',
+                'is_homework'       => (bool) $a->is_homework,
                 'title'             => $a->title,
                 'description'       => $a->description ?? '',
                 'max_score'         => $a->max_score,
@@ -166,6 +186,8 @@ class HubController extends Controller
                 'nee_type'          => $a->nee_type,
                 'nee_adaptation'    => $a->nee_adaptation,
                 'avg_score'         => isset($gradeStats[$a->id]) ? round($gradeStats[$a->id], 1) : null,
+                'graded_count'      => (int) ($gradeCounts[$a->id] ?? 0),
+                'total_students'    => $totalStudents,
                 'grades_url'        => route('teacher.grades.create', $a->id),
                 'tareas'            => $a->tareas->map(fn ($t) => [
                     'id' => $t->id,

@@ -104,7 +104,9 @@ class ActivitiesController extends Controller
 
         $isHomework = $request->boolean('is_homework');
         $requestedType = trim((string) ($data['type'] ?? 'actividad'));
-        $resolvedType = $isHomework ? 'tarea' : ($requestedType !== '' ? $requestedType : 'actividad');
+        $typeMeta = Activity::normalizeType($requestedType, $isHomework);
+        $resolvedType = $typeMeta['type'];
+        $isHomework = $typeMeta['is_homework'];
 
         $neeType = $data['nee_type'] ?? null;
         $neeAdaptation = $neeType ? $this->buildNeeAdaptation($neeType) : null;

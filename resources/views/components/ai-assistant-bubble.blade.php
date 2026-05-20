@@ -776,6 +776,26 @@
             </span>
         </div>
 
+        <!-- Acciones de notas (siempre visibles) -->
+        <div class="quick-suggestions" style="border-top: 1px solid rgba(16,185,129,0.2);">
+            <span class="suggestion-chip" style="background: rgba(16,185,129,0.15); border-color: rgba(16,185,129,0.3);" 
+                @click="quickAddStudent()">
+                👨‍🎓 Agregar Alumno
+            </span>
+            <span class="suggestion-chip" style="background: rgba(16,185,129,0.15); border-color: rgba(16,185,129,0.3);"
+                @click="quickAddStudents()">
+                👥 Agregar Varios
+            </span>
+            <span class="suggestion-chip" style="background: rgba(59,201,219,0.15); border-color: rgba(59,201,219,0.3);"
+                @click="quickLoadGrades()">
+                📝 Cargar Notas
+            </span>
+            <span class="suggestion-chip" style="background: rgba(139,92,246,0.15); border-color: rgba(139,92,246,0.3);"
+                @click="quickPublishGrades()">
+                🚀 Publicar Notas
+            </span>
+        </div>
+
         <!-- Input -->
         <div class="nova-ai-input">
             <div class="input-wrapper">
@@ -1109,6 +1129,97 @@ function novaAIAssistant() {
             if (!text) return '';
             return text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
                        .replace(/\n/g, '<br>');
+        },
+
+        async quickAddStudent() {
+            const name = prompt('Nombre del alumno:');
+            if (!name) return;
+            this.loading = true;
+            this.addMessage('user', `Agregar aluno: ${name}`);
+            try {
+                const res = await fetch('/teacher/api/students', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify({ name })
+                });
+                const json = await res.json();
+                if (json.success) {
+                    this.addMessage('assistant', `✅ Alumno **${name}** agregado correctamente.`);
+                    this.showToast('Alumno agregado', 'success', 'fa-user-plus');
+                    window.dispatchEvent(new CustomEvent('ai-canvas-refresh'));
+                } else {
+                    this.addMessage('assistant', `⚠️ ${json.error || 'Error al agregar alumno'}`);
+                }
+            } catch (e) {
+                this.addMessage('assistant', '❌ Error de conexión');
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        async quickAddStudents() {
+            const input = prompt('Nombres de alumnos separados por coma:\nEj: María, Pedro, Juan');
+            if (!input) return;
+            const names = input.split(',').map(n => n.trim()).filter(n => n);
+            if (names.length === 0) return;
+            this.loading = true;
+            this.addMessage('user', `Agregar alumnos: ${names.join(', ')}`);
+            let success = 0;
+            try {
+                for (const name of names) {
+                    const res = await fetch('/teacher/api/students', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+                            'Accept': 'application/json'
+                        },
+                        body: JSON.stringify({ name })
+                    });
+                    const json = await res.json();
+                    if (json.success) success++;
+                }
+                this.addMessage('assistant', `✅ ${success} alumno(s) agregado(s) correctamente.`);
+                this.showToast(`${success} alumnos agregados`, 'success', 'fa-users');
+                window.dispatchEvent(new CustomEvent('ai-canvas-refresh'));
+            } catch (e) {
+                this.addMessage('assistant', '❌ Error de conexión');
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        quickLoadGrades() {
+            this.open = false;
+            setTimeout(() => {
+                const hub = document.querySelector('[x-data*="courseData"]')?.__x?.$data;
+                if (hub?.courseData?.activities?.length > 0) {
+                    const act = hub.courseData.activities.find(a => a.type !== 'clase');
+                    if (act) hub.openGradesSlideover(act);
+                }
+            }, 200);
+            this.showToast('Abriendo panel de notas...', 'success', 'fa-table-cells');
+        },
+
+        quickPublishGrades() {
+            this.open = false;
+            setTimeout(() => {
+                const hub = document.querySelector('[x-data*="courseData"]')?.__x?.$data;
+                if (hub?.gradesSlideover?.open) {
+                    hub.gradesSlideover.confirmPublish = true;
+                } else if (hub?.courseData?.activities?.length > 0) {
+                    const act = hub.courseData.activities.find(a => a.type !== 'clase');
+                    if (act) {
+                        hub.openGradesSlideover(act);
+                        setTimeout(() => { hub.gradesSlideover.confirmPublish = true; }, 500);
+                    }
+                }
+            }, 200);
+            this.showToast('Abriendo publicar notas...', 'success', 'fa-rocket');
         }
     };
 }

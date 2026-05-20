@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\Activity;
 use App\Models\Grade;
 use App\Services\GradeProcessingService;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -41,15 +43,50 @@ class GradesController extends Controller
     {
         abort_unless($activity->teacher_id === auth()->id(), 403);
 
-        $students = $activity->course
-            ->students()
+        $course = $activity->course;
+        $studentIds = $course->students()->pluck('students.id')->toArray();
+
+        $gradeMap = Grade::where('activity_id', $activity->id)
+            ->whereIn('student_id', $studentIds)
+            ->pluck('score', 'student_id')
+            ->toArray();
+
+        $statusMap = $this->supportsGradeWorkflow()
+            ? Grade::where('activity_id', $activity->id)
+                ->whereIn('student_id', $studentIds)
+                ->pluck('status', 'student_id')
+                ->toArray()
+            : [];
+
+        $weightedMap = [];
+        if ($this->supportsCourseStudentAccumulated()) {
+            $weightedMap = DB::table('course_student')
+                ->where('course_id', $course->id)
+                ->whereIn('student_id', $studentIds)
+                ->pluck('nota_actual', 'student_id')
+                ->map(fn ($v) => $v ?? 0.0)
+                ->toArray();
+        } else {
+            $weightedMap = Grade::query()
+                ->join('activities', 'grades.activity_id', '=', 'activities.id')
+                ->where('activities.course_id', $course->id)
+                ->whereIn('grades.student_id', $studentIds)
+                ->where('activities.type', '!=', 'clase')
+                ->groupBy('grades.student_id')
+                ->selectRaw('grades.student_id, COALESCE(SUM((grades.score * activities.weight_percentage) / 100.0), 0) as weighted_total')
+                ->pluck('weighted_total', 'grades.student_id')
+                ->map(fn ($v) => (float) $v)
+                ->toArray();
+        }
+
+        $students = $course->students()
             ->get()
             ->map(fn ($student) => [
                 'id'             => $student->id,
                 'name'           => $student->name,
-                'existing_score' => Grade::where('activity_id', $activity->id)
-                                    ->where('student_id', $student->id)
-                                    ->first()?->score,
+                'existing_score' => isset($gradeMap[$student->id]) ? (float) $gradeMap[$student->id] : null,
+                'is_published'   => ($statusMap[$student->id] ?? null) === 'published',
+                'nota_actual'    => isset($weightedMap[$student->id]) ? round((float) $weightedMap[$student->id], 2) : null,
             ]);
 
         return view('teacher.grades.create', compact('activity', 'students'));
@@ -77,10 +114,210 @@ class GradesController extends Controller
         }
 
         if ($request->wantsJson()) {
-            return response()->json(['success' => true, 'message' => 'Nota guardada.']);
+            $studentId = $data['grades'][0]['student_id'] ?? null;
+            $acumulated = $this->updateCourseStudentAccumulated($activity->course_id, $studentId);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Nota guardada.',
+                'acumulated' => round($acumulated, 2),
+            ]);
         }
 
         return redirect()->back()->with('success', 'Notas guardadas correctamente.');
+    }
+
+    /**
+     * Payload para panel lateral de notas (Hub).
+     */
+    public function panel(Activity $activity): JsonResponse
+    {
+        abort_unless($activity->teacher_id === auth()->id(), 403);
+
+        $course = $activity->course()->with('students:id,name')->firstOrFail();
+        $studentIds = $course->students->pluck('id');
+
+        $gradeMap = Grade::where('activity_id', $activity->id)
+            ->whereIn('student_id', $studentIds)
+            ->pluck('score', 'student_id')
+            ->toArray();
+        $statusMap = $this->supportsGradeWorkflow()
+            ? Grade::where('activity_id', $activity->id)
+                ->whereIn('student_id', $studentIds)
+                ->pluck('status', 'student_id')
+                ->toArray()
+            : [];
+
+        $studentAverages = Grade::query()
+            ->join('activities', 'grades.activity_id', '=', 'activities.id')
+            ->where('activities.course_id', $course->id)
+            ->whereIn('grades.student_id', $studentIds)
+            ->groupBy('grades.student_id')
+            ->selectRaw('grades.student_id, AVG(grades.score) as avg_score')
+            ->pluck('avg_score', 'grades.student_id')
+            ->toArray();
+        $weightedMap = Grade::query()
+            ->join('activities', 'grades.activity_id', '=', 'activities.id')
+            ->where('activities.course_id', $course->id)
+            ->whereIn('grades.student_id', $studentIds)
+            ->where('activities.type', '!=', 'clase')
+            ->groupBy('grades.student_id')
+            ->selectRaw('grades.student_id, COALESCE(SUM((grades.score * activities.weight_percentage) / 100.0), 0) as weighted_total')
+            ->pluck('weighted_total', 'grades.student_id')
+            ->toArray();
+
+        return response()->json([
+            'success' => true,
+            'activity' => [
+                'id' => $activity->id,
+                'title' => $activity->title,
+                'max_score' => $activity->max_score,
+                'course_id' => $course->id,
+                'course_name' => $course->subject_name . ' · ' . $course->grade . ($course->section ? ' / ' . $course->section : ''),
+            ],
+            'students' => $course->students->map(fn ($student) => [
+                'id' => $student->id,
+                'name' => $student->name,
+                'score' => isset($gradeMap[$student->id]) ? (float) $gradeMap[$student->id] : null,
+                'avg_score' => isset($studentAverages[$student->id]) ? round((float) $studentAverages[$student->id], 2) : null,
+                'status' => $statusMap[$student->id] ?? null,
+                'nota_actual' => isset($weightedMap[$student->id]) ? round((float) $weightedMap[$student->id], 2) : 0.0,
+            ])->values(),
+        ]);
+    }
+
+    /**
+     * Guardado instantáneo de una nota individual (blur/change).
+     */
+    public function quickStore(Request $request, Activity $activity): JsonResponse
+    {
+        abort_unless($activity->teacher_id === auth()->id(), 403);
+        $course = $activity->course()->firstOrFail();
+
+        $data = $request->validate([
+            'student_id' => ['required', 'integer', 'exists:students,id'],
+            'score' => ['required', 'numeric', 'min:0', "max:{$activity->max_score}"],
+        ]);
+
+        $isEnrolled = $course
+            ->students()
+            ->where('students.id', $data['student_id'])
+            ->exists();
+
+        if (! $isEnrolled) {
+            return response()->json([
+                'success' => false,
+                'error' => 'El alumno no pertenece al curso de esta actividad.',
+            ], 422);
+        }
+
+        $payload = ['score' => $data['score']];
+        if ($this->supportsGradeWorkflow()) {
+            $payload['status'] = 'draft';
+            $payload['published_at'] = null;
+        }
+
+        $grade = Grade::updateOrCreate(
+            ['activity_id' => $activity->id, 'student_id' => $data['student_id']],
+            $payload
+        );
+
+        $activityAvg = Grade::where('activity_id', $activity->id)->avg('score');
+        $studentAvg = Grade::query()
+            ->join('activities', 'grades.activity_id', '=', 'activities.id')
+            ->where('activities.course_id', $course->id)
+            ->where('grades.student_id', $data['student_id'])
+            ->avg('grades.score');
+
+        $gradedCount = Grade::where('activity_id', $activity->id)->count();
+        $totalStudents = $course->students()->count();
+        $accumulated = $this->updateCourseStudentAccumulated(
+            courseId: (int) $course->id,
+            studentId: (int) $data['student_id']
+        );
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Nota guardada.',
+            'activity_id' => $activity->id,
+            'student_id' => (int) $data['student_id'],
+            'score' => (float) $data['score'],
+            'status' => $this->supportsGradeWorkflow() ? $grade->status : null,
+            'activity_avg_score' => $activityAvg !== null ? round((float) $activityAvg, 2) : null,
+            'student_avg_score' => $studentAvg !== null ? round((float) $studentAvg, 2) : null,
+            'graded_count' => $gradedCount,
+            'total_students' => $totalStudents,
+            'nota_actual' => $accumulated,
+        ]);
+    }
+
+    public function publish(Activity $activity): JsonResponse
+    {
+        abort_unless($activity->teacher_id === auth()->id(), 403);
+        if (! $this->supportsGradeWorkflow()) {
+            return response()->json([
+                'success' => false,
+                'error' => 'El flujo de publicación requiere ejecutar migraciones pendientes.',
+            ], 422);
+        }
+
+        $totalGrades = Grade::where('activity_id', $activity->id)->count();
+        if ($totalGrades === 0) {
+            return response()->json([
+                'success' => false,
+                'error' => 'No hay notas para publicar en esta actividad.',
+            ], 422);
+        }
+
+        Grade::where('activity_id', $activity->id)->update([
+            'status' => 'published',
+            'published_at' => now(),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Notas publicadas correctamente.',
+            'activity_id' => $activity->id,
+            'published_count' => $totalGrades,
+        ]);
+    }
+
+    private function updateCourseStudentAccumulated(int $courseId, int $studentId): float
+    {
+        if (! $this->supportsCourseStudentAccumulated()) {
+            return 0.0;
+        }
+
+        $weighted = Grade::query()
+            ->join('activities', 'grades.activity_id', '=', 'activities.id')
+            ->where('activities.course_id', $courseId)
+            ->where('grades.student_id', $studentId)
+            ->where('activities.type', '!=', 'clase')
+            ->selectRaw('COALESCE(SUM((grades.score * activities.weight_percentage) / 100.0), 0) as weighted_total')
+            ->value('weighted_total');
+
+        $weighted = round((float) $weighted, 2);
+
+        DB::table('course_student')
+            ->where('course_id', $courseId)
+            ->where('student_id', $studentId)
+            ->update([
+                'nota_actual' => $weighted,
+                'promedio_acumulado' => $weighted,
+            ]);
+
+        return $weighted;
+    }
+
+    private function supportsGradeWorkflow(): bool
+    {
+        return Schema::hasColumn('grades', 'status') && Schema::hasColumn('grades', 'published_at');
+    }
+
+    private function supportsCourseStudentAccumulated(): bool
+    {
+        return Schema::hasColumn('course_student', 'nota_actual')
+            && Schema::hasColumn('course_student', 'promedio_acumulado');
     }
 
     /**
