@@ -468,6 +468,16 @@
             margin-bottom: 1.25rem;
         }
 
+        .feature-icon svg {
+            width: 24px;
+            height: 24px;
+            stroke: currentColor;
+            fill: none;
+            stroke-width: 2;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+
         .feature-card h3 {
             font-family: 'Outfit', sans-serif;
             font-size: 1.35rem;
@@ -852,16 +862,16 @@
                 
                 <div class="hero-stats">
                     <div class="stat-item">
-                        <span class="stat-number">+15k</span>
-                        <span class="stat-label">Profesores</span>
+                        <span class="stat-number">Beta Activa</span>
+                        <span class="stat-label">Validando con colegios</span>
                     </div>
                     <div class="stat-item">
-                        <span class="stat-number">50k+</span>
-                        <span class="stat-label">Planificaciones</span>
+                        <span class="stat-number">IA Generativa</span>
+                        <span class="stat-label">Planificaciones automáticas</span>
                     </div>
                     <div class="stat-item">
-                        <span class="stat-number">98%</span>
-                        <span class="stat-label">Satisfacción</span>
+                        <span class="stat-number">Ahorra 10h/semana</span>
+                        <span class="stat-label">por profesor</span>
                     </div>
                 </div>
 
@@ -897,42 +907,42 @@
             <div class="features-grid">
                 <div class="feature-card">
                     <div class="feature-icon">
-                        <i class="fa-regular fa-bolt"></i>
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
                     </div>
                     <h3>5x Más Rápido</h3>
                     <p>Reduce el tiempo de planificación de horas a minutos con nuestra IA especializada en educación.</p>
                 </div>
                 <div class="feature-card">
                     <div class="feature-icon">
-                        <i class="fa-regular fa-magic"></i>
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/></svg>
                     </div>
                     <h3>IA Especializada</h3>
                     <p>Algoritmos entrenados específicamente con miles de planificaciones y estándares educativos.</p>
                 </div>
                 <div class="feature-card">
                     <div class="feature-icon">
-                        <i class="fa-regular fa-graduation-cap"></i>
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21.42 10.922a1 1 0 0 0-.019-1.838L12.83 5.18a2 2 0 0 0-1.66 0L2.6 9.08a1 1 0 0 0 0 1.832l8.57 3.908a2 2 0 0 0 1.66 0z"/><path d="M22 10v6"/><path d="M6 12.5V16a6 3 0 0 0 12 0v-3.5"/></svg>
                     </div>
                     <h3>Adaptado a Ti</h3>
                     <p>Se ajusta automáticamente a tu estilo de enseñanza, materia y nivel educativo.</p>
                 </div>
                 <div class="feature-card">
                     <div class="feature-icon">
-                        <i class="fa-regular fa-calendar"></i>
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/></svg>
                     </div>
                     <h3>Calendario Inteligente</h3>
                     <p>Visualiza todas tus actividades y planificaciones en un calendario interactivo.</p>
                 </div>
                 <div class="feature-card">
                     <div class="feature-icon">
-                        <i class="fa-regular fa-users"></i>
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
                     </div>
                     <h3>Gestión de Alumnos</h3>
                     <p>Administra cursos, estudiantes y calificaciones desde un solo panel.</p>
                 </div>
                 <div class="feature-card">
                     <div class="feature-icon">
-                        <i class="fa-regular fa-file-lines"></i>
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>
                     </div>
                     <h3>Exportación Profesional</h3>
                     <p>Exporta tus planificaciones a PDF, Word o Google Docs con un clic.</p>
