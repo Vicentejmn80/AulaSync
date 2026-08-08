@@ -482,17 +482,18 @@
             font-size: 0.95rem;
         }
 
-        /* Pricing */
+        /* Pricing — 4 planes piloto 2026 (solo esta sección) */
         .pricing {
             padding: 4rem 0;
         }
 
         .pricing-grid {
             display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 1.5rem;
-            max-width: 1000px;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 1.25rem;
+            max-width: 1200px;
             margin: 0 auto;
+            align-items: stretch;
         }
 
         .pricing-card {
@@ -500,19 +501,23 @@
             backdrop-filter: blur(10px);
             border: 1px solid var(--nova-glass-border);
             border-radius: 24px;
-            padding: 2rem;
+            padding: 2rem 1.5rem;
             transition: all 0.3s;
             position: relative;
+            display: flex;
+            flex-direction: column;
         }
 
         .pricing-card.popular {
             background: linear-gradient(135deg, rgba(139, 92, 246, 0.15) 0%, rgba(236, 72, 153, 0.15) 100%);
             border-color: rgba(236, 72, 153, 0.5);
             transform: scale(1.03);
+            box-shadow: 0 0 40px rgba(139, 92, 246, 0.25), 0 0 70px rgba(236, 72, 153, 0.12);
+            z-index: 1;
         }
 
         .pricing-card.popular::before {
-            content: 'Más Popular';
+            content: 'Piloto Casa212';
             position: absolute;
             top: -12px;
             left: 50%;
@@ -523,46 +528,72 @@
             font-size: 0.75rem;
             font-weight: 600;
             color: white;
+            white-space: nowrap;
         }
 
         .pricing-card h3 {
             font-family: 'Outfit', sans-serif;
-            font-size: 1.3rem;
+            font-size: 1.15rem;
             font-weight: 700;
-            margin-bottom: 0.5rem;
+            margin-bottom: 0.35rem;
             color: white;
+        }
+
+        .pricing-card .plan-subtitle {
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            margin-bottom: 1rem;
+            line-height: 1.4;
         }
 
         .pricing-card .price {
             font-family: 'Outfit', sans-serif;
-            font-size: 2.5rem;
+            font-size: 2.25rem;
             font-weight: 800;
             color: white;
             margin-bottom: 0.25rem;
+            line-height: 1.1;
+            display: flex;
+            align-items: baseline;
+            flex-wrap: wrap;
+            gap: 0.15rem 0.25rem;
         }
 
+        .pricing-card .price .price-currency {
+            font-size: 0.95rem;
+            color: var(--text-secondary);
+            font-weight: 500;
+            align-self: flex-start;
+            margin-top: 0.35rem;
+        }
+
+        .pricing-card .price .price-period,
         .pricing-card .price span {
-            font-size: 1rem;
+            font-size: 0.95rem;
             color: var(--text-secondary);
             font-weight: 400;
         }
 
         .pricing-card ul {
             list-style: none;
-            margin: 1.5rem 0;
+            margin: 1.25rem 0 1.5rem;
+            flex: 1;
         }
 
         .pricing-card li {
             color: var(--text-secondary);
-            padding: 0.5rem 0;
+            padding: 0.45rem 0;
             display: flex;
-            align-items: center;
+            align-items: flex-start;
             gap: 10px;
-            font-size: 0.9rem;
+            font-size: 0.85rem;
+            line-height: 1.4;
         }
 
         .pricing-card li i {
-            color: var(--nova-green);
+            color: var(--nova-violet);
+            margin-top: 0.15rem;
+            flex-shrink: 0;
         }
 
         .pricing-card .btn-plan {
@@ -575,6 +606,8 @@
             text-decoration: none;
             display: block;
             text-align: center;
+            margin-top: auto;
+            font-size: 0.9rem;
         }
 
         .pricing-card .btn-plan.primary {
@@ -587,6 +620,29 @@
             background: transparent;
             border: 1px solid var(--nova-glass-border);
             color: white;
+        }
+
+        .pricing-banner {
+            max-width: 900px;
+            margin: 2.5rem auto 0;
+            padding: 1.1rem 1.5rem;
+            text-align: center;
+            background: var(--nova-glass);
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--nova-glass-border);
+            border-radius: 16px;
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+            line-height: 1.55;
+        }
+
+        .pricing-footnote {
+            max-width: 800px;
+            margin: 1.25rem auto 0;
+            text-align: center;
+            color: var(--text-tertiary);
+            font-size: 0.8rem;
+            line-height: 1.5;
         }
 
         /* CTA Section */
@@ -884,58 +940,88 @@
             </div>
         </section>
 
-        <!-- Pricing Section -->
+        <!-- Pricing Section — actualizada: 4 planes piloto 2026 -->
         <section class="pricing" id="pricing">
             <div class="section-header">
-                <h2>Planes para cada necesidad</h2>
-                <p>Desde profesores individuales hasta instituciones educativas completas</p>
+                <h2>Precios Piloto — Cohorte Inicial 2026</h2>
+                <p>Valores especiales para colegios aliados mientras validamos el producto.</p>
             </div>
 
             <div class="pricing-grid">
+                <!-- Plan 1: Docente -->
                 <div class="pricing-card">
-                    <h3>Gratis</h3>
-                    <div class="pricing-price">
-                        <span class="price">0€ <span>/mes</span></span>
-                    </div>
+                    <h3>Docente</h3>
+                    <p class="plan-subtitle">Para profesores independientes</p>
+                    <div class="price">Gratis</div>
                     <ul class="pricing-features">
-                        <li><i class="fa-regular fa-check"></i> 10 planificaciones/mes</li>
-                        <li><i class="fa-regular fa-check"></i> IA Básica</li>
-                        <li><i class="fa-regular fa-check"></i> 1 curso activo</li>
-                        <li><i class="fa-regular fa-times"></i> Exportación limitada</li>
+                        <li><i class="fa-solid fa-check"></i> 1 curso activo</li>
+                        <li><i class="fa-solid fa-check"></i> Planificación básica con IA</li>
+                        <li><i class="fa-solid fa-check"></i> Calendario académico</li>
+                        <li><i class="fa-solid fa-check"></i> Hasta 20 alumnos</li>
                     </ul>
-                    <a href="{{ route('register') }}" class="btn-plan secondary">Comenzar</a>
+                    <a href="{{ route('register') }}" class="btn-plan secondary">Empezar Gratis</a>
                 </div>
 
+                <!-- Plan 2: Colegio Piloto (destacado) -->
                 <div class="pricing-card popular">
-                    <h3>Pro</h3>
-                    <div class="pricing-price">
-                        <span class="price">9.99€ <span>/mes</span></span>
+                    <h3>Colegio Piloto</h3>
+                    <p class="plan-subtitle">Precio especial de validación 2026</p>
+                    <div class="price">
+                        <span class="price-currency">$</span>49<span class="price-period">/mes</span>
                     </div>
                     <ul class="pricing-features">
-                        <li><i class="fa-regular fa-check"></i> Planificaciones ilimitadas</li>
-                        <li><i class="fa-regular fa-check"></i> IA Avanzada</li>
-                        <li><i class="fa-regular fa-check"></i> Cursos ilimitados</li>
-                        <li><i class="fa-regular fa-check"></i> Exportación completa</li>
-                        <li><i class="fa-regular fa-check"></i> Soporte prioritario</li>
+                        <li><i class="fa-solid fa-check"></i> Hasta 15 docentes</li>
+                        <li><i class="fa-solid fa-check"></i> IA para planificaciones completas</li>
+                        <li><i class="fa-solid fa-check"></i> Rúbricas y evaluaciones automáticas</li>
+                        <li><i class="fa-solid fa-check"></i> Dashboard directivo básico</li>
+                        <li><i class="fa-solid fa-check"></i> Soporte prioritario</li>
+                        <li><i class="fa-solid fa-check"></i> Implementación gratuita</li>
                     </ul>
-                    <a href="{{ route('register') }}" class="btn-plan primary">Elegir Pro</a>
+                    <a href="#demo" class="btn-plan primary">Solicitar Demo Piloto</a>
                 </div>
 
+                <!-- Plan 3: Colegio -->
                 <div class="pricing-card">
-                    <h3>Institucional</h3>
-                    <div class="pricing-price">
-                        <span class="price">Personalizado</span>
+                    <h3>Colegio</h3>
+                    <p class="plan-subtitle">Precio comercial estándar</p>
+                    <div class="price">
+                        <span class="price-currency">$</span>99<span class="price-period">/mes</span>
                     </div>
                     <ul class="pricing-features">
-                        <li><i class="fa-regular fa-check"></i> Para colegios/universidades</li>
-                        <li><i class="fa-regular fa-check"></i> Dashboard compartido</li>
-                        <li><i class="fa-regular fa-check"></i> API acceso</li>
-                        <li><i class="fa-regular fa-check"></i> Formación incluida</li>
-                        <li><i class="fa-regular fa-check"></i> Soporte 24/7</li>
+                        <li><i class="fa-solid fa-check"></i> Hasta 25 docentes</li>
+                        <li><i class="fa-solid fa-check"></i> Todo lo del plan Piloto</li>
+                        <li><i class="fa-solid fa-check"></i> Reportes académicos avanzados</li>
+                        <li><i class="fa-solid fa-check"></i> Exportación profesional (PDF, Word, Google Calendar)</li>
+                        <li><i class="fa-solid fa-check"></i> Soporte con respuesta en 4 horas</li>
                     </ul>
-                    <a href="#contacto" class="btn-plan secondary">Contactar</a>
+                    <a href="#demo" class="btn-plan secondary">Agendar Demo</a>
+                </div>
+
+                <!-- Plan 4: Red Educativa -->
+                <div class="pricing-card">
+                    <h3>Red Educativa</h3>
+                    <p class="plan-subtitle">Para cadenas de colegios</p>
+                    <div class="price">
+                        <span class="price-currency">Desde $</span>499<span class="price-period">/mes</span>
+                    </div>
+                    <ul class="pricing-features">
+                        <li><i class="fa-solid fa-check"></i> Múltiples sedes</li>
+                        <li><i class="fa-solid fa-check"></i> Docentes ilimitados</li>
+                        <li><i class="fa-solid fa-check"></i> Analítica avanzada por sede</li>
+                        <li><i class="fa-solid fa-check"></i> Capacitación del equipo incluida</li>
+                        <li><i class="fa-solid fa-check"></i> Integraciones futuras (API)</li>
+                        <li><i class="fa-solid fa-check"></i> SLA garantizado</li>
+                    </ul>
+                    <a href="#contacto" class="btn-plan secondary">Hablar con Ventas</a>
                 </div>
             </div>
+
+            <div class="pricing-banner">
+                💡 Un colegio que ahorre solo 10 horas administrativas al mes ya recupera varias veces el costo de Nova Academy.
+            </div>
+            <p class="pricing-footnote">
+                🚀 Los primeros 10 colegios piloto recibirán implementación y acompañamiento gratuito durante 3 meses a cambio de feedback y métricas de uso.
+            </p>
         </section>
 
         <!-- Footer -->
