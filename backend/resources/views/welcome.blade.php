@@ -7,7 +7,7 @@
 
     <title>AULASYNC | La plataforma que sincroniza a tu colegio</title>
     <meta name="description" content="Centraliza planificación, tareas, calificaciones, asistencia, calendario y comunicación escolar con AULASYNC.">
-    <meta name="theme-color" content="#1B2168">
+    <meta name="theme-color" content="#7C3AED">
 
     <!-- Open Graph -->
     <meta property="og:type" content="website">
@@ -29,30 +29,33 @@
            AULASYNC — Design tokens
            ============================================================ */
         :root {
-            --az-ink: #12143A;
-            --az-indigo-900: #1B2168;
-            --az-indigo-700: #2D3494;
-            --az-indigo-600: #3F47B0;
-            --az-indigo-500: #545CD8;
-            --az-violet-500: #8B7EF0;
-            --az-violet-300: #C7C0F7;
-            --az-violet-100: #EFEBFC;
+            --az-ink: #1E1133;
+            --az-indigo-900: #3D105D;
+            --az-indigo-700: #6B21A8;
+            --az-indigo-600: #8B2FC9;
+            --az-indigo-500: #A855F7;
+            --az-violet-500: #C455ED;
+            --az-violet-300: #E7C4FA;
+            --az-violet-100: #F9EEFF;
+            --az-rose-500: #EC4899;
+            --az-rose-300: #F8B6D9;
+            --az-rose-100: #FDE7F4;
             --az-mint-600: #159A79;
             --az-mint-500: #1FBE93;
             --az-mint-100: #DFF6EC;
             --az-bg: #FBFAF7;
             --az-surface: #FFFFFF;
-            --az-border: #E4E3F0;
-            --az-text-secondary: #52577C;
-            --az-text-tertiary: #868BAC;
-            --az-shadow-sm: 0 1px 2px rgba(18, 20, 58, 0.05);
-            --az-shadow-md: 0 16px 40px -20px rgba(27, 33, 104, 0.22);
-            --az-shadow-lg: 0 32px 64px -24px rgba(27, 33, 104, 0.28);
+            --az-border: #EEDDF7;
+            --az-text-secondary: #5B4B72;
+            --az-text-tertiary: #9D89B6;
+            --az-shadow-sm: 0 1px 2px rgba(104, 33, 168, 0.08);
+            --az-shadow-md: 0 16px 40px -20px rgba(107, 33, 168, 0.24);
+            --az-shadow-lg: 0 32px 64px -24px rgba(107, 33, 168, 0.32);
             --az-radius-lg: 26px;
             --az-radius-md: 18px;
             --az-radius-sm: 12px;
-            --az-gradient-brand: linear-gradient(135deg, #2D3494 0%, #545CD8 55%, #8B7EF0 100%);
-            --az-gradient-soft: linear-gradient(135deg, rgba(84, 92, 216, 0.08) 0%, rgba(139, 126, 240, 0.06) 100%);
+            --az-gradient-brand: linear-gradient(135deg, #7C3AED 0%, #C455ED 55%, #EC4899 100%);
+            --az-gradient-soft: linear-gradient(135deg, rgba(168, 85, 247, 0.12) 0%, rgba(236, 72, 153, 0.10) 100%);
             --az-container: 1180px;
         }
 
@@ -76,6 +79,19 @@
             color: var(--az-ink);
             line-height: 1.6;
             -webkit-font-smoothing: antialiased;
+            position: relative;
+        }
+
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            z-index: -2;
+            pointer-events: none;
+            background:
+                radial-gradient(540px 380px at 6% 18%, rgba(196, 85, 237, 0.16), transparent 68%),
+                radial-gradient(500px 380px at 94% 14%, rgba(236, 72, 153, 0.14), transparent 68%),
+                radial-gradient(520px 420px at 90% 80%, rgba(139, 126, 240, 0.14), transparent 72%);
         }
 
         h1, h2, h3, h4 {
@@ -163,10 +179,10 @@
         .az-btn-primary {
             background: var(--az-gradient-brand);
             color: #fff;
-            box-shadow: 0 14px 30px -12px rgba(45, 52, 148, 0.55);
+            box-shadow: 0 14px 30px -12px rgba(139, 46, 201, 0.56);
         }
 
-        .az-btn-primary:hover { transform: translateY(-2px); box-shadow: 0 18px 36px -12px rgba(45, 52, 148, 0.6); }
+        .az-btn-primary:hover { transform: translateY(-2px); box-shadow: 0 18px 36px -12px rgba(139, 46, 201, 0.66); }
 
         .az-btn-secondary {
             background: var(--az-surface);
@@ -196,17 +212,17 @@
             position: sticky;
             top: 0;
             z-index: 60;
-            background: rgba(251, 250, 247, 0.7);
+            background: rgba(255, 251, 255, 0.7);
             border-bottom: 1px solid transparent;
             transition: background-color 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
         }
 
         .az-nav.is-scrolled {
-            background: rgba(251, 250, 247, 0.86);
+            background: rgba(255, 250, 255, 0.9);
             backdrop-filter: blur(14px);
             -webkit-backdrop-filter: blur(14px);
             border-bottom-color: var(--az-border);
-            box-shadow: 0 8px 24px -18px rgba(18, 20, 58, 0.25);
+            box-shadow: 0 8px 24px -18px rgba(107, 33, 168, 0.34);
         }
 
         .az-nav-inner {
@@ -238,7 +254,16 @@
             font-weight: 800;
             font-size: 18px;
             flex-shrink: 0;
-            box-shadow: 0 8px 18px -8px rgba(45, 52, 148, 0.55);
+            box-shadow: 0 8px 18px -8px rgba(139, 46, 201, 0.58);
+            overflow: hidden;
+            padding: 4px;
+        }
+
+        .az-logo-mark img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.2));
         }
 
         .az-logo-text {
@@ -339,8 +364,9 @@
             inset: 0;
             z-index: -1;
             background:
-                radial-gradient(600px 420px at 85% -10%, rgba(139, 126, 240, 0.18), transparent 70%),
-                radial-gradient(520px 420px at -10% 30%, rgba(31, 190, 147, 0.10), transparent 70%);
+                radial-gradient(620px 440px at 86% -12%, rgba(236, 72, 153, 0.20), transparent 70%),
+                radial-gradient(580px 460px at -12% 26%, rgba(168, 85, 247, 0.18), transparent 72%),
+                radial-gradient(500px 360px at 72% 84%, rgba(196, 85, 237, 0.15), transparent 70%);
         }
 
         .az-hero-inner {
@@ -414,7 +440,7 @@
         .az-mock-body { display: grid; grid-template-columns: 56px 1fr; min-height: 380px; }
 
         .az-mock-sidebar {
-            background: var(--az-indigo-900);
+            background: linear-gradient(180deg, #4B1A78 0%, #721CA3 65%, #8B2FC9 100%);
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -532,6 +558,19 @@
         .az-floating-chip.indigo i { color: var(--az-indigo-600); }
         .az-floating-chip.violet i { color: var(--az-violet-500); }
 
+        .az-hero-mascot {
+            position: absolute;
+            right: 14px;
+            top: 52%;
+            width: 76px;
+            height: 76px;
+            object-fit: contain;
+            filter: drop-shadow(0 14px 24px rgba(139, 46, 201, 0.4));
+            z-index: 5;
+            transform: translateY(-50%);
+            pointer-events: none;
+        }
+
         .chip-1 { top: -18px; left: -22px; }
         .chip-2 { bottom: 22%; right: -30px; }
         .chip-3 { bottom: -18px; left: 14%; }
@@ -565,6 +604,17 @@
             grid-template-columns: repeat(4, 1fr);
             gap: 14px;
             margin-top: 32px;
+            position: relative;
+        }
+
+        .az-trust-mascot {
+            position: absolute;
+            right: -10px;
+            bottom: -38px;
+            width: 76px;
+            opacity: 0.9;
+            pointer-events: none;
+            filter: drop-shadow(0 8px 18px rgba(196, 85, 237, 0.28));
         }
 
         .az-chip {
@@ -994,7 +1044,7 @@
            Final CTA
            ============================================================ */
         .az-final-cta {
-            background: linear-gradient(160deg, var(--az-indigo-900) 0%, #262C7C 55%, #382E8F 100%);
+            background: linear-gradient(160deg, #4B166F 0%, #7A2BB7 56%, #C026D3 100%);
             color: #fff;
             text-align: center;
             position: relative;
@@ -1005,8 +1055,29 @@
             content: '';
             position: absolute;
             inset: 0;
-            background: radial-gradient(560px 380px at 15% 0%, rgba(139,126,240,0.28), transparent 70%),
-                        radial-gradient(500px 380px at 100% 100%, rgba(31,190,147,0.16), transparent 70%);
+            background: radial-gradient(560px 380px at 15% 0%, rgba(196,85,237,0.34), transparent 70%),
+                        radial-gradient(500px 380px at 100% 100%, rgba(236,72,153,0.24), transparent 70%);
+        }
+
+        .az-final-cta::after {
+            content: '';
+            position: absolute;
+            width: 320px;
+            height: 320px;
+            right: -130px;
+            bottom: -140px;
+            background: radial-gradient(circle, rgba(255, 255, 255, 0.22), transparent 70%);
+            pointer-events: none;
+        }
+
+        .az-final-cta-mascot {
+            position: absolute;
+            right: 34px;
+            bottom: 22px;
+            width: 72px;
+            z-index: 2;
+            filter: drop-shadow(0 8px 20px rgba(0,0,0,0.35));
+            pointer-events: none;
         }
 
         .az-final-cta h2 { color: #fff; font-size: clamp(1.9rem, 3.6vw, 2.6rem); position: relative; max-width: 700px; margin: 0 auto 16px; }
@@ -1183,6 +1254,9 @@
         @media (max-width: 640px) {
             section { padding: 60px 0; }
             .az-hero { padding-top: 40px; }
+            .az-hero-mascot,
+            .az-trust-mascot,
+            .az-final-cta-mascot { display: none; }
         }
     </style>
 </head>
@@ -1195,7 +1269,7 @@
         <nav class="az-nav" id="az-nav" aria-label="Navegación principal">
             <div class="az-container az-nav-inner">
                 <a href="{{ route('welcome') }}" class="az-logo" aria-label="AULASYNC — Inicio">
-                    <span class="az-logo-mark" aria-hidden="true">A</span>
+                    <span class="az-logo-mark" aria-hidden="true"><img src="/images/emoji leyendo sin fondo.png" alt=""></span>
                     <span class="az-logo-text">AULASYNC</span>
                 </a>
 
@@ -1314,6 +1388,7 @@
                     <div class="az-floating-chip chip-3 violet">
                         <i class="fa-solid fa-file-pen"></i> 3 evaluaciones esta semana
                     </div>
+                    <img class="az-hero-mascot" src="/images/emoji viendo fijo sin fondo.png" alt="" aria-hidden="true">
                 </div>
             </div>
         </section>
@@ -1333,6 +1408,7 @@
                     <div class="az-chip"><i class="fa-solid fa-comments"></i><span>Comunicación organizada</span></div>
                     <div class="az-chip"><i class="fa-solid fa-database"></i><span>Información siempre disponible</span></div>
                     <div class="az-chip"><i class="fa-solid fa-feather"></i><span>Menos carga administrativa</span></div>
+                    <img class="az-trust-mascot" src="/images/emoji leyendo sin fondo.png" alt="" aria-hidden="true">
                 </div>
             </div>
         </section>
@@ -1728,6 +1804,7 @@
                     <button type="button" class="az-btn az-btn-secondary" data-open-demo>Conocer el programa piloto</button>
                 </div>
                 <p class="az-final-cta-support">Una plataforma creada para colegios que quieren operar con más claridad.</p>
+                <img class="az-final-cta-mascot" src="/images/emoji viendo fijo sin fondo.png" alt="" aria-hidden="true">
             </div>
         </section>
     </main>
@@ -1740,7 +1817,7 @@
             <div class="az-footer-top">
                 <div class="az-footer-brand">
                     <a href="{{ route('welcome') }}" class="az-logo" aria-label="AULASYNC — Inicio">
-                        <span class="az-logo-mark" aria-hidden="true">A</span>
+                        <span class="az-logo-mark" aria-hidden="true"><img src="/images/emoji leyendo sin fondo.png" alt=""></span>
                         <span class="az-logo-text">AULASYNC</span>
                     </a>
                     <p>Gestión académica más clara, comunidades más conectadas.</p>
