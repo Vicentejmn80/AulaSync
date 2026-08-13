@@ -64,7 +64,7 @@
 <body class="min-h-screen">
     @php
         $settings = auth()->user()->settings;
-        $institutionName = $settings?->nombre_institucion ?? 'Aulasync';
+        $institutionName = $settings?->nombre_institucion ?? 'AulaSync';
         $schoolYear = data_get($settings?->preferencias, 'periodo_academico', now()->year . '-' . now()->copy()->addYear()->year);
         $issueDate = now()->format('d/m/Y');
     @endphp

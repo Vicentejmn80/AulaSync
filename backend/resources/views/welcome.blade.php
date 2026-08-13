@@ -5,14 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="{{ csrf_token() }}">
 
-    <title>AULASYNC | La plataforma que sincroniza a tu colegio</title>
-    <meta name="description" content="Centraliza planificación, tareas, calificaciones, asistencia, calendario y comunicación escolar con AULASYNC.">
+    <title>AulaSync | La plataforma que sincroniza a tu colegio</title>
+    <meta name="description" content="Centraliza planificación, tareas, calificaciones, asistencia, calendario y comunicación escolar con AulaSync.">
     <meta name="theme-color" content="#7C3AED">
 
     <!-- Open Graph -->
     <meta property="og:type" content="website">
-    <meta property="og:site_name" content="AULASYNC">
-    <meta property="og:title" content="AULASYNC | La plataforma que sincroniza a tu colegio">
+    <meta property="og:site_name" content="AulaSync">
+    <meta property="og:title" content="AulaSync | La plataforma que sincroniza a tu colegio">
     <meta property="og:description" content="Planificación, tareas, calificaciones, asistencia y comunicación en un solo lugar.">
     <meta property="og:locale" content="es_VE">
 
@@ -26,7 +26,7 @@
 
     <style>
         /* ============================================================
-           AULASYNC — Design tokens
+           AulaSync — Design tokens
            ============================================================ */
         :root {
             --az-ink: #1E1133;
@@ -230,7 +230,8 @@
             align-items: center;
             justify-content: space-between;
             gap: 24px;
-            padding: 16px 24px;
+            min-height: 64px;
+            padding: 12px 24px;
         }
 
         .az-logo {
@@ -241,36 +242,90 @@
             flex-shrink: 0;
         }
 
-        .az-logo-mark {
-            width: 38px;
-            height: 38px;
-            border-radius: 11px;
+        /* Navbar branding — proporción y alineación exactas */
+        .az-nav .az-logo {
+            gap: 10px;
+        }
+
+        .az-nav .az-logo-mark {
+            width: 36px;
+            height: 36px;
+            min-width: 36px;
+            min-height: 36px;
+            border-radius: 10px;
             background: var(--az-gradient-brand);
             display: flex;
             align-items: center;
             justify-content: center;
-            color: #fff;
-            font-family: 'Manrope', sans-serif;
-            font-weight: 800;
-            font-size: 18px;
             flex-shrink: 0;
-            box-shadow: 0 8px 18px -8px rgba(139, 46, 201, 0.58);
+            box-shadow: 0 6px 16px -6px rgba(139, 46, 201, 0.45);
             overflow: hidden;
-            padding: 4px;
+            padding: 0;
+        }
+
+        .az-nav .az-logo-mark img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            display: block;
+            filter: drop-shadow(0 1px 4px rgba(0, 0, 0, 0.12));
+        }
+
+        .az-nav .az-logo-text {
+            font-family: 'Manrope', 'Inter', sans-serif;
+            font-size: 1.125rem;
+            font-weight: 900;
+            letter-spacing: 0.08em;
+            line-height: 1;
+            text-transform: uppercase;
+            color: #0f172a;
+            margin: 0;
+            padding-top: 1px;
+        }
+
+        /* Utilidades Tailwind-equivalentes (solo navbar branding) */
+        .az-nav .flex { display: flex; }
+        .az-nav .items-center { align-items: center; }
+        .az-nav .shrink-0 { flex-shrink: 0; }
+        .az-nav .gap-2\.5 { gap: 0.625rem; }
+        .az-nav .h-9 { height: 2.25rem; }
+        .az-nav .w-9 { width: 2.25rem; }
+        .az-nav .h-full { height: 100%; }
+        .az-nav .w-full { width: 100%; }
+        .az-nav .object-contain { object-fit: contain; }
+        .az-nav .text-lg { font-size: 1.125rem; }
+        .az-nav .font-black { font-weight: 900; }
+        .az-nav .tracking-wider { letter-spacing: 0.05em; }
+        .az-nav .text-slate-900 { color: #0f172a; }
+        .az-nav .uppercase { text-transform: uppercase; }
+        .az-nav .leading-none { line-height: 1; }
+
+        .az-logo-mark {
+            width: 36px;
+            height: 36px;
+            border-radius: 10px;
+            background: var(--az-gradient-brand);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            box-shadow: 0 6px 16px -6px rgba(139, 46, 201, 0.45);
+            overflow: hidden;
         }
 
         .az-logo-mark img {
             width: 100%;
             height: 100%;
             object-fit: contain;
-            filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.2));
+            display: block;
         }
 
         .az-logo-text {
             font-family: 'Manrope', sans-serif;
             font-weight: 800;
-            font-size: 20px;
-            letter-spacing: -0.01em;
+            font-size: 1.125rem;
+            letter-spacing: 0.04em;
+            line-height: 1;
             color: var(--az-ink);
         }
 
@@ -1268,9 +1323,11 @@
     <header>
         <nav class="az-nav" id="az-nav" aria-label="Navegación principal">
             <div class="az-container az-nav-inner">
-                <a href="{{ route('welcome') }}" class="az-logo" aria-label="AULASYNC — Inicio">
-                    <span class="az-logo-mark" aria-hidden="true"><img src="/images/emoji leyendo sin fondo.png" alt=""></span>
-                    <span class="az-logo-text">AULASYNC</span>
+                <a href="{{ route('welcome') }}" class="az-logo flex items-center gap-2.5 shrink-0" aria-label="AulaSync — Inicio">
+                    <span class="az-logo-mark h-9 w-9 flex items-center justify-center shrink-0" aria-hidden="true">
+                        <img src="/images/emoji leyendo sin fondo.png" alt="" class="h-full w-full object-contain">
+                    </span>
+                    <span class="az-logo-text text-lg font-black tracking-wider text-slate-900 uppercase leading-none">AulaSync</span>
                 </a>
 
                 <ul class="az-nav-links">
@@ -1329,12 +1386,12 @@
                 </div>
 
                 <div class="az-hero-visual" data-reveal>
-                    <div class="az-dashboard-mock" role="img" aria-label="Vista ilustrativa del panel de AULASYNC con clases, tareas, asistencia, calendario y un comunicado. Datos de ejemplo.">
+                    <div class="az-dashboard-mock" role="img" aria-label="Vista ilustrativa del panel de AulaSync con clases, tareas, asistencia, calendario y un comunicado. Datos de ejemplo.">
                         <div class="az-mock-topbar">
                             <span class="az-mock-dot a"></span>
                             <span class="az-mock-dot b"></span>
                             <span class="az-mock-dot c"></span>
-                            <span>Panel de AULASYNC · Colegio Demo</span>
+                            <span>Panel de AulaSync · Colegio Demo</span>
                         </div>
                         <div class="az-mock-body">
                             <div class="az-mock-sidebar" aria-hidden="true">
@@ -1429,7 +1486,7 @@
 
                 <div class="az-ps-grid" data-reveal>
                     <div class="az-ps-col az-ps-col-neg">
-                        <h3><i class="fa-solid fa-xmark"></i> Sin AULASYNC</h3>
+                        <h3><i class="fa-solid fa-xmark"></i> Sin AulaSync</h3>
                         <ul class="az-ps-list">
                             <li><i class="fa-solid fa-xmark"></i> Tareas dispersas entre WhatsApp, cuadernos y correos.</li>
                             <li><i class="fa-solid fa-xmark"></i> Calificaciones y asistencia registradas manualmente.</li>
@@ -1438,7 +1495,7 @@
                         </ul>
                     </div>
                     <div class="az-ps-col az-ps-col-pos">
-                        <h3><i class="fa-solid fa-check"></i> Con AULASYNC</h3>
+                        <h3><i class="fa-solid fa-check"></i> Con AulaSync</h3>
                         <ul class="az-ps-list">
                             <li><i class="fa-solid fa-check"></i> Un espacio único para cada proceso académico.</li>
                             <li><i class="fa-solid fa-check"></i> Información actualizada para cada rol.</li>
@@ -1459,12 +1516,12 @@
                     <span class="az-eyebrow"><i class="fa-solid fa-layer-group"></i> Producto</span>
                     <h2 class="az-section-title">Todo lo que tu colegio necesita para avanzar sincronizado.</h2>
                     <p class="az-section-text">
-                        Desde la planificación diaria hasta la comunicación con las familias, AULASYNC reúne los
+                        Desde la planificación diaria hasta la comunicación con las familias, AulaSync reúne los
                         procesos académicos esenciales en una experiencia simple.
                     </p>
                 </div>
 
-                <div role="tablist" aria-label="Funciones de AULASYNC" class="az-tabs" id="az-feature-tabs">
+                <div role="tablist" aria-label="Funciones de AulaSync" class="az-tabs" id="az-feature-tabs">
                     <button class="az-tab-btn" role="tab" id="tab-plan" aria-controls="panel-plan" aria-selected="true" data-tab="plan">
                         <i class="fa-solid fa-clipboard-list"></i> Planificación
                     </button>
@@ -1682,7 +1739,7 @@
                     </div>
                     <div class="az-step">
                         <div class="az-step-number">02</div>
-                        <h3>Configuramos AULASYNC</h3>
+                        <h3>Configuramos AulaSync</h3>
                         <p>Preparamos períodos, secciones, materias, usuarios y permisos.</p>
                     </div>
                     <div class="az-step">
@@ -1733,7 +1790,7 @@
             <div class="az-container">
                 <div class="az-pilot-card" data-reveal>
                     <div>
-                        <h2>Forma parte de los primeros colegios en construir AULASYNC.</h2>
+                        <h2>Forma parte de los primeros colegios en construir AulaSync.</h2>
                         <p>Estamos buscando instituciones educativas que quieran probar la plataforma, aportar feedback y organizar su gestión académica.</p>
                     </div>
                     <div class="az-pilot-actions">
@@ -1757,8 +1814,8 @@
 
                 <div class="az-faq-list" data-reveal>
                     <details class="az-faq-item">
-                        <summary>¿Qué es AULASYNC?<i class="fa-solid fa-chevron-down" aria-hidden="true"></i></summary>
-                        <div class="az-faq-answer-wrap"><div class="az-faq-answer"><p>AULASYNC es una plataforma de gestión académica que centraliza la planificación docente, las tareas, las calificaciones, la asistencia, el calendario y la comunicación escolar en un solo lugar.</p></div></div>
+                        <summary>¿Qué es AulaSync?<i class="fa-solid fa-chevron-down" aria-hidden="true"></i></summary>
+                        <div class="az-faq-answer-wrap"><div class="az-faq-answer"><p>AulaSync es una plataforma de gestión académica que centraliza la planificación docente, las tareas, las calificaciones, la asistencia, el calendario y la comunicación escolar en un solo lugar.</p></div></div>
                     </details>
                     <details class="az-faq-item">
                         <summary>¿A quién está dirigida la plataforma?<i class="fa-solid fa-chevron-down" aria-hidden="true"></i></summary>
@@ -1773,7 +1830,7 @@
                         <div class="az-faq-answer-wrap"><div class="az-faq-answer"><p>Planificación por materia y período, tareas y evaluaciones, calificaciones, asistencia, calendario académico y comunicación con la comunidad educativa.</p></div></div>
                     </details>
                     <details class="az-faq-item">
-                        <summary>¿AULASYNC funciona desde el teléfono?<i class="fa-solid fa-chevron-down" aria-hidden="true"></i></summary>
+                        <summary>¿AulaSync funciona desde el teléfono?<i class="fa-solid fa-chevron-down" aria-hidden="true"></i></summary>
                         <div class="az-faq-answer-wrap"><div class="az-faq-answer"><p>Sí, puedes acceder desde el navegador de tu teléfono o computadora, según las capacidades actuales del producto.</p></div></div>
                     </details>
                     <details class="az-faq-item">
@@ -1781,7 +1838,7 @@
                         <div class="az-faq-answer-wrap"><div class="az-faq-answer"><p>Haz clic en "Solicitar una demo" en cualquier parte de esta página, completa el formulario y nuestro equipo se pondrá en contacto contigo.</p></div></div>
                     </details>
                     <details class="az-faq-item">
-                        <summary>¿Puedo implementar AULASYNC de forma gradual?<i class="fa-solid fa-chevron-down" aria-hidden="true"></i></summary>
+                        <summary>¿Puedo implementar AulaSync de forma gradual?<i class="fa-solid fa-chevron-down" aria-hidden="true"></i></summary>
                         <div class="az-faq-answer-wrap"><div class="az-faq-answer"><p>Sí. Acompañamos la configuración inicial y la adopción se puede hacer por secciones, materias o etapas, según el ritmo de tu equipo.</p></div></div>
                     </details>
                     <details class="az-faq-item">
@@ -1798,7 +1855,7 @@
         <section class="az-final-cta">
             <div class="az-container" data-reveal>
                 <h2>Haz que la gestión académica deje de ser un obstáculo.</h2>
-                <p>Conecta a tu comunidad educativa y centraliza lo importante con AULASYNC.</p>
+                <p>Conecta a tu comunidad educativa y centraliza lo importante con AulaSync.</p>
                 <div class="az-final-cta-actions">
                     <button type="button" class="az-btn az-btn-primary" data-open-demo>Solicitar una demo</button>
                     <button type="button" class="az-btn az-btn-secondary" data-open-demo>Conocer el programa piloto</button>
@@ -1816,9 +1873,9 @@
         <div class="az-container">
             <div class="az-footer-top">
                 <div class="az-footer-brand">
-                    <a href="{{ route('welcome') }}" class="az-logo" aria-label="AULASYNC — Inicio">
+                    <a href="{{ route('welcome') }}" class="az-logo" aria-label="AulaSync — Inicio">
                         <span class="az-logo-mark" aria-hidden="true"><img src="/images/emoji leyendo sin fondo.png" alt=""></span>
-                        <span class="az-logo-text">AULASYNC</span>
+                        <span class="az-logo-text">AulaSync</span>
                     </a>
                     <p>Gestión académica más clara, comunidades más conectadas.</p>
                 </div>
@@ -1841,7 +1898,7 @@
             </div>
 
             <div class="az-footer-bottom">
-                <span>&copy; {{ date('Y') }} AULASYNC. Todos los derechos reservados.</span>
+                <span>&copy; {{ date('Y') }} AulaSync. Todos los derechos reservados.</span>
                 <div style="display:flex; gap: 20px;">
                     <a href="{{ route('legal.privacidad') }}">Privacidad</a>
                     <a href="{{ route('legal.terminos') }}">Términos</a>

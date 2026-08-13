@@ -6,7 +6,7 @@
         <div class="container">
             <div class="onboarding-card mx-auto animate__animated animate__fadeIn" x-data="onboardingWizard()">
                 <div class="text-center mb-4">
-                    <p class="onboarding-kicker mb-2">Aulasync</p>
+                    <p class="onboarding-kicker mb-2">AulaSync</p>
                     <h1 class="onboarding-title mb-2">Configura tu asistente inteligente</h1>
                     <p class="text-muted mb-0">Una experiencia personalizada según tu rol y contexto.</p>
                 </div>
@@ -21,6 +21,7 @@
                     <input type="hidden" name="school_code" x-model="schoolCode">
                     <input type="hidden" name="family_code" x-model="familyValidated ? familyCode : ''">
 
+                    @php($errors = $errors ?? new \Illuminate\Support\ViewErrorBag())
                     @if($errors->any())
                         <div class="alert alert-danger py-3 mb-4">
                             <strong>Revisa los datos:</strong>
@@ -366,7 +367,7 @@
                             <label class="form-label text-sm text-slate-300 mb-2 block">Código de Licencia Premium</label>
                             <input type="text" x-model="licenseCode"
                                    class="form-control rounded-3 w-full"
-                                   placeholder="Ej: AULASYNC-PREMIUM-2026">
+                                   placeholder="Ej: AulaSync-PREMIUM-2026">
                             <p class="text-xs text-slate-500 mt-1">Déjalo vacío si quieres empezar en modo demo.</p>
                         </div>
 

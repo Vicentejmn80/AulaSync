@@ -46,7 +46,7 @@
 <body>
     @php
         $settings = auth()->user()->settings;
-        $institutionName = $settings?->nombre_institucion ?? 'Aulasync';
+        $institutionName = $settings?->nombre_institucion ?? 'AulaSync';
         $schoolYear = data_get($settings?->preferencias, 'periodo_academico', now()->year . '-' . now()->copy()->addYear()->year);
     @endphp
 
@@ -144,7 +144,7 @@
     </div>
 
     <div class="footer">
-        <p>Generado el {{ now()->format('d/m/Y H:i') }} · Aulasync Intelligence</p>
+        <p>Generado el {{ now()->format('d/m/Y H:i') }} · AulaSync Intelligence</p>
     </div>
 </body>
 </html>

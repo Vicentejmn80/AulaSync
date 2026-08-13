@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Política de Privacidad · AULASYNC</title>
+    <title>Política de Privacidad · AulaSync</title>
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     <style>
         :root { --ink: #12143A; --indigo: #2D3494; --border: #E4E3F0; --bg: #FBFAF7; --text: #52577C; }
@@ -25,12 +25,12 @@
         <h1>Política de Privacidad</h1>
         <p>
             Estamos redactando la versión completa de nuestra política de privacidad junto con nuestro equipo
-            legal. Mientras tanto, aquí resumimos los principios que guían el manejo de la información en AULASYNC.
+            legal. Mientras tanto, aquí resumimos los principios que guían el manejo de la información en AulaSync.
         </p>
 
         <h2>Qué información gestionamos</h2>
         <p>
-            AULASYNC administra información académica proporcionada por los colegios que usan la plataforma:
+            AulaSync administra información académica proporcionada por los colegios que usan la plataforma:
             datos de usuarios (directivos, docentes, representantes y estudiantes), planificaciones, tareas,
             calificaciones, asistencia y comunicados.
         </p>

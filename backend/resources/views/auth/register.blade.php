@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Crear Cuenta · Aulasync</title>
+    <title>Crear Cuenta · AulaSync</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <style>
         *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
@@ -13,28 +13,41 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            background: #0c0118;
+            background: #FBFAF7;
             overflow: hidden;
             position: relative;
+            color: #1E1133;
+        }
+
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            z-index: 0;
+            background:
+                radial-gradient(500px 400px at 10% 12%, rgba(196, 85, 237, 0.18), transparent 68%),
+                radial-gradient(460px 360px at 92% 84%, rgba(236, 72, 153, 0.14), transparent 70%),
+                radial-gradient(400px 320px at 60% 18%, rgba(168, 85, 247, 0.10), transparent 70%);
         }
 
         .orb { position:fixed; border-radius:50%; filter:blur(120px); pointer-events:none; z-index:0; }
         .orb-1 { width:500px; height:500px; top:-120px; right:-100px;
-                  background:radial-gradient(circle,rgba(192,38,211,.45),transparent 70%); }
+                  background:radial-gradient(circle,rgba(196,85,237,.22),transparent 70%); }
         .orb-2 { width:400px; height:400px; bottom:-80px; left:-80px;
-                  background:radial-gradient(circle,rgba(124,58,237,.35),transparent 70%); }
+                  background:radial-gradient(circle,rgba(236,72,153,.18),transparent 70%); }
         .orb-3 { width:280px; height:280px; top:40%; left:35%;
-                  background:radial-gradient(circle,rgba(219,39,119,.18),transparent 70%); }
+                  background:radial-gradient(circle,rgba(168,85,247,.12),transparent 70%); }
 
         .glass-card {
             position:relative; z-index:1;
             width:100%; max-width:440px;
-            background:rgba(255,255,255,.06);
+            background:rgba(255,255,255,.88);
             backdrop-filter:blur(24px); -webkit-backdrop-filter:blur(24px);
-            border:1px solid rgba(255,255,255,.1);
+            border:1px solid rgba(237,221,247,.95);
             border-radius:1.75rem;
             padding:2.25rem 2rem;
-            box-shadow:0 32px 64px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.08);
+            box-shadow:0 28px 70px rgba(107,33,168,.10), 0 10px 24px rgba(236,72,153,.05);
             animation:cardIn .6s ease-out;
         }
         @keyframes cardIn {
@@ -45,53 +58,54 @@
         .logo-row { display:flex; align-items:center; justify-content:center; gap:.75rem; margin-bottom:1.5rem; }
         .logo-icon {
             width:44px; height:44px; border-radius:.875rem;
-            background:linear-gradient(135deg,#7c3aed,#c026d3);
+            background:linear-gradient(135deg,#8b5cf6,#d946ef,#f472b6);
             display:flex; align-items:center; justify-content:center;
-            box-shadow:0 4px 20px rgba(124,58,237,.4);
+            box-shadow:0 10px 20px rgba(139,92,246,.22);
+            overflow:hidden; padding:6px;
         }
-        .logo-icon i { color:#fff; font-size:1.15rem; }
-        .logo-text { font-size:1.2rem; font-weight:900; color:#fff; }
+        .logo-icon img { width:100%; height:100%; object-fit:contain; filter:drop-shadow(0 2px 5px rgba(0,0,0,.12)); }
+        .logo-text { font-size:1.2rem; font-weight:900; color:#1E1133; }
         .logo-text span {
-            background:linear-gradient(90deg,#e879f9,#f0abfc);
+            background:linear-gradient(90deg,#8b5cf6,#d946ef,#f472b6);
             -webkit-background-clip:text; -webkit-text-fill-color:transparent;
         }
 
-        .card-title { font-size:1.4rem; font-weight:900; color:#fff; text-align:center; margin-bottom:.3rem; }
-        .card-sub { text-align:center; color:rgba(196,181,253,.7); font-size:.85rem; margin-bottom:1.5rem; }
+        .card-title { font-size:1.4rem; font-weight:900; color:#1E1133; text-align:center; margin-bottom:.3rem; }
+        .card-sub { text-align:center; color:#6B4D87; font-size:.85rem; margin-bottom:1.5rem; }
 
         .field { margin-bottom:1rem; }
-        .field label { display:block; font-size:.78rem; font-weight:700; color:#c4b5fd; margin-bottom:.35rem; letter-spacing:.02em; }
+        .field label { display:block; font-size:.78rem; font-weight:700; color:#7c3aed; margin-bottom:.35rem; letter-spacing:.02em; }
         .field input {
             width:100%; padding:.7rem 1rem;
-            background:rgba(255,255,255,.07);
-            border:1px solid rgba(255,255,255,.12);
-            border-radius:.875rem; color:#fff; font-size:.9rem; outline:none;
+            background:rgba(255,255,255,.94);
+            border:1px solid rgba(237,221,247,.95);
+            border-radius:.875rem; color:#1E1133; font-size:.9rem; outline:none;
             transition:border-color .2s, box-shadow .2s;
         }
-        .field input::placeholder { color:rgba(196,181,253,.35); }
-        .field input:focus { border-color:#a855f7; box-shadow:0 0 0 3px rgba(168,85,247,.2); }
-        .field-error { display:block; font-size:.75rem; color:#f472b6; margin-top:.3rem; }
+        .field input::placeholder { color:rgba(107,77,135,.45); }
+        .field input:focus { border-color:#d946ef; box-shadow:0 0 0 3px rgba(217,70,239,.16); }
+        .field-error { display:block; font-size:.75rem; color:#be185d; margin-top:.3rem; }
 
         .btn-submit {
             width:100%; padding:.8rem; margin-top:.5rem;
-            background:linear-gradient(135deg,#7c3aed,#c026d3);
+            background:linear-gradient(135deg,#8b5cf6,#d946ef 55%,#f472b6);
             color:#fff; font-weight:800; font-size:.95rem;
             border:none; border-radius:.875rem; cursor:pointer;
-            box-shadow:0 6px 24px rgba(192,38,211,.35);
+            box-shadow:0 10px 24px rgba(217,70,239,.22);
             transition:opacity .15s, transform .15s, box-shadow .15s;
         }
-        .btn-submit:hover { opacity:.92; transform:translateY(-2px); box-shadow:0 8px 32px rgba(192,38,211,.5); }
+        .btn-submit:hover { opacity:.92; transform:translateY(-2px); box-shadow:0 12px 34px rgba(217,70,239,.28); }
         .btn-submit:active { transform:translateY(0); }
 
-        .card-footer-link { text-align:center; margin-top:1.25rem; font-size:.85rem; color:rgba(196,181,253,.6); }
-        .card-footer-link a { color:#e879f9; font-weight:700; text-decoration:none; transition:color .15s; }
-        .card-footer-link a:hover { color:#f0abfc; text-decoration:underline; }
+        .card-footer-link { text-align:center; margin-top:1.25rem; font-size:.85rem; color:#6b4d87; }
+        .card-footer-link a { color:#c026d3; font-weight:700; text-decoration:none; transition:color .15s; }
+        .card-footer-link a:hover { color:#8b5cf6; text-decoration:underline; }
 
         .alert-box {
-            background:rgba(244,114,182,.1); border:1px solid rgba(244,114,182,.25);
+            background:rgba(244,114,182,.08); border:1px solid rgba(244,114,182,.18);
             border-radius:.75rem; padding:.6rem 1rem; margin-bottom:1.1rem;
         }
-        .alert-box li { font-size:.8rem; color:#f9a8d4; margin-left:1rem; list-style:disc; }
+        .alert-box li { font-size:.8rem; color:#be185d; margin-left:1rem; list-style:disc; }
 
         .row-2 { display:grid; grid-template-columns:1fr 1fr; gap:.75rem; }
     </style>
@@ -103,13 +117,14 @@
 
     <div class="glass-card">
         <div class="logo-row">
-            <div class="logo-icon"><i class="fa-solid fa-graduation-cap"></i></div>
-            <div class="logo-text">Aulasync <span>Academia Inteligente</span></div>
+            <div class="logo-icon"><img src="/images/emoji leyendo sin fondo.png" alt="" aria-hidden="true"></div>
+            <div class="logo-text">AulaSync <span>Academia Inteligente</span></div>
         </div>
 
         <h1 class="card-title">Crear tu cuenta</h1>
         <p class="card-sub">Únete a la nueva era de la planificación docente.</p>
 
+        @php($errors = $errors ?? new \Illuminate\Support\ViewErrorBag())
         @if($errors->any())
         <div class="alert-box">
             <ul>@foreach($errors->all() as $e)<li>{{ $e }}</li>@endforeach</ul>
