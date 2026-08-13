@@ -1681,6 +1681,227 @@
         .lesson-section-content ol { padding-left: 1.2rem; margin: 0 0 .45em; }
         .lesson-section-content strong { color: var(--text-primary); font-weight: 700; }
 
+        /* ── Modal Phase Cards (Inicio / Desarrollo / Cierre) ─────── */
+        .phase-cards-stack {
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            margin-bottom: 4px;
+        }
+
+        .phase-card {
+            border-radius: 18px;
+            overflow: hidden;
+            border: 1px solid transparent;
+            transition: box-shadow 0.25s ease, border-color 0.25s ease, transform 0.2s ease;
+        }
+
+        .phase-card:hover:not(.phase-card--editing) {
+            transform: translateY(-1px);
+        }
+
+        .phase-card--inicio {
+            background: linear-gradient(145deg, rgba(124, 58, 237, 0.11) 0%, rgba(124, 58, 237, 0.03) 55%, rgba(255, 255, 255, 0.02) 100%);
+            border-color: rgba(124, 58, 237, 0.28);
+            box-shadow: 0 8px 28px rgba(124, 58, 237, 0.08);
+        }
+
+        .phase-card--desarrollo {
+            background: linear-gradient(145deg, rgba(6, 182, 212, 0.11) 0%, rgba(34, 197, 94, 0.06) 55%, rgba(255, 255, 255, 0.02) 100%);
+            border-color: rgba(6, 182, 212, 0.28);
+            box-shadow: 0 8px 28px rgba(6, 182, 212, 0.07);
+        }
+
+        .phase-card--cierre {
+            background: linear-gradient(145deg, rgba(59, 130, 246, 0.1) 0%, rgba(236, 72, 153, 0.06) 55%, rgba(255, 255, 255, 0.02) 100%);
+            border-color: rgba(59, 130, 246, 0.26);
+            box-shadow: 0 8px 28px rgba(59, 130, 246, 0.07);
+        }
+
+        html.dark .phase-card--inicio {
+            background: linear-gradient(145deg, rgba(108, 74, 224, 0.18) 0%, rgba(108, 74, 224, 0.05) 60%, rgba(12, 18, 37, 0.4) 100%);
+        }
+
+        html.dark .phase-card--desarrollo {
+            background: linear-gradient(145deg, rgba(59, 201, 219, 0.16) 0%, rgba(34, 197, 94, 0.08) 60%, rgba(12, 18, 37, 0.4) 100%);
+        }
+
+        html.dark .phase-card--cierre {
+            background: linear-gradient(145deg, rgba(96, 165, 250, 0.14) 0%, rgba(236, 72, 153, 0.08) 60%, rgba(12, 18, 37, 0.4) 100%);
+        }
+
+        .phase-card--editing {
+            box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.25), 0 12px 32px rgba(0, 0, 0, 0.12);
+        }
+
+        .phase-card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 12px 16px 10px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+        }
+
+        :root:not(.dark) .phase-card-header {
+            border-bottom-color: rgba(15, 23, 42, 0.06);
+        }
+
+        .phase-card-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 11px;
+            font-weight: 800;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+        }
+
+        .phase-card--inicio .phase-card-badge { color: #7C3AED; }
+        .phase-card--desarrollo .phase-card-badge { color: #0891B2; }
+        .phase-card--cierre .phase-card-badge { color: #3B82F6; }
+
+        html.dark .phase-card--inicio .phase-card-badge { color: #A78BFA; }
+        html.dark .phase-card--desarrollo .phase-card-badge { color: #22D3EE; }
+        html.dark .phase-card--cierre .phase-card-badge { color: #60A5FA; }
+
+        .phase-card-badge i {
+            font-size: 10px;
+            opacity: 0.85;
+        }
+
+        .phase-card-actions {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-shrink: 0;
+        }
+
+        .phase-edit-btn {
+            width: 32px;
+            height: 32px;
+            border-radius: 10px;
+            border: 1px solid var(--nova-glass-border);
+            background: rgba(255, 255, 255, 0.04);
+            color: var(--text-secondary);
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            transition: all 0.15s ease;
+        }
+
+        .phase-edit-btn:hover {
+            color: var(--nova-violet);
+            border-color: rgba(124, 58, 237, 0.35);
+            background: rgba(124, 58, 237, 0.08);
+        }
+
+        .phase-save-btn,
+        .phase-cancel-btn {
+            padding: 6px 12px;
+            border-radius: 10px;
+            font-size: 11px;
+            font-weight: 600;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            transition: all 0.15s ease;
+            border: 1px solid transparent;
+        }
+
+        .phase-save-btn {
+            background: linear-gradient(135deg, rgba(124, 58, 237, 0.9), rgba(6, 182, 212, 0.85));
+            color: #fff;
+            border-color: rgba(255, 255, 255, 0.1);
+        }
+
+        .phase-save-btn:hover:not(:disabled) {
+            filter: brightness(1.08);
+            transform: translateY(-1px);
+        }
+
+        .phase-save-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .phase-cancel-btn {
+            background: transparent;
+            color: var(--text-secondary);
+            border-color: var(--nova-glass-border);
+        }
+
+        .phase-cancel-btn:hover {
+            background: rgba(239, 68, 68, 0.06);
+            color: #ef4444;
+            border-color: rgba(239, 68, 68, 0.25);
+        }
+
+        .phase-card-body {
+            padding: 14px 16px 16px;
+            font-size: 13.5px;
+            line-height: 1.65;
+            color: var(--text-secondary);
+        }
+
+        .phase-card-body :where(p, ul, ol) {
+            margin: 0 0 0.55em;
+        }
+
+        .phase-card-body ul,
+        .phase-card-body ol {
+            padding-left: 1.25rem;
+        }
+
+        .phase-card-body strong {
+            color: var(--text-primary);
+            font-weight: 700;
+        }
+
+        .phase-card-body p:last-child,
+        .phase-card-body ul:last-child,
+        .phase-card-body ol:last-child {
+            margin-bottom: 0;
+        }
+
+        .phase-empty {
+            margin: 0;
+            font-style: italic;
+            color: var(--text-tertiary);
+            font-size: 13px;
+        }
+
+        .phase-card-textarea {
+            width: 100%;
+            min-height: 120px;
+            resize: vertical;
+            border: none;
+            border-top: 1px solid rgba(255, 255, 255, 0.06);
+            background: rgba(0, 0, 0, 0.12);
+            color: var(--text-primary);
+            padding: 14px 16px 16px;
+            font-size: 13.5px;
+            line-height: 1.6;
+            font-family: inherit;
+            outline: none;
+        }
+
+        :root:not(.dark) .phase-card-textarea {
+            background: rgba(255, 255, 255, 0.65);
+            border-top-color: rgba(15, 23, 42, 0.06);
+        }
+
+        .phase-card-textarea:focus {
+            background: rgba(124, 58, 237, 0.04);
+        }
+
+        .phase-card--inicio .phase-card-textarea:focus { box-shadow: inset 0 0 0 1px rgba(124, 58, 237, 0.25); }
+        .phase-card--desarrollo .phase-card-textarea:focus { box-shadow: inset 0 0 0 1px rgba(6, 182, 212, 0.25); }
+        .phase-card--cierre .phase-card-textarea:focus { box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.25); }
+
         .activity-description.markdown-body p:last-child {
             margin-bottom: 0;
         }
@@ -3118,7 +3339,7 @@
 
     {{-- Activity Modal --}}
 <div x-show="activityModal" x-cloak class="modal-overlay" @click.self="activityModal = null" @keydown.escape.window="activityModal = null">
-    <div class="modal-nova" style="max-width: 640px;">
+    <div class="modal-nova" style="max-width: 680px;">
         <div class="modal-header" style="padding: 20px 28px;">
             <div style="display: flex; align-items: center; gap: 12px; min-width: 0;">
                 <span class="activity-type-badge" style="flex-shrink: 0; font-size: 10px; padding: 3px 10px;"
@@ -3141,29 +3362,118 @@
                 <span class="modal-meta-item" x-show="activityModal?.weight_percentage > 0"><i class="fa-solid fa-weight-scale" style="color: var(--nova-fuchsia);"></i><span x-text="activityModal?.weight_percentage"></span>%</span>
             </div>
 
-            {{-- Edición manual Inicio / Desarrollo / Cierre (sin IA) --}}
-            <div x-show="activityModal?.type === 'clase'" style="display: flex; flex-direction: column; gap: 14px; margin-bottom: 8px;">
-                <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">
-                    <span class="modal-section-label">FASES DE LA CLASE</span>
-                    <span x-show="phaseEdit.dirty" style="font-size: 11px; color: #F59E0B;">Cambios sin guardar</span>
+            {{-- Fases de la clase: tarjetas PRO + edición individual --}}
+            <div x-show="activityModal?.type === 'clase'" class="phase-cards-stack">
+                <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 2px;">
+                    <span class="modal-section-label">Planificación de la clase</span>
                 </div>
-                <div>
-                    <label style="display:block; font-size:11px; font-weight:700; letter-spacing:.08em; color: var(--nova-violet); margin-bottom:6px;">INICIO</label>
-                    <textarea x-model="phaseEdit.inicio" @input="phaseEdit.dirty = true"
-                              rows="3" placeholder="Motivación, activación de saberes previos..."
-                              style="width:100%; resize:vertical; border-radius:12px; border:1px solid var(--nova-glass-border); background: var(--bg-tertiary, rgba(15,23,42,.45)); color: var(--text-primary); padding:12px 14px; font-size:13px; line-height:1.55;"></textarea>
+
+                {{-- INICIO --}}
+                <div class="phase-card phase-card--inicio"
+                     :class="{ 'phase-card--editing': phaseEdit.editing === 'inicio' }">
+                    <div class="phase-card-header">
+                        <div class="phase-card-badge">
+                            <i class="fa-solid fa-play"></i>
+                            <span>Inicio</span>
+                        </div>
+                        <div class="phase-card-actions">
+                            <button x-show="phaseEdit.editing !== 'inicio'"
+                                    @click="startPhaseEdit('inicio')"
+                                    class="phase-edit-btn" title="Editar Inicio" type="button">
+                                <i class="fa-solid fa-pencil"></i>
+                            </button>
+                            <template x-if="phaseEdit.editing === 'inicio'">
+                                <div class="phase-card-actions">
+                                    <button @click="savePhaseSection('inicio')" class="phase-save-btn"
+                                            :disabled="phaseEdit.saving === 'inicio'" type="button">
+                                        <i class="fa-solid" :class="phaseEdit.saving === 'inicio' ? 'fa-spinner fa-spin' : 'fa-floppy-disk'"></i>
+                                        <span x-text="phaseEdit.saving === 'inicio' ? 'Guardando…' : 'Guardar'"></span>
+                                    </button>
+                                    <button @click="cancelPhaseEdit('inicio')" class="phase-cancel-btn" type="button">Cancelar</button>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+                    <div x-show="phaseEdit.editing !== 'inicio'"
+                         class="phase-card-body markdown-body"
+                         x-html="renderPhaseMarkdown(phaseEdit.inicio)"></div>
+                    <textarea x-show="phaseEdit.editing === 'inicio'"
+                              x-model="phaseEdit.draft.inicio"
+                              class="phase-card-textarea"
+                              rows="4"
+                              placeholder="Motivación, activación de saberes previos…"></textarea>
                 </div>
-                <div>
-                    <label style="display:block; font-size:11px; font-weight:700; letter-spacing:.08em; color: var(--nova-cyan); margin-bottom:6px;">DESARROLLO</label>
-                    <textarea x-model="phaseEdit.desarrollo" @input="phaseEdit.dirty = true"
-                              rows="4" placeholder="Actividades principales, práctica guiada..."
-                              style="width:100%; resize:vertical; border-radius:12px; border:1px solid var(--nova-glass-border); background: var(--bg-tertiary, rgba(15,23,42,.45)); color: var(--text-primary); padding:12px 14px; font-size:13px; line-height:1.55;"></textarea>
+
+                {{-- DESARROLLO --}}
+                <div class="phase-card phase-card--desarrollo"
+                     :class="{ 'phase-card--editing': phaseEdit.editing === 'desarrollo' }">
+                    <div class="phase-card-header">
+                        <div class="phase-card-badge">
+                            <i class="fa-solid fa-layer-group"></i>
+                            <span>Desarrollo</span>
+                        </div>
+                        <div class="phase-card-actions">
+                            <button x-show="phaseEdit.editing !== 'desarrollo'"
+                                    @click="startPhaseEdit('desarrollo')"
+                                    class="phase-edit-btn" title="Editar Desarrollo" type="button">
+                                <i class="fa-solid fa-pencil"></i>
+                            </button>
+                            <template x-if="phaseEdit.editing === 'desarrollo'">
+                                <div class="phase-card-actions">
+                                    <button @click="savePhaseSection('desarrollo')" class="phase-save-btn"
+                                            :disabled="phaseEdit.saving === 'desarrollo'" type="button">
+                                        <i class="fa-solid" :class="phaseEdit.saving === 'desarrollo' ? 'fa-spinner fa-spin' : 'fa-floppy-disk'"></i>
+                                        <span x-text="phaseEdit.saving === 'desarrollo' ? 'Guardando…' : 'Guardar'"></span>
+                                    </button>
+                                    <button @click="cancelPhaseEdit('desarrollo')" class="phase-cancel-btn" type="button">Cancelar</button>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+                    <div x-show="phaseEdit.editing !== 'desarrollo'"
+                         class="phase-card-body markdown-body"
+                         x-html="renderPhaseMarkdown(phaseEdit.desarrollo)"></div>
+                    <textarea x-show="phaseEdit.editing === 'desarrollo'"
+                              x-model="phaseEdit.draft.desarrollo"
+                              class="phase-card-textarea"
+                              rows="6"
+                              placeholder="Actividades principales, práctica guiada…"></textarea>
                 </div>
-                <div>
-                    <label style="display:block; font-size:11px; font-weight:700; letter-spacing:.08em; color: #22C55E; margin-bottom:6px;">CIERRE</label>
-                    <textarea x-model="phaseEdit.cierre" @input="phaseEdit.dirty = true"
-                              rows="3" placeholder="Síntesis, evaluación formativa, tarea..."
-                              style="width:100%; resize:vertical; border-radius:12px; border:1px solid var(--nova-glass-border); background: var(--bg-tertiary, rgba(15,23,42,.45)); color: var(--text-primary); padding:12px 14px; font-size:13px; line-height:1.55;"></textarea>
+
+                {{-- CIERRE --}}
+                <div class="phase-card phase-card--cierre"
+                     :class="{ 'phase-card--editing': phaseEdit.editing === 'cierre' }">
+                    <div class="phase-card-header">
+                        <div class="phase-card-badge">
+                            <i class="fa-solid fa-flag-checkered"></i>
+                            <span>Cierre</span>
+                        </div>
+                        <div class="phase-card-actions">
+                            <button x-show="phaseEdit.editing !== 'cierre'"
+                                    @click="startPhaseEdit('cierre')"
+                                    class="phase-edit-btn" title="Editar Cierre" type="button">
+                                <i class="fa-solid fa-pencil"></i>
+                            </button>
+                            <template x-if="phaseEdit.editing === 'cierre'">
+                                <div class="phase-card-actions">
+                                    <button @click="savePhaseSection('cierre')" class="phase-save-btn"
+                                            :disabled="phaseEdit.saving === 'cierre'" type="button">
+                                        <i class="fa-solid" :class="phaseEdit.saving === 'cierre' ? 'fa-spinner fa-spin' : 'fa-floppy-disk'"></i>
+                                        <span x-text="phaseEdit.saving === 'cierre' ? 'Guardando…' : 'Guardar'"></span>
+                                    </button>
+                                    <button @click="cancelPhaseEdit('cierre')" class="phase-cancel-btn" type="button">Cancelar</button>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+                    <div x-show="phaseEdit.editing !== 'cierre'"
+                         class="phase-card-body markdown-body"
+                         x-html="renderPhaseMarkdown(phaseEdit.cierre)"></div>
+                    <textarea x-show="phaseEdit.editing === 'cierre'"
+                              x-model="phaseEdit.draft.cierre"
+                              class="phase-card-textarea"
+                              rows="4"
+                              placeholder="Síntesis, evaluación formativa, tarea…"></textarea>
                 </div>
             </div>
 
@@ -3259,12 +3569,6 @@
         </div>
 
         <div class="modal-footer" style="padding: 16px 28px; display: flex; gap: 8px; justify-content: flex-end; align-items: center; border-top: 1px solid var(--nova-glass-border); flex-wrap: wrap;">
-            <template x-if="activityModal?.type === 'clase'">
-                <button @click="saveActivityPhases()" class="modal-footer-btn primary" :disabled="phaseEdit.saving">
-                    <i class="fa-solid" :class="phaseEdit.saving ? 'fa-spinner fa-spin' : 'fa-floppy-disk'"></i>
-                    <span x-text="phaseEdit.saving ? 'Guardando…' : 'Guardar Cambios'"></span>
-                </button>
-            </template>
             <template x-if="activityModal?.type !== 'clase'">
                 <button @click="openGradesSlideover(activityModal)" class="modal-footer-btn primary">
                     <i class="fa-solid fa-table-cells"></i>
@@ -3683,8 +3987,9 @@ function teacherHub() {
             inicio: '',
             desarrollo: '',
             cierre: '',
-            saving: false,
-            dirty: false,
+            draft: { inicio: '', desarrollo: '', cierre: '' },
+            editing: null,
+            saving: null,
         },
         studentSlideover: {
             open: false,
@@ -4674,58 +4979,104 @@ function teacherHub() {
                 inicio: phases.inicio,
                 desarrollo: phases.desarrollo,
                 cierre: phases.cierre,
-                saving: false,
-                dirty: false,
+                draft: { inicio: '', desarrollo: '', cierre: '' },
+                editing: null,
+                saving: null,
             };
+        },
+
+        renderPhaseMarkdown(text) {
+            if (typeof window.renderPhaseMarkdown === 'function') {
+                return window.renderPhaseMarkdown(text);
+            }
+            const trimmed = String(text ?? '').trim();
+            return trimmed ? `<p>${trimmed.replace(/</g, '&lt;')}</p>` : '<p class="phase-empty">Sin contenido. Haz clic en el lápiz para añadir.</p>';
+        },
+
+        startPhaseEdit(key) {
+            if (this.phaseEdit.editing && this.phaseEdit.editing !== key) {
+                this.cancelPhaseEdit(this.phaseEdit.editing);
+            }
+            this.phaseEdit.draft[key] = this.phaseEdit[key] ?? '';
+            this.phaseEdit.editing = key;
+        },
+
+        cancelPhaseEdit(key) {
+            this.phaseEdit.draft[key] = this.phaseEdit[key] ?? '';
+            if (this.phaseEdit.editing === key) {
+                this.phaseEdit.editing = null;
+            }
+        },
+
+        async savePhaseSection(key) {
+            if (!this.activityModal?.id || this.phaseEdit.saving) return;
+            this.phaseEdit[key] = this.phaseEdit.draft[key] ?? '';
+            this.phaseEdit.saving = key;
+            try {
+                await this.persistActivityPhases();
+                this.phaseEdit.editing = null;
+                const labels = { inicio: 'Inicio', desarrollo: 'Desarrollo', cierre: 'Cierre' };
+                window.dispatchEvent(new CustomEvent('ai-toast', {
+                    detail: { message: `${labels[key] || 'Fase'} guardada correctamente`, type: 'success', icon: 'fa-check' },
+                }));
+            } catch (e) {
+                window.dispatchEvent(new CustomEvent('ai-toast', {
+                    detail: { message: e.message || 'Error al guardar', type: 'error' },
+                }));
+            } finally {
+                this.phaseEdit.saving = null;
+            }
+        },
+
+        async persistActivityPhases() {
+            if (!this.activityModal?.id) return;
+            const description = this.buildDescriptionFromPhases();
+            const res = await fetch(`/teacher/activities/${this.activityModal.id}/phases`, {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]')?.content || '',
+                },
+                body: JSON.stringify({
+                    inicio: this.phaseEdit.inicio,
+                    desarrollo: this.phaseEdit.desarrollo,
+                    cierre: this.phaseEdit.cierre,
+                    description,
+                }),
+            });
+            const json = await res.json();
+            if (!res.ok || !json.success) {
+                throw new Error(json.message || 'No se pudieron guardar los cambios');
+            }
+            this.activityModal.description = json.activity?.description ?? description;
+
+            const id = Number(this.activityModal.id);
+            if (this.courseData?.activities) {
+                const idx = this.courseData.activities.findIndex(a => Number(a.id) === id);
+                if (idx >= 0) {
+                    this.courseData.activities[idx] = {
+                        ...this.courseData.activities[idx],
+                        description: this.activityModal.description,
+                    };
+                }
+            }
+            if (this.calendarData?.activities_by_day) {
+                for (const dayKey in this.calendarData.activities_by_day) {
+                    const list = this.calendarData.activities_by_day[dayKey] || [];
+                    const idx = list.findIndex(a => Number(a.id) === id);
+                    if (idx >= 0) {
+                        list[idx] = { ...list[idx], description: this.activityModal.description };
+                    }
+                }
+            }
         },
 
         async saveActivityPhases() {
             if (!this.activityModal?.id || this.phaseEdit.saving) return;
-            this.phaseEdit.saving = true;
-            const description = this.buildDescriptionFromPhases();
+            this.phaseEdit.saving = 'all';
             try {
-                const res = await fetch(`/teacher/activities/${this.activityModal.id}/phases`, {
-                    method: 'PATCH',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Accept': 'application/json',
-                        'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]')?.content || '',
-                    },
-                    body: JSON.stringify({
-                        inicio: this.phaseEdit.inicio,
-                        desarrollo: this.phaseEdit.desarrollo,
-                        cierre: this.phaseEdit.cierre,
-                        description,
-                    }),
-                });
-                const json = await res.json();
-                if (!res.ok || !json.success) {
-                    throw new Error(json.message || 'No se pudieron guardar los cambios');
-                }
-                this.activityModal.description = json.activity?.description ?? description;
-                this.phaseEdit.dirty = false;
-
-                // Sync in local lists
-                const id = Number(this.activityModal.id);
-                if (this.courseData?.activities) {
-                    const idx = this.courseData.activities.findIndex(a => Number(a.id) === id);
-                    if (idx >= 0) {
-                        this.courseData.activities[idx] = {
-                            ...this.courseData.activities[idx],
-                            description: this.activityModal.description,
-                        };
-                    }
-                }
-                if (this.calendarData?.activities_by_day) {
-                    for (const dayKey in this.calendarData.activities_by_day) {
-                        const list = this.calendarData.activities_by_day[dayKey] || [];
-                        const idx = list.findIndex(a => Number(a.id) === id);
-                        if (idx >= 0) {
-                            list[idx] = { ...list[idx], description: this.activityModal.description };
-                        }
-                    }
-                }
-
+                await this.persistActivityPhases();
                 window.dispatchEvent(new CustomEvent('ai-toast', {
                     detail: { message: 'Fases guardadas correctamente', type: 'success', icon: 'fa-check' },
                 }));
@@ -4734,7 +5085,7 @@ function teacherHub() {
                     detail: { message: e.message || 'Error al guardar', type: 'error' },
                 }));
             } finally {
-                this.phaseEdit.saving = false;
+                this.phaseEdit.saving = null;
             }
         },
 

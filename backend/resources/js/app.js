@@ -106,6 +106,16 @@ window.renderMarkdown = function renderMarkdown(md) {
     return `<div class="lesson-sections">${sectionsHtml}</div>`;
 };
 
+/** Renders markdown for a single phase body (no section-header splitting). */
+window.renderPhaseMarkdown = function renderPhaseMarkdown(text) {
+    const trimmed = String(text ?? '').trim();
+    if (!trimmed) {
+        return '<p class="phase-empty">Sin contenido. Haz clic en el lápiz para añadir.</p>';
+    }
+    const raw = marked.parse(trimmed);
+    return DOMPurify.sanitize(raw, { USE_PROFILES: { html: true } });
+};
+
 window.Alpine = Alpine;
 
 Alpine.start();
