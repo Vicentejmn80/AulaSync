@@ -103,9 +103,10 @@ class ActivityFeedbackController extends Controller
                 'colegio_id' => $colegioId,
                 'title' => 'Observación del director',
                 'message' => 'Dirección dejó una nota en «' . ($activity->title ?? 'una clase') . '».',
-                'link' => $activity->plan_block_id
-                    ? route('teacher.hub', ['plan_block' => $activity->plan_block_id])
-                    : route('teacher.hub'),
+                'link' => route('teacher.hub', array_filter([
+                    'open_activity' => $activity->id,
+                    'plan_block' => $activity->plan_block_id,
+                ])),
             ]);
         }
 
@@ -142,9 +143,10 @@ class ActivityFeedbackController extends Controller
                 'colegio_id' => $colegioId,
                 'title' => 'Actividad editada por Dirección',
                 'message' => 'Dirección actualizó la actividad «' . ($activity->title ?? '') . '».',
-                'link' => $activity->plan_block_id
-                    ? route('teacher.hub', ['plan_block' => $activity->plan_block_id])
-                    : route('teacher.hub'),
+                'link' => route('teacher.hub', array_filter([
+                    'open_activity' => $activity->id,
+                    'plan_block' => $activity->plan_block_id,
+                ])),
             ]);
         }
 

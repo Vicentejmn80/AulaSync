@@ -130,6 +130,7 @@ Route::middleware(['auth'])->group(function () {
             Route::get('/teacher/api/courses/{course}', [HubController::class, 'apiCourse'])->name('teacher.api.course');
             Route::get('/teacher/api/courses/{course}/students/{student}/grades', [HubController::class, 'apiCourseStudentGrades'])->name('teacher.api.course.student.grades');
             Route::get('/teacher/api/calendar', [HubController::class, 'apiCalendar'])->name('teacher.api.calendar');
+            Route::get('/teacher/api/activities/{activity}', [HubController::class, 'apiActivity'])->name('teacher.api.activity');
 
             // Asistente de IA
             Route::post('/ai/command', [AICommandHandlerController::class, 'handle'])->name('ai.command');
@@ -152,6 +153,7 @@ Route::middleware(['auth'])->group(function () {
                 Route::post('/{activity}/nee/generate', [ActivitiesController::class, 'generateNee'])->name('nee_generate');
                 Route::post('/{activity}/nee/save', [ActivitiesController::class, 'saveNee'])->name('nee_save');
                 Route::post('/{activity}/ai-edit', [ActivitiesController::class, 'editWithAI'])->name('ai_edit');
+                Route::patch('/{activity}/phases', [ActivitiesController::class, 'updatePhases'])->name('phases');
                 Route::delete('/{activity}', [ActivitiesController::class, 'destroy'])->name('destroy');
             });
 

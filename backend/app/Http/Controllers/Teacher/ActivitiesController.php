@@ -395,4 +395,45 @@ class ActivitiesController extends Controller
             return response()->json(['success' => false, 'error' => 'Error al conectar con IA.'], 422);
         }
     }
+
+    /**
+     * Actualiza Inicio / Desarrollo / Cierre sin llamar a OpenAI.
+     */
+    public function updatePhases(Request $request, Activity $activity): JsonResponse
+    {
+        abort_unless($activity->teacher_id === auth()->id(), 403);
+
+        $data = $request->validate([
+            'inicio' => ['nullable', 'string', 'max:10000'],
+            'desarrollo' => ['nullable', 'string', 'max:10000'],
+            'cierre' => ['nullable', 'string', 'max:10000'],
+            'description' => ['nullable', 'string', 'max:30000'],
+        ]);
+
+        $description = trim((string) ($data['description'] ?? ''));
+        if ($description === '') {
+            $parts = [];
+            if (trim((string) ($data['inicio'] ?? '')) !== '') {
+                $parts[] = "**INICIO**\n" . trim($data['inicio']);
+            }
+            if (trim((string) ($data['desarrollo'] ?? '')) !== '') {
+                $parts[] = "**DESARROLLO**\n" . trim($data['desarrollo']);
+            }
+            if (trim((string) ($data['cierre'] ?? '')) !== '') {
+                $parts[] = "**CIERRE**\n" . trim($data['cierre']);
+            }
+            $description = implode("\n\n", $parts);
+        }
+
+        $activity->update(['description' => $description]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Fases actualizadas.',
+            'activity' => [
+                'id' => $activity->id,
+                'description' => $activity->description,
+            ],
+        ]);
+    }
 }

@@ -76,8 +76,8 @@
             <div class="ucp-dropdown-empty px-4 py-6 text-center text-sm">Sin notificaciones</div>
         </template>
         <template x-for="n in notifications" :key="n.id">
-            <a :href="notificationLink(n)"
-               @click="markAsRead(n.id); showNotifications = false"
+            <a href="#"
+               @click.prevent="handleNotificationClick(n)"
                class="ucp-notification"
                :class="{ unread: !n.read_at }">
                 <div class="flex items-start gap-2">
@@ -219,6 +219,31 @@ if (!window.userControlPanel) {
             },
             notificationLink(notification) {
                 return notification.link || '/dashboard';
+            },
+            async handleNotificationClick(notification) {
+                await this.markAsRead(notification.id);
+                this.showNotifications = false;
+
+                const href = this.notificationLink(notification);
+                try {
+                    const url = new URL(href, window.location.origin);
+                    const activityId = Number(
+                        url.searchParams.get('open_activity')
+                        || url.searchParams.get('activity')
+                        || 0
+                    );
+                    if (activityId > 0) {
+                        window.dispatchEvent(new CustomEvent('open-activity-modal', {
+                            detail: { id: activityId },
+                        }));
+                        if (!window.location.pathname.includes('/teacher/hub')) {
+                            window.location.href = url.pathname + url.search;
+                        }
+                        return;
+                    }
+                } catch (e) {}
+
+                window.location.href = href;
             },
         };
     };

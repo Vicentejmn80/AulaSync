@@ -2534,7 +2534,21 @@
         </button>
     </div>
     <div class="user-panel" style="position: relative; z-index: 5;">
-        @include('components.user-control-panel')
+        {{-- Solo Salir: campana/tema pequeños se eliminaron; el tema grande está arriba --}}
+        <div class="relative flex items-center justify-end">
+            <form method="POST" action="{{ route('logout') }}">
+                @csrf
+                <button
+                    type="submit"
+                    class="ucp-btn inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition"
+                    title="Cerrar sesión"
+                    style="border:1px solid rgba(255,255,255,.2); background: rgba(255,255,255,.1); color: #f0abfc;"
+                >
+                    <i class="fa-solid fa-right-from-bracket text-[10px]"></i>
+                    Salir
+                </button>
+            </form>
+        </div>
     </div>
 </div>
 
@@ -2664,8 +2678,8 @@
                                         </div>
                                     </template>
                                     <template x-for="n in notifications" :key="n.id">
-                                        <a :href="notificationLink(n)"
-                                           @click="markAsRead(n.id); showNotifications = false"
+                                        <a href="#"
+                                           @click.prevent="handleNotificationClick(n)"
                                            class="notifications-item"
                                            :class="{ 'unread': !n.read_at }">
                                             <div class="notifications-item-content">
@@ -3075,7 +3089,7 @@
                                             <span class="day-number" x-text="cell"></span>
                                             <div class="day-content">
                                                 <template x-for="act in activitiesForDay(cell).slice(0,2)" :key="act.id">
-                                                    <button @click.stop="setActivityContext(act); activityModal = act" 
+                                                    <button @click.stop="setActivityContext(act); openActivityModal(act)" 
                                                              class="cal-event"
                                                              :class="[
                                                                  act.type === 'clase' ? 'clase' : (act.is_homework ? 'homework' : 'actividad'),
@@ -3104,7 +3118,7 @@
 
     {{-- Activity Modal --}}
 <div x-show="activityModal" x-cloak class="modal-overlay" @click.self="activityModal = null" @keydown.escape.window="activityModal = null">
-    <div class="modal-nova" style="max-width: 560px;">
+    <div class="modal-nova" style="max-width: 640px;">
         <div class="modal-header" style="padding: 20px 28px;">
             <div style="display: flex; align-items: center; gap: 12px; min-width: 0;">
                 <span class="activity-type-badge" style="flex-shrink: 0; font-size: 10px; padding: 3px 10px;"
@@ -3127,16 +3141,44 @@
                 <span class="modal-meta-item" x-show="activityModal?.weight_percentage > 0"><i class="fa-solid fa-weight-scale" style="color: var(--nova-fuchsia);"></i><span x-text="activityModal?.weight_percentage"></span>%</span>
             </div>
 
-            <div style="margin-bottom: 8px;">
-                <span class="modal-section-label">DESCRIPCIÓN</span>
+            {{-- Edición manual Inicio / Desarrollo / Cierre (sin IA) --}}
+            <div x-show="activityModal?.type === 'clase'" style="display: flex; flex-direction: column; gap: 14px; margin-bottom: 8px;">
+                <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">
+                    <span class="modal-section-label">FASES DE LA CLASE</span>
+                    <span x-show="phaseEdit.dirty" style="font-size: 11px; color: #F59E0B;">Cambios sin guardar</span>
+                </div>
+                <div>
+                    <label style="display:block; font-size:11px; font-weight:700; letter-spacing:.08em; color: var(--nova-violet); margin-bottom:6px;">INICIO</label>
+                    <textarea x-model="phaseEdit.inicio" @input="phaseEdit.dirty = true"
+                              rows="3" placeholder="Motivación, activación de saberes previos..."
+                              style="width:100%; resize:vertical; border-radius:12px; border:1px solid var(--nova-glass-border); background: var(--bg-tertiary, rgba(15,23,42,.45)); color: var(--text-primary); padding:12px 14px; font-size:13px; line-height:1.55;"></textarea>
+                </div>
+                <div>
+                    <label style="display:block; font-size:11px; font-weight:700; letter-spacing:.08em; color: var(--nova-cyan); margin-bottom:6px;">DESARROLLO</label>
+                    <textarea x-model="phaseEdit.desarrollo" @input="phaseEdit.dirty = true"
+                              rows="4" placeholder="Actividades principales, práctica guiada..."
+                              style="width:100%; resize:vertical; border-radius:12px; border:1px solid var(--nova-glass-border); background: var(--bg-tertiary, rgba(15,23,42,.45)); color: var(--text-primary); padding:12px 14px; font-size:13px; line-height:1.55;"></textarea>
+                </div>
+                <div>
+                    <label style="display:block; font-size:11px; font-weight:700; letter-spacing:.08em; color: #22C55E; margin-bottom:6px;">CIERRE</label>
+                    <textarea x-model="phaseEdit.cierre" @input="phaseEdit.dirty = true"
+                              rows="3" placeholder="Síntesis, evaluación formativa, tarea..."
+                              style="width:100%; resize:vertical; border-radius:12px; border:1px solid var(--nova-glass-border); background: var(--bg-tertiary, rgba(15,23,42,.45)); color: var(--text-primary); padding:12px 14px; font-size:13px; line-height:1.55;"></textarea>
+                </div>
             </div>
-            <div class="markdown-body" style="color: #cbd5e1; font-size: 13.5px; line-height: 1.7; margin-bottom: 0;">
-                <template x-if="activityModal?.description">
-                    <div x-html="renderMarkdown(activityModal.description)"></div>
-                </template>
-                <template x-if="!activityModal?.description">
-                    <p style="color: #94a3b8; font-style: italic; margin: 0;">Sin descripción.</p>
-                </template>
+
+            <div x-show="activityModal?.type !== 'clase'">
+                <div style="margin-bottom: 8px;">
+                    <span class="modal-section-label">DESCRIPCIÓN</span>
+                </div>
+                <div class="markdown-body" style="color: #cbd5e1; font-size: 13.5px; line-height: 1.7; margin-bottom: 0;">
+                    <template x-if="activityModal?.description">
+                        <div x-html="renderMarkdown(activityModal.description)"></div>
+                    </template>
+                    <template x-if="!activityModal?.description">
+                        <p style="color: #94a3b8; font-style: italic; margin: 0;">Sin descripción.</p>
+                    </template>
+                </div>
             </div>
 
             <div x-show="(activityModal?.tareas ?? []).length > 0" style="margin-top: 22px;">
@@ -3216,7 +3258,13 @@
             </div>
         </div>
 
-        <div class="modal-footer" style="padding: 16px 28px; display: flex; gap: 8px; justify-content: flex-end; align-items: center; border-top: 1px solid var(--nova-glass-border);">
+        <div class="modal-footer" style="padding: 16px 28px; display: flex; gap: 8px; justify-content: flex-end; align-items: center; border-top: 1px solid var(--nova-glass-border); flex-wrap: wrap;">
+            <template x-if="activityModal?.type === 'clase'">
+                <button @click="saveActivityPhases()" class="modal-footer-btn primary" :disabled="phaseEdit.saving">
+                    <i class="fa-solid" :class="phaseEdit.saving ? 'fa-spinner fa-spin' : 'fa-floppy-disk'"></i>
+                    <span x-text="phaseEdit.saving ? 'Guardando…' : 'Guardar Cambios'"></span>
+                </button>
+            </template>
             <template x-if="activityModal?.type !== 'clase'">
                 <button @click="openGradesSlideover(activityModal)" class="modal-footer-btn primary">
                     <i class="fa-solid fa-table-cells"></i>
@@ -3546,7 +3594,7 @@
                                 <p style="font-weight: 600; color: var(--text-primary); margin-bottom: 4px;" x-text="act.title"></p>
                                 <p style="font-size: 11px; color: var(--text-tertiary);" x-text="act.course_name"></p>
                             </div>
-                            <button @click="setActivityContext(act); activityModal = act; dayModal = null" style="color: var(--nova-cyan); font-size: 12px;">
+                            <button @click="setActivityContext(act); openActivityModal(act); dayModal = null" style="color: var(--nova-cyan); font-size: 12px;">
                                 Ver
                             </button>
                         </div>
@@ -3631,6 +3679,13 @@ function teacherHub() {
         calendarMonth:   null,
         hiddenWidgets:   [],
         activityModal:   null,
+        phaseEdit: {
+            inicio: '',
+            desarrollo: '',
+            cierre: '',
+            saving: false,
+            dirty: false,
+        },
         studentSlideover: {
             open: false,
             loading: false,
@@ -3753,6 +3808,29 @@ function teacherHub() {
             return '/teacher/hub';
         },
 
+        async handleNotificationClick(n) {
+            await this.markAsRead(n.id);
+            this.showNotifications = false;
+
+            const href = this.notificationLink(n);
+            try {
+                const url = new URL(href, window.location.origin);
+                const activityId = Number(
+                    url.searchParams.get('open_activity')
+                    || url.searchParams.get('activity')
+                    || 0
+                );
+                if (activityId > 0) {
+                    await this.openActivityModalFromExternal({ id: activityId });
+                    return;
+                }
+            } catch (e) {}
+
+            if (href && href !== window.location.href) {
+                window.location.href = href;
+            }
+        },
+
         closeSidebarMobile() {
             if (window.matchMedia('(max-width: 767px)').matches) {
                 this.sidebarOpen = false;
@@ -3770,11 +3848,10 @@ function teacherHub() {
             await this.refreshCourseSidebar();
 
             const urlCourse = {{ $initialCourseId ?? 'null' }};
+            const deepLinkActivityId = openActivityId > 0 ? openActivityId : (shouldOpenGrades ? 0 : targetActivityId);
+
             if (this.planBlockFilter) {
                 await this.loadCalendar();
-                if (openActivityId > 0) {
-                    this.$nextTick(() => this.openActivityModalFromExternal({ id: openActivityId }));
-                }
             } else if (urlCourse) {
                 await this.loadCourse(urlCourse);
                 if (shouldOpenGrades && this.courseData?.activities?.length) {
@@ -3791,6 +3868,11 @@ function teacherHub() {
                 }
             } else {
                 await this.loadWelcome();
+            }
+
+            // Deep-link: abrir modal de clase desde notificación (?open_activity=ID)
+            if (deepLinkActivityId > 0 && !shouldOpenGrades) {
+                this.$nextTick(() => this.openActivityModalFromExternal({ id: deepLinkActivityId }));
             }
 
             this.setNovaContext(null);
@@ -4545,6 +4627,117 @@ function teacherHub() {
             return null;
         },
 
+        parsePhasesFromDescription(description) {
+            const text = String(description || '');
+            const names = ['INICIO', 'DESARROLLO', 'CIERRE'];
+            const out = { inicio: '', desarrollo: '', cierre: '' };
+            const keys = ['inicio', 'desarrollo', 'cierre'];
+
+            for (let i = 0; i < names.length; i++) {
+                const header = '**' + names[i] + '**';
+                const start = text.indexOf(header);
+                if (start === -1) continue;
+                const contentStart = start + header.length;
+                let contentEnd = text.length;
+                for (let j = i + 1; j < names.length; j++) {
+                    const next = text.indexOf('**' + names[j] + '**', contentStart);
+                    if (next !== -1 && next < contentEnd) contentEnd = next;
+                }
+                out[keys[i]] = text.slice(contentStart, contentEnd).trim();
+            }
+
+            // Fallback: si no hay headers, todo el texto va a Desarrollo
+            if (!out.inicio && !out.desarrollo && !out.cierre && text.trim()) {
+                out.desarrollo = text.trim();
+            }
+            return out;
+        },
+
+        buildDescriptionFromPhases() {
+            const parts = [];
+            if (this.phaseEdit.inicio.trim()) {
+                parts.push('**INICIO**\n' + this.phaseEdit.inicio.trim());
+            }
+            if (this.phaseEdit.desarrollo.trim()) {
+                parts.push('**DESARROLLO**\n' + this.phaseEdit.desarrollo.trim());
+            }
+            if (this.phaseEdit.cierre.trim()) {
+                parts.push('**CIERRE**\n' + this.phaseEdit.cierre.trim());
+            }
+            return parts.join('\n\n');
+        },
+
+        openActivityModal(activity) {
+            this.activityModal = activity;
+            const phases = this.parsePhasesFromDescription(activity?.description);
+            this.phaseEdit = {
+                inicio: phases.inicio,
+                desarrollo: phases.desarrollo,
+                cierre: phases.cierre,
+                saving: false,
+                dirty: false,
+            };
+        },
+
+        async saveActivityPhases() {
+            if (!this.activityModal?.id || this.phaseEdit.saving) return;
+            this.phaseEdit.saving = true;
+            const description = this.buildDescriptionFromPhases();
+            try {
+                const res = await fetch(`/teacher/activities/${this.activityModal.id}/phases`, {
+                    method: 'PATCH',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]')?.content || '',
+                    },
+                    body: JSON.stringify({
+                        inicio: this.phaseEdit.inicio,
+                        desarrollo: this.phaseEdit.desarrollo,
+                        cierre: this.phaseEdit.cierre,
+                        description,
+                    }),
+                });
+                const json = await res.json();
+                if (!res.ok || !json.success) {
+                    throw new Error(json.message || 'No se pudieron guardar los cambios');
+                }
+                this.activityModal.description = json.activity?.description ?? description;
+                this.phaseEdit.dirty = false;
+
+                // Sync in local lists
+                const id = Number(this.activityModal.id);
+                if (this.courseData?.activities) {
+                    const idx = this.courseData.activities.findIndex(a => Number(a.id) === id);
+                    if (idx >= 0) {
+                        this.courseData.activities[idx] = {
+                            ...this.courseData.activities[idx],
+                            description: this.activityModal.description,
+                        };
+                    }
+                }
+                if (this.calendarData?.activities_by_day) {
+                    for (const dayKey in this.calendarData.activities_by_day) {
+                        const list = this.calendarData.activities_by_day[dayKey] || [];
+                        const idx = list.findIndex(a => Number(a.id) === id);
+                        if (idx >= 0) {
+                            list[idx] = { ...list[idx], description: this.activityModal.description };
+                        }
+                    }
+                }
+
+                window.dispatchEvent(new CustomEvent('ai-toast', {
+                    detail: { message: 'Fases guardadas correctamente', type: 'success', icon: 'fa-check' },
+                }));
+            } catch (e) {
+                window.dispatchEvent(new CustomEvent('ai-toast', {
+                    detail: { message: e.message || 'Error al guardar', type: 'error' },
+                }));
+            } finally {
+                this.phaseEdit.saving = false;
+            }
+        },
+
         async openActivityModalFromExternal(payload = {}) {
             const activityId = Number(payload?.id ?? 0);
             if (!activityId) return;
@@ -4566,6 +4759,25 @@ function teacherHub() {
                 }
             }
 
+            // Fallback: cargar actividad desde API (p. ej. clic en notificación)
+            if (!activity) {
+                try {
+                    const res = await fetch(`/teacher/api/activities/${activityId}`, {
+                        headers: { Accept: 'application/json' },
+                    });
+                    const json = await res.json();
+                    if (res.ok && json.success && json.activity) {
+                        activity = json.activity;
+                        if (activity.due_date) {
+                            const month = String(activity.due_date).slice(0, 7);
+                            if (month) await this.loadCalendar(month);
+                        }
+                    }
+                } catch (e) {
+                    console.warn('fetch activity failed', e);
+                }
+            }
+
             if (!activity) {
                 window.dispatchEvent(new CustomEvent('ai-toast', {
                     detail: { message: 'No se encontró la actividad en la vista actual.', type: 'error' }
@@ -4573,8 +4785,8 @@ function teacherHub() {
                 return;
             }
 
-            if (this.view !== 'calendar' && targetDate) {
-                const month = String(targetDate).slice(0, 7);
+            if (this.view !== 'calendar' && (targetDate || activity.due_date)) {
+                const month = String(targetDate || activity.due_date).slice(0, 7);
                 if (month) {
                     await this.loadCalendar(month);
                     activity = this.findActivityByIdLocal(activityId) ?? activity;
@@ -4582,7 +4794,7 @@ function teacherHub() {
             }
 
             this.setActivityContext(activity);
-            this.activityModal = activity;
+            this.openActivityModal(activity);
 
             this.$nextTick(() => {
                 const calendarGrid = document.querySelector('.calendar-grid');

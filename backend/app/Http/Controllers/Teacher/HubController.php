@@ -317,6 +317,54 @@ class HubController extends Controller
         ]);
     }
 
+    /**
+     * Detalle de una actividad del docente (para deep-link desde notificaciones).
+     */
+    public function apiActivity(Activity $activity): JsonResponse
+    {
+        abort_unless($activity->teacher_id === auth()->id(), 403);
+
+        $activity->load([
+            'course:id,subject_name,grade,section',
+            'tareas:id,actividad_id,titulo,descripcion,fecha_entrega,puntos,calificacion,feedback',
+        ]);
+
+        $course = $activity->course;
+
+        return response()->json([
+            'success' => true,
+            'activity' => [
+                'id' => $activity->id,
+                'type' => $activity->type ?? 'actividad',
+                'title' => $activity->title,
+                'description' => $activity->description ?? '',
+                'course_name' => trim(($course?->subject_name ?? '') . ' ' . ($course?->grade ?? '')),
+                'course_id' => $activity->course_id,
+                'grade' => $course?->grade,
+                'section' => $course?->section,
+                'due_date' => $activity->due_date instanceof \Carbon\Carbon
+                    ? $activity->due_date->format('Y-m-d')
+                    : (string) $activity->due_date,
+                'max_score' => $activity->max_score,
+                'weight_percentage' => $activity->weight_percentage,
+                'plan_block_id' => $activity->plan_block_id,
+                'is_homework' => (bool) $activity->is_homework,
+                'director_notes' => $activity->director_notes,
+                'nee_type' => $activity->nee_type,
+                'nee_adaptation' => $activity->nee_adaptation,
+                'tareas' => $activity->tareas->map(fn ($t) => [
+                    'id' => $t->id,
+                    'titulo' => $t->titulo,
+                    'descripcion' => $t->descripcion,
+                    'fecha_entrega' => $t->fecha_entrega?->format('Y-m-d'),
+                    'puntos' => $t->puntos,
+                    'calificacion' => $t->calificacion,
+                    'feedback' => $t->feedback,
+                ])->values(),
+            ],
+        ]);
+    }
+
     // ─── Helpers ─────────────────────────────────────────────────────────────
 
     private function monthNameEs(int $month): string
