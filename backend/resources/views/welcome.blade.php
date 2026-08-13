@@ -16,7 +16,10 @@
     <meta property="og:description" content="Planificación, tareas, calificaciones, asistencia y comunicación en un solo lugar.">
     <meta property="og:locale" content="es_VE">
 
-    <link rel="icon" href="/favicon.ico" sizes="any">
+    <link rel="icon" href="/favicon.ico?v=3" sizes="any">
+    <link rel="icon" type="image/png" href="/favicon-32x32.png?v=3" sizes="32x32">
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=3">
+    <link rel="shortcut icon" href="/favicon.png?v=3">
 
     <!-- Fonts & Icons -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -244,21 +247,22 @@
 
         /* Navbar branding — proporción y alineación exactas */
         .az-nav .az-logo {
-            gap: 10px;
+            gap: 12px;
         }
 
+        /* Mark compuesto: cuadro fucsia + emoji a gran escala */
         .az-nav .az-logo-mark {
-            width: 36px;
-            height: 36px;
-            min-width: 36px;
-            min-height: 36px;
-            border-radius: 10px;
-            background: var(--az-gradient-brand);
+            width: 52px;
+            height: 52px;
+            min-width: 52px;
+            min-height: 52px;
+            border-radius: 13px;
+            background: transparent;
             display: flex;
             align-items: center;
             justify-content: center;
             flex-shrink: 0;
-            box-shadow: 0 6px 16px -6px rgba(139, 46, 201, 0.45);
+            box-shadow: 0 8px 20px -8px rgba(139, 46, 201, 0.55);
             overflow: hidden;
             padding: 0;
         }
@@ -266,14 +270,13 @@
         .az-nav .az-logo-mark img {
             width: 100%;
             height: 100%;
-            object-fit: contain;
+            object-fit: cover;
             display: block;
-            filter: drop-shadow(0 1px 4px rgba(0, 0, 0, 0.12));
         }
 
         .az-nav .az-logo-text {
             font-family: 'Manrope', 'Inter', sans-serif;
-            font-size: 1.125rem;
+            font-size: 1.25rem;
             font-weight: 900;
             letter-spacing: 0.08em;
             line-height: 1;
@@ -283,28 +286,11 @@
             padding-top: 1px;
         }
 
-        /* Utilidades Tailwind-equivalentes (solo navbar branding) */
-        .az-nav .flex { display: flex; }
-        .az-nav .items-center { align-items: center; }
-        .az-nav .shrink-0 { flex-shrink: 0; }
-        .az-nav .gap-2\.5 { gap: 0.625rem; }
-        .az-nav .h-9 { height: 2.25rem; }
-        .az-nav .w-9 { width: 2.25rem; }
-        .az-nav .h-full { height: 100%; }
-        .az-nav .w-full { width: 100%; }
-        .az-nav .object-contain { object-fit: contain; }
-        .az-nav .text-lg { font-size: 1.125rem; }
-        .az-nav .font-black { font-weight: 900; }
-        .az-nav .tracking-wider { letter-spacing: 0.05em; }
-        .az-nav .text-slate-900 { color: #0f172a; }
-        .az-nav .uppercase { text-transform: uppercase; }
-        .az-nav .leading-none { line-height: 1; }
-
         .az-logo-mark {
-            width: 36px;
-            height: 36px;
-            border-radius: 10px;
-            background: var(--az-gradient-brand);
+            width: 44px;
+            height: 44px;
+            border-radius: 11px;
+            background: transparent;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -316,7 +302,7 @@
         .az-logo-mark img {
             width: 100%;
             height: 100%;
-            object-fit: contain;
+            object-fit: cover;
             display: block;
         }
 
@@ -1323,11 +1309,11 @@
     <header>
         <nav class="az-nav" id="az-nav" aria-label="Navegación principal">
             <div class="az-container az-nav-inner">
-                <a href="{{ route('welcome') }}" class="az-logo flex items-center gap-2.5 shrink-0" aria-label="AulaSync — Inicio">
-                    <span class="az-logo-mark h-9 w-9 flex items-center justify-center shrink-0" aria-hidden="true">
-                        <img src="/images/emoji leyendo sin fondo.png" alt="" class="h-full w-full object-contain">
+                <a href="{{ route('welcome') }}" class="az-logo" aria-label="AulaSync — Inicio">
+                    <span class="az-logo-mark" aria-hidden="true">
+                        <img src="/images/aulasync-mark.png" alt="">
                     </span>
-                    <span class="az-logo-text text-lg font-black tracking-wider text-slate-900 uppercase leading-none">AulaSync</span>
+                    <span class="az-logo-text">AulaSync</span>
                 </a>
 
                 <ul class="az-nav-links">
@@ -1874,7 +1860,7 @@
             <div class="az-footer-top">
                 <div class="az-footer-brand">
                     <a href="{{ route('welcome') }}" class="az-logo" aria-label="AulaSync — Inicio">
-                        <span class="az-logo-mark" aria-hidden="true"><img src="/images/emoji leyendo sin fondo.png" alt=""></span>
+                        <span class="az-logo-mark" aria-hidden="true"><img src="/images/aulasync-mark.png" alt=""></span>
                         <span class="az-logo-text">AulaSync</span>
                     </a>
                     <p>Gestión académica más clara, comunidades más conectadas.</p>
