@@ -1,4 +1,4 @@
-﻿<x-app-layout>
+﻿<x-onboarding-layout>
     <div class="onboarding-shell py-5">
         <button type="button" class="theme-toggle-btn" id="themeToggleBtn" aria-label="Cambiar tema">
             <i class="fa-solid fa-moon" id="themeToggleIcon"></i>
@@ -393,8 +393,6 @@
     @include('partials.nova-theme')
     <style>
         [x-cloak] { display: none !important; }
-        body > nav.navbar, body > footer { display: none !important; }
-        main.min-h-screen { min-height: auto !important; }
         .onboarding-shell {
             min-height: 100vh;
             background: radial-gradient(1200px 600px at 20% -10%, rgba(139, 92, 246, 0.18), transparent 60%),
@@ -882,4 +880,4 @@
         }
     </script>
     @endpush
-</x-app-layout>
+</x-onboarding-layout>
