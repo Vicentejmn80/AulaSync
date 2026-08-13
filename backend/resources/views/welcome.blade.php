@@ -130,14 +130,32 @@
         .logo {
             display: flex;
             align-items: center;
-            gap: 14px;
+            gap: 16px;
+        }
+
+        .logo-icon {
+            width: 62px;
+            height: 62px;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            filter: drop-shadow(0 6px 16px rgba(139, 92, 246, 0.45))
+                    drop-shadow(0 2px 8px rgba(236, 72, 153, 0.25));
+        }
+
+        .logo-icon img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
         }
 
         .logo-text {
             font-family: 'Outfit', sans-serif;
-            font-size: 1.85rem;
+            font-size: 2.75rem;
             font-weight: 800;
-            letter-spacing: -0.5px;
+            letter-spacing: -0.02em;
+            line-height: 1;
             background: linear-gradient(135deg, #fff 0%, #22D3EE 40%, #EC4899 70%, #F59E0B 100%);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
@@ -315,8 +333,8 @@
         .hero-image-container {
             position: relative;
             width: 100%;
-            max-width: 560px;
-            padding: 20px;
+            max-width: 680px;
+            padding: 10px;
         }
 
         .nova-mascot {
@@ -352,12 +370,12 @@
             object-fit: contain;
             filter: drop-shadow(0 30px 60px rgba(139, 92, 246, 0.5)) 
                     drop-shadow(0 15px 30px rgba(236, 72, 153, 0.3));
-            transform: scale(1.05);
+            transform: scale(1.18);
             transition: transform 0.3s ease;
         }
 
         .nova-mascot:hover img {
-            transform: scale(1.15);
+            transform: scale(1.28);
         }
 
         @keyframes float {
@@ -784,6 +802,15 @@
                 flex-direction: column;
                 gap: 1rem;
             }
+
+            .logo-text {
+                font-size: 2.15rem;
+            }
+
+            .logo-icon {
+                width: 52px;
+                height: 52px;
+            }
             
             .nav-links {
                 flex-wrap: wrap;
@@ -834,6 +861,9 @@
         <!-- Header -->
         <header class="header">
             <div class="logo">
+                <div class="logo-icon">
+                    <img src="/images/emoji leyendo sin fondo.png" alt="Aulasync">
+                </div>
                 <span class="logo-text">AULASYNC</span>
             </div>
             <nav class="nav-links">
