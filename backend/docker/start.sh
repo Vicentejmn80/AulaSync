@@ -8,6 +8,7 @@ export PORT="${PORT:-8080}"
 php artisan config:cache
 php artisan route:cache
 php artisan view:cache
+php artisan migrate --force || true
 
 envsubst '${PORT}' < /etc/nginx/templates/default.conf.template > /etc/nginx/conf.d/default.conf
 

@@ -27,6 +27,12 @@ Route::get('/', function () {
     return view('welcome');
 })->name('welcome');
 
+Route::post('/solicitar-demo', [App\Http\Controllers\DemoRequestController::class, 'store'])
+    ->name('demo.request');
+
+Route::view('/privacidad', 'legal.privacidad')->name('legal.privacidad');
+Route::view('/terminos', 'legal.terminos')->name('legal.terminos');
+
 // Rutas de autenticación (Breeze)
 require __DIR__.'/auth.php';
 
