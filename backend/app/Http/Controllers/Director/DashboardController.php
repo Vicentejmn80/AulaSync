@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 
 namespace App\Http\Controllers\Director;
 
@@ -253,7 +253,7 @@ class DashboardController extends Controller
         $inactiveTeachersCount = $teachersWithoutActivity->count();
 
         $institution = [
-            'name' => $settings?->nombre_institucion ?? 'Nova Academy',
+            'name' => $settings?->nombre_institucion ?? 'Aulasync',
             'period' => data_get($settings?->preferencias, 'periodo_academico', now()->year . '-' . now()->copy()->addYear()->year),
             'campuses' => data_get($settings?->preferencias, 'cantidad_sedes', 1),
         ];

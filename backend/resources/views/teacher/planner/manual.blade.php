@@ -1,9 +1,9 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Planificador Visual · Nova Academy</title>
+    <title>Planificador Visual · Aulasync</title>
     <meta name="csrf-token" content="{{ csrf_token() }}">
     
     <script src="https://cdn.jsdelivr.net/npm/@phosphor-icons/web"></script>

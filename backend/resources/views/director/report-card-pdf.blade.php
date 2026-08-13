@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
@@ -46,7 +46,7 @@
 <body>
     @php
         $settings = auth()->user()->settings;
-        $institutionName = $settings?->nombre_institucion ?? 'Nova Academy';
+        $institutionName = $settings?->nombre_institucion ?? 'Aulasync';
         $schoolYear = data_get($settings?->preferencias, 'periodo_academico', now()->year . '-' . now()->copy()->addYear()->year);
     @endphp
 
@@ -144,7 +144,7 @@
     </div>
 
     <div class="footer">
-        <p>Generado el {{ now()->format('d/m/Y H:i') }} · Nova Executive Intelligence</p>
+        <p>Generado el {{ now()->format('d/m/Y H:i') }} · Aulasync Intelligence</p>
     </div>
 </body>
 </html>

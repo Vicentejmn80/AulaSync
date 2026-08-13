@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 
 namespace App\Http\Controllers\Teacher;
 
@@ -325,7 +325,7 @@ class ManualPlanningController extends Controller
             'Nueva planificación pendiente',
             "El/La docente {$teacherName} envió una planificación de {$courseName} para revisión.",
             route('director.planificaciones', ['status' => 'pendiente']),
-            '📋 Nova · Nueva planificación'
+            '📋 Aulasync · Nueva planificación'
         );
     }
 
@@ -336,7 +336,7 @@ class ManualPlanningController extends Controller
             'Planificación corregida por docente',
             "El/La docente {$teacherName} ha corregido la planificación de {$courseName}.",
             route('director.planificaciones', ['status' => 'pendiente_revision']),
-            '🔄 Nova · Planificación corregida'
+            '🔄 Aulasync · Planificación corregida'
         );
     }
 }

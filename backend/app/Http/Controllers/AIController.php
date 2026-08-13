@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 
 namespace App\Http\Controllers;
 
@@ -369,7 +369,7 @@ class AIController extends Controller
             'Nueva planificación IA pendiente',
             "El/La docente {$user->name} guardó una planificación IA: «{$tema}».",
             route('director.planificaciones', ['status' => 'pendiente']),
-            '🤖 Nova · Planificación IA'
+            '🤖 Aulasync · Planificación IA'
         );
 
         Log::debug('PLAN_CREATED', [

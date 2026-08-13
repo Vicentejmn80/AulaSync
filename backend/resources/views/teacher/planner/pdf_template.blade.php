@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
@@ -42,7 +42,7 @@
     </table>
 
     <footer style="margin-top: 24px; font-size: 11px; color: #475569;">
-        Documento generado automáticamente por Nova Academy.
+        Documento generado automáticamente por Aulasync.
     </footer>
 </body>
 </html>

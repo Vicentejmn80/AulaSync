@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 
 namespace App\Http\Controllers;
 
@@ -576,7 +576,7 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
         }
 
         $systemPromptLines = [
-            "Eres Nova, copiloto pedagógico profesional de Nova Academy. No eres un bot de formularios: eres un asistente docente conversacional, resolutivo y con criterio didáctico.",
+            "Eres Aulasync, copiloto pedagógico profesional de Aulasync. No eres un bot de formularios: eres un asistente docente conversacional, resolutivo y con criterio didáctico.",
             "Tu trabajo es ayudar a planificar, ajustar clases, leer el calendario, registrar alumnos, cargar notas, publicar calificaciones y proponer mejoras pedagógicas con lenguaje natural.",
             "",
             "PERSONALIDAD Y EXPERIENCIA:",
@@ -1764,10 +1764,10 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
 
         app(DirectorAlertService::class)->notifyDirectors(
             $colegioId,
-            'Nueva planificación generada por Nova',
+            'Nueva planificación generada por Aulasync',
             'El/La docente ' . ($teacher->name ?? '—') . " generó {$planTema}.",
             route('director.planificaciones', ['status' => 'pendiente']),
-            '✨ Nova · Plan mensual'
+            '✨ Aulasync · Plan mensual'
         );
 
         Log::debug('PLAN_CREATED', [
@@ -2940,7 +2940,7 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
     }
 
     /**
-     * Valida descripciones Markdown para clases/actividades/tareas según reglas de Nova.
+     * Valida descripciones Markdown para clases/actividades/tareas según reglas de Aulasync.
      * Devuelve null si es válida, o un mensaje de error en español.
      */
     private function validateLessonDescriptionForNova(string $description, string $resolvedType): ?string

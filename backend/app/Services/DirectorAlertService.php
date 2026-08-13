@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 
 namespace App\Services;
 
@@ -58,7 +58,7 @@ class DirectorAlertService
             $prefix ? "<b>{$prefix}</b>" : null,
             "<b>{$this->escapeHtml($title)}</b>",
             $this->escapeHtml($message),
-            "<a href=\"{$absoluteLink}\">Abrir en Nova</a>",
+            "<a href=\"{$absoluteLink}\">Abrir en Aulasync</a>",
         ]);
 
         $this->telegram->sendMessage(implode("\n\n", $lines));

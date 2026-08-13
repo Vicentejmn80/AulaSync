@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
@@ -64,7 +64,7 @@
 <body class="min-h-screen">
     @php
         $settings = auth()->user()->settings;
-        $institutionName = $settings?->nombre_institucion ?? 'Nova Academy';
+        $institutionName = $settings?->nombre_institucion ?? 'Aulasync';
         $schoolYear = data_get($settings?->preferencias, 'periodo_academico', now()->year . '-' . now()->copy()->addYear()->year);
         $issueDate = now()->format('d/m/Y');
     @endphp

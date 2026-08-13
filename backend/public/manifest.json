@@ -1,9 +1,9 @@
-{
-    "name": "Nova Academy",
-    "short_name": "Nova",
+﻿{
+    "name": "Aulasync",
+    "short_name": "Aulasync",
     "start_url": "/teacher/hub",
     "background_color": "#FFFFFF",
-    "description": "Nova Academy - Plataforma inteligente para docentes.",
+    "description": "Aulasync - Plataforma inteligente para docentes.",
     "display": "standalone",
     "theme_color": "#000000",
     "icons": [

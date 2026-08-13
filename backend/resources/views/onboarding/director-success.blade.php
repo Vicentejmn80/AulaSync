@@ -1,10 +1,10 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="es" class="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    <title>¡Colegio creado! · Nova</title>
+    <title>¡Colegio creado! · Aulasync</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>tailwind.config = { darkMode: 'class' };</script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
@@ -80,7 +80,7 @@
                 <span x-text="copied ? '¡Copiado!' : 'Copiar Código'"></span>
             </button>
 
-            <a href="https://wa.me/?text={{ urlencode('¡Hola! Te invito a unirte a nuestro colegio ' . $schoolName . ' en Nova Academy. Usa este código para registrarte: ' . $inviteCode) }}"
+            <a href="https://wa.me/?text={{ urlencode('¡Hola! Te invito a unirte a nuestro colegio ' . $schoolName . ' en Aulasync. Usa este código para registrarte: ' . $inviteCode) }}"
                target="_blank"
                rel="noopener noreferrer"
                class="flex items-center justify-center gap-3 rounded-2xl border border-emerald-400/30 bg-emerald-400/10 px-5 py-3.5 text-sm font-bold text-emerald-200 transition hover:bg-emerald-400/20 hover:shadow-lg hover:shadow-emerald-500/10">

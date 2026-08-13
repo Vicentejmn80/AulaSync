@@ -1,4 +1,4 @@
-package com.example
+﻿package com.example
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -29,7 +29,7 @@ data class ChatMessage(val id: String, val sender: String, val text: String, val
 @Composable
 fun ChatScreen(viewModel: NovaViewModel) {
     val messages = remember { mutableStateListOf(
-        ChatMessage("1", "Nova IA", "¡Hola! Soy Nova, tu asistente educativo. ¿En qué puedo ayudarte hoy revisando las notas o planificando actividades?", true)
+        ChatMessage("1", "Aulasync IA", "¡Hola! Soy Aulasync, tu asistente educativo. ¿En qué puedo ayudarte hoy revisando las notas o planificando actividades?", true)
     )}
     var currentInput by remember { mutableStateOf("") }
 
@@ -41,7 +41,7 @@ fun ChatScreen(viewModel: NovaViewModel) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Filled.AutoAwesome, contentDescription = "IA", tint = Color.White)
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("Nova Assistant", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                Text("Aulasync Assistant", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 20.sp)
             }
         }
         
@@ -75,7 +75,7 @@ fun ChatScreen(viewModel: NovaViewModel) {
                         val cmd = currentInput
                         currentInput = ""
                         // Mock bot response
-                        messages.add(ChatMessage((System.currentTimeMillis()+1).toString(), "Nova IA", "Procesando el contexto de tus alumnos para responder a: '$cmd'...", true))
+                        messages.add(ChatMessage((System.currentTimeMillis()+1).toString(), "Aulasync IA", "Procesando el contexto de tus alumnos para responder a: '$cmd'...", true))
                     }
                 },
                 modifier = Modifier.background(PurpleAccent, CircleShape)

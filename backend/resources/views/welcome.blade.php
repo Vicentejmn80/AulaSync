@@ -1,9 +1,9 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NOVA ACADEMY · IA Educativa para Profesores</title>
+    <title>AULASYNC · IA Educativa para Profesores</title>
     
     <!-- Fonts & Icons -->
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700;9..40,800&family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
@@ -834,7 +834,7 @@
         <!-- Header -->
         <header class="header">
             <div class="logo">
-                <span class="logo-text">NOVA ACADEMY</span>
+                <span class="logo-text">AULASYNC</span>
             </div>
             <nav class="nav-links">
                 <a href="#features">Características</a>
@@ -856,7 +856,7 @@
                     Planifica un Mes de Clases <br>en 5 Minutos
                 </h1>
                 <p class="hero-subtitle">
-                    Deja atrás las horas de planificación. Nova transforma tus ideas en planificaciones completas, 
+                    Deja atrás las horas de planificación. Aulasync transforma tus ideas en planificaciones completas, 
                     personalizadas y listas para usar con inteligencia artificial especializada en educación.
                 </p>
                 
@@ -890,7 +890,7 @@
                 <div class="hero-image-container animate-pulse">
                     <div class="hero-glow"></div>
                     <div class="nova-mascot">
-                        <img src="/images/emoji leyendo sin fondo.png" alt="NOVA - Tu Asistente de IA">
+                        <img src="/images/emoji leyendo sin fondo.png" alt="AULASYNC - Tu Asistente de IA">
                     </div>
                 </div>
             </div>
@@ -1027,7 +1027,7 @@
             </div>
 
             <div class="pricing-banner">
-                💡 Un colegio que ahorre solo 10 horas administrativas al mes ya recupera varias veces el costo de Nova Academy.
+                💡 Un colegio que ahorre solo 10 horas administrativas al mes ya recupera varias veces el costo de Aulasync.
             </div>
             <p class="pricing-footnote">
                 🚀 Los primeros 10 colegios piloto recibirán implementación y acompañamiento gratuito durante 3 meses a cambio de feedback y métricas de uso.
@@ -1038,7 +1038,7 @@
         <footer class="footer">
             <div class="footer-content">
                 <div class="footer-logo">
-                    <span>© 2026 NOVA ACADEMY. Todos los derechos reservados.</span>
+                    <span>© 2026 AULASYNC. Todos los derechos reservados.</span>
                 </div>
                 <div class="footer-links">
                     <a href="#features">Características</a>

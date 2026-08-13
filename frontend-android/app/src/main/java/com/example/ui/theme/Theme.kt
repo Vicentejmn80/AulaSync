@@ -1,4 +1,4 @@
-package com.example.ui.theme
+﻿package com.example.ui.theme
 
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -46,7 +46,7 @@ private val LightColorScheme =
 @Composable
 fun MyApplicationTheme(
   darkTheme: Boolean = isSystemInDarkTheme(),
-  // For Nova Academy we strictly follow the specified palette, so default dynamicColor to false
+  // For Aulasync we strictly follow the specified palette, so default dynamicColor to false
   dynamicColor: Boolean = false,
   content: @Composable () -> Unit,
 ) {

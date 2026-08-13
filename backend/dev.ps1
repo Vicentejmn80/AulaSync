@@ -1,7 +1,7 @@
-$ErrorActionPreference = "Stop"
+﻿$ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 
-Write-Host "=== Nova Academy - Dev Environment ===" -ForegroundColor Cyan
+Write-Host "=== Aulasync - Dev Environment ===" -ForegroundColor Cyan
 
 $jobs = @()
 

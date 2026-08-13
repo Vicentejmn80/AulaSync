@@ -1,9 +1,9 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Iniciar Sesión · Nova Academy</title>
+    <title>Iniciar Sesión · Aulasync</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <style>
         *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
@@ -164,7 +164,7 @@
     <div class="glass-card">
         <div class="logo-row">
             <div class="logo-icon"><i class="fa-solid fa-graduation-cap"></i></div>
-            <div class="logo-text">Nova Academy <span>Academia Inteligente</span></div>
+            <div class="logo-text">Aulasync <span>Academia Inteligente</span></div>
         </div>
 
         <h1 class="card-title">Bienvenido de vuelta</h1>

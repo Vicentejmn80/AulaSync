@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
@@ -66,7 +66,7 @@
                     <i class="fa-solid fa-building-columns text-xl text-white"></i>
                 </div>
                 <div>
-                    <p class="text-xs font-bold uppercase tracking-[.3em] text-cyan-200">Nova Executive Intelligence</p>
+                    <p class="text-xs font-bold uppercase tracking-[.3em] text-cyan-200">Aulasync Intelligence</p>
                     <h1 class="mt-1 text-2xl font-black tracking-tight text-white md:text-3xl">{{ $institution['name'] }}</h1>
                     <p class="mt-1 text-sm text-slate-400">
                         Período {{ $institution['period'] }} · {{ $institution['campuses'] }} sede{{ (int) $institution['campuses'] === 1 ? '' : 's' }}
@@ -133,7 +133,7 @@
                         <i class="fa-solid fa-wand-magic-sparkles text-white"></i>
                     </div>
                     <div>
-                        <p class="text-xs font-bold uppercase tracking-[.22em] text-fuchsia-200">Nova AI Alerts</p>
+                        <p class="text-xs font-bold uppercase tracking-[.22em] text-fuchsia-200">Aulasync AI Alerts</p>
                         <h2 class="text-lg font-black text-white">Alertas inteligentes</h2>
                     </div>
                 </div>
@@ -179,7 +179,7 @@
                             </div>
                         @empty
                             <div class="rounded-2xl border border-white/10 bg-white/[.045] p-5 text-sm text-slate-300">
-                                Nova AI no detecta alertas. Todos los indicadores están estables.
+                                Aulasync AI no detecta alertas. Todos los indicadores están estables.
                             </div>
                         @endforelse
                     @endif
@@ -209,7 +209,7 @@
 
             <div class="glass-card rounded-[2rem] p-6">
                 <p class="text-xs font-bold uppercase tracking-[.25em] text-cyan-200">Siguiente acción</p>
-                <h2 class="mt-2 text-xl font-black text-white">Prioridades Nova</h2>
+                <h2 class="mt-2 text-xl font-black text-white">Prioridades Aulasync</h2>
 
                 @if($planificacionesPendientesRevision > 0)
                     <p class="mt-4 text-sm leading-6 text-cyan-200">

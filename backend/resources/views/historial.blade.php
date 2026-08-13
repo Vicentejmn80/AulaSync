@@ -1,4 +1,4 @@
-<x-app-layout>
+﻿<x-app-layout>
     @push('styles')
     @include('partials.nova-theme')
     <style>
@@ -240,7 +240,7 @@
         <div class="hist-banner">
             <div>
                 <h1>📚 Historial de Planificaciones</h1>
-                <p>Gestiona, visualiza y mejora tus clases guardadas bajo el sello Nova Academy.</p>
+                <p>Gestiona, visualiza y mejora tus clases guardadas bajo el sello Aulasync.</p>
             </div>
             <div class="flex flex-wrap gap-3">
                 <a href="{{ route('teacher.hub') }}" class="btn-hist-secondary">

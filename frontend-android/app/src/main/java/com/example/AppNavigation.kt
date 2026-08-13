@@ -1,4 +1,4 @@
-package com.example
+﻿package com.example
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
@@ -21,7 +21,7 @@ sealed class Screen(val route: String, val title: String, val icon: ImageVector)
     object Dashboard : Screen("dashboard", "Inicio", Icons.Filled.Home)
     object Activities : Screen("activities", "Actividades", Icons.Filled.Assignment)
     object MyCourse : Screen("mycourse", "Mi Curso", Icons.Filled.Person)
-    object Chat : Screen("chat", "Nova IA", Icons.Filled.AutoAwesome)
+    object Chat : Screen("chat", "Aulasync IA", Icons.Filled.AutoAwesome)
     object Calendar : Screen("calendar", "Calendario", Icons.Filled.DateRange)
 }
 
@@ -57,7 +57,7 @@ fun MainApp(viewModel: NovaViewModel) {
                     drawerContentColor = MaterialTheme.colorScheme.onSurface
                 ) {
                     Spacer(Modifier.height(12.dp))
-                    Text("NOVA ACADEMY", modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface)
+                    Text("AULASYNC", modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface)
                     
                     val students by viewModel.students.collectAsState()
                     Row(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
@@ -100,7 +100,7 @@ fun MainApp(viewModel: NovaViewModel) {
             Scaffold(
                 topBar = {
                     TopAppBar(
-                        title = { Text(items.find { it.route == currentRoute }?.title ?: "Nova Academy") },
+                        title = { Text(items.find { it.route == currentRoute }?.title ?: "Aulasync") },
                         navigationIcon = {
                             IconButton(onClick = { scope.launch { drawerState.open() } }) {
                                 Icon(Icons.Default.Menu, contentDescription = "Menu")

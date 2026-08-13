@@ -1,4 +1,4 @@
-package com.example
+﻿package com.example
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
@@ -45,7 +45,7 @@ fun LoginScreen(onLoginSuccess: () -> Unit) {
         ) {
             Icon(Icons.Filled.School, contentDescription = "Logo", tint = PinkAccent, modifier = Modifier.size(64.dp))
             Spacer(modifier = Modifier.height(16.dp))
-            Text("NOVA ACADEMY", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
+            Text("AULASYNC", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
             Text("El futuro de la planificación educativa", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 14.sp)
             Spacer(modifier = Modifier.height(48.dp))
 

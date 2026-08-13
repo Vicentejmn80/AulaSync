@@ -1,5 +1,5 @@
-{{--
-  AI Assistant Bubble v3 — Nova Assistant
+﻿{{--
+  AI Assistant Bubble v3 — Aulasync Assistant
   Diseño innovador con gradientes, microinteracciones y experiencia premium
 --}}
 <style>
@@ -728,7 +728,7 @@
                     </div>
                 </div>
                 <div class="nova-ai-title">
-                    <h3>Nova Assistant</h3>
+                    <h3>Aulasync Assistant</h3>
                     <p><span class="nova-ai-badge">IA Educativa</span> <span>⚡ Siempre activa</span></p>
                 </div>
                 <div class="nova-ai-close" @click="open = false">
@@ -755,7 +755,7 @@
                 <div class="message-assistant">
                     <div class="bubble">
                         <i class="fa-solid fa-wand-magic-sparkles" style="margin-right: 8px; color: #C455ED;"></i>
-                        ¡Hola! Soy Nova, tu asistente educativo.<br>
+                        ¡Hola! Soy Aulasync, tu asistente educativo.<br>
                         Puedes pedirme que:<br>
                         • ✏️ Modifique una clase o actividad<br>
                         • 📝 Cree planificaciones mensuales<br>
@@ -804,7 +804,7 @@
                             <div class="typing-dot"></div>
                             <div class="typing-dot"></div>
                         </div>
-                        <span style="font-size: 11px; margin-left: 8px;">Nova está pensando...</span>
+                        <span style="font-size: 11px; margin-left: 8px;">Aulasync está pensando...</span>
                     </div>
                 </div>
             </template>
@@ -870,7 +870,7 @@
     </div>
 
     <!-- Botón flotante -->
-    <button type="button" class="nova-ai-trigger" :class="{ 'listening': listening }" @click="togglePanel()" aria-label="Abrir o cerrar Nova">
+    <button type="button" class="nova-ai-trigger" :class="{ 'listening': listening }" @click="togglePanel()" aria-label="Abrir o cerrar Aulasync">
         <div class="nova-monkey-avatar nova-monkey-avatar--trigger" :class="{ 'nova-monkey-avatar--open': open }" aria-hidden="true">
             <div class="nova-monkey-avatar__sprite nova-monkey-avatar__sprite--closed"></div>
             <div class="nova-monkey-avatar__sprite nova-monkey-avatar__sprite--open"></div>

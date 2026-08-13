@@ -1,4 +1,4 @@
-@php return; @endphp
+﻿@php return; @endphp
 {{--<x-app-layout>
     <div id="app-dashboard-root" class="dashboard-root {{ ($role ?? 'profesor') === 'director' ? 'dashboard-state-editor' : 'dashboard-state-form' }}" data-onboarding="{{ json_encode($onboardingData ?? []) }}" data-initial-plan="{{ json_encode($initialPlan ?? null) }}">
         <!-- ========== FASE 1: FORMULARIO INICIAL ========== -->
@@ -83,7 +83,7 @@
             <aside class="dashboard-sidebar">
                 <div class="dashboard-sidebar-header">
                     <a href="{{ route('dashboard') }}" class="dashboard-sidebar-brand">
-                        <i class="fas fa-robot me-2"></i>Nova Academy
+                        <i class="fas fa-robot me-2"></i>Aulasync
                     </a>
                 </div>
                 @if(($role ?? 'profesor') === 'director')

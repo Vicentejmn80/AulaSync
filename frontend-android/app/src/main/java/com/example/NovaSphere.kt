@@ -1,4 +1,4 @@
-package com.example
+﻿package com.example
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
@@ -115,7 +115,7 @@ fun NovaSphere(navController: NavHostController, viewModel: NovaViewModel) {
             ) {
                 Icon(
                     imageVector = Icons.Default.AutoAwesome,
-                    contentDescription = "Nova AI",
+                    contentDescription = "Aulasync AI",
                     tint = Color.White,
                     modifier = Modifier
                         .size(32.dp)
@@ -217,7 +217,7 @@ fun VoiceRubricModal(onDismiss: () -> Unit) {
                 1 -> {
                     androidx.compose.material3.CircularProgressIndicator(color = PurpleAccent)
                     Spacer(modifier = Modifier.height(16.dp))
-                    Text("Generando Rúbrica con Nova IA...", color = androidx.compose.material3.MaterialTheme.colorScheme.onSurface)
+                    Text("Generando Rúbrica con Aulasync IA...", color = androidx.compose.material3.MaterialTheme.colorScheme.onSurface)
                 }
                 2 -> {
                     Text("Rúbrica: Exposición Oral", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = androidx.compose.material3.MaterialTheme.colorScheme.onSurface)

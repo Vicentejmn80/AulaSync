@@ -1,10 +1,10 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    <title>Nova · Hub Académico Inteligente</title>
+    <title>Aulasync · Hub Académico Inteligente</title>
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css">
@@ -2506,7 +2506,7 @@
         >
             <i class="fa-solid text-lg" :class="sidebarOpen ? 'fa-xmark' : 'fa-bars'"></i>
         </button>
-        <span class="min-w-0 truncate text-sm font-bold" style="color: var(--text-primary);">Nova Academy</span>
+        <span class="min-w-0 truncate text-sm font-bold" style="color: var(--text-primary);">Aulasync</span>
     </header>
 
     {{-- SIDEBAR NOVA --}}
@@ -2521,7 +2521,7 @@
                 <i class="fa-solid fa-robot"></i>
             </div>
             <div class="brand-text">
-                <div class="brand-title">Nova Academy</div>
+                <div class="brand-title">Aulasync</div>
                 <div class="brand-subtitle">
                     <i class="fa-solid fa-circle"></i>
                     <span>{{ auth()->user()->name }}</span>
@@ -3240,7 +3240,7 @@
         <aside class="grades-slideover-panel" @click.stop>
             <div class="grades-slideover-header">
                 <div>
-                    <p class="grades-slideover-eyebrow">Nova Academy · Cargar Notas</p>
+                    <p class="grades-slideover-eyebrow">Aulasync · Cargar Notas</p>
                     <h3 x-text="gradesSlideover.activity?.title || 'Cargar notas'"></h3>
                     <p class="grades-slideover-subtitle" x-text="gradesSlideover.activity?.course_name || ''"></p>
                 </div>
@@ -3365,7 +3365,7 @@
         <aside class="grades-slideover-panel" @click.stop>
             <div class="grades-slideover-header">
                 <div>
-                    <p class="grades-slideover-eyebrow">Nova Academy · Ficha del Alumno</p>
+                    <p class="grades-slideover-eyebrow">Aulasync · Ficha del Alumno</p>
                     <h3 x-text="studentSlideover.student?.name || 'Alumno'"></h3>
                     <p class="grades-slideover-subtitle" x-text="studentSlideover.courseName || ''"></p>
                 </div>
@@ -4625,7 +4625,7 @@ function teacherHub() {
                 <div class="w-10 h-10 bg-gradient-to-br from-[#6C4AE0] to-[#3BC9DB] rounded-xl flex items-center justify-center shadow-lg shadow-violet-900/20">
                     <i class="fas fa-robot text-white"></i>
                 </div>
-                <h3 class="text-white font-bold text-lg">Asistente Nova IA</h3>
+                <h3 class="text-white font-bold text-lg">Asistente Aulasync IA</h3>
             </div>
 
             <p class="text-gray-400 text-sm mb-4">¿Cómo quieres mejorar esta clase? Solo escribe y yo me encargo del resto.</p>
