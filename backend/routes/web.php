@@ -1,0 +1,259 @@
+<?php
+
+use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\OnboardingController;
+use App\Http\Controllers\AIController;
+use App\Http\Controllers\PlanningController;
+use App\Http\Controllers\Teacher\GradesController;
+use App\Http\Controllers\Teacher\CoursesController;
+use App\Http\Controllers\Teacher\ActivitiesController;
+use App\Http\Controllers\Teacher\TareaController;
+use App\Http\Controllers\Teacher\ManualPlanningController;
+use App\Http\Controllers\Director\DashboardController as DirectorDashboardController;
+use App\Http\Controllers\Director\PlanificacionesController as DirectorPlanificacionesController;
+use App\Http\Controllers\Director\ReportCardController as DirectorReportCardController;
+use App\Http\Controllers\Director\StudentController as DirectorStudentController;
+use App\Http\Controllers\Director\ActivityFeedbackController;
+use App\Http\Controllers\NotificationController;
+use App\Http\Controllers\AICommandHandlerController;
+use App\Http\Controllers\Teacher\HubController;
+use App\Http\Controllers\RepresentanteController;
+use App\Http\Controllers\SmartPlannerController;
+use Illuminate\Http\Request;
+
+// --- RUTAS PÚBLICAS ---
+Route::get('/', function () {
+    return view('welcome');
+})->name('welcome');
+
+Route::post('/solicitar-demo', [App\Http\Controllers\DemoRequestController::class, 'store'])
+    ->name('demo.request');
+
+Route::view('/privacidad', 'legal.privacidad')->name('legal.privacidad');
+Route::view('/terminos', 'legal.terminos')->name('legal.terminos');
+
+// Rutas de autenticación (Breeze)
+require __DIR__.'/auth.php';
+
+// --- RUTAS PROTEGIDAS (Solo usuarios logueados) ---
+Route::middleware(['auth'])->group(function () {
+    
+    // A. EXCEPCIÓN: Rutas de Onboarding
+    Route::get('/onboarding', [OnboardingController::class, 'show'])->name('onboarding');
+        // RUTA TEMPORAL: Para ver el diseño sin loguearse
+    Route::get('/debug-onboarding', function () {
+        return view('onboarding.wizard');
+    })->name('debug.onboarding');
+    Route::post('/api/validate-school-code', [OnboardingController::class, 'validateSchoolCode'])
+        ->name('api.validate-school-code');
+    Route::post('/api/validate-family-code', [App\Http\Controllers\FamilyCodeController::class, 'validateFamilyCode'])
+        ->name('api.validate-family-code');
+    Route::post('/onboarding/save', [OnboardingController::class, 'save'])->name('onboarding.save');
+    Route::get('/onboarding/director-success', [OnboardingController::class, 'directorSuccess'])
+        ->name('onboarding.director_success');
+    Route::post('/onboarding/demo', [OnboardingController::class, 'joinAsDemo'])
+        ->name('onboarding.demo');
+    
+    // B. RUTAS BLOQUEADAS HASTA COMPLETAR ONBOARDING
+    Route::middleware(['onboarding.completed'])->group(function () {
+        
+        // Dashboard Principal
+        Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
+
+        // Director — Centro de Mando
+        Route::prefix('director')
+            ->name('director.')
+            ->middleware(['role.director'])
+            ->group(function () {
+                Route::get('/dashboard', [DirectorDashboardController::class, 'index'])
+                    ->name('dashboard');
+                Route::get('/profesores', [DirectorDashboardController::class, 'profesores'])
+                    ->name('profesores');
+
+                // Planificaciones feed + auditoría
+                Route::get('/planificaciones', [DirectorPlanificacionesController::class, 'index'])
+                    ->name('planificaciones');
+                Route::get('/planificaciones/{id}/sessions', [DirectorPlanificacionesController::class, 'sessions'])
+                    ->name('planificaciones.sessions');
+                Route::post('/planificaciones/{id}/approve', [DirectorPlanificacionesController::class, 'approve'])
+                    ->name('planificaciones.approve');
+                Route::post('/planificaciones/{id}/reject', [DirectorPlanificacionesController::class, 'reject'])
+                    ->name('planificaciones.reject');
+
+                // Alumnos y boletas
+                Route::get('/students', [DirectorStudentController::class, 'index'])
+                    ->name('students');
+                Route::post('/students', [DirectorStudentController::class, 'store'])
+                    ->name('students.store');
+                Route::get('/students/search', [DirectorStudentController::class, 'search'])
+                    ->name('students.search');
+                Route::get('/report-card/{student}', [DirectorReportCardController::class, 'preview'])
+                    ->name('report-card');
+                Route::get('/report-card/{student}/pdf', [DirectorReportCardController::class, 'pdf'])
+                    ->name('report-card.pdf');
+
+                // Feedback y co-edición del director
+                Route::post('/activities/{id}/feedback', [ActivityFeedbackController::class, 'storeFeedback'])
+                    ->name('activities.feedback');
+                Route::put('/activities/{id}/update', [ActivityFeedbackController::class, 'update'])
+                    ->name('activities.update');
+                Route::get('/planificaciones/{id}/activities', [ActivityFeedbackController::class, 'planActivities'])
+                    ->name('planificaciones.activities');
+                Route::put('/planificaciones/{id}/sessions', [ActivityFeedbackController::class, 'updatePlanificacionSession'])
+                    ->name('planificaciones.sessions.update');
+        });
+        
+        // Representante — Panel de seguimiento
+        Route::prefix('representante')
+            ->name('representante.')
+            ->middleware(['role.representante'])
+            ->group(function () {
+                Route::get('/dashboard', [RepresentanteController::class, 'index'])
+                    ->name('dashboard');
+            });
+
+        // Generador de IA y Herramientas
+        Route::post('/generate-ai', [AIController::class, 'generate'])->name('ai.generate');
+        Route::post('/improve-section', [AIController::class, 'improveSection'])->name('ai.improve_section');
+        Route::post('/plan-pro/nee', [AIController::class, 'planProNEE'])->name('ai.plan_pro.nee');
+        Route::post('/plan-pro/calendario', [AIController::class, 'planProCalendario'])->name('ai.plan_pro.calendario');
+        Route::post('/plan-pro/materiales', [AIController::class, 'planProMateriales'])->name('ai.plan_pro.materiales');
+
+        // Gestión de Planificaciones
+        Route::post('/planning/save', [AIController::class, 'save'])->name('planning.save');
+        Route::delete('/planificaciones/{id}', [AIController::class, 'destroy'])->name('planning.destroy');
+        Route::get('/historial', [AIController::class, 'historial'])->name('historial');
+        Route::get('/planning/history', [PlanningController::class, 'index'])->name('planning.index');
+
+        // ── RUTAS EXCLUSIVAS DE DOCENTES ───────────────────────────────────────
+        Route::middleware(['role.teacher'])->group(function () {
+
+            // Hub del docente
+            Route::get('/teacher/hub', [HubController::class, 'index'])->name('teacher.hub');
+            Route::get('/teacher/api/stats', [HubController::class, 'apiStats'])->name('teacher.api.stats');
+            Route::get('/teacher/api/courses', [HubController::class, 'apiCourses'])->name('teacher.api.courses');
+            Route::get('/teacher/api/courses/{course}', [HubController::class, 'apiCourse'])->name('teacher.api.course');
+            Route::get('/teacher/api/courses/{course}/students/{student}/grades', [HubController::class, 'apiCourseStudentGrades'])->name('teacher.api.course.student.grades');
+            Route::get('/teacher/api/calendar', [HubController::class, 'apiCalendar'])->name('teacher.api.calendar');
+            Route::get('/teacher/api/activities/{activity}', [HubController::class, 'apiActivity'])->name('teacher.api.activity');
+
+            // Asistente de IA
+            Route::post('/ai/command', [AICommandHandlerController::class, 'handle'])->name('ai.command');
+
+            // Gestión Académica — Cursos
+            Route::prefix('teacher/courses')->name('teacher.courses.')->group(function () {
+                Route::get('/', [CoursesController::class, 'index'])->name('index');
+                Route::post('/', [CoursesController::class, 'store'])->name('store');
+                Route::delete('/{course}', [CoursesController::class, 'destroy'])->name('destroy');
+                Route::post('/{course}/import-students', [CoursesController::class, 'importStudents'])->name('import_students');
+                Route::delete('/{course}/students/{student}', [CoursesController::class, 'removeStudent']) ->name('remove_student');
+            });
+
+            // Gestión Académica — Actividades
+            Route::prefix('teacher/activities')->name('teacher.activities.')->group(function () {
+                Route::get('/', [ActivitiesController::class, 'index'])->name('index');
+                Route::get('/create', [ActivitiesController::class, 'index'])->name('create');
+                Route::post('/', [ActivitiesController::class, 'store'])->name('store');
+                Route::post('/ai-description', [ActivitiesController::class, 'generateDescription'])->name('ai_description');
+                Route::post('/{activity}/nee/generate', [ActivitiesController::class, 'generateNee'])->name('nee_generate');
+                Route::post('/{activity}/nee/save', [ActivitiesController::class, 'saveNee'])->name('nee_save');
+                Route::post('/{activity}/ai-edit', [ActivitiesController::class, 'editWithAI'])->name('ai_edit');
+                Route::patch('/{activity}/phases', [ActivitiesController::class, 'updatePhases'])->name('phases');
+                Route::delete('/{activity}', [ActivitiesController::class, 'destroy'])->name('destroy');
+            });
+
+            Route::prefix('teacher/tareas')->name('teacher.tareas.')->group(function () {
+                Route::post('/generate', [TareaController::class, 'generate'])->name('generate');
+                Route::post('/store', [TareaController::class, 'store'])->name('store');
+                Route::patch('/{tarea}/grade', [TareaController::class, 'updateGrade'])->name('grade');
+            });
+
+            // --- PLANIFICADOR MANUAL (CORREGIDO) ---
+            Route::prefix('teacher/planner')->name('teacher.planner.')->group(function () {
+                // El {id?} permite que el Hub entre a /manual sin error
+                Route::get('/manual/{id?}', [ManualPlanningController::class, 'show'])->name('manual'); 
+                Route::post('/manual', [ManualPlanningController::class, 'store'])->name('store');
+                
+                // Ruta show explícita para compatibilidad con redirecciones
+                Route::get('/show/{id}', [ManualPlanningController::class, 'show'])->name('show');
+                
+                Route::get('/manual/pdf/{manualPlanning?}', [ManualPlanningController::class, 'pdf'])->name('pdf');
+            });
+
+            // API: Guardar preferencia de plantilla de clase
+            Route::post('/teacher/api/lesson-template', function (Illuminate\Http\Request $request) {
+                $data = $request->validate(['lesson_template' => 'required|in:clasica,directa,constructivista']);
+                $settings = \App\Models\UserSettings::firstOrCreate(
+                    ['user_id' => \Auth::id()],
+                    []
+                );
+                $settings->update(['lesson_template' => $data['lesson_template']]);
+                return response()->json(['success' => true, 'lesson_template' => $data['lesson_template']]);
+            })->name('teacher.api.lesson-template');
+
+            // API: Crear estudiante
+            Route::post('/teacher/api/students', function (Illuminate\Http\Request $request) {
+                $name = $request->validate(['name' => 'required|string|max:255'])['name'];
+                abort_unless($request->user()?->role === 'profesor' && $request->user()?->colegio_id, 403);
+                $student = \App\Models\Student::create([
+                    'teacher_id' => \Auth::id(),
+                    'colegio_id' => \Auth::user()->colegio_id,
+                    'name' => $name,
+                    'grade' => \Auth::user()->grade ?? '1',
+                    'section' => \Auth::user()->section ?? 'A',
+                ]);
+                foreach (\App\Models\User::where('role', 'director')->where('colegio_id', \Auth::user()->colegio_id)->get(['id']) as $director) {
+                    \App\Models\Notification::create([
+                        'user_id' => $director->id,
+                        'colegio_id' => \Auth::user()->colegio_id,
+                        'title' => 'Nuevo alumno registrado',
+                        'message' => "El/La docente " . (\Auth::user()->name ?? '—') . " registró a {$student->name}.",
+                        'link' => route('director.students'),
+                    ]);
+                }
+                return response()->json(['success' => true, 'student' => $student]);
+            })->name('api.students.create');
+
+            // Gestión Académica — Notas
+            Route::prefix('teacher/grades')->name('teacher.grades.')->group(function () {
+                Route::get('/', [GradesController::class, 'index'])->name('index');
+                Route::get('/{activity}', [GradesController::class, 'create'])->name('show');
+                Route::get('/activity/{activity}/create', [GradesController::class, 'create'])->name('create');
+                Route::get('/activity/{activity}/panel', [GradesController::class, 'panel'])->name('panel');
+                Route::post('/activity/{activity}/quick-store', [GradesController::class, 'quickStore'])->name('quick_store');
+                Route::post('/activity/{activity}/publish', [GradesController::class, 'publish'])->name('publish');
+                Route::post('/activity/{activity}/store', [GradesController::class, 'store'])->name('store');
+                Route::post('/activity/{activity}/ai-parse', [GradesController::class, 'parseWithAI'])->name('ai_parse');
+            });
+
+            // Boleta de calificaciones del docente
+            Route::prefix('teacher/report-card')->name('teacher.report-card.')->group(function () {
+                Route::get('/{student}', [\App\Http\Controllers\Teacher\ReportCardController::class, 'preview'])->name('preview');
+                Route::get('/{student}/pdf', [\App\Http\Controllers\Teacher\ReportCardController::class, 'pdf'])->name('pdf');
+            });
+
+        }); // end role.teacher
+
+        // Perfil de Usuario
+        Route::get('/profile', function () {
+            return view('profile');
+        })->name('profile');
+
+        // Notificaciones (docentes y directores)
+        Route::get('/notifications', [NotificationController::class, 'index'])->name('notifications');
+        Route::post('/notifications/{id}/read', [NotificationController::class, 'markAsRead'])->name('notifications.read');
+        Route::post('/notifications/read-all', [NotificationController::class, 'markAllAsRead'])->name('notifications.read-all');
+    });
+
+    // Ruta para procesar el texto mágico
+    Route::post('/smart-planner/parse', [SmartPlannerController::class, 'parseText'])->name('smart.parse');
+
+    // Ruta de emergencia para cerrar sesión
+    Route::get('/logout-manual', function () {
+        auth()->logout();
+        request()->session()->invalidate();
+        request()->session()->regenerateToken();
+        return redirect('/');
+    });
+});

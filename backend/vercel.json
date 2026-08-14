@@ -8,27 +8,27 @@
   "routes": [
     {
       "src": "/build/(.*)",
-      "dest": "/backend/public/build/$1"
+      "dest": "/public/build/$1"
     },
     {
       "src": "/storage/(.*)",
-      "dest": "/backend/public/storage/$1"
+      "dest": "/public/storage/$1"
     },
     {
       "src": "/favicon.ico",
-      "dest": "/backend/public/favicon.ico"
+      "dest": "/public/favicon.ico"
     },
     {
       "src": "/robots.txt",
-      "dest": "/backend/public/robots.txt"
+      "dest": "/public/robots.txt"
     },
     {
       "src": "/\\.well-known/(.*)",
-      "dest": "/backend/public/.well-known/$1"
+      "dest": "/public/.well-known/$1"
     },
     {
       "src": "/(.*\\.(?:css|js|mjs|map|ico|png|jpg|jpeg|gif|svg|webp|woff2?|ttf|eot|json|webmanifest))$",
-      "dest": "/backend/public/$1"
+      "dest": "/public/$1"
     },
     {
       "src": "/(.*)",
