@@ -27,8 +27,8 @@
         align-items: center;
         justify-content: center;
         cursor: pointer;
-        box-shadow: 0 10px 30px -8px rgba(139, 92, 246, 0.4), 
-                    0 5px 15px -5px rgba(236, 72, 153, 0.3);
+        box-shadow: 0 10px 30px -8px rgba(124, 58, 237, 0.45),
+                    0 5px 15px -5px rgba(236, 72, 153, 0.32);
         transition: all 0.3s cubic-bezier(0.2, 0.9, 0.4, 1.1);
         position: relative;
         overflow: visible;
@@ -38,7 +38,7 @@
         content: '';
         position: absolute;
         inset: -3px;
-        background: linear-gradient(135deg, rgba(139, 92, 246, 0.15), rgba(236, 72, 153, 0.15));
+        background: linear-gradient(135deg, rgba(124, 58, 237, 0.18), rgba(196, 85, 237, 0.15), rgba(236, 72, 153, 0.18));
         border-radius: 50%;
         z-index: -1;
         opacity: 0;
@@ -51,8 +51,8 @@
 
     .nova-ai-trigger:hover {
         transform: scale(1.08);
-        box-shadow: 0 15px 40px -10px rgba(139, 92, 246, 0.5), 
-                    0 8px 20px -6px rgba(236, 72, 153, 0.4);
+        box-shadow: 0 15px 40px -10px rgba(124, 58, 237, 0.55),
+                    0 8px 20px -6px rgba(236, 72, 153, 0.42);
     }
 
     .nova-ai-trigger:active {
@@ -161,7 +161,7 @@
 
     /* Header con gradiente animado */
     .nova-ai-header {
-        background: linear-gradient(135deg, #6C4AE0 0%, #C455ED 50%, #3BC9DB 100%);
+        background: linear-gradient(135deg, #7C3AED 0%, #C455ED 55%, #EC4899 100%);
         background-size: 200% 100%;
         animation: gradient-shift 6s ease infinite;
         padding: 18px 20px;
@@ -583,6 +583,90 @@
         to { opacity: 1; transform: translateX(0); }
     }
 
+    /* Menú inicial: "¿Qué quieres hacer?" (panel sin conversación) */
+    .nova-ai-quickstart {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+        gap: 6px;
+        padding: 20px 8px 10px;
+    }
+
+    .nova-ai-quickstart-icon {
+        width: 46px;
+        height: 46px;
+        border-radius: 16px;
+        background: linear-gradient(135deg, #7C3AED 0%, #C455ED 55%, #EC4899 100%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-size: 18px;
+        box-shadow: 0 10px 24px -10px rgba(124, 58, 237, 0.55);
+        margin-bottom: 4px;
+    }
+
+    .nova-ai-quickstart h4 {
+        font-size: 14.5px;
+        font-weight: 700;
+        color: #1E1133;
+        margin: 0 0 12px;
+    }
+
+    html.dark .nova-ai-quickstart h4 {
+        color: rgba(255, 255, 255, 0.92);
+    }
+
+    .nova-ai-quickstart-actions {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        width: 100%;
+    }
+
+    .quickstart-btn {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        width: 100%;
+        background: rgba(124, 58, 237, 0.06);
+        border: 1px solid rgba(124, 58, 237, 0.16);
+        border-radius: 14px;
+        padding: 11px 14px;
+        font-size: 13px;
+        font-weight: 600;
+        color: #1E1133;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        text-align: left;
+    }
+
+    .quickstart-btn i {
+        color: #C455ED;
+        width: 16px;
+        text-align: center;
+    }
+
+    .quickstart-btn:hover {
+        background: rgba(124, 58, 237, 0.12);
+        border-color: rgba(124, 58, 237, 0.32);
+        transform: translateY(-1px);
+    }
+
+    html.dark .quickstart-btn {
+        background: rgba(196, 85, 237, 0.08);
+        border-color: rgba(196, 85, 237, 0.2);
+        color: rgba(255, 255, 255, 0.9);
+    }
+
+    .nova-ai-quickstart-hint {
+        font-size: 11px;
+        color: #9D89B6;
+        margin: 12px 4px 4px;
+        line-height: 1.5;
+    }
+
     /* Sugerencias rápidas */
     .quick-suggestions {
         display: flex;
@@ -752,17 +836,30 @@
         <!-- Mensajes -->
         <div class="nova-ai-messages" x-ref="messagesContainer">
             <template x-if="messages.length === 0">
-                <div class="message-assistant">
-                    <div class="bubble">
-                        <i class="fa-solid fa-wand-magic-sparkles" style="margin-right: 8px; color: #C455ED;"></i>
-                        ¡Hola! Soy AulaSync, tu asistente educativo.<br>
-                        Puedes pedirme que:<br>
-                        • ✏️ Modifique una clase o actividad<br>
-                        • 📝 Cree planificaciones mensuales<br>
-                        • 🗑️ Elimine actividades por fechas<br>
-                        • 🎯 Genere rúbricas o materiales<br><br>
-                        <strong>¿En qué puedo ayudarte hoy?</strong>
+                <div class="nova-ai-quickstart">
+                    <div class="nova-ai-quickstart-icon">
+                        <i class="fa-solid fa-sparkles"></i>
                     </div>
+                    <h4>¿Qué quieres hacer?</h4>
+                    <div class="nova-ai-quickstart-actions">
+                        <button type="button" class="quickstart-btn"
+                                @click="input = 'Ayúdame a crear una planificación para mi curso'; sendCommand()">
+                            <i class="fa-solid fa-calendar-days"></i>
+                            Crear planificación
+                        </button>
+                        <button type="button" class="quickstart-btn"
+                                @click="input = 'Ayúdame a crear una actividad para mi curso'; sendCommand()">
+                            <i class="fa-solid fa-clipboard-list"></i>
+                            Crear actividad
+                        </button>
+                        <button type="button" class="quickstart-btn" @click="$refs.novaMainTextarea?.focus()">
+                            <i class="fa-solid fa-comment-dots"></i>
+                            Preguntar algo
+                        </button>
+                    </div>
+                    <p class="nova-ai-quickstart-hint">
+                        También puedo ayudarte a agregar alumnos, cargar notas, publicar calificaciones o generar rúbricas.
+                    </p>
                 </div>
             </template>
 
@@ -853,7 +950,7 @@
         <!-- Input -->
         <div class="nova-ai-input">
             <div class="input-wrapper">
-                <textarea x-model="input" @keydown.enter.prevent="if(!$event.shiftKey) sendCommand()" :disabled="loading" rows="1" placeholder="Escribe tu mensaje..."></textarea>
+                <textarea x-ref="novaMainTextarea" x-model="input" @keydown.enter.prevent="if(!$event.shiftKey) sendCommand()" :disabled="loading" rows="1" placeholder="Escribe tu mensaje..."></textarea>
                 <div class="input-actions">
                     <button class="voice-btn" :class="{ 'listening': listening }" @click="toggleVoice()" title="Dictado de voz">
                         <i class="fa-solid" :class="listening ? 'fa-stop' : 'fa-microphone'"></i>

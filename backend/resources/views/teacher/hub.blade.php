@@ -8,31 +8,42 @@
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@600;700;800;900&display=swap" rel="stylesheet">
     <style>
-        /* ── Design System Nova ─────────────────────────────── */
+        /* ── Design System AulaSync (alineado con la landing --az-*) ── */
         :root {
             --nova-deep: #F1F5F9;
             --nova-dark: #FFFFFF;
             --nova-medium: #F8FAFC;
             --nova-light: #F1F5F9;
             --nova-violet: #7C3AED;
-            --nova-fuchsia: #C026D3;
-            --nova-cyan: #06B6D4;
+            --nova-fuchsia: #C455ED;
+            --nova-cyan: #EC4899;
             --nova-success: #22C55E;
             --nova-warning: #F59E0B;
-            --nova-gradient: linear-gradient(135deg, #7C3AED 0%, #C026D3 50%, #06B6D4 100%);
-            --nova-glass: rgba(0, 0, 0, 0.02);
-            --nova-glass-border: rgba(99, 102, 241, 0.12);
-            --nova-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.04), 0 1px 2px -1px rgba(0, 0, 0, 0.06);
-            --text-primary: #0F172A;
-            --text-secondary: #475569;
-            --text-tertiary: #94A3B8;
+            --nova-gradient: linear-gradient(135deg, #7C3AED 0%, #C455ED 55%, #EC4899 100%);
+            --nova-glass: rgba(124, 58, 237, 0.04);
+            --nova-glass-border: rgba(139, 46, 201, 0.14);
+            --nova-shadow: 0 16px 40px -20px rgba(107, 33, 168, 0.24);
+            --text-primary: #1E1133;
+            --text-secondary: #5B4B72;
+            --text-tertiary: #9D89B6;
             --text-inverse: #FFFFFF;
-            --bg-primary: #F1F5F9;
+            --bg-primary: #FBFAF7;
             --bg-secondary: #FFFFFF;
-            --bg-tertiary: #F8FAFC;
+            --bg-tertiary: #F9EEFF;
             --bg-card: rgba(255, 255, 255, 0.92);
             --bg-sidebar: rgba(255, 255, 255, 0.98);
+            /* Alias directos del sistema de la landing, para componentes nuevos */
+            --az-violet: #7C3AED;
+            --az-fuchsia: #C455ED;
+            --az-rose: #EC4899;
+            --az-radius-lg: 26px;
+            --az-radius-md: 18px;
+            --az-shadow-glow: 0 16px 40px -20px rgba(107, 33, 168, 0.34);
+            --font-display: 'Manrope', 'Inter', system-ui, sans-serif;
         }
 
         html.dark {
@@ -40,24 +51,25 @@
             --nova-dark: #0C1225;
             --nova-medium: #11182F;
             --nova-light: #192140;
-            --nova-violet: #6C4AE0;
+            --nova-violet: #8B5CF6;
             --nova-fuchsia: #C455ED;
-            --nova-cyan: #3BC9DB;
+            --nova-cyan: #EC4899;
             --nova-success: #22C55E;
             --nova-warning: #F59E0B;
-            --nova-gradient: linear-gradient(135deg, #6C4AE0 0%, #C455ED 70%, #3BC9DB 100%);
-            --nova-glass: rgba(255, 255, 255, 0.03);
-            --nova-glass-border: rgba(99, 102, 241, 0.18);
-            --nova-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            --nova-gradient: linear-gradient(135deg, #8B5CF6 0%, #C455ED 55%, #EC4899 100%);
+            --nova-glass: rgba(196, 85, 237, 0.05);
+            --nova-glass-border: rgba(196, 85, 237, 0.18);
+            --nova-shadow: 0 25px 50px -12px rgba(59, 7, 100, 0.5);
             --text-primary: rgba(255, 255, 255, 0.92);
             --text-secondary: rgba(255, 255, 255, 0.58);
             --text-tertiary: rgba(255, 255, 255, 0.3);
             --text-inverse: #0C1225;
-            --bg-primary: #060B18;
-            --bg-secondary: #0C1225;
-            --bg-tertiary: #11182F;
-            --bg-card: rgba(12, 18, 37, 0.85);
-            --bg-sidebar: rgba(12, 18, 37, 0.9);
+            --bg-primary: #0F0A1F;
+            --bg-secondary: #170F2E;
+            --bg-tertiary: #1E1440;
+            --bg-card: rgba(23, 15, 46, 0.85);
+            --bg-sidebar: rgba(20, 13, 40, 0.92);
+            --az-shadow-glow: 0 25px 50px -12px rgba(196, 85, 237, 0.4);
         }
 
         [x-cloak] {
@@ -484,6 +496,7 @@
         }
 
         .brand-title {
+            font-family: var(--font-display);
             font-size: 18px;
             font-weight: 800;
             background: linear-gradient(135deg, var(--text-primary), var(--nova-violet));
@@ -514,9 +527,22 @@
 }
 
         /* ── Navegación ─────────────────────────────────────── */
+        .nav-group-label {
+            padding: 0 16px 8px;
+            font-size: 10.5px;
+            font-weight: 800;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: var(--text-tertiary);
+        }
+
         .nav-section {
             padding: 20px 16px;
             border-bottom: 1px solid var(--nova-glass-border);
+        }
+
+        .nav-section-account {
+            padding: 16px 16px 20px;
         }
 
         .nav-item {
@@ -966,6 +992,331 @@
             font-size: 10px;
         }
 
+        /* ── Dashboard editorial: header, stat strip, AI command center, insights ── */
+        .dash-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 24px;
+            margin-top: 4px;
+            margin-bottom: 22px;
+        }
+
+        .dash-eyebrow {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12.5px;
+            font-weight: 700;
+            text-transform: capitalize;
+            color: var(--text-tertiary);
+            margin-bottom: 8px;
+        }
+
+        .dash-greeting {
+            font-family: var(--font-display);
+            font-size: 32px;
+            font-weight: 800;
+            background: linear-gradient(135deg, var(--text-primary), var(--nova-violet));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 8px;
+            line-height: 1.15;
+        }
+
+        .dash-subtitle {
+            color: var(--text-secondary);
+            font-size: 15px;
+            max-width: 560px;
+            line-height: 1.5;
+        }
+
+        .dash-stat-strip {
+            display: flex;
+            align-items: center;
+            gap: 22px;
+            background: var(--bg-card);
+            border: 1px solid var(--nova-glass-border);
+            border-radius: var(--az-radius-md);
+            padding: 16px 24px;
+            margin-bottom: 20px;
+            overflow-x: auto;
+        }
+
+        .dash-stat-chip {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            white-space: nowrap;
+        }
+
+        .dash-stat-chip-value {
+            font-family: var(--font-display);
+            font-size: 20px;
+            font-weight: 800;
+            color: var(--text-primary);
+            line-height: 1;
+        }
+
+        .dash-stat-chip-label {
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--text-tertiary);
+        }
+
+        .dash-stat-chip-divider {
+            width: 1px;
+            height: 28px;
+            background: var(--nova-glass-border);
+            flex-shrink: 0;
+        }
+
+        /* AulaSync Intelligence — command center */
+        .ai-command-card {
+            position: relative;
+            background: var(--bg-card);
+            border: 1px solid var(--nova-glass-border);
+            border-radius: var(--az-radius-lg);
+            padding: 28px 30px;
+            margin-bottom: 26px;
+            overflow: hidden;
+        }
+
+        .ai-command-glow {
+            position: absolute;
+            top: -60%;
+            right: -10%;
+            width: 320px;
+            height: 320px;
+            background: radial-gradient(circle, rgba(196, 85, 237, 0.16), transparent 70%);
+            pointer-events: none;
+        }
+
+        .ai-command-head {
+            display: flex;
+            align-items: flex-start;
+            gap: 18px;
+            position: relative;
+            z-index: 1;
+            margin-bottom: 22px;
+        }
+
+        .ai-command-icon {
+            width: 52px;
+            height: 52px;
+            flex-shrink: 0;
+            border-radius: var(--az-radius-md);
+            background: var(--nova-gradient);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 22px;
+            box-shadow: var(--az-shadow-glow);
+        }
+
+        .ai-command-copy h2 {
+            font-family: var(--font-display);
+            font-size: 18px;
+            font-weight: 800;
+            color: var(--text-primary);
+            margin-bottom: 6px;
+        }
+
+        .ai-command-copy p {
+            font-size: 14px;
+            color: var(--text-secondary);
+            line-height: 1.55;
+            max-width: 620px;
+        }
+
+        .ai-command-footer {
+            position: relative;
+            z-index: 1;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 14px;
+        }
+
+        .ai-insight-counter {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: var(--nova-glass);
+            border: 1px solid var(--nova-glass-border);
+            color: var(--text-secondary);
+            font-size: 12.5px;
+            font-weight: 600;
+            padding: 8px 16px;
+            border-radius: 30px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .ai-insight-counter:hover {
+            border-color: var(--nova-violet);
+            color: var(--text-primary);
+        }
+
+        .ai-insight-counter i {
+            color: var(--nova-fuchsia);
+        }
+
+        .ai-command-actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .btn-ai-ghost {
+            background: transparent;
+            border: none;
+            color: var(--nova-violet);
+            font-size: 13.5px;
+            font-weight: 700;
+            cursor: pointer;
+            padding: 10px 6px;
+            transition: color 0.2s ease;
+        }
+
+        .btn-ai-ghost:hover {
+            color: var(--nova-fuchsia);
+        }
+
+        /* Insights */
+        .insights-section {
+            margin-bottom: 30px;
+            scroll-margin-top: 24px;
+        }
+
+        .insights-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 16px;
+            margin-bottom: 18px;
+        }
+
+        .insight-card {
+            background: var(--bg-card);
+            border: 1px solid var(--nova-glass-border);
+            border-radius: var(--az-radius-md);
+            padding: 18px 20px;
+            transition: all 0.25s ease;
+        }
+
+        .insight-card:hover {
+            transform: translateY(-3px);
+            box-shadow: var(--nova-shadow);
+        }
+
+        .insight-chip {
+            display: inline-flex;
+            font-size: 10.5px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            padding: 4px 10px;
+            border-radius: 30px;
+            margin-bottom: 12px;
+        }
+
+        .insight-atencion .insight-chip {
+            color: #B4761F;
+            background: #FDF0DD;
+        }
+
+        .insight-tendencia .insight-chip {
+            color: var(--nova-violet);
+            background: var(--nova-glass);
+        }
+
+        .insight-logro .insight-chip {
+            color: #159A79;
+            background: #DFF6EC;
+        }
+
+        .insight-recomendacion .insight-chip {
+            color: var(--nova-fuchsia);
+            background: var(--nova-glass);
+        }
+
+        .insight-proximamente {
+            opacity: 0.7;
+        }
+
+        .insight-proximamente .insight-chip {
+            color: var(--text-tertiary);
+            background: var(--nova-glass);
+        }
+
+        html.dark .insight-atencion .insight-chip {
+            color: #FCD34D;
+            background: rgba(252, 211, 77, 0.12);
+        }
+
+        html.dark .insight-logro .insight-chip {
+            color: #34D399;
+            background: rgba(52, 211, 153, 0.12);
+        }
+
+        .insight-course {
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--text-tertiary);
+            margin-bottom: 4px;
+        }
+
+        .insight-text {
+            font-size: 13.5px;
+            color: var(--text-primary);
+            line-height: 1.5;
+            margin-bottom: 12px;
+        }
+
+        .insight-action {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: transparent;
+            border: none;
+            color: var(--nova-violet);
+            font-size: 12.5px;
+            font-weight: 700;
+            cursor: pointer;
+            padding: 0;
+        }
+
+        .insight-action:hover {
+            color: var(--nova-fuchsia);
+        }
+
+        .dash-quote {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 13px;
+            font-style: italic;
+            color: var(--text-tertiary);
+            padding: 4px 2px;
+        }
+
+        .dash-quote i {
+            color: var(--nova-glass-border);
+            font-size: 12px;
+        }
+
+        @media (max-width: 767px) {
+            .dash-header {
+                flex-direction: column;
+            }
+
+            .dash-stat-strip {
+                justify-content: flex-start;
+            }
+        }
+
         /* ── Tarjetas de Contenido ──────────────────────────── */
         .content-grid-2 {
             display: grid;
@@ -1104,6 +1455,7 @@
         }
 
         .section-title h2 {
+            font-family: var(--font-display);
             font-size: 18px;
             font-weight: 700;
             color: var(--text-primary);
@@ -1119,8 +1471,8 @@
             background: var(--bg-card);
             backdrop-filter: blur(10px);
             border: 1px solid var(--nova-glass-border);
-            border-radius: 24px;
-            padding: 20px;
+            border-radius: var(--az-radius-lg);
+            padding: 22px;
             cursor: pointer;
             transition: all 0.3s ease;
             position: relative;
@@ -1142,7 +1494,7 @@
         .course-card:hover {
             transform: translateY(-5px);
             border-color: var(--nova-violet);
-            box-shadow: var(--nova-shadow);
+            box-shadow: var(--az-shadow-glow);
         }
 
         .course-card:hover::before {
@@ -1167,11 +1519,18 @@
             font-size: 20px;
             font-weight: 700;
             color: white;
+            flex-shrink: 0;
+        }
+
+        .course-card-info {
+            flex: 1;
+            min-width: 0;
         }
 
         .course-card-info h3 {
             font-size: 16px;
             font-weight: 700;
+            font-family: var(--font-display);
             color: var(--text-primary);
             margin-bottom: 4px;
         }
@@ -1179,6 +1538,52 @@
         .course-card-info p {
             font-size: 12px;
             color: var(--text-tertiary);
+        }
+
+        .course-pending-badge {
+            flex-shrink: 0;
+            font-size: 10.5px;
+            font-weight: 700;
+            color: #B4761F;
+            background: #FDF0DD;
+            border: 1px solid rgba(180, 118, 31, 0.2);
+            padding: 5px 10px;
+            border-radius: 30px;
+            white-space: nowrap;
+        }
+
+        html.dark .course-pending-badge {
+            color: #FCD34D;
+            background: rgba(252, 211, 77, 0.12);
+            border-color: rgba(252, 211, 77, 0.25);
+        }
+
+        .course-progress {
+            margin-bottom: 14px;
+        }
+
+        .course-progress-head {
+            display: flex;
+            justify-content: space-between;
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--text-tertiary);
+            margin-bottom: 6px;
+        }
+
+        .course-progress-track {
+            height: 6px;
+            border-radius: 30px;
+            background: var(--nova-glass);
+            border: 1px solid var(--nova-glass-border);
+            overflow: hidden;
+        }
+
+        .course-progress-fill {
+            height: 100%;
+            border-radius: 30px;
+            background: var(--nova-gradient);
+            transition: width 0.4s ease;
         }
 
         .course-stats {
@@ -2773,6 +3178,7 @@
     </div>
 </div>
 
+        <div class="nav-group-label">Enseñanza</div>
         <nav class="nav-section">
             <button @click="loadWelcome()" :class="{ active: view === 'welcome' }" class="nav-item">
                 <i class="fa-solid fa-house-chimney"></i>
@@ -2787,7 +3193,7 @@
             </button>
             <a href="{{ route('historial') }}" class="nav-item">
                 <i class="fa-solid fa-folder-open"></i>
-                <span>Mis Planificaciones</span>
+                <span>Planificaciones</span>
                 <i class="fa-solid fa-arrow-up-right-from-square" style="margin-left: auto; font-size: 10px; opacity: 0.4;"></i>
             </a>
             <a href="{{ route('teacher.activities.index') }}" class="nav-item">
@@ -2834,6 +3240,14 @@
                 </button>
             </template>
         </div>
+
+        <div class="nav-group-label" style="margin-top: 4px;">Cuenta</div>
+        <nav class="nav-section-account">
+            <a href="{{ route('profile') }}" class="nav-item">
+                <i class="fa-solid fa-gear"></i>
+                <span>Configuración</span>
+            </a>
+        </nav>
     </aside>
 
     {{-- CANVAS PRINCIPAL --}}
@@ -2859,15 +3273,15 @@
         {{-- WELCOME VIEW --}}
         <template x-if="!canvasLoading && view === 'welcome'">
             <div style="animation: slide-up 0.5s ease;">
-                {{-- Header --}}
-                <div class="flex items-center justify-between mt-4 mb-6">
-                    <div>
-                        <h1 style="font-size: 32px; font-weight: 800; background: linear-gradient(135deg, var(--text-primary), var(--nova-violet)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 6px;">
-                            ¡Hola, {{ auth()->user()->name }}!
-                        </h1>
-                        <p style="color: var(--text-tertiary); font-size: 15px;">
-                            {{ now()->isoFormat('dddd, D [de] MMMM') }} · Tu resumen académico
+                {{-- Header editorial --}}
+                <div class="dash-header">
+                    <div class="dash-header-main">
+                        <p class="dash-eyebrow">
+                            <i class="fa-regular fa-calendar"></i>
+                            {{ now()->isoFormat('dddd, D [de] MMMM') }}
                         </p>
+                        <h1 class="dash-greeting" x-text="greetingTitle()"></h1>
+                        <p class="dash-subtitle" x-text="greetingSubtitle()"></p>
                     </div>
                     <div class="flex items-center space-x-4">
                         <div class="relative z-50" @click.outside="showNotifications = false">
@@ -2922,87 +3336,86 @@
                     </div>
                 </div>
 
-                {{-- Stats --}}
+                {{-- Franja de métricas reales (compacta, no protagonista) --}}
                 <template x-if="stats">
-                    <div class="stats-grid">
-                        <div class="stat-card-nova">
-                            <div class="stat-header">
-                                <span class="stat-label">Cursos activos</span>
-                                <div class="stat-icon">📚</div>
-                            </div>
-                            <div class="stat-value" x-text="stats.total_courses"></div>
-                            <div class="stat-footer">
-                                <i class="fa-regular fa-calendar"></i>
-                                <span>este año</span>
-                            </div>
+                    <div class="dash-stat-strip">
+                        <div class="dash-stat-chip">
+                            <span class="dash-stat-chip-value" x-text="stats.total_courses"></span>
+                            <span class="dash-stat-chip-label">Cursos activos</span>
                         </div>
-                        <div class="stat-card-nova">
-                            <div class="stat-header">
-                                <span class="stat-label">Alumnos</span>
-                                <div class="stat-icon">👥</div>
-                            </div>
-                            <div class="stat-value" x-text="stats.total_students"></div>
-                            <div class="stat-footer">
-                                <i class="fa-regular fa-user"></i>
-                                <span>inscritos total</span>
-                            </div>
+                        <div class="dash-stat-chip-divider"></div>
+                        <div class="dash-stat-chip">
+                            <span class="dash-stat-chip-value" x-text="stats.total_students"></span>
+                            <span class="dash-stat-chip-label">Alumnos</span>
                         </div>
-                        <div class="stat-card-nova">
-                            <div class="stat-header">
-                                <span class="stat-label">Promedio</span>
-                                <div class="stat-icon" x-text="stats.climate?.icon ?? '📊'"></div>
-                            </div>
-                            <div class="stat-value" x-text="stats.avg_grade ?? '—'"></div>
-                            <div class="stat-footer" x-text="stats.climate?.label ?? 'Sin datos'"></div>
+                        <div class="dash-stat-chip-divider"></div>
+                        <div class="dash-stat-chip">
+                            <span class="dash-stat-chip-value" x-text="stats.avg_grade ?? '—'"></span>
+                            <span class="dash-stat-chip-label" x-text="stats.climate?.label ?? 'Promedio'"></span>
                         </div>
-                        <div class="stat-card-nova">
-                            <div class="stat-header">
-                                <span class="stat-label">Esta semana</span>
-                                <div class="stat-icon">📅</div>
-                            </div>
-                            <div class="stat-value" x-text="stats.activities_this_week"></div>
-                            <div class="stat-footer">
-                                <i class="fa-regular fa-clock"></i>
-                                <span>actividades</span>
-                            </div>
+                        <div class="dash-stat-chip-divider"></div>
+                        <div class="dash-stat-chip">
+                            <span class="dash-stat-chip-value" x-text="stats.activities_this_week"></span>
+                            <span class="dash-stat-chip-label">Esta semana</span>
                         </div>
                     </div>
                 </template>
 
-                {{-- Próxima entrega + Frase --}}
-                <div class="content-grid-2">
-                    <div class="content-card">
-                        <div class="card-header">
-                            <i class="fa-regular fa-clock"></i>
-                            <div>
-                                <h3>Próxima Entrega</h3>
-                                <p>Actividades pendientes</p>
-                            </div>
+                {{-- AulaSync Intelligence — command center --}}
+                <div class="ai-command-card">
+                    <div class="ai-command-glow" aria-hidden="true"></div>
+                    <div class="ai-command-head">
+                        <div class="ai-command-icon">
+                            <i class="fa-solid fa-sparkles"></i>
                         </div>
-                        <template x-if="stats?.next_activity">
-                            <div class="next-activity-content">
-                                <div class="activity-tag">
-                                    <i class="fa-regular fa-calendar"></i>
-                                    <span x-text="stats.next_activity.title"></span>
-                                </div>
-                                <p style="color: var(--text-secondary); font-size: 13px;" x-text="stats.next_activity.course_name"></p>
-                                <div style="margin-top: 10px;">
-                                    <span style="background: var(--nova-glass); color: var(--nova-cyan); padding: 6px 14px; border-radius: 30px; font-size: 12px;">
-                                        <i class="fa-regular fa-calendar mr-1"></i>
-                                        <span x-text="stats.next_activity.due_date"></span>
-                                    </span>
-                                </div>
+                        <div class="ai-command-copy">
+                            <h2>AulaSync Intelligence</h2>
+                            <p x-text="aiSummaryText()"></p>
+                        </div>
+                    </div>
+                    <div class="ai-command-footer">
+                        <button type="button" class="ai-insight-counter" @click="scrollToInsights()">
+                            <i class="fa-solid fa-bolt"></i>
+                            <span x-text="activeInsightsCount()"></span>
+                            <span x-text="activeInsightsCount() === 1 ? 'insight requiere' : 'insights requieren'"></span>
+                            tu atención
+                        </button>
+                        <div class="ai-command-actions">
+                            <button type="button" class="btn-ai-ghost" @click="scrollToInsights()">Ver insights</button>
+                            <button type="button" class="btn-primary" @click="openBubbleWithFocus()">
+                                <i class="fa-solid fa-robot"></i>
+                                Preguntar a AulaSync AI
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                {{-- Insights de AulaSync --}}
+                <div class="insights-section" x-ref="insightsSection">
+                    <div class="section-title">
+                        <i class="fa-solid fa-wand-magic-sparkles"></i>
+                        <h2>Insights de AulaSync</h2>
+                    </div>
+                    <div class="insights-grid">
+                        <template x-for="insight in insightsList()" :key="insight.id">
+                            <div class="insight-card" :class="'insight-' + insight.type">
+                                <span class="insight-chip" x-text="insight.chipLabel"></span>
+                                <p class="insight-course" x-show="insight.course" x-text="insight.course"></p>
+                                <p class="insight-text" x-text="insight.text"></p>
+                                <button type="button"
+                                        class="insight-action"
+                                        x-show="insight.actionLabel"
+                                        @click="runInsightAction(insight)">
+                                    <span x-text="insight.actionLabel"></span>
+                                    <i class="fa-solid fa-arrow-right"></i>
+                                </button>
                             </div>
                         </template>
-                        <template x-if="!stats?.next_activity">
-                            <p style="color: var(--text-tertiary); font-style: italic;">Sin entregas pendientes próximamente.</p>
-                        </template>
                     </div>
-
-                    <div class="content-card quote-card">
-                        <div class="quote-text">"{{ $dailyQuote }}"</div>
-                        <div class="quote-author">Frase del día</div>
-                    </div>
+                    <p class="dash-quote">
+                        <i class="fa-solid fa-quote-left"></i>
+                        {{ $dailyQuote }}
+                    </p>
                 </div>
 
                 {{-- Mis Cursos --}}
@@ -3021,7 +3434,21 @@
                                             <h3 x-text="c.subject_name"></h3>
                                             <p x-text="c.grade + (c.section ? ' / ' + c.section : '')"></p>
                                         </div>
+                                        <span class="course-pending-badge" x-show="c.pending_grading_count > 0">
+                                            <span x-text="c.pending_grading_count"></span> sin calificar
+                                        </span>
                                     </div>
+
+                                    <div class="course-progress" x-show="c.avg_score !== null && c.avg_score !== undefined">
+                                        <div class="course-progress-head">
+                                            <span>Rendimiento</span>
+                                            <span x-text="c.avg_score + '/20'"></span>
+                                        </div>
+                                        <div class="course-progress-track">
+                                            <div class="course-progress-fill" :style="`width: ${Math.max(4, Math.min(100, Math.round((c.avg_score / 20) * 100)))}%`"></div>
+                                        </div>
+                                    </div>
+
                                     <div class="course-stats">
                                         <span class="course-stat">
                                             <i class="fa-solid fa-users"></i>
@@ -3033,7 +3460,7 @@
                                         </span>
                                     </div>
                                     <div class="card-footer">
-                                        <span>Ver detalle <i class="fa-solid fa-arrow-right"></i></span>
+                                        <span>Entrar al curso <i class="fa-solid fa-arrow-right"></i></span>
                                     </div>
                                 </div>
                             </template>
@@ -4292,6 +4719,138 @@ function teacherHub() {
                     document.querySelector('#ai-assistant-root textarea')?.focus();
                 });
             }
+        },
+
+        // ── AulaSync Intelligence: saludo, resumen e insights (Fase 1) ──────
+
+        greetingTitle() {
+            const hour = new Date().getHours();
+            const name = {{ Illuminate\Support\Js::from(explode(' ', auth()->user()->name)[0] ?? auth()->user()->name) }};
+            const greeting = hour < 12 ? 'Buenos días' : (hour < 19 ? 'Buenas tardes' : 'Buenas noches');
+            return `${greeting}, ${name}`;
+        },
+
+        greetingSubtitle() {
+            const stats = this.stats;
+            if (!stats) return 'Cargando tu resumen académico…';
+            if (!stats.total_courses) return 'Crea tu primer curso para empezar a ver tu resumen aquí.';
+            if (stats.next_activity) {
+                const count = stats.activities_this_week ?? 0;
+                return `Tienes ${count} actividad${count === 1 ? '' : 'es'} esta semana. Tu próxima entrega es "${stats.next_activity.title}".`;
+            }
+            const courseCount = stats.total_courses;
+            return `Tienes ${courseCount} curso${courseCount === 1 ? '' : 's'} activo${courseCount === 1 ? '' : 's'} y ninguna entrega pendiente por ahora.`;
+        },
+
+        aiSummaryText() {
+            const stats = this.stats;
+            if (!stats) return 'Analizando tu semana…';
+            const parts = [];
+            if (stats.activities_this_week > 0) {
+                parts.push(`tienes ${stats.activities_this_week} actividad${stats.activities_this_week === 1 ? '' : 'es'} esta semana`);
+            }
+            if (stats.avg_grade !== null && stats.avg_grade !== undefined) {
+                parts.push(`tu promedio general está en ${stats.avg_grade} (${stats.climate?.label ?? 'sin datos'})`);
+            }
+            if (parts.length === 0) {
+                return 'Aún no tengo suficientes datos. Crea tu primera actividad para que pueda ayudarte a analizar tu semana.';
+            }
+            return `He revisado tu semana: ${parts.join(' y ')}.`;
+        },
+
+        insightsList() {
+            const stats = this.stats;
+            const courses = this.courses || [];
+            const insights = [];
+
+            if (stats?.next_activity) {
+                insights.push({
+                    id: 'next-activity',
+                    type: 'atencion',
+                    chipLabel: 'Atención',
+                    course: stats.next_activity.course_name,
+                    text: `"${stats.next_activity.title}" vence el ${stats.next_activity.due_date}.`,
+                    actionLabel: 'Ver calendario',
+                    actionType: 'calendar',
+                    actionPayload: null,
+                });
+            }
+
+            const pendingCourse = [...courses]
+                .filter(c => (c.pending_grading_count || 0) > 0)
+                .sort((a, b) => (b.pending_grading_count || 0) - (a.pending_grading_count || 0))[0];
+            if (pendingCourse) {
+                insights.push({
+                    id: 'pending-grading-' + pendingCourse.id,
+                    type: 'atencion',
+                    chipLabel: 'Atención',
+                    course: pendingCourse.name,
+                    text: `${pendingCourse.pending_grading_count} actividad${pendingCourse.pending_grading_count === 1 ? '' : 'es'} sin calificar todavía.`,
+                    actionLabel: 'Investigar',
+                    actionType: 'course',
+                    actionPayload: pendingCourse.id,
+                });
+            }
+
+            if (stats?.grade_trend) {
+                const delta = stats.grade_trend.delta;
+                const improving = delta > 0.4;
+                const dropping = delta < -0.4;
+                insights.push({
+                    id: 'grade-trend',
+                    type: dropping ? 'atencion' : (improving ? 'logro' : 'tendencia'),
+                    chipLabel: dropping ? 'Atención' : (improving ? 'Logro' : 'Tendencia'),
+                    course: null,
+                    text: dropping
+                        ? `Tu promedio bajó de ${stats.grade_trend.previous_week_avg} a ${stats.grade_trend.current_week_avg} esta semana.`
+                        : (improving
+                            ? `Tu promedio subió de ${stats.grade_trend.previous_week_avg} a ${stats.grade_trend.current_week_avg} esta semana.`
+                            : `Tu promedio se mantiene estable en ${stats.grade_trend.current_week_avg}.`),
+                    actionLabel: null,
+                    actionType: null,
+                    actionPayload: null,
+                });
+            } else if (stats?.avg_grade !== null && stats?.avg_grade !== undefined) {
+                const attention = ['Atención', 'Intervención'].includes(stats.climate?.label);
+                insights.push({
+                    id: 'grade-overview',
+                    type: attention ? 'atencion' : 'logro',
+                    chipLabel: attention ? 'Atención' : 'Logro',
+                    course: null,
+                    text: `Promedio general: ${stats.avg_grade}/20 (${stats.climate?.label ?? 'Sin datos'}).`,
+                    actionLabel: null,
+                    actionType: null,
+                    actionPayload: null,
+                });
+            }
+
+            insights.push({
+                id: 'attendance-soon',
+                type: 'proximamente',
+                chipLabel: 'Próximamente',
+                course: null,
+                text: 'El seguimiento de asistencia llegará pronto a AulaSync Intelligence.',
+                actionLabel: null,
+                actionType: null,
+                actionPayload: null,
+            });
+
+            return insights;
+        },
+
+        activeInsightsCount() {
+            return this.insightsList().filter(i => i.type !== 'proximamente').length;
+        },
+
+        runInsightAction(insight) {
+            if (!insight?.actionType) return;
+            if (insight.actionType === 'course') this.loadCourse(insight.actionPayload);
+            else if (insight.actionType === 'calendar') this.loadCalendar();
+            else if (insight.actionType === 'ai') this.sendAICommand(insight.actionPayload);
+        },
+
+        scrollToInsights() {
+            this.$refs.insightsSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
         },
 
         sendAICommand(text) {

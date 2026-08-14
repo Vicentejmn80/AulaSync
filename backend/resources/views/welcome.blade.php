@@ -245,19 +245,15 @@
             flex-shrink: 0;
         }
 
-        /* Navbar branding — proporción y alineación exactas */
-        .az-nav .az-logo {
-            gap: 12px;
-        }
 
-        /* Mark compuesto: cuadro fucsia + emoji a gran escala */
+        /* Mark: cuadro fucsia + emoji leyendo */
         .az-nav .az-logo-mark {
             width: 52px;
             height: 52px;
             min-width: 52px;
             min-height: 52px;
             border-radius: 13px;
-            background: transparent;
+            background: var(--az-gradient-brand);
             display: flex;
             align-items: center;
             justify-content: center;
@@ -267,11 +263,30 @@
             padding: 0;
         }
 
-        .az-nav .az-logo-mark img {
+        .az-logo-mark {
+            width: 44px;
+            height: 44px;
+            min-width: 44px;
+            min-height: 44px;
+            border-radius: 11px;
+            background: var(--az-gradient-brand);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            box-shadow: 0 6px 16px -6px rgba(139, 46, 201, 0.45);
+            overflow: hidden;
+            padding: 0;
+        }
+
+        .az-logo-mark img {
             width: 100%;
             height: 100%;
-            object-fit: cover;
+            max-width: none;
+            object-fit: contain;
             display: block;
+            transform: scale(1.65);
+            transform-origin: center center;
         }
 
         .az-nav .az-logo-text {
@@ -284,26 +299,6 @@
             color: #0f172a;
             margin: 0;
             padding-top: 1px;
-        }
-
-        .az-logo-mark {
-            width: 44px;
-            height: 44px;
-            border-radius: 11px;
-            background: transparent;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            flex-shrink: 0;
-            box-shadow: 0 6px 16px -6px rgba(139, 46, 201, 0.45);
-            overflow: hidden;
-        }
-
-        .az-logo-mark img {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-            display: block;
         }
 
         .az-logo-text {
@@ -1311,7 +1306,7 @@
             <div class="az-container az-nav-inner">
                 <a href="{{ route('welcome') }}" class="az-logo" aria-label="AulaSync — Inicio">
                     <span class="az-logo-mark" aria-hidden="true">
-                        <img src="/images/aulasync-mark.png" alt="">
+                        <img src="/images/emoji leyendo sin fondo.png" alt="">
                     </span>
                     <span class="az-logo-text">AulaSync</span>
                 </a>
@@ -1860,7 +1855,9 @@
             <div class="az-footer-top">
                 <div class="az-footer-brand">
                     <a href="{{ route('welcome') }}" class="az-logo" aria-label="AulaSync — Inicio">
-                        <span class="az-logo-mark" aria-hidden="true"><img src="/images/aulasync-mark.png" alt=""></span>
+                        <span class="az-logo-mark" aria-hidden="true">
+                            <img src="/images/emoji leyendo sin fondo.png" alt="">
+                        </span>
                         <span class="az-logo-text">AulaSync</span>
                     </a>
                     <p>Gestión académica más clara, comunidades más conectadas.</p>
