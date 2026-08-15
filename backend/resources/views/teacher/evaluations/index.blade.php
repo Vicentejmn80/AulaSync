@@ -271,6 +271,7 @@
                     <span class="pill" x-text="ev.status"></span>
                     <a class="btn btn-ghost" :href="`/teacher/evaluations/${ev.id}/print`" target="_blank">Imprimir</a>
                     <a class="btn btn-soft" x-show="ev.mode === 'digital' && ev.public_token" :href="`/e/${ev.public_token}`" target="_blank">Abrir examen</a>
+                    <button class="btn btn-soft" @click="addToPlan(ev.id)"><i class="fa-solid fa-diagram-project"></i> Agregar al plan</button>
                     <button class="btn btn-ghost" @click="duplicate(ev.id)">Duplicar</button>
                     <button class="btn btn-ghost" @click="remove(ev.id)">Eliminar</button>
                 </div>
@@ -408,6 +409,22 @@ function evaluationsApp() {
             if (!confirm('¿Eliminar esta evaluación?')) return;
             await fetch(`/teacher/evaluations/${id}`, { method: 'DELETE', headers: { 'X-CSRF-TOKEN': this.csrf(), 'Accept': 'application/json' } });
             this.evaluations = this.evaluations.filter(e => e.id !== id);
+        },
+        async addToPlan(id) {
+            this.error = '';
+            this.message = '';
+            try {
+                const res = await fetch('{{ route('teacher.assessment.attach_evaluation') }}', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': this.csrf(), 'Accept': 'application/json' },
+                    body: JSON.stringify({ evaluation_id: id, weight_percentage: 10, category: 'summative' }),
+                });
+                const data = await res.json();
+                if (!data.success) { this.error = data.error || 'No se pudo agregar al plan.'; return; }
+                this.message = data.message || 'Evaluación agregada al plan.';
+            } catch (e) {
+                this.error = 'Error de red al sincronizar con el plan.';
+            }
         },
         async gradeAi(id) {
             const res = await fetch(`/teacher/evaluations/attempts/${id}/grade-ai`, { method: 'POST', headers: { 'X-CSRF-TOKEN': this.csrf(), 'Accept': 'application/json' } });

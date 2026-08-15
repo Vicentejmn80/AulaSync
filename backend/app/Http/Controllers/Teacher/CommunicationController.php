@@ -3,13 +3,11 @@
 namespace App\Http\Controllers\Teacher;
 
 use App\Http\Controllers\Controller;
-use App\Models\Activity;
 use App\Models\CommunicationAnnouncement;
 use App\Models\CommunicationAnnouncementRead;
 use App\Models\CommunicationMessage;
 use App\Models\CommunicationThread;
 use App\Models\Course;
-use App\Models\CourseEvaluationPlan;
 use App\Models\Student;
 use Carbon\Carbon;
 use Illuminate\Database\QueryException;
@@ -37,7 +35,6 @@ class CommunicationController extends Controller
 
         $announcements = collect();
         $threads = collect();
-        $plans = collect();
 
         try {
             if ($this->communicationTablesReady()) {
@@ -74,12 +71,6 @@ class CommunicationController extends Controller
                         ];
                     })
                     ->values();
-
-                $plans = CourseEvaluationPlan::where('teacher_id', $teacher->id)
-                    ->with(['course:id,subject_name,grade,section', 'items'])
-                    ->latest()
-                    ->limit(20)
-                    ->get();
             }
         } catch (QueryException $e) {
             Log::warning('Communication index skipped due to missing schema: ' . $e->getMessage());
@@ -90,8 +81,7 @@ class CommunicationController extends Controller
             'courses',
             'students',
             'announcements',
-            'threads',
-            'plans'
+            'threads'
         ));
     }
 
@@ -334,170 +324,6 @@ class CommunicationController extends Controller
         }
     }
 
-    public function generateEvaluationPlan(Request $request): JsonResponse
-    {
-        $data = $request->validate([
-            'course_id' => 'required|integer',
-            'program_text' => 'required|string|min:12|max:5000',
-            'weeks' => 'nullable|integer|min:4|max:40',
-        ]);
-
-        $teacher = auth()->user();
-        $course = Course::where('id', $data['course_id'])->where('teacher_id', $teacher->id)->firstOrFail();
-        $weeks = $data['weeks'] ?? 12;
-
-        $apiKey = config('services.openai.key');
-        if (empty($apiKey)) {
-            return response()->json(['success' => true, 'plan' => $this->fallbackPlan($course, $weeks)]);
-        }
-
-        $prompt = "Curso: {$course->subject_name} {$course->grade} {$course->section}\n"
-            . "Duración estimada: {$weeks} semanas.\n"
-            . "Programa del docente: {$data['program_text']}\n"
-            . 'Devuelve JSON: {"title":"","summary":"","items":[{"unit_name":"","assessment_type":"","weight_percentage":0,"due_date":"YYYY-MM-DD","notes":""}]}.'
-            . 'Debe sumar 100% y distribuir equilibradamente por unidad.';
-
-        try {
-            $response = Http::withToken($apiKey)
-                ->timeout(55)
-                ->post('https://api.openai.com/v1/chat/completions', [
-                    'model' => 'gpt-4o-mini',
-                    'temperature' => 0.3,
-                    'response_format' => ['type' => 'json_object'],
-                    'messages' => [
-                        ['role' => 'system', 'content' => 'Eres coordinador académico experto en evaluación por competencias. Responde solo JSON.'],
-                        ['role' => 'user', 'content' => $prompt],
-                    ],
-                ]);
-
-            if (! $response->successful()) {
-                return response()->json(['success' => false, 'error' => 'No se pudo generar el plan con IA.'], 200);
-            }
-            $payload = json_decode((string) data_get($response->json(), 'choices.0.message.content', '{}'), true);
-            if (! is_array($payload) || empty($payload['items']) || ! is_array($payload['items'])) {
-                return response()->json(['success' => false, 'error' => 'La IA devolvió un formato inválido.'], 200);
-            }
-            return response()->json(['success' => true, 'plan' => $payload]);
-        } catch (\Throwable $e) {
-            Log::error('Communication eval plan generation error: ' . $e->getMessage());
-            return response()->json(['success' => false, 'error' => 'Error al contactar la IA.'], 200);
-        }
-    }
-
-    public function saveEvaluationPlan(Request $request): JsonResponse
-    {
-        $data = $request->validate([
-            'course_id' => 'required|integer',
-            'title' => 'required|string|max:255',
-            'summary' => 'nullable|string',
-            'items' => 'required|array|min:1',
-            'items.*.unit_name' => 'required|string|max:255',
-            'items.*.assessment_type' => 'required|string|max:120',
-            'items.*.weight_percentage' => 'required|numeric|min:0|max:100',
-            'items.*.due_date' => 'nullable|date',
-            'items.*.notes' => 'nullable|string|max:1000',
-        ]);
-
-        $teacher = auth()->user();
-        Course::where('id', $data['course_id'])->where('teacher_id', $teacher->id)->firstOrFail();
-
-        $plan = CourseEvaluationPlan::create([
-            'teacher_id' => $teacher->id,
-            'course_id' => $data['course_id'],
-            'title' => $data['title'],
-            'summary' => $data['summary'] ?? null,
-        ]);
-
-        foreach ($data['items'] as $item) {
-            $plan->items()->create([
-                'unit_name' => $item['unit_name'],
-                'assessment_type' => $item['assessment_type'],
-                'weight_percentage' => (float) $item['weight_percentage'],
-                'due_date' => $item['due_date'] ?? null,
-                'notes' => $item['notes'] ?? null,
-            ]);
-        }
-
-        return response()->json(['success' => true, 'plan' => $plan->fresh(['course', 'items'])]);
-    }
-
-    public function analyzeOverload(Request $request): JsonResponse
-    {
-        $data = $request->validate([
-            'course_id' => 'required|integer',
-            'items' => 'required|array|min:1',
-            'items.*.due_date' => 'nullable|date',
-            'items.*.assessment_type' => 'nullable|string|max:120',
-            'items.*.unit_name' => 'nullable|string|max:255',
-        ]);
-
-        $teacher = auth()->user();
-        Course::where('id', $data['course_id'])->where('teacher_id', $teacher->id)->firstOrFail();
-
-        $weekly = [];
-        foreach ($data['items'] as $item) {
-            if (empty($item['due_date'])) {
-                continue;
-            }
-            $week = Carbon::parse($item['due_date'])->startOfWeek()->toDateString();
-            $weekly[$week] = ($weekly[$week] ?? 0) + 1;
-        }
-
-        $warnings = [];
-        foreach ($weekly as $week => $count) {
-            if ($count >= 3) {
-                $warnings[] = "Semana {$week}: hay {$count} evaluaciones planificadas en el curso.";
-            }
-        }
-
-        return response()->json([
-            'success' => true,
-            'warnings' => $warnings,
-            'status' => count($warnings) > 0 ? 'warning' : 'ok',
-            'message' => count($warnings) > 0
-                ? 'Se detectó posible sobrecarga para estudiantes.'
-                : 'La carga de evaluaciones está balanceada.',
-        ]);
-    }
-
-    public function publishPlanToCalendar(CourseEvaluationPlan $plan): JsonResponse
-    {
-        $this->authorizePlan($plan);
-        $plan->load('items');
-
-        $created = 0;
-        foreach ($plan->items as $item) {
-            if (! $item->due_date) {
-                continue;
-            }
-            $activity = Activity::firstOrCreate(
-                [
-                    'teacher_id' => $plan->teacher_id,
-                    'course_id' => $plan->course_id,
-                    'title' => $item->assessment_type . ' · ' . $item->unit_name,
-                    'due_date' => $item->due_date,
-                ],
-                [
-                    'description' => $item->notes ?: ('Evaluación planificada desde: ' . $plan->title),
-                    'max_score' => 20,
-                    'weight_percentage' => $item->weight_percentage,
-                    'type' => 'actividad',
-                    'is_homework' => false,
-                    'colegio_id' => auth()->user()->colegio_id,
-                ]
-            );
-            if ($activity->wasRecentlyCreated) {
-                $created++;
-            }
-        }
-
-        return response()->json([
-            'success' => true,
-            'created' => $created,
-            'message' => "Se publicaron {$created} eventos de evaluación en el calendario.",
-        ]);
-    }
-
     private function authorizeAnnouncement(CommunicationAnnouncement $announcement): void
     {
         abort_unless($announcement->teacher_id === auth()->id(), 403);
@@ -508,16 +334,10 @@ class CommunicationController extends Controller
         abort_unless($thread->teacher_id === auth()->id(), 403);
     }
 
-    private function authorizePlan(CourseEvaluationPlan $plan): void
-    {
-        abort_unless($plan->teacher_id === auth()->id(), 403);
-    }
-
     private function communicationTablesReady(): bool
     {
         return Schema::hasTable('communication_threads')
-            && Schema::hasTable('communication_announcements')
-            && Schema::hasTable('course_evaluation_plans');
+            && Schema::hasTable('communication_announcements');
     }
 
     private function ensureThreads(int $teacherId, $students): void
@@ -580,45 +400,6 @@ class CommunicationController extends Controller
             'Gracias por escribir. Confirmo esta información y te respondo en breve.',
             'Perfecto, lo reviso ahora y te doy respuesta por este chat.',
             'Recibido. Te comparto el detalle completo en un momento.',
-        ];
-    }
-
-    private function fallbackPlan(Course $course, int $weeks): array
-    {
-        $start = now()->addWeek();
-        return [
-            'title' => 'Plan de evaluación sugerido · ' . $course->subject_name,
-            'summary' => "Distribución inicial para {$weeks} semanas, balanceada entre evidencia formativa y sumativa.",
-            'items' => [
-                [
-                    'unit_name' => 'Unidad 1',
-                    'assessment_type' => 'Quiz diagnóstico',
-                    'weight_percentage' => 15,
-                    'due_date' => $start->copy()->toDateString(),
-                    'notes' => 'Evalúa conocimientos previos y conceptos base.',
-                ],
-                [
-                    'unit_name' => 'Unidad 2',
-                    'assessment_type' => 'Proyecto aplicado',
-                    'weight_percentage' => 35,
-                    'due_date' => $start->copy()->addWeeks(3)->toDateString(),
-                    'notes' => 'Entrega por equipos con rúbrica de desempeño.',
-                ],
-                [
-                    'unit_name' => 'Unidad 3',
-                    'assessment_type' => 'Examen parcial',
-                    'weight_percentage' => 25,
-                    'due_date' => $start->copy()->addWeeks(6)->toDateString(),
-                    'notes' => 'Prueba individual con preguntas mixtas.',
-                ],
-                [
-                    'unit_name' => 'Unidad 4',
-                    'assessment_type' => 'Portafolio y presentación final',
-                    'weight_percentage' => 25,
-                    'due_date' => $start->copy()->addWeeks(9)->toDateString(),
-                    'notes' => 'Cierre del curso con evidencia acumulada.',
-                ],
-            ],
         ];
     }
 }

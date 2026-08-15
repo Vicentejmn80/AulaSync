@@ -20,6 +20,7 @@ use App\Http\Controllers\AICommandHandlerController;
 use App\Http\Controllers\Teacher\HubController;
 use App\Http\Controllers\Teacher\EvaluationController;
 use App\Http\Controllers\Teacher\CommunicationController;
+use App\Http\Controllers\Teacher\AssessmentStrategyController;
 use App\Http\Controllers\RepresentanteController;
 use App\Http\Controllers\SmartPlannerController;
 use Illuminate\Http\Request;
@@ -196,10 +197,19 @@ Route::middleware(['auth'])->group(function () {
                 Route::post('/threads/{thread}/messages', [CommunicationController::class, 'sendMessage'])->name('messages.send');
                 Route::post('/threads/{thread}/simulate-incoming', [CommunicationController::class, 'simulateIncoming'])->name('messages.simulate_incoming');
                 Route::post('/threads/{thread}/quick-replies', [CommunicationController::class, 'suggestQuickReply'])->name('messages.quick_replies');
-                Route::post('/plans/generate', [CommunicationController::class, 'generateEvaluationPlan'])->name('plans.generate');
-                Route::post('/plans', [CommunicationController::class, 'saveEvaluationPlan'])->name('plans.store');
-                Route::post('/plans/analyze-overload', [CommunicationController::class, 'analyzeOverload'])->name('plans.overload');
-                Route::post('/plans/{plan}/publish-calendar', [CommunicationController::class, 'publishPlanToCalendar'])->name('plans.publish_calendar');
+            });
+
+            Route::prefix('teacher/assessment')->name('teacher.assessment.')->group(function () {
+                Route::get('/', [AssessmentStrategyController::class, 'index'])->name('index');
+                Route::post('/plans/generate', [AssessmentStrategyController::class, 'generatePlan'])->name('plans.generate');
+                Route::post('/plans', [AssessmentStrategyController::class, 'storePlan'])->name('plans.store');
+                Route::post('/plans/analyze-overload', [AssessmentStrategyController::class, 'analyzeOverload'])->name('plans.overload');
+                Route::post('/plans/{plan}/publish-calendar', [AssessmentStrategyController::class, 'publishPlanToCalendar'])->name('plans.publish_calendar');
+                Route::delete('/plans/{plan}', [AssessmentStrategyController::class, 'destroyPlan'])->name('plans.destroy');
+                Route::post('/attach-evaluation', [AssessmentStrategyController::class, 'attachEvaluation'])->name('attach_evaluation');
+                Route::post('/rubrics/generate', [AssessmentStrategyController::class, 'generateRubric'])->name('rubrics.generate');
+                Route::post('/rubrics', [AssessmentStrategyController::class, 'storeRubric'])->name('rubrics.store');
+                Route::delete('/rubrics/{rubric}', [AssessmentStrategyController::class, 'destroyRubric'])->name('rubrics.destroy');
             });
 
             Route::prefix('teacher/planner')->name('teacher.planner.')->group(function () {
