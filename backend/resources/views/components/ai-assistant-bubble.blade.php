@@ -848,6 +848,11 @@
                             Crear planificación
                         </button>
                         <button type="button" class="quickstart-btn"
+                                @click="input = 'Créame una evaluación sobre el tema actual y agrégala al plan de evaluación'; sendCommand()">
+                            <i class="fa-solid fa-file-pen"></i>
+                            Crear evaluación + plan
+                        </button>
+                        <button type="button" class="quickstart-btn"
                                 @click="input = 'Ayúdame a crear una actividad para mi curso'; sendCommand()">
                             <i class="fa-solid fa-clipboard-list"></i>
                             Crear actividad
@@ -858,7 +863,7 @@
                         </button>
                     </div>
                     <p class="nova-ai-quickstart-hint">
-                        También puedo ayudarte a agregar alumnos, cargar notas, publicar calificaciones o generar rúbricas.
+                        También puedo crear exámenes, agregarlos al plan, generar rúbricas, cargar notas o inscribir alumnos.
                     </p>
                 </div>
             </template>

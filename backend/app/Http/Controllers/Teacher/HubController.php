@@ -4,12 +4,17 @@ namespace App\Http\Controllers\Teacher;
 
 use App\Http\Controllers\Controller;
 use App\Models\Activity;
+use App\Models\Attendance;
+use App\Models\AbsenceRequest;
 use App\Models\Course;
 use App\Models\Grade;
+use App\Models\Notification;
 use App\Models\Student;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\View\View;
 
 class HubController extends Controller
@@ -114,7 +119,54 @@ class HubController extends Controller
                 'due_date'    => $nextActivity->due_date,
                 'course_name' => optional($nextActivity->course)->subject_name . ' ' . optional($nextActivity->course)->grade,
             ] : null,
+            'attendance'           => $this->attendanceSnapshot($teacher->id, $courseIds),
         ]);
+    }
+
+    private function attendanceSnapshot(int $teacherId, $courseIds): ?array
+    {
+        if (! Schema::hasTable('attendances') || $courseIds->isEmpty()) {
+            return null;
+        }
+
+        $today = now()->toDateString();
+        $base = Attendance::where('teacher_id', $teacherId)->whereDate('attended_on', $today);
+
+        $absentToday = (clone $base)->where('status', Attendance::STATUS_ABSENT)->count();
+        $tardyToday = (clone $base)->where('status', Attendance::STATUS_TARDY)->count();
+        $takenCourses = (clone $base)->distinct()->pluck('course_id')->count();
+        $pendingCourses = max(0, $courseIds->count() - $takenCourses);
+
+        $alertMessage = null;
+        if (Schema::hasTable('notifications')) {
+            $alertMessage = Notification::where('user_id', $teacherId)
+                ->where('title', 'Notificación de ausencia enviada')
+                ->latest()
+                ->value('message');
+        }
+
+        $familyReports = 0;
+        if (Schema::hasTable('absence_requests')) {
+            $studentIds = DB::table('course_student')
+                ->whereIn('course_id', $courseIds)
+                ->pluck('student_id')
+                ->unique();
+            $familyReports = $studentIds->isEmpty()
+                ? 0
+                : AbsenceRequest::whereIn('student_id', $studentIds)
+                    ->where('status', 'pending')
+                    ->whereDate('end_date', '>=', $today)
+                    ->count();
+        }
+
+        return [
+            'absent_today' => $absentToday,
+            'tardy_today' => $tardyToday,
+            'pending_courses' => $pendingCourses,
+            'taken_courses' => $takenCourses,
+            'family_reports' => $familyReports,
+            'last_alert' => $alertMessage,
+        ];
     }
 
     // ─── Canvas API — Courses list ───────────────────────────────────────────

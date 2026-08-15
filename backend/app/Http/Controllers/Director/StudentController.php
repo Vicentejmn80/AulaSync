@@ -5,11 +5,16 @@ namespace App\Http\Controllers\Director;
 use App\Http\Controllers\Controller;
 use App\Models\Course;
 use App\Models\Student;
+use App\Services\StudentEnrollmentService;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 
 class StudentController extends Controller
 {
+    public function __construct(private StudentEnrollmentService $enrollment)
+    {
+    }
+
     public function index(Request $request): View
     {
         $colegioId = auth()->user()->colegio_id;
@@ -19,7 +24,9 @@ class StudentController extends Controller
             $search = $request->search;
             $query->where(function ($q) use ($search) {
                 $q->where('name', 'like', "%{$search}%")
-                  ->orWhere('grade', 'like', "%{$search}%");
+                  ->orWhere('grade', 'like', "%{$search}%")
+                  ->orWhere('family_code', 'like', "%{$search}%")
+                  ->orWhere('document_id', 'like', "%{$search}%");
             });
         }
 
@@ -42,35 +49,55 @@ class StudentController extends Controller
             ->orderBy('subject_name')
             ->get(['id', 'subject_name', 'grade', 'section', 'school_year']);
 
-        return view('director.students', compact('students', 'grades', 'courses'));
+        $households = Student::where('colegio_id', $colegioId)
+            ->whereNotNull('family_code')
+            ->orderBy('name')
+            ->get(['id', 'name', 'grade', 'section', 'family_code']);
+
+        return view('director.students', compact('students', 'grades', 'courses', 'households'));
     }
 
     public function store(Request $request)
     {
-        $request->validate([
-            'name'      => ['required', 'string', 'max:180'],
-            'course_id' => ['required', 'integer'],
+        $request->merge([
+            'course_id' => $request->filled('course_id') ? $request->course_id : null,
+            'sibling_student_id' => $request->filled('sibling_student_id') ? $request->sibling_student_id : null,
+            'document_id' => $request->document_id ?: null,
+            'birthdate' => $request->birthdate ?: null,
+            'grade' => $request->grade ?: null,
+            'section' => $request->section ?: null,
         ]);
 
-        $user      = auth()->user();
-        $colegioId = $user->colegio_id;
-
-        $course = Course::where('id', $request->course_id)
-            ->where('colegio_id', $colegioId)
-            ->firstOrFail();
-
-        $student = Student::create([
-            'name'      => trim($request->name),
-            'grade'     => $course->grade,
-            'section'   => $course->section,
-            'colegio_id' => $colegioId,
-            'teacher_id' => $course->teacher_id,
+        $data = $request->validate([
+            'name' => ['required', 'string', 'max:180'],
+            'grade' => ['nullable', 'string', 'max:60'],
+            'section' => ['nullable', 'string', 'max:10'],
+            'document_id' => ['nullable', 'string', 'max:40'],
+            'birthdate' => ['nullable', 'date'],
+            'course_id' => ['nullable', 'integer'],
+            'family_mode' => ['nullable', 'in:new,existing'],
+            'family_code' => ['nullable', 'string', 'max:20'],
+            'sibling_student_id' => ['nullable', 'integer'],
         ]);
 
-        $student->courses()->attach($course->id, ['enrolled_at' => now()]);
+        $user = $request->user();
+        $course = null;
+        if (! empty($data['course_id'])) {
+            $course = Course::where('id', $data['course_id'])
+                ->where('colegio_id', $user->colegio_id)
+                ->firstOrFail();
+            $data['grade'] = $data['grade'] ?: $course->grade;
+            $data['section'] = $data['section'] ?: $course->section;
+        }
+
+        if (($data['family_mode'] ?? 'new') === 'new') {
+            unset($data['family_code'], $data['sibling_student_id']);
+        }
+
+        $student = $this->enrollment->enroll($user, $data, $course);
 
         return redirect()->route('director.students')
-            ->with('success', "Alumno «{$student->name}» matriculado con código {$student->family_code}.");
+            ->with('success', "Alumno «{$student->name}» matriculado. Código familiar: {$student->family_code}. Entrégaselo al representante.");
     }
 
     public function search(Request $request)
@@ -78,9 +105,12 @@ class StudentController extends Controller
         $colegioId = auth()->user()->colegio_id;
         $search = $request->get('q', '');
         $students = Student::where('colegio_id', $colegioId)
-            ->where('name', 'like', "%{$search}%")
+            ->where(function ($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                    ->orWhere('family_code', 'like', "%{$search}%");
+            })
             ->limit(20)
-            ->get(['id', 'name', 'grade', 'section']);
+            ->get(['id', 'name', 'grade', 'section', 'family_code']);
 
         return response()->json($students);
     }

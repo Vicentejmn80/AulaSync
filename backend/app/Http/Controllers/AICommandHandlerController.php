@@ -4,6 +4,9 @@ namespace App\Http\Controllers;
 
 use App\Models\Activity;
 use App\Models\Course;
+use App\Models\CourseEvaluationPlan;
+use App\Models\Evaluation;
+use App\Models\EvaluationQuestion;
 use App\Models\Grade;
 use App\Models\Notification;
 use App\Models\Planificacion;
@@ -314,6 +317,53 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
                             'activity_id' => ['type' => 'integer', 'description' => 'ID de la actividad cuyas notas se publicarán'],
                         ],
                         'required' => ['activity_id'],
+                    ],
+                ],
+            ],
+            [
+                'type' => 'function',
+                'function' => [
+                    'name'        => 'createEvaluation',
+                    'description' => 'Crea una evaluación formal (digital o física) en el módulo de Evaluaciones, genera preguntas con IA y opcionalmente la agrega al Plan de Evaluación del curso. Úsala cuando el usuario pida crear un examen, prueba, quiz o evaluación (NO uses createActivity para eso).',
+                    'parameters'  => [
+                        'type'       => 'object',
+                        'properties' => [
+                            'course_id' => ['type' => 'integer', 'description' => 'ID del curso. Si no lo conoces, usa course_name_hint.'],
+                            'course_name_hint' => ['type' => 'string', 'description' => 'Nombre/grado del curso, ej: Matemáticas 1er grado'],
+                            'title' => ['type' => 'string', 'description' => 'Título de la evaluación'],
+                            'topic' => ['type' => 'string', 'description' => 'Tema o unidad'],
+                            'prompt' => ['type' => 'string', 'description' => 'Descripción de qué debe evaluar (contenido, nivel, enfoque)'],
+                            'mode' => ['type' => 'string', 'enum' => ['digital', 'physical'], 'description' => 'digital=online, physical=imprimible'],
+                            'difficulty' => ['type' => 'string', 'enum' => ['basico', 'intermedio', 'avanzado']],
+                            'question_mix' => ['type' => 'string', 'enum' => ['mixto', 'multiple_choice', 'true_false', 'open', 'completion']],
+                            'question_count' => ['type' => 'integer', 'description' => 'Cantidad de preguntas (3-20). Default 8.'],
+                            'weight_percentage' => ['type' => 'number', 'description' => 'Peso en el plan de evaluación (1-100). Default 10.'],
+                            'category' => ['type' => 'string', 'enum' => ['formative', 'summative'], 'description' => 'Tipo pedagógico en el plan'],
+                            'add_to_plan' => ['type' => 'boolean', 'description' => 'Si true, agrega automáticamente al Plan de Evaluación del curso'],
+                            'status' => ['type' => 'string', 'enum' => ['draft', 'published'], 'description' => 'draft por defecto'],
+                            'due_date' => ['type' => 'string', 'description' => 'Fecha YYYY-MM-DD opcional para el ítem del plan'],
+                        ],
+                        'required' => ['prompt'],
+                    ],
+                ],
+            ],
+            [
+                'type' => 'function',
+                'function' => [
+                    'name'        => 'attachEvaluationToPlan',
+                    'description' => 'Agrega una evaluación ya existente al Plan de Evaluación del curso. Úsala cuando el usuario diga «agrégala al plan», «súbela al plan de evaluación» o similar.',
+                    'parameters'  => [
+                        'type'       => 'object',
+                        'properties' => [
+                            'evaluation_id' => ['type' => 'integer'],
+                            'evaluation_title_hint' => ['type' => 'string', 'description' => 'Si no tienes ID, busca por título'],
+                            'plan_id' => ['type' => 'integer', 'description' => 'Opcional. Si no se pasa, usa/crea el plan del curso de la evaluación'],
+                            'weight_percentage' => ['type' => 'number'],
+                            'category' => ['type' => 'string', 'enum' => ['formative', 'summative']],
+                            'unit_name' => ['type' => 'string'],
+                            'due_date' => ['type' => 'string'],
+                        ],
+                        'required' => [],
                     ],
                 ],
             ],
@@ -636,7 +686,10 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             "",
             "MAPA DE INTENCIONES → HERRAMIENTA:",
             "- crear curso / sección → createCourse",
-            "- crear clase / actividad / evaluación / tarea → createActivity  (type: clase|actividad|tarea)",
+            "- crear clase / actividad / tarea (NO examen formal) → createActivity  (type: clase|actividad|tarea)",
+            "- crear evaluación / examen / prueba / quiz formal → createEvaluation (NO uses createActivity)",
+            "- crear evaluación y agregarla al plan → createEvaluation con add_to_plan=true",
+            "- agregar evaluación existente al plan de evaluación → attachEvaluationToPlan",
             "- adaptación NEE / TDAH / TEA / dislexia / discalculia → createActivity con nee_type relleno",
             "- modificar / cambiar / editar actividad existente → modifyActivity",
             "- inscribir / agregar alumnos → registerStudent",
@@ -651,6 +704,13 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             "- leer libro de calificaciones → getGradebookContext",
             "- leer historial pedagógico → getPedagogicalHistory",
             "- ver qué tengo esta semana / qué hay esta semana / mi agenda semanal → getCurrentWeek",
+            "",
+            "REGLAS DE EVALUACIONES Y PLAN:",
+            "1. Si el usuario pide un examen/evaluación/prueba y además dice «agrégala al plan», llama createEvaluation con add_to_plan=true en el mismo turno.",
+            "2. Si solo pide crear la evaluación, usa createEvaluation (add_to_plan=false) y menciona que puedes agregarla al plan si quiere.",
+            "3. Si la evaluación ya existe y pide agregarla al plan, usa attachEvaluationToPlan.",
+            "4. Resuelve el curso con course_id o course_name_hint. Si solo hay un curso, úsalo.",
+            "5. Defaults: mode=digital, difficulty=intermedio, question_mix=mixto, question_count=8, weight_percentage=10, category=summative, status=draft.",
             "",
             "REGLAS CRÍTICAS DE BORRADO:",
             "1. IDENTIFICACIÓN DE ID: Cada línea del calendario inyectado incluye 'actividad_id XXXX'. Cuando el usuario pida borrar una actividad específica (ej: 'borra la clase del jueves' o 'elimina la actividad de números'), primero localiza su activity_id en el calendario inyectado.",
@@ -845,7 +905,7 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
 
             // Resolución robusta de curso: course_id válido > mapa de cursos del
             // turno (por grado/nombre) > BD por hint > pantalla > único curso.
-            if (in_array($fn, ['createActivity', 'registerStudent', 'bulkPlan', 'deleteActivities', 'getCalendarContext'], true)) {
+            if (in_array($fn, ['createActivity', 'registerStudent', 'bulkPlan', 'deleteActivities', 'getCalendarContext', 'createEvaluation'], true)) {
                 $resolvedCourseId = $this->resolveCourseIdForArgs($args, $teacher->id, $createdCourseMap, $screenContext);
                 if ($resolvedCourseId > 0) {
                     $args['course_id'] = $resolvedCourseId;
@@ -942,6 +1002,8 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
                 'getGradebookContext' => $this->getGradebookContext($args, $teacherId),
                 'getPedagogicalHistory' => $this->getPedagogicalHistory($args, $teacherId),
                 'getCurrentWeek' => $this->getCurrentWeek($args, $teacherId),
+                'createEvaluation' => $this->doCreateEvaluation($args, $teacherId),
+                'attachEvaluationToPlan' => $this->doAttachEvaluationToPlan($args, $teacherId),
                 default           => ['success' => false, 'message' => "Acción $fn no definida."],
             };
         } catch (\Throwable $e) {
@@ -1225,6 +1287,382 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             'action_type' => 'course',
             'icon'        => '🏫',
             'data'        => ['course_id' => $course->id, 'reused' => $reused],
+        ];
+    }
+
+    private function doCreateEvaluation(array $args, int $teacherId): array
+    {
+        if (! Schema::hasTable('evaluations')) {
+            return [
+                'success' => false,
+                'message' => 'El módulo de Evaluaciones aún no está disponible en la base de datos.',
+                'action_type' => 'evaluation',
+                'icon' => '⚠️',
+            ];
+        }
+
+        $teacher = User::find($teacherId);
+        $courseId = (int) ($args['course_id'] ?? 0);
+        $course = null;
+        if ($courseId > 0) {
+            $course = Course::where('id', $courseId)->where('teacher_id', $teacherId)->first();
+        }
+        if (! $course) {
+            $resolved = $this->resolveCourseIdForArgs($args, $teacherId, [], []);
+            if ($resolved > 0) {
+                $course = Course::where('id', $resolved)->where('teacher_id', $teacherId)->first();
+            }
+        }
+        if (! $course) {
+            return [
+                'success' => false,
+                'message' => 'Necesito saber el curso. Dime materia/grado (ej: Matemáticas 1er grado) o abre el curso y vuelve a pedirlo.',
+                'action_type' => 'evaluation',
+                'icon' => '⚠️',
+            ];
+        }
+
+        $prompt = trim((string) ($args['prompt'] ?? $args['topic'] ?? $args['title'] ?? ''));
+        if (mb_strlen($prompt) < 8) {
+            return [
+                'success' => false,
+                'message' => 'Describe brevemente qué debe evaluar (tema, nivel o enfoque) para generar la evaluación.',
+                'action_type' => 'evaluation',
+                'icon' => '⚠️',
+            ];
+        }
+
+        $mode = in_array(($args['mode'] ?? 'digital'), ['digital', 'physical'], true) ? $args['mode'] : 'digital';
+        $difficulty = in_array(($args['difficulty'] ?? 'intermedio'), ['basico', 'intermedio', 'avanzado'], true)
+            ? $args['difficulty']
+            : 'intermedio';
+        $mix = in_array(($args['question_mix'] ?? 'mixto'), ['mixto', 'multiple_choice', 'true_false', 'open', 'completion'], true)
+            ? $args['question_mix']
+            : 'mixto';
+        $count = max(3, min(20, (int) ($args['question_count'] ?? 8)));
+        $status = in_array(($args['status'] ?? 'draft'), ['draft', 'published'], true) ? $args['status'] : 'draft';
+        $addToPlan = filter_var($args['add_to_plan'] ?? false, FILTER_VALIDATE_BOOLEAN);
+        $weight = (float) ($args['weight_percentage'] ?? 10);
+        $category = in_array(($args['category'] ?? 'summative'), ['formative', 'summative'], true)
+            ? $args['category']
+            : 'summative';
+        $topic = trim((string) ($args['topic'] ?? ''));
+        $title = trim((string) ($args['title'] ?? '')) ?: ('Evaluación · '.($topic !== '' ? $topic : Str::limit($prompt, 40, '')));
+
+        $generated = $this->generateEvaluationPayloadForAi(
+            prompt: $prompt,
+            mode: $mode,
+            topic: $topic !== '' ? $topic : $title,
+            difficulty: $difficulty,
+            mix: $mix,
+            count: $count,
+            courseLabel: trim($course->subject_name.' '.$course->grade.' '.($course->section ?? ''))
+        );
+
+        $questions = $generated['questions'] ?? [];
+        if (! is_array($questions) || count($questions) === 0) {
+            return [
+                'success' => false,
+                'message' => 'No pude generar las preguntas de la evaluación. Intenta de nuevo con más detalle del tema.',
+                'action_type' => 'evaluation',
+                'icon' => '⚠️',
+            ];
+        }
+
+        $title = trim((string) ($generated['title'] ?? $title)) ?: $title;
+        $instructions = trim((string) ($generated['instructions'] ?? 'Lee cuidadosamente cada pregunta y responde con claridad.'));
+        $total = collect($questions)->sum(fn ($q) => (int) ($q['points'] ?? 1));
+
+        $evaluation = Evaluation::create([
+            'teacher_id' => $teacherId,
+            'course_id' => $course->id,
+            'colegio_id' => $teacher?->colegio_id,
+            'title' => $title,
+            'description' => $prompt,
+            'topic' => $topic !== '' ? $topic : null,
+            'mode' => $mode,
+            'status' => $status,
+            'difficulty' => $difficulty,
+            'question_mix' => $mix,
+            'question_count' => count($questions),
+            'generated_by_ai' => true,
+            'instructions' => $instructions,
+            'scheduled_at' => ! empty($args['due_date']) ? $args['due_date'] : null,
+            'total_points' => $total,
+            'passing_score' => max(1, (int) floor($total * 0.6)),
+            'rubric' => $generated['rubric'] ?? ['total_points' => $total, 'passing_score' => max(1, (int) floor($total * 0.6))],
+            'physical_format' => ['paper_size' => 'A4', 'orientation' => 'portrait', 'font_size' => 12, 'include_qr' => true],
+            'large_print' => false,
+        ]);
+
+        foreach (array_values($questions) as $index => $question) {
+            EvaluationQuestion::create([
+                'evaluation_id' => $evaluation->id,
+                'sort_order' => $index,
+                'type' => $question['type'] ?? 'open',
+                'text' => $question['text'] ?? 'Pregunta',
+                'options' => $question['options'] ?? [],
+                'correct_answer' => $question['correct_answer'] ?? null,
+                'points' => (int) ($question['points'] ?? 1),
+                'topic' => $question['topic'] ?? $evaluation->topic,
+            ]);
+        }
+
+        $planMessage = '';
+        $planId = null;
+        if ($addToPlan && Schema::hasTable('course_evaluation_plans')) {
+            $attach = $this->attachEvaluationToCoursePlan(
+                teacherId: $teacherId,
+                evaluation: $evaluation,
+                planId: null,
+                weight: $weight,
+                category: $category,
+                unitName: $topic !== '' ? $topic : 'Unidad sincronizada',
+                dueDate: $args['due_date'] ?? null
+            );
+            $planMessage = ' '.$attach['message'];
+            $planId = $attach['plan_id'] ?? null;
+        }
+
+        $evalUrl = route('teacher.evaluations.index');
+        $planUrl = route('teacher.assessment.index');
+        $modeLabel = $mode === 'physical' ? 'física imprimible' : 'digital';
+
+        return [
+            'success' => true,
+            'message' => "Evaluación creada: «{$evaluation->title}» ({$modeLabel}, {$evaluation->question_count} preguntas) en {$course->subject_name}."
+                .$planMessage
+                ." Puedes revisarla en Evaluaciones ({$evalUrl})".($addToPlan ? " y en Estrategia de Evaluación ({$planUrl})." : '.'),
+            'action_type' => 'evaluation',
+            'icon' => '📝',
+            'data' => [
+                'evaluation_id' => $evaluation->id,
+                'course_id' => $course->id,
+                'plan_id' => $planId,
+                'added_to_plan' => $addToPlan,
+                'public_token' => $evaluation->public_token,
+                'evaluations_url' => $evalUrl,
+                'assessment_url' => $planUrl,
+            ],
+        ];
+    }
+
+    private function doAttachEvaluationToPlan(array $args, int $teacherId): array
+    {
+        if (! Schema::hasTable('evaluations') || ! Schema::hasTable('course_evaluation_plans')) {
+            return [
+                'success' => false,
+                'message' => 'El módulo de Plan de Evaluación aún no está disponible.',
+                'action_type' => 'evaluation_plan',
+                'icon' => '⚠️',
+            ];
+        }
+
+        $evaluation = null;
+        $evaluationId = (int) ($args['evaluation_id'] ?? 0);
+        if ($evaluationId > 0) {
+            $evaluation = Evaluation::where('id', $evaluationId)->where('teacher_id', $teacherId)->first();
+        }
+
+        if (! $evaluation) {
+            $hint = trim((string) ($args['evaluation_title_hint'] ?? ''));
+            if ($hint !== '') {
+                $evaluation = Evaluation::where('teacher_id', $teacherId)
+                    ->whereRaw('LOWER(title) LIKE ?', ['%'.mb_strtolower($hint).'%'])
+                    ->latest()
+                    ->first();
+            }
+        }
+
+        if (! $evaluation) {
+            $evaluation = Evaluation::where('teacher_id', $teacherId)->latest()->first();
+        }
+
+        if (! $evaluation) {
+            return [
+                'success' => false,
+                'message' => 'No encontré ninguna evaluación para agregar al plan. Crea una primero.',
+                'action_type' => 'evaluation_plan',
+                'icon' => '⚠️',
+            ];
+        }
+
+        $attach = $this->attachEvaluationToCoursePlan(
+            teacherId: $teacherId,
+            evaluation: $evaluation,
+            planId: ! empty($args['plan_id']) ? (int) $args['plan_id'] : null,
+            weight: (float) ($args['weight_percentage'] ?? 10),
+            category: in_array(($args['category'] ?? 'summative'), ['formative', 'summative'], true) ? $args['category'] : 'summative',
+            unitName: trim((string) ($args['unit_name'] ?? $evaluation->topic ?? 'Unidad sincronizada')),
+            dueDate: $args['due_date'] ?? optional($evaluation->scheduled_at)->toDateString()
+        );
+
+        return [
+            'success' => (bool) ($attach['success'] ?? false),
+            'message' => $attach['message'] ?? 'No se pudo sincronizar.',
+            'action_type' => 'evaluation_plan',
+            'icon' => ($attach['success'] ?? false) ? '📌' : '⚠️',
+            'data' => [
+                'evaluation_id' => $evaluation->id,
+                'plan_id' => $attach['plan_id'] ?? null,
+                'assessment_url' => route('teacher.assessment.index'),
+            ],
+        ];
+    }
+
+    private function attachEvaluationToCoursePlan(
+        int $teacherId,
+        Evaluation $evaluation,
+        ?int $planId,
+        float $weight,
+        string $category,
+        string $unitName,
+        ?string $dueDate
+    ): array {
+        $plan = null;
+        if ($planId) {
+            $plan = CourseEvaluationPlan::where('id', $planId)->where('teacher_id', $teacherId)->first();
+        }
+
+        if (! $plan) {
+            if (! $evaluation->course_id) {
+                return ['success' => false, 'message' => 'La evaluación no tiene curso asignado.'];
+            }
+            $course = Course::find($evaluation->course_id);
+            $plan = CourseEvaluationPlan::firstOrCreate(
+                [
+                    'teacher_id' => $teacherId,
+                    'course_id' => $evaluation->course_id,
+                    'title' => 'Plan de evaluación · '.($course?->subject_name ?? 'Curso'),
+                ],
+                [
+                    'summary' => 'Plan sincronizado automáticamente desde AulaSync AI.',
+                    'status' => 'draft',
+                ]
+            );
+        }
+
+        $existing = $plan->items()->where('evaluation_id', $evaluation->id)->first();
+        if ($existing) {
+            return [
+                'success' => true,
+                'plan_id' => $plan->id,
+                'message' => "La evaluación «{$evaluation->title}» ya estaba en el plan.",
+            ];
+        }
+
+        $plan->items()->create([
+            'evaluation_id' => $evaluation->id,
+            'unit_name' => $unitName !== '' ? $unitName : 'Unidad sincronizada',
+            'assessment_type' => $evaluation->title,
+            'category' => $category,
+            'weight_percentage' => max(1, min(100, $weight)),
+            'due_date' => $dueDate,
+            'notes' => 'Sincronizado automáticamente desde AulaSync AI.',
+            'learning_outcome' => null,
+        ]);
+
+        return [
+            'success' => true,
+            'plan_id' => $plan->id,
+            'message' => "Agregada al Plan de Evaluación del curso (peso {$weight}%).",
+        ];
+    }
+
+    private function generateEvaluationPayloadForAi(
+        string $prompt,
+        string $mode,
+        string $topic,
+        string $difficulty,
+        string $mix,
+        int $count,
+        string $courseLabel
+    ): array {
+        $apiKey = config('services.openai.key');
+        if (empty($apiKey)) {
+            return $this->fallbackEvaluationPayload($topic, $count, $mix);
+        }
+
+        $system = 'Eres experto en evaluación educativa. Responde SOLO JSON válido. '
+            .'Estructura: {"title":"","instructions":"","questions":[{"type":"multiple_choice|true_false|open|completion","text":"","options":[],"correct_answer":"","points":1,"topic":""}],"rubric":{"total_points":0,"passing_score":0}}. '
+            .'Si type no es multiple_choice o true_false, options debe ser [].';
+
+        $user = "Curso: {$courseLabel}. Modo: {$mode}. Tema: {$topic}. Dificultad: {$difficulty}. "
+            ."Tipo de preguntas: {$mix}. Número: {$count}. Descripción del docente: {$prompt}";
+
+        try {
+            $response = Http::withToken($apiKey)
+                ->timeout(70)
+                ->post('https://api.openai.com/v1/chat/completions', [
+                    'model' => 'gpt-4o-mini',
+                    'temperature' => 0.35,
+                    'response_format' => ['type' => 'json_object'],
+                    'messages' => [
+                        ['role' => 'system', 'content' => $system],
+                        ['role' => 'user', 'content' => $user],
+                    ],
+                ]);
+
+            if (! $response->successful()) {
+                return $this->fallbackEvaluationPayload($topic, $count, $mix);
+            }
+
+            $payload = json_decode((string) data_get($response->json(), 'choices.0.message.content', '{}'), true);
+            if (! is_array($payload) || empty($payload['questions'])) {
+                return $this->fallbackEvaluationPayload($topic, $count, $mix);
+            }
+
+            return $payload;
+        } catch (\Throwable $e) {
+            Log::warning('AI createEvaluation generation failed: '.$e->getMessage());
+            return $this->fallbackEvaluationPayload($topic, $count, $mix);
+        }
+    }
+
+    private function fallbackEvaluationPayload(string $topic, int $count, string $mix): array
+    {
+        $questions = [];
+        for ($i = 1; $i <= $count; $i++) {
+            if ($mix === 'true_false' || ($mix === 'mixto' && $i % 3 === 2)) {
+                $questions[] = [
+                    'type' => 'true_false',
+                    'text' => "Afirmación {$i} sobre {$topic}: el concepto central está bien aplicado.",
+                    'options' => ['Verdadero', 'Falso'],
+                    'correct_answer' => 'Verdadero',
+                    'points' => 1,
+                    'topic' => $topic,
+                ];
+            } elseif ($mix === 'open' || ($mix === 'mixto' && $i % 3 === 0)) {
+                $questions[] = [
+                    'type' => 'open',
+                    'text' => "Explica con tus palabras el punto {$i} relacionado con {$topic}.",
+                    'options' => [],
+                    'correct_answer' => 'Respuesta clara, coherente y alineada al tema.',
+                    'points' => 2,
+                    'topic' => $topic,
+                ];
+            } else {
+                $questions[] = [
+                    'type' => 'multiple_choice',
+                    'text' => "Pregunta {$i}: ¿Cuál opción describe mejor un aspecto clave de {$topic}?",
+                    'options' => ['Opción A', 'Opción B', 'Opción C', 'Opción D'],
+                    'correct_answer' => 'Opción A',
+                    'points' => 1,
+                    'topic' => $topic,
+                ];
+            }
+        }
+
+        $total = collect($questions)->sum('points');
+
+        return [
+            'title' => 'Evaluación · '.$topic,
+            'instructions' => 'Lee cada pregunta con atención y responde de forma clara.',
+            'questions' => $questions,
+            'rubric' => [
+                'total_points' => $total,
+                'passing_score' => max(1, (int) floor($total * 0.6)),
+            ],
         ];
     }
 

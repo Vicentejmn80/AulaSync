@@ -9,7 +9,23 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Student extends Model
 {
-    protected $fillable = ['teacher_id', 'colegio_id', 'name', 'grade', 'section', 'family_code'];
+    protected $fillable = [
+        'teacher_id',
+        'colegio_id',
+        'name',
+        'grade',
+        'section',
+        'document_id',
+        'birthdate',
+        'family_code',
+    ];
+
+    protected function casts(): array
+    {
+        return [
+            'birthdate' => 'date',
+        ];
+    }
 
     public function teacher(): BelongsTo
     {
@@ -30,5 +46,22 @@ class Student extends Model
     public function grades(): HasMany
     {
         return $this->hasMany(Grade::class);
+    }
+
+    public function attendances(): HasMany
+    {
+        return $this->hasMany(Attendance::class);
+    }
+
+    public function absenceRequests(): HasMany
+    {
+        return $this->hasMany(AbsenceRequest::class);
+    }
+
+    public function guardians(): BelongsToMany
+    {
+        return $this->belongsToMany(User::class, 'guardian_student')
+            ->withPivot('relationship')
+            ->withTimestamps();
     }
 }
