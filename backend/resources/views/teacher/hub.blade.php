@@ -26,16 +26,16 @@
             --nova-gradient: linear-gradient(135deg, #7C3AED 0%, #C455ED 55%, #EC4899 100%);
             --nova-glass: rgba(124, 58, 237, 0.04);
             --nova-glass-border: rgba(139, 46, 201, 0.14);
-            --nova-shadow: 0 16px 40px -20px rgba(107, 33, 168, 0.24);
-            --text-primary: #1E1133;
+            --nova-shadow: 0 10px 28px rgba(28, 20, 60, 0.07);
+            --text-primary: #1C1233;
             --text-secondary: #5B4B72;
             --text-tertiary: #9D89B6;
             --text-inverse: #FFFFFF;
-            --bg-primary: #FBFAF7;
+            --bg-primary: #F4F6FB;
             --bg-secondary: #FFFFFF;
-            --bg-tertiary: #F9EEFF;
-            --bg-card: rgba(255, 255, 255, 0.92);
-            --bg-sidebar: rgba(255, 255, 255, 0.98);
+            --bg-tertiary: #F0E8FF;
+            --bg-card: #FFFFFF;
+            --bg-sidebar: #FFFFFF;
             /* Alias directos del sistema de la landing, para componentes nuevos */
             --az-violet: #7C3AED;
             --az-fuchsia: #C455ED;
@@ -83,12 +83,13 @@
         }
 
         body {
-            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Manrope', 'Inter', system-ui, sans-serif;
             background: var(--bg-primary);
             color: var(--text-primary);
             overflow-x: hidden;
             overflow-y: auto;
             transition: background-color 0.3s ease, color 0.2s ease;
+            -webkit-font-smoothing: antialiased;
         }
 
 /* ── Theme Toggle Button (CORREGIDO) ───────────────────── */
@@ -992,83 +993,369 @@
             font-size: 10px;
         }
 
-        /* ── Dashboard editorial: header, stat strip, AI command center, insights ── */
+        /* ── Dashboard iOS: header, widgets, insights ── */
         .dash-header {
             display: flex;
-            align-items: flex-start;
+            align-items: center;
             justify-content: space-between;
-            gap: 24px;
+            gap: 20px;
             margin-top: 4px;
             margin-bottom: 22px;
+            flex-wrap: wrap;
         }
 
         .dash-eyebrow {
             display: flex;
             align-items: center;
             gap: 8px;
-            font-size: 12.5px;
-            font-weight: 700;
+            font-size: 13px;
+            font-weight: 600;
             text-transform: capitalize;
             color: var(--text-tertiary);
-            margin-bottom: 8px;
+            margin-bottom: 6px;
         }
 
         .dash-greeting {
             font-family: var(--font-display);
-            font-size: 32px;
+            font-size: 34px;
             font-weight: 800;
-            background: linear-gradient(135deg, var(--text-primary), var(--nova-violet));
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            margin-bottom: 8px;
-            line-height: 1.15;
+            color: var(--text-primary);
+            margin-bottom: 6px;
+            line-height: 1.1;
+            letter-spacing: -0.03em;
         }
 
         .dash-subtitle {
             color: var(--text-secondary);
             font-size: 15px;
-            max-width: 560px;
+            max-width: 520px;
             line-height: 1.5;
         }
 
-        .dash-stat-strip {
+        .dash-toolbar {
             display: flex;
             align-items: center;
-            gap: 22px;
-            background: var(--bg-card);
-            border: 1px solid var(--nova-glass-border);
-            border-radius: var(--az-radius-md);
-            padding: 16px 24px;
-            margin-bottom: 20px;
-            overflow-x: auto;
+            gap: 10px;
+            flex-wrap: wrap;
         }
 
-        .dash-stat-chip {
+        .dash-search {
             display: flex;
-            flex-direction: column;
-            gap: 2px;
-            white-space: nowrap;
+            align-items: center;
+            gap: 8px;
+            min-width: 220px;
+            height: 44px;
+            padding: 0 16px;
+            background: #fff;
+            border: 1px solid rgba(124, 58, 237, 0.08);
+            border-radius: 999px;
+            box-shadow: 0 6px 20px rgba(28, 20, 60, 0.05);
         }
 
-        .dash-stat-chip-value {
-            font-family: var(--font-display);
-            font-size: 20px;
-            font-weight: 800;
+        html.dark .dash-search {
+            background: var(--bg-card);
+            border-color: var(--nova-glass-border);
+        }
+
+        .dash-search i { color: var(--text-tertiary); font-size: 13px; }
+
+        .dash-search input {
+            border: 0;
+            outline: 0;
+            background: transparent;
+            width: 100%;
+            font-size: 14px;
             color: var(--text-primary);
-            line-height: 1;
         }
 
-        .dash-stat-chip-label {
-            font-size: 11px;
+        .ios-icon-btn {
+            width: 44px;
+            height: 44px;
+            border-radius: 14px;
+            border: 1px solid rgba(124, 58, 237, 0.08);
+            background: #fff;
+            color: var(--text-primary);
+            box-shadow: 0 6px 20px rgba(28, 20, 60, 0.05);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            position: relative;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        html.dark .ios-icon-btn {
+            background: var(--bg-card);
+            border-color: var(--nova-glass-border);
+            color: var(--text-primary);
+        }
+
+        .ios-icon-btn:hover { transform: translateY(-1px); }
+
+        .btn-create {
+            height: 44px;
+            padding: 0 18px;
+            border: 0;
+            border-radius: 999px;
+            background: var(--nova-gradient);
+            color: #fff;
+            font-weight: 800;
+            font-size: 14px;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            box-shadow: 0 10px 24px rgba(124, 58, 237, 0.28);
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .btn-create:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 14px 30px rgba(124, 58, 237, 0.34);
+        }
+
+        .create-menu {
+            position: absolute;
+            right: 0;
+            top: calc(100% + 8px);
+            min-width: 230px;
+            background: #fff;
+            border-radius: 18px;
+            padding: 8px;
+            box-shadow: 0 18px 50px rgba(28, 20, 60, 0.16);
+            border: 1px solid rgba(124, 58, 237, 0.08);
+            z-index: 60;
+        }
+
+        html.dark .create-menu { background: var(--bg-secondary); border-color: var(--nova-glass-border); }
+
+        .create-menu button,
+        .create-menu a {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            width: 100%;
+            padding: 11px 12px;
+            border: 0;
+            background: transparent;
+            border-radius: 12px;
+            color: var(--text-primary);
+            font-size: 13.5px;
+            font-weight: 600;
+            text-align: left;
+            cursor: pointer;
+            text-decoration: none;
+        }
+
+        .create-menu button:hover,
+        .create-menu a:hover { background: rgba(124, 58, 237, 0.08); }
+
+        .ios-stat-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 14px;
+            margin-bottom: 20px;
+        }
+
+        .ios-stat {
+            background: #fff;
+            border-radius: 22px;
+            padding: 18px 18px 16px;
+            box-shadow: var(--nova-shadow);
+            border: 1px solid rgba(255,255,255,0.8);
+            transition: transform 0.22s cubic-bezier(.2,.8,.2,1);
+        }
+
+        html.dark .ios-stat { background: var(--bg-card); border-color: var(--nova-glass-border); }
+
+        .ios-stat:hover { transform: translateY(-3px); }
+
+        .ios-stat-icon {
+            width: 42px;
+            height: 42px;
+            border-radius: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+            margin-bottom: 14px;
+            font-size: 16px;
+        }
+
+        .ios-stat-icon.purple { background: linear-gradient(135deg, #7C3AED, #A855F7); }
+        .ios-stat-icon.green { background: linear-gradient(135deg, #10B981, #34D399); }
+        .ios-stat-icon.blue { background: linear-gradient(135deg, #2563EB, #60A5FA); }
+        .ios-stat-icon.amber { background: linear-gradient(135deg, #F59E0B, #FBBF24); }
+
+        .ios-stat-value {
+            font-family: var(--font-display);
+            font-size: 26px;
+            font-weight: 800;
+            letter-spacing: -0.03em;
+            line-height: 1;
+            margin-bottom: 4px;
+        }
+
+        .ios-stat-label {
+            font-size: 12.5px;
             font-weight: 600;
             color: var(--text-tertiary);
         }
 
-        .dash-stat-chip-divider {
-            width: 1px;
-            height: 28px;
-            background: var(--nova-glass-border);
+        .ios-board {
+            display: grid;
+            grid-template-columns: 1.15fr 0.85fr;
+            gap: 16px;
+            margin-bottom: 22px;
+        }
+
+        .ios-panel {
+            background: #fff;
+            border-radius: 24px;
+            padding: 20px;
+            box-shadow: var(--nova-shadow);
+        }
+
+        html.dark .ios-panel { background: var(--bg-card); }
+
+        .ios-panel h3 {
+            font-family: var(--font-display);
+            font-size: 16px;
+            font-weight: 800;
+            margin-bottom: 14px;
+        }
+
+        .upcoming-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 0;
+            border-bottom: 1px solid rgba(124, 58, 237, 0.06);
+        }
+
+        .upcoming-row:last-child { border-bottom: 0; }
+
+        .upcoming-date {
+            width: 52px;
+            height: 52px;
+            border-radius: 16px;
+            background: #F3EEFF;
+            color: #7C3AED;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
             flex-shrink: 0;
+        }
+
+        html.dark .upcoming-date { background: rgba(124, 58, 237, 0.18); color: #C4B5FD; }
+
+        .upcoming-date strong { font-size: 16px; line-height: 1; }
+        .upcoming-date span { font-size: 9px; font-weight: 800; letter-spacing: 0.06em; }
+
+        .upcoming-copy { min-width: 0; flex: 1; }
+        .upcoming-copy p { font-size: 14px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .upcoming-copy small { color: var(--text-tertiary); font-size: 12px; }
+
+        .status-pill {
+            font-size: 11px;
+            font-weight: 700;
+            padding: 5px 10px;
+            border-radius: 999px;
+            background: #ECFDF5;
+            color: #059669;
+            white-space: nowrap;
+        }
+
+        html.dark .status-pill { background: rgba(16,185,129,0.15); color: #6EE7B7; }
+
+        .reminder-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            width: 100%;
+            padding: 11px 0;
+            border: 0;
+            background: transparent;
+            cursor: pointer;
+            text-align: left;
+            color: inherit;
+        }
+
+        .reminder-ico {
+            width: 38px;
+            height: 38px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+            flex-shrink: 0;
+        }
+
+        .quick-actions {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-top: 8px;
+        }
+
+        .quick-action {
+            border: 0;
+            background: #F7F4FF;
+            border-radius: 16px;
+            padding: 14px 12px;
+            text-align: left;
+            cursor: pointer;
+            color: var(--text-primary);
+            font-weight: 700;
+            font-size: 12.5px;
+            transition: transform 0.2s ease, background 0.2s ease;
+            text-decoration: none;
+            display: block;
+        }
+
+        html.dark .quick-action { background: rgba(124, 58, 237, 0.12); }
+
+        .quick-action:hover { transform: translateY(-2px); background: #EFE7FF; }
+        .quick-action i { display: block; color: #7C3AED; margin-bottom: 8px; }
+
+        .sidebar-profile {
+            margin: auto 16px 16px;
+            padding: 12px;
+            border-radius: 18px;
+            background: #F7F4FF;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        html.dark .sidebar-profile { background: rgba(124, 58, 237, 0.12); }
+
+        .sidebar-profile-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 14px;
+            background: var(--nova-gradient);
+            color: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 800;
+            flex-shrink: 0;
+        }
+
+        .sidebar-profile strong { display: block; font-size: 13px; }
+        .sidebar-profile small { color: var(--text-tertiary); font-size: 11px; }
+
+        @media (max-width: 1100px) {
+            .ios-stat-grid { grid-template-columns: repeat(2, 1fr); }
+            .ios-board { grid-template-columns: 1fr; }
+        }
+
+        @media (max-width: 767px) {
+            .ios-stat-grid { grid-template-columns: 1fr 1fr; }
+            .dash-search { min-width: 100%; }
         }
 
         /* AulaSync Intelligence — command center */
@@ -1471,8 +1758,9 @@
             background: var(--bg-card);
             backdrop-filter: blur(10px);
             border: 1px solid var(--nova-glass-border);
-            border-radius: var(--az-radius-lg);
+            border-radius: 24px;
             padding: 22px;
+            box-shadow: var(--nova-shadow);
             cursor: pointer;
             transition: all 0.3s ease;
             position: relative;
@@ -3086,7 +3374,7 @@
         // Theme initialization
         (function() {
             const savedTheme = localStorage.getItem('nova-theme');
-            if (!savedTheme || savedTheme === 'dark') {
+            if (savedTheme === 'dark') {
                 document.documentElement.classList.add('dark');
             } else {
                 document.documentElement.classList.remove('dark');
@@ -3159,26 +3447,10 @@
             <i :class="isDarkMode ? 'fa-solid fa-sun' : 'fa-solid fa-moon'"></i>
         </button>
     </div>
-    <div class="user-panel" style="position: relative; z-index: 5;">
-        {{-- Solo Salir: campana/tema pequeños se eliminaron; el tema grande está arriba --}}
-        <div class="relative flex items-center justify-end">
-            <form method="POST" action="{{ route('logout') }}">
-                @csrf
-                <button
-                    type="submit"
-                    class="ucp-btn inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition"
-                    title="Cerrar sesión"
-                    style="border:1px solid rgba(255,255,255,.2); background: rgba(255,255,255,.1); color: #f0abfc;"
-                >
-                    <i class="fa-solid fa-right-from-bracket text-[10px]"></i>
-                    Salir
-                </button>
-            </form>
-        </div>
-    </div>
+    <div class="user-panel" style="position: relative; z-index: 5; padding-bottom: 8px;"></div>
 </div>
 
-        <div class="nav-group-label">Enseñanza</div>
+        <div class="nav-group-label">Academia</div>
         <nav class="nav-section">
             <button @click="loadWelcome()" :class="{ active: view === 'welcome' }" class="nav-item">
                 <i class="fa-solid fa-house-chimney"></i>
@@ -3248,6 +3520,19 @@
                 <span>Configuración</span>
             </a>
         </nav>
+        <div class="sidebar-profile">
+            <div class="sidebar-profile-avatar">{{ strtoupper(mb_substr(auth()->user()->name, 0, 1)) }}</div>
+            <div style="min-width:0;flex:1;">
+                <strong class="truncate">{{ auth()->user()->name }}</strong>
+                <small>Docente</small>
+            </div>
+            <form method="POST" action="{{ route('logout') }}">
+                @csrf
+                <button type="submit" class="ios-icon-btn" title="Cerrar sesión" style="width:36px;height:36px;box-shadow:none;">
+                    <i class="fa-solid fa-right-from-bracket" style="font-size:12px;"></i>
+                </button>
+            </form>
+        </div>
     </aside>
 
     {{-- CANVAS PRINCIPAL --}}
@@ -3273,28 +3558,25 @@
         {{-- WELCOME VIEW --}}
         <template x-if="!canvasLoading && view === 'welcome'">
             <div style="animation: slide-up 0.5s ease;">
-                {{-- Header editorial --}}
                 <div class="dash-header">
                     <div class="dash-header-main">
-                        <p class="dash-eyebrow">
-                            <i class="fa-regular fa-calendar"></i>
-                            {{ now()->isoFormat('dddd, D [de] MMMM') }}
-                        </p>
-                        <h1 class="dash-greeting" x-text="greetingTitle()"></h1>
+                        <p class="dash-eyebrow">{{ now()->isoFormat('dddd, D [de] MMMM YYYY') }}</p>
+                        <h1 class="dash-greeting" x-text="greetingHello()"></h1>
                         <p class="dash-subtitle" x-text="greetingSubtitle()"></p>
                     </div>
-                    <div class="flex items-center space-x-4">
+                    <div class="dash-toolbar">
+                        <label class="dash-search">
+                            <i class="fa-solid fa-magnifying-glass"></i>
+                            <input type="search" x-model="dashQuery" placeholder="Buscar curso…">
+                        </label>
                         <div class="relative z-50" @click.outside="showNotifications = false">
-                            <button @click.stop="toggleNotifications()"
-                                    title="Notificaciones"
-                                    class="relative flex h-11 w-11 items-center justify-center rounded-xl border border-slate-700/80 bg-slate-900/95 text-slate-100 shadow-xl shadow-black/40 transition hover:border-cyan-400/50 hover:text-cyan-200">
-                                <i class="fa-solid fa-bell"></i>
+                            <button type="button" @click.stop="toggleNotifications()" title="Notificaciones" class="ios-icon-btn">
+                                <i class="fa-regular fa-bell"></i>
                                 <span x-show="unreadCount > 0"
                                       x-text="unreadCount > 99 ? '99+' : unreadCount"
                                       class="notification-badge"
                                       x-cloak></span>
                             </button>
-
                             <div x-show="showNotifications"
                                  x-cloak
                                  x-transition.opacity.scale.origin.top.right
@@ -3328,40 +3610,104 @@
                                 </div>
                             </div>
                         </div>
-
-                        <a href="{{ route('teacher.planner.manual') }}" class="btn-primary">
-                            <i class="fa-solid fa-wand-magic-sparkles"></i>
-                            Generar Planificación
-                        </a>
+                        <div class="relative" @click.outside="createMenuOpen = false">
+                            <button type="button" class="btn-create" @click="createMenuOpen = !createMenuOpen">
+                                <i class="fa-solid fa-plus"></i>
+                                Crear
+                                <i class="fa-solid fa-chevron-down" style="font-size:10px;opacity:.8;"></i>
+                            </button>
+                            <div class="create-menu" x-show="createMenuOpen" x-cloak x-transition.opacity>
+                                <a href="{{ route('teacher.planner.manual') }}"><i class="fa-solid fa-wand-magic-sparkles" style="color:#7C3AED;"></i> Nueva planificación</a>
+                                <a href="{{ route('teacher.activities.index') }}"><i class="fa-solid fa-clipboard-list" style="color:#10B981;"></i> Crear actividad</a>
+                                <button type="button" @click="createMenuOpen = false; showNewCourseModal = true"><i class="fa-solid fa-book" style="color:#2563EB;"></i> Nuevo curso</button>
+                                <button type="button" @click="createMenuOpen = false; openBubbleWithFocus()"><i class="fa-solid fa-sparkles" style="color:#EC4899;"></i> Preguntar a AulaSync AI</button>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
-                {{-- Franja de métricas reales (compacta, no protagonista) --}}
                 <template x-if="stats">
-                    <div class="dash-stat-strip">
-                        <div class="dash-stat-chip">
-                            <span class="dash-stat-chip-value" x-text="stats.total_courses"></span>
-                            <span class="dash-stat-chip-label">Cursos activos</span>
+                    <div class="ios-stat-grid">
+                        <div class="ios-stat">
+                            <div class="ios-stat-icon purple"><i class="fa-solid fa-layer-group"></i></div>
+                            <div class="ios-stat-value" x-text="stats.total_courses"></div>
+                            <div class="ios-stat-label">Cursos activos</div>
                         </div>
-                        <div class="dash-stat-chip-divider"></div>
-                        <div class="dash-stat-chip">
-                            <span class="dash-stat-chip-value" x-text="stats.total_students"></span>
-                            <span class="dash-stat-chip-label">Alumnos</span>
+                        <div class="ios-stat">
+                            <div class="ios-stat-icon green"><i class="fa-solid fa-clipboard-check"></i></div>
+                            <div class="ios-stat-value" x-text="pendingTotal()"></div>
+                            <div class="ios-stat-label">Actividades por calificar</div>
                         </div>
-                        <div class="dash-stat-chip-divider"></div>
-                        <div class="dash-stat-chip">
-                            <span class="dash-stat-chip-value" x-text="stats.avg_grade ?? '—'"></span>
-                            <span class="dash-stat-chip-label" x-text="stats.climate?.label ?? 'Promedio'"></span>
+                        <div class="ios-stat">
+                            <div class="ios-stat-icon blue"><i class="fa-solid fa-users"></i></div>
+                            <div class="ios-stat-value" x-text="stats.total_students"></div>
+                            <div class="ios-stat-label">Estudiantes</div>
                         </div>
-                        <div class="dash-stat-chip-divider"></div>
-                        <div class="dash-stat-chip">
-                            <span class="dash-stat-chip-value" x-text="stats.activities_this_week"></span>
-                            <span class="dash-stat-chip-label">Esta semana</span>
+                        <div class="ios-stat">
+                            <div class="ios-stat-icon amber"><i class="fa-solid fa-chart-line"></i></div>
+                            <div class="ios-stat-value" x-text="stats.avg_grade ?? '—'"></div>
+                            <div class="ios-stat-label" x-text="stats.climate?.label ?? 'Promedio general'"></div>
                         </div>
                     </div>
                 </template>
 
-                {{-- AulaSync Intelligence — command center --}}
+                <div class="ios-board">
+                    <div class="ios-panel">
+                        <h3>Próximas actividades</h3>
+                        <template x-if="stats?.next_activity">
+                            <div class="upcoming-row">
+                                <div class="upcoming-date">
+                                    <strong x-text="formatDueParts(stats.next_activity.due_date).day"></strong>
+                                    <span x-text="formatDueParts(stats.next_activity.due_date).mon"></span>
+                                </div>
+                                <div class="upcoming-copy">
+                                    <p x-text="stats.next_activity.title"></p>
+                                    <small x-text="stats.next_activity.course_name"></small>
+                                </div>
+                                <span class="status-pill">Programada</span>
+                            </div>
+                        </template>
+                        <template x-if="!stats?.next_activity">
+                            <p style="color:var(--text-tertiary);font-size:13px;">No hay entregas próximas. Cuando crees una actividad, aparecerá aquí.</p>
+                        </template>
+                        <template x-if="(stats?.activities_this_week || 0) > 1">
+                            <div class="upcoming-row">
+                                <div class="upcoming-date">
+                                    <strong x-text="stats.activities_this_week"></strong>
+                                    <span>SEM</span>
+                                </div>
+                                <div class="upcoming-copy">
+                                    <p>Actividades esta semana</p>
+                                    <small>Revisa el calendario para ver el detalle</small>
+                                </div>
+                                <button type="button" class="insight-action" @click="loadCalendar()">Ver</button>
+                            </div>
+                        </template>
+                    </div>
+
+                    <div class="ios-panel" x-ref="insightsSection">
+                        <h3>Recordatorios</h3>
+                        <template x-for="insight in insightsList().filter(i => i.type !== 'proximamente')" :key="insight.id">
+                            <button type="button" class="reminder-row" @click="runInsightAction(insight)">
+                                <div class="reminder-ico" :style="insight.type === 'atencion' ? 'background:#F59E0B' : (insight.type === 'logro' ? 'background:#10B981' : 'background:#7C3AED')">
+                                    <i class="fa-solid" :class="insight.type === 'atencion' ? 'fa-bolt' : 'fa-sparkles'"></i>
+                                </div>
+                                <div class="upcoming-copy">
+                                    <p x-text="insight.chipLabel"></p>
+                                    <small x-text="insight.text"></small>
+                                </div>
+                                <i class="fa-solid fa-chevron-right" style="color:var(--text-tertiary);font-size:11px;"></i>
+                            </button>
+                        </template>
+                        <div class="quick-actions">
+                            <a href="{{ route('teacher.planner.manual') }}" class="quick-action"><i class="fa-solid fa-wand-magic-sparkles"></i>Nueva planificación</a>
+                            <a href="{{ route('teacher.activities.index') }}" class="quick-action"><i class="fa-solid fa-plus"></i>Crear actividad</a>
+                            <button type="button" class="quick-action" @click="showNewCourseModal = true"><i class="fa-solid fa-book-open"></i>Nuevo curso</button>
+                            <button type="button" class="quick-action" @click="openBubbleWithFocus()"><i class="fa-solid fa-robot"></i>Hablar con IA</button>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="ai-command-card">
                     <div class="ai-command-glow" aria-hidden="true"></div>
                     <div class="ai-command-head">
@@ -3377,12 +3723,10 @@
                         <button type="button" class="ai-insight-counter" @click="scrollToInsights()">
                             <i class="fa-solid fa-bolt"></i>
                             <span x-text="activeInsightsCount()"></span>
-                            <span x-text="activeInsightsCount() === 1 ? 'insight requiere' : 'insights requieren'"></span>
-                            tu atención
+                            insights activos
                         </button>
                         <div class="ai-command-actions">
-                            <button type="button" class="btn-ai-ghost" @click="scrollToInsights()">Ver insights</button>
-                            <button type="button" class="btn-primary" @click="openBubbleWithFocus()">
+                            <button type="button" class="btn-create" @click="openBubbleWithFocus()">
                                 <i class="fa-solid fa-robot"></i>
                                 Preguntar a AulaSync AI
                             </button>
@@ -3390,43 +3734,14 @@
                     </div>
                 </div>
 
-                {{-- Insights de AulaSync --}}
-                <div class="insights-section" x-ref="insightsSection">
-                    <div class="section-title">
-                        <i class="fa-solid fa-wand-magic-sparkles"></i>
-                        <h2>Insights de AulaSync</h2>
-                    </div>
-                    <div class="insights-grid">
-                        <template x-for="insight in insightsList()" :key="insight.id">
-                            <div class="insight-card" :class="'insight-' + insight.type">
-                                <span class="insight-chip" x-text="insight.chipLabel"></span>
-                                <p class="insight-course" x-show="insight.course" x-text="insight.course"></p>
-                                <p class="insight-text" x-text="insight.text"></p>
-                                <button type="button"
-                                        class="insight-action"
-                                        x-show="insight.actionLabel"
-                                        @click="runInsightAction(insight)">
-                                    <span x-text="insight.actionLabel"></span>
-                                    <i class="fa-solid fa-arrow-right"></i>
-                                </button>
-                            </div>
-                        </template>
-                    </div>
-                    <p class="dash-quote">
-                        <i class="fa-solid fa-quote-left"></i>
-                        {{ $dailyQuote }}
-                    </p>
-                </div>
-
-                {{-- Mis Cursos --}}
-                <template x-if="courses.length > 0">
+                <template x-if="filteredCourses().length > 0">
                     <div>
                         <div class="section-title">
                             <i class="fa-solid fa-layer-group"></i>
                             <h2>Mis Cursos</h2>
                         </div>
                         <div class="courses-grid">
-                            <template x-for="c in courses" :key="c.id">
+                            <template x-for="c in filteredCourses()" :key="c.id">
                                 <div @click="loadCourse(c.id)" class="course-card">
                                     <div class="course-card-header">
                                         <div class="course-card-avatar" x-text="c.subject_name.charAt(0).toUpperCase()"></div>
@@ -3438,25 +3753,23 @@
                                             <span x-text="c.pending_grading_count"></span> sin calificar
                                         </span>
                                     </div>
-
                                     <div class="course-progress" x-show="c.avg_score !== null && c.avg_score !== undefined">
                                         <div class="course-progress-head">
-                                            <span>Rendimiento</span>
+                                            <span>Promedio</span>
                                             <span x-text="c.avg_score + '/20'"></span>
                                         </div>
                                         <div class="course-progress-track">
                                             <div class="course-progress-fill" :style="`width: ${Math.max(4, Math.min(100, Math.round((c.avg_score / 20) * 100)))}%`"></div>
                                         </div>
                                     </div>
-
                                     <div class="course-stats">
                                         <span class="course-stat">
                                             <i class="fa-solid fa-users"></i>
-                                            <span x-text="c.students_count"></span>
+                                            <span x-text="c.students_count + ' alumnos'"></span>
                                         </span>
                                         <span class="course-stat">
                                             <i class="fa-solid fa-clipboard-list"></i>
-                                            <span x-text="c.activities_count"></span>
+                                            <span x-text="c.activities_count + ' actividades'"></span>
                                         </span>
                                     </div>
                                     <div class="card-footer">
@@ -4398,6 +4711,8 @@ window.addEventListener('open-ai-bubble', () => {
 function teacherHub() {
     return {
         sidebarOpen:     false,
+        createMenuOpen:  false,
+        dashQuery:       '',
         view:            'welcome',
         canvasLoading:   false,
         coursesLoading:  false,
@@ -4728,6 +5043,34 @@ function teacherHub() {
             const name = {{ Illuminate\Support\Js::from(explode(' ', auth()->user()->name)[0] ?? auth()->user()->name) }};
             const greeting = hour < 12 ? 'Buenos días' : (hour < 19 ? 'Buenas tardes' : 'Buenas noches');
             return `${greeting}, ${name}`;
+        },
+
+        greetingHello() {
+            const name = {{ Illuminate\Support\Js::from(explode(' ', auth()->user()->name)[0] ?? auth()->user()->name) }};
+            return `¡Hola, ${name}! 👋`;
+        },
+
+        formatDueParts(dateStr) {
+            if (!dateStr) return { day: '—', mon: '' };
+            const d = new Date(dateStr);
+            if (Number.isNaN(d.getTime())) return { day: '—', mon: '' };
+            return {
+                day: String(d.getDate()).padStart(2, '0'),
+                mon: d.toLocaleDateString('es', { month: 'short' }).replace('.', '').toUpperCase(),
+            };
+        },
+
+        pendingTotal() {
+            return (this.courses || []).reduce((sum, course) => sum + (course.pending_grading_count || 0), 0);
+        },
+
+        filteredCourses() {
+            const query = (this.dashQuery || '').trim().toLowerCase();
+            if (!query) return this.courses || [];
+            return (this.courses || []).filter((course) => {
+                const haystack = `${course.subject_name} ${course.grade} ${course.section || ''}`.toLowerCase();
+                return haystack.includes(query);
+            });
         },
 
         greetingSubtitle() {
