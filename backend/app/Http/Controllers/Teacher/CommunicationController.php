@@ -12,10 +12,12 @@ use App\Models\Course;
 use App\Models\CourseEvaluationPlan;
 use App\Models\Student;
 use Carbon\Carbon;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\View\View;
 
 class CommunicationController extends Controller
@@ -33,45 +35,55 @@ class CommunicationController extends Controller
             ->orderBy('name')
             ->get(['id', 'name', 'grade', 'section']);
 
-        $this->ensureThreads($teacher->id, $students);
+        $announcements = collect();
+        $threads = collect();
+        $plans = collect();
 
-        $announcements = CommunicationAnnouncement::where('teacher_id', $teacher->id)
-            ->withCount([
-                'reads as recipients_count',
-                'reads as read_count' => fn ($q) => $q->whereNotNull('read_at'),
-            ])
-            ->latest()
-            ->limit(30)
-            ->get();
+        try {
+            if ($this->communicationTablesReady()) {
+                $this->ensureThreads($teacher->id, $students);
 
-        $threads = CommunicationThread::where('teacher_id', $teacher->id)
-            ->with(['student:id,name', 'messages' => fn ($q) => $q->latest()->limit(30)])
-            ->orderByDesc('last_message_at')
-            ->limit(30)
-            ->get()
-            ->map(function (CommunicationThread $thread) {
-                $avg = $thread->student
-                    ? round((float) $thread->student->grades()->avg('score'), 1)
-                    : null;
+                $announcements = CommunicationAnnouncement::where('teacher_id', $teacher->id)
+                    ->withCount([
+                        'reads as recipients_count',
+                        'reads as read_count' => fn ($q) => $q->whereNotNull('read_at'),
+                    ])
+                    ->latest()
+                    ->limit(30)
+                    ->get();
 
-                return [
-                    'id' => $thread->id,
-                    'contact_name' => $thread->contact_name,
-                    'contact_role' => $thread->contact_role,
-                    'last_message_preview' => $thread->last_message_preview,
-                    'last_message_at' => optional($thread->last_message_at)->toDateTimeString(),
-                    'student' => $thread->student,
-                    'student_avg' => $avg,
-                    'messages' => $thread->messages->sortBy('created_at')->values(),
-                ];
-            })
-            ->values();
+                $threads = CommunicationThread::where('teacher_id', $teacher->id)
+                    ->with(['student:id,name', 'messages' => fn ($q) => $q->latest()->limit(30)])
+                    ->orderByDesc('last_message_at')
+                    ->limit(30)
+                    ->get()
+                    ->map(function (CommunicationThread $thread) {
+                        $avg = $thread->student
+                            ? round((float) $thread->student->grades()->avg('score'), 1)
+                            : null;
 
-        $plans = CourseEvaluationPlan::where('teacher_id', $teacher->id)
-            ->with(['course:id,subject_name,grade,section', 'items'])
-            ->latest()
-            ->limit(20)
-            ->get();
+                        return [
+                            'id' => $thread->id,
+                            'contact_name' => $thread->contact_name,
+                            'contact_role' => $thread->contact_role,
+                            'last_message_preview' => $thread->last_message_preview,
+                            'last_message_at' => optional($thread->last_message_at)->toDateTimeString(),
+                            'student' => $thread->student,
+                            'student_avg' => $avg,
+                            'messages' => $thread->messages->sortBy('created_at')->values(),
+                        ];
+                    })
+                    ->values();
+
+                $plans = CourseEvaluationPlan::where('teacher_id', $teacher->id)
+                    ->with(['course:id,subject_name,grade,section', 'items'])
+                    ->latest()
+                    ->limit(20)
+                    ->get();
+            }
+        } catch (QueryException $e) {
+            Log::warning('Communication index skipped due to missing schema: ' . $e->getMessage());
+        }
 
         return view('teacher.communication.index', compact(
             'teacher',
@@ -501,8 +513,19 @@ class CommunicationController extends Controller
         abort_unless($plan->teacher_id === auth()->id(), 403);
     }
 
+    private function communicationTablesReady(): bool
+    {
+        return Schema::hasTable('communication_threads')
+            && Schema::hasTable('communication_announcements')
+            && Schema::hasTable('course_evaluation_plans');
+    }
+
     private function ensureThreads(int $teacherId, $students): void
     {
+        if (! Schema::hasTable('communication_threads')) {
+            return;
+        }
+
         foreach ($students->take(10) as $student) {
             CommunicationThread::firstOrCreate(
                 ['teacher_id' => $teacherId, 'student_id' => $student->id],
