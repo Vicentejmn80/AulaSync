@@ -32,7 +32,11 @@ class RepresentanteController extends Controller
 
         return view('representante.hub', [
             'students' => $students->map(fn ($s) => $this->dashboard->studentPayload($s))->values(),
-            'reasons' => $reasons,
+            'reasons' => $reasons->map(fn ($r) => [
+                'id' => $r->id,
+                'label' => $r->label,
+                'requires_comment' => (bool) $r->requires_comment,
+            ])->values(),
             'schoolName' => $school?->name,
             'parent' => [
                 'name' => $user->name,
@@ -210,6 +214,19 @@ class RepresentanteController extends Controller
         $pdf->setPaper('letter', 'portrait');
 
         return $pdf->download('boletin-'.$student->id.'-'.now()->format('Ymd').'.pdf');
+    }
+
+    public function boletinPreview(int $estudiante): JsonResponse
+    {
+        $student = $this->dashboard->authorizeStudent(auth()->user(), $estudiante);
+        $payload = $this->dashboard->reportCardData($student);
+
+        return response()->json([
+            'ok' => true,
+            'student' => $this->dashboard->studentPayload($student),
+            'globalAverage' => $payload['globalAverage'],
+            'courses' => $payload['courseData'],
+        ]);
     }
 
     public function constancia(int $estudiante): Response

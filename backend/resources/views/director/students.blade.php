@@ -198,6 +198,10 @@
                         <i class="fa-solid fa-user-plus"></i>
                         Matricular Nuevo Alumno
                     </button>
+                    <a href="{{ route('director.boletines') }}"
+                       class="flex items-center gap-2 rounded-2xl border border-white/10 px-4 py-3 text-sm font-semibold text-slate-200 hover:bg-white/10">
+                        <i class="fa-solid fa-file-lines"></i> Boletines
+                    </a>
                     @include('components.user-control-panel')
                 </div>
             </header>

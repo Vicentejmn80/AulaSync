@@ -103,6 +103,8 @@ Route::middleware(['auth'])->group(function () {
                     ->name('students.store');
                 Route::get('/students/search', [DirectorStudentController::class, 'search'])
                     ->name('students.search');
+                Route::get('/boletines', [DirectorReportCardController::class, 'index'])
+                    ->name('boletines');
                 Route::get('/report-card/{student}', [DirectorReportCardController::class, 'preview'])
                     ->name('report-card');
                 Route::get('/report-card/{student}/pdf', [DirectorReportCardController::class, 'pdf'])
@@ -148,6 +150,7 @@ Route::middleware(['auth'])->group(function () {
                 Route::post('/api/notificaciones/leer', [RepresentanteController::class, 'markNotificationsRead'])->name('api.notificaciones.leer');
                 Route::post('/api/perfil', [RepresentanteController::class, 'updateProfile'])->name('api.perfil');
                 Route::get('/boletin/{estudiante}', [RepresentanteController::class, 'boletin'])->name('boletin');
+                Route::get('/api/{estudiante}/boletin', [RepresentanteController::class, 'boletinPreview'])->name('api.boletin');
                 Route::get('/constancia/{estudiante}', [RepresentanteController::class, 'constancia'])->name('constancia');
             });
 
@@ -223,6 +226,7 @@ Route::middleware(['auth'])->group(function () {
 
             Route::prefix('teacher/communication')->name('teacher.communication.')->group(function () {
                 Route::get('/', [CommunicationController::class, 'index'])->name('index');
+                Route::get('/threads', [CommunicationController::class, 'threads'])->name('threads');
                 Route::post('/announcements/generate', [CommunicationController::class, 'generateAnnouncement'])->name('announcements.generate');
                 Route::post('/announcements', [CommunicationController::class, 'storeAnnouncement'])->name('announcements.store');
                 Route::post('/announcements/{announcement}/demo-read', [CommunicationController::class, 'markReadDemo'])->name('announcements.demo_read');

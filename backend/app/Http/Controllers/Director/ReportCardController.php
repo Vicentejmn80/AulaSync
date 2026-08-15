@@ -3,106 +3,80 @@
 namespace App\Http\Controllers\Director;
 
 use App\Http\Controllers\Controller;
-use App\Models\Activity;
-use App\Models\Course;
-use App\Models\Grade;
 use App\Models\Student;
+use App\Services\ReportCardService;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 
 class ReportCardController extends Controller
 {
-    public function preview(int $studentId): View
+    public function __construct(private ReportCardService $reportCards)
+    {
+    }
+
+    public function index(Request $request): View
     {
         $colegioId = auth()->user()->colegio_id;
-        $student = Student::where('colegio_id', $colegioId)->with('courses')->findOrFail($studentId);
-        $courses = $student->courses;
+        $query = Student::where('colegio_id', $colegioId)->with(['courses.teacher']);
 
-        $courseData = $courses->map(function (Course $course) use ($student) {
-            $activities = Activity::where('course_id', $course->id)
-                ->whereHas('grades', fn ($q) => $q->where('student_id', $student->id))
-                ->with(['grades' => fn ($q) => $q->where('student_id', $student->id)])
-                ->get(['id', 'title', 'type', 'max_score', 'weight_percentage', 'due_date']);
+        if ($request->filled('search')) {
+            $search = $request->search;
+            $query->where(function ($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                    ->orWhere('grade', 'like', "%{$search}%")
+                    ->orWhere('document_id', 'like', "%{$search}%");
+            });
+        }
 
-            $grades = Grade::with('activity')
-                ->where('student_id', $student->id)
-                ->whereIn('activity_id', $activities->pluck('id'))
-                ->get();
+        if ($request->filled('grade')) {
+            $query->where('grade', $request->grade);
+        }
 
-            $promedio = $activities->count() > 0
-                ? round($grades->avg(fn ($g) => $g->activity?->max_score > 0
-                    ? ($g->score / $g->activity->max_score) * 100
-                    : 0), 1)
-                : 0;
+        $students = $query->orderBy('name')->paginate(30)->withQueryString();
+        $grades = Student::where('colegio_id', $colegioId)->distinct()->orderBy('grade')->pluck('grade');
+
+        $rows = $students->getCollection()->map(function (Student $student) {
+            $payload = $this->reportCards->build($student);
 
             return [
-                'course_name' => $course->subject_name . ' ' . $course->grade . ($course->section ? ' / ' . $course->section : ''),
-                'teacher_name' => $course->teacher?->name ?? '—',
-                'promedio' => $promedio,
-                'activities' => $activities->map(fn ($a) => [
-                    'title' => $a->title,
-                    'type' => $a->type,
-                    'score' => $a->grades->first()?->score ?? 0,
-                    'max_score' => $a->max_score,
-                    'percentage' => $a->max_score > 0
-                        ? round(($a->grades->first()?->score ?? 0) / $a->max_score * 100, 1)
-                        : 0,
-                    'due_date' => $a->due_date?->format('d/m/Y'),
-                ]),
+                'student' => $student,
+                'globalAverage' => $payload['globalAverage'],
+                'courses' => $payload['courseData']->count(),
+                'has_grades' => $payload['courseData']->contains(fn ($c) => collect($c['activities'])->contains(fn ($a) => $a['has_score'])),
             ];
         });
 
-        $globalAverage = $courseData->avg('promedio');
+        return view('director.boletines', compact('students', 'rows', 'grades'));
+    }
+
+    public function preview(int $studentId): View
+    {
+        $student = $this->findSchoolStudent($studentId);
+        $payload = $this->reportCards->build($student);
+        $courseData = $payload['courseData'];
+        $globalAverage = $payload['globalAverage'];
 
         return view('director.report-card', compact('student', 'courseData', 'globalAverage'));
     }
 
     public function pdf(int $studentId)
     {
-        $colegioId = auth()->user()->colegio_id;
-        $student = Student::where('colegio_id', $colegioId)->with('courses')->findOrFail($studentId);
-        $courses = $student->courses;
-
-        $courseData = $courses->map(function (Course $course) use ($student) {
-            $activities = Activity::where('course_id', $course->id)
-                ->whereHas('grades', fn ($q) => $q->where('student_id', $student->id))
-                ->with(['grades' => fn ($q) => $q->where('student_id', $student->id)])
-                ->get(['id', 'title', 'type', 'max_score', 'weight_percentage', 'due_date']);
-
-            $grades = Grade::with('activity')
-                ->where('student_id', $student->id)
-                ->whereIn('activity_id', $activities->pluck('id'))
-                ->get();
-
-            $promedio = $activities->count() > 0
-                ? round($grades->avg(fn ($g) => $g->activity?->max_score > 0
-                    ? ($g->score / $g->activity->max_score) * 100
-                    : 0), 1)
-                : 0;
-
-            return [
-                'course_name' => $course->subject_name . ' ' . $course->grade . ($course->section ? ' / ' . $course->section : ''),
-                'teacher_name' => $course->teacher?->name ?? '—',
-                'promedio' => $promedio,
-                'activities' => $activities->map(fn ($a) => [
-                    'title' => $a->title,
-                    'type' => $a->type,
-                    'score' => $a->grades->first()?->score ?? 0,
-                    'max_score' => $a->max_score,
-                    'percentage' => $a->max_score > 0
-                        ? round(($a->grades->first()?->score ?? 0) / $a->max_score * 100, 1)
-                        : 0,
-                    'due_date' => $a->due_date?->format('d/m/Y'),
-                ]),
-            ];
-        });
-
-        $globalAverage = $courseData->avg('promedio');
+        $student = $this->findSchoolStudent($studentId);
+        $payload = $this->reportCards->build($student);
+        $courseData = $payload['courseData'];
+        $globalAverage = $payload['globalAverage'];
 
         $pdf = Pdf::loadView('director.report-card-pdf', compact('student', 'courseData', 'globalAverage'));
         $pdf->setPaper('letter', 'portrait');
 
-        return $pdf->download('boleta-' . $student->id . '-' . now()->format('Ymd') . '.pdf');
+        return $pdf->download('boleta-'.$student->id.'-'.now()->format('Ymd').'.pdf');
+    }
+
+    private function findSchoolStudent(int $studentId): Student
+    {
+        return Student::where('colegio_id', auth()->user()->colegio_id)
+            ->with(['courses.teacher', 'colegio'])
+            ->findOrFail($studentId);
     }
 }

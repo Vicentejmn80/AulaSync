@@ -163,6 +163,7 @@
                 <i class="fa-solid fa-comments"></i> Comunicación
                 <span x-show="unreadAnnouncements > 0" x-text="unreadAnnouncements" style="margin-left:auto;background:#EC4899;color:#fff;border-radius:99px;padding:1px 7px;font-size:11px;"></span>
             </button>
+            <button class="nav-item" :class="{ active: view === 'docs' }" @click="view = 'docs'; sidebarOpen = false"><i class="fa-solid fa-folder-open"></i> Documentos</button>
             <div style="flex:1"></div>
             <button class="nav-item" @click="openProfile = true"><i class="fa-solid fa-user-gear"></i> Editar perfil</button>
             <form method="POST" action="{{ route('logout') }}">
@@ -303,6 +304,16 @@
                     </section>
                 </div>
 
+                <section class="panel" x-show="view === 'home' && (summary.absence_requests || []).length">
+                    <h2 class="section-title">Tus reportes de ausencia</h2>
+                    <template x-for="req in (summary.absence_requests || [])" :key="req.id">
+                        <div class="feed-item" style="cursor:default">
+                            <strong x-text="(req.kind === 'tardy' ? 'Retraso' : 'Ausencia') + ' · ' + (req.reason || '')"></strong>
+                            <div style="font-size:12px;color:var(--text-secondary)" x-text="fmt(req.start) + (req.end !== req.start ? ' – ' + fmt(req.end) : '') + ' · ' + req.status"></div>
+                        </div>
+                    </template>
+                </section>
+
                 <section class="panel" x-show="view === 'calendar'">
                     <div class="cal-head">
                         <h2 class="section-title" style="margin:0">Horario y calendario</h2>
@@ -356,7 +367,18 @@
                         </template>
                     </div>
                     <div x-show="commTab === 'messages'">
-                        <template x-if="threads.length === 0"><p class="empty">Aún no hay conversaciones. Escríbele al docente desde una materia.</p></template>
+                        <div class="panel" style="padding:12px;margin-bottom:12px;box-shadow:none">
+                            <strong>Escribirle a un docente</strong>
+                            <select x-model="composeCourseId">
+                                <option value="">Elige la materia</option>
+                                <template x-for="sub in subjects" :key="'c'+sub.id">
+                                    <option :value="sub.id" x-text="sub.name + ' · ' + sub.teacher"></option>
+                                </template>
+                            </select>
+                            <textarea rows="2" x-model="newMessage" placeholder="Hola profesor, quería consultar…"></textarea>
+                            <button class="btn btn-primary" @click="messageTeacher(composeCourseId)">Enviar</button>
+                        </div>
+                        <template x-if="threads.length === 0"><p class="empty">Aún no hay conversaciones. Escríbele al docente arriba o desde una materia.</p></template>
                         <template x-for="t in threads" :key="t.id">
                             <div class="feed-item" @click="openThread(t.id)">
                                 <div style="font-weight:800" x-text="t.teacher"></div>
@@ -379,13 +401,35 @@
                         <p class="empty" x-show="announcements.filter(x => x.official).length === 0">Sin comunicados oficiales.</p>
                     </div>
                 </section>
+
+                <section class="panel" x-show="view === 'docs'">
+                    <h2 class="section-title">Documentos de <span x-text="currentStudent?.name"></span></h2>
+                    <p class="empty">Descarga o previsualiza el boletín (las mismas notas que ve el docente y el director) y la constancia de estudio.</p>
+                    <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:12px">
+                        <button class="btn btn-primary" @click="openBoletin()">Ver boletín</button>
+                        <a class="btn btn-ghost" :href="boletinUrl" style="text-decoration:none">Descargar PDF</a>
+                        <a class="btn btn-ghost" :href="constanciaUrl" style="text-decoration:none">Constancia de estudio</a>
+                    </div>
+                    <div x-show="boletin" style="margin-top:18px">
+                        <p><strong>Promedio global:</strong> <span x-text="(boletin?.globalAverage ?? 0) + '%'"></span></p>
+                        <template x-for="course in (boletin?.courses || [])" :key="course.course_id || course.course_name">
+                            <div class="feed-item" style="cursor:default">
+                                <strong x-text="course.course_name"></strong>
+                                <div style="font-size:12px;color:var(--text-secondary)" x-text="course.teacher_name + ' · ' + course.promedio + '%'"></div>
+                                <template x-for="act in (course.activities || [])" :key="act.title">
+                                    <div style="font-size:13px;padding:4px 0" x-text="act.title + (act.has_score ? (' · ' + act.score + '/' + act.max_score) : ' · pendiente')"></div>
+                                </template>
+                            </div>
+                        </template>
+                    </div>
+                </section>
             </div>
         </main>
     </div>
 
     <div class="fab" x-show="students.length > 0">
         <button class="fab-btn" @click="openAbsence = true"><i class="fa-solid fa-calendar-xmark"></i> Reportar ausencia</button>
-        <a class="fab-btn" :href="boletinUrl" style="text-decoration:none"><i class="fa-solid fa-file-arrow-down"></i> Descargar boletín</a>
+        <button class="fab-btn" @click="openBoletin()"><i class="fa-solid fa-file-arrow-down"></i> Ver boletín</button>
         <a class="fab-btn" :href="constanciaUrl" style="text-decoration:none"><i class="fa-solid fa-stamp"></i> Ver constancias</a>
         <button class="fab-btn" @click="openProfile = true"><i class="fa-solid fa-pen"></i> Editar perfil</button>
     </div>
@@ -406,6 +450,7 @@
             <select x-model="absence.reason_id">
                 <template x-for="r in reasons" :key="r.id"><option :value="r.id" x-text="r.label"></option></template>
             </select>
+            <p class="empty" x-show="!reasons.length">No hay motivos configurados. Recarga o avisa al colegio.</p>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
                 <div><label>Desde</label><input type="date" x-model="absence.start_date"></div>
                 <div><label>Hasta</label><input type="date" x-model="absence.end_date"></div>
@@ -482,7 +527,9 @@
         </div>
     </div>
 
-    @include('partials.theme-switcher')
+    <div x-show="toast" x-cloak class="fab" style="left:24px;right:auto;bottom:24px;z-index:60">
+        <div class="fab-btn" style="max-width:280px" x-text="toast"></div>
+    </div>
     <script>
         document.addEventListener('alpine:init', () => {
             Alpine.data('familyHub', () => ({
@@ -509,6 +556,9 @@
                 chat: null,
                 chatBody: '',
                 newMessage: '',
+                composeCourseId: '',
+                boletin: null,
+                toast: '',
                 absenceError: '',
                 profileMsg: '',
                 profile: {
@@ -520,7 +570,7 @@
                 absence: {
                     student_id: @json($students->first()['id'] ?? null),
                     kind: 'absence',
-                    reason_id: @json(optional($reasons->first())->id),
+                    reason_id: @json($reasons->first()['id'] ?? null),
                     start_date: '{{ now()->toDateString() }}',
                     end_date: '{{ now()->toDateString() }}',
                     comment: '',
@@ -610,23 +660,37 @@
                         body: JSON.stringify({ estudiante_id: this.studentId, body: this.chatBody }),
                     });
                     this.chatBody = '';
+                    this.showToast('Mensaje enviado.');
                     await this.openThread(this.chat.id);
                 },
                 async messageTeacher(courseId) {
-                    if (!this.newMessage.trim()) return;
-                    await fetch(`/representante/api/mensajes`, {
+                    if (!courseId) { this.showToast('Elige una materia.'); return; }
+                    if (!this.newMessage.trim()) { this.showToast('Escribe un mensaje.'); return; }
+                    const res = await fetch(`/representante/api/mensajes`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-CSRF-TOKEN': this.csrf() },
                         body: JSON.stringify({ estudiante_id: this.studentId, course_id: courseId, body: this.newMessage }),
                     });
+                    const json = await res.json().catch(() => ({}));
+                    if (!res.ok) {
+                        this.showToast(json.message || 'No se pudo enviar el mensaje.');
+                        return;
+                    }
                     this.newMessage = '';
+                    this.composeCourseId = '';
                     this.subjectModal = null;
                     this.view = 'comms';
                     this.commTab = 'messages';
+                    this.showToast('Mensaje enviado al docente.');
                     await this.refreshAll();
+                    if (json.thread_id) await this.openThread(json.thread_id);
                 },
                 async submitAbsence() {
                     this.absenceError = '';
+                    if (!this.absence.reason_id) {
+                        this.absenceError = 'No hay motivos cargados. Recarga la página o avisa al colegio.';
+                        return;
+                    }
                     const res = await fetch(`/representante/api/ausencia`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-CSRF-TOKEN': this.csrf() },
@@ -634,11 +698,24 @@
                     });
                     const json = await res.json().catch(() => ({}));
                     if (!res.ok) {
-                        this.absenceError = json.message || json.error || 'No se pudo enviar.';
+                        const firstError = json.errors ? Object.values(json.errors).flat()[0] : null;
+                        this.absenceError = firstError || json.message || json.error || 'No se pudo enviar.';
                         return;
                     }
                     this.openAbsence = false;
+                    this.absence.comment = '';
+                    this.showToast('Ausencia reportada. El docente ya fue notificado.');
                     await this.refreshAll();
+                },
+                async openBoletin() {
+                    this.view = 'docs';
+                    const json = await fetch(`/representante/api/${this.studentId}/boletin`, { headers: { Accept: 'application/json' } }).then(r => r.json());
+                    this.boletin = json;
+                    this.showToast('Boletín actualizado con las notas del docente.');
+                },
+                showToast(text) {
+                    this.toast = text;
+                    setTimeout(() => { if (this.toast === text) this.toast = ''; }, 3200);
                 },
                 async saveProfile() {
                     const res = await fetch(`/representante/api/perfil`, {
@@ -648,6 +725,7 @@
                     });
                     const json = await res.json();
                     this.profileMsg = json.message || 'Guardado.';
+                    this.showToast('Perfil actualizado.');
                 },
                 toggleNotif() { this.showNotif = !this.showNotif; },
                 async markNotifRead() {
