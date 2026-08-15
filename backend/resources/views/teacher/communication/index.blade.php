@@ -54,14 +54,13 @@
         <div>
             <a href="{{ route('teacher.hub') }}" style="text-decoration:none;color:var(--nova-violet);font-weight:700;"><i class="fa-solid fa-arrow-left"></i> Volver al hub</a>
             <h1 class="title">Comunicación</h1>
-            <p class="muted">Canales inteligentes para informar, conversar y planificar evaluaciones sin fricción.</p>
+            <p class="muted">Canales inteligentes para informar y conversar con familias y estudiantes.</p>
         </div>
     </div>
 
     <div class="tabs">
         <button class="tab" :class="{ active: tab === 'announcements' }" @click="tab = 'announcements'"><i class="fa-solid fa-bullhorn"></i> Anuncios / Circulares</button>
         <button class="tab" :class="{ active: tab === 'messages' }" @click="tab = 'messages'"><i class="fa-solid fa-comments"></i> Mensajes</button>
-        <button class="tab" :class="{ active: tab === 'plans' }" @click="tab = 'plans'"><i class="fa-solid fa-sitemap"></i> Plan de Evaluación</button>
     </div>
 
     <div x-show="tab === 'announcements'" class="layout">
@@ -187,76 +186,6 @@
         </div>
     </div>
 
-    <div x-show="tab === 'plans'" class="layout">
-        <div class="card">
-            <h3><i class="fa-solid fa-sliders"></i> Generar plan de evaluación con IA</h3>
-            <div class="row2">
-                <div>
-                    <label>Curso</label>
-                    <select x-model="planForm.course_id">
-                        <option value="">Selecciona un curso</option>
-                        <template x-for="c in courses" :key="c.id">
-                            <option :value="c.id" x-text="`${c.subject_name} · ${c.grade}${c.section ? ' / ' + c.section : ''}`"></option>
-                        </template>
-                    </select>
-                </div>
-                <div>
-                    <label>Semanas del período</label>
-                    <input type="number" min="4" max="40" x-model.number="planForm.weeks">
-                </div>
-            </div>
-            <label>Programa de la materia</label>
-            <textarea x-model="planForm.program_text" placeholder="Describe unidades, objetivos y ritmo del curso para que IA distribuya evaluaciones y porcentajes."></textarea>
-            <div class="stack">
-                <button class="btn btn-main" @click="generatePlan()">Generar plan de evaluación para todo el curso</button>
-                <button class="btn btn-soft" x-show="planDraft" @click="analyzeOverload()">Alerta de sobrecarga</button>
-            </div>
-            <p class="ok" x-show="planMessage" x-text="planMessage"></p>
-            <p class="warn" x-show="planWarning" x-text="planWarning"></p>
-            <template x-if="planDraft">
-                <div style="margin-top:14px;">
-                    <label>Título del plan</label>
-                    <input x-model="planDraft.title">
-                    <label>Resumen</label>
-                    <textarea x-model="planDraft.summary"></textarea>
-                    <table class="table">
-                        <thead>
-                            <tr>
-                                <th>Unidad</th>
-                                <th>Evaluación</th>
-                                <th>%</th>
-                                <th>Fecha</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <template x-for="(item, idx) in planDraft.items" :key="idx">
-                                <tr>
-                                    <td><input x-model="item.unit_name"></td>
-                                    <td><input x-model="item.assessment_type"></td>
-                                    <td><input type="number" min="0" max="100" x-model.number="item.weight_percentage"></td>
-                                    <td><input type="date" x-model="item.due_date"></td>
-                                </tr>
-                            </template>
-                        </tbody>
-                    </table>
-                    <div class="stack">
-                        <button class="btn btn-main" @click="savePlan()">Guardar plan</button>
-                        <button class="btn btn-alert" :disabled="!savedPlanId" @click="publishToCalendar()">Publicar en calendario</button>
-                    </div>
-                </div>
-            </template>
-        </div>
-        <div class="card">
-            <h3><i class="fa-solid fa-list-check"></i> Planes guardados</h3>
-            <template x-if="plans.length === 0"><p class="muted">No hay planes guardados todavía.</p></template>
-            <template x-for="p in plans" :key="p.id">
-                <div class="list-item">
-                    <strong x-text="p.title"></strong>
-                    <div class="muted" x-text="p.course ? `${p.course.subject_name} · ${p.course.grade}` : 'Sin curso'"></div>
-                    <small x-text="`${(p.items || []).length} ítems`"></small>
-                </div>
-            </template>
-        </div>
     </div>
 </div>
 
@@ -266,17 +195,13 @@ function communicationApp() {
         tab: 'announcements',
         notice: '',
         error: '',
-        planMessage: '',
-        planWarning: '',
         courses: @json($courses),
         students: @json($students),
         announcements: @json($announcements),
         threads: @json($threads),
-        plans: @json($plans),
         selectedThreadId: @json($threads->first()['id'] ?? null),
         chatDraft: '',
         quickReplies: [],
-        savedPlanId: null,
         announcement: {
             idea: '',
             course_id: '',
@@ -286,8 +211,6 @@ function communicationApp() {
             files: [],
             draft: null,
         },
-        planForm: { course_id: '', program_text: '', weeks: 12 },
-        planDraft: null,
         csrf() { return document.querySelector('meta[name="csrf-token"]').content; },
         selectedThread() {
             return this.threads.find(t => t.id === this.selectedThreadId) || null;
@@ -384,60 +307,6 @@ function communicationApp() {
         },
         applySuggestion(text) {
             this.chatDraft = text;
-        },
-        async generatePlan() {
-            this.planMessage = ''; this.planWarning = '';
-            const res = await fetch('{{ route('teacher.communication.plans.generate') }}', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': this.csrf(), 'Accept': 'application/json' },
-                body: JSON.stringify(this.planForm),
-            });
-            const data = await res.json();
-            if (!data.success) { this.planWarning = data.error || 'No se pudo generar el plan.'; return; }
-            this.planDraft = data.plan;
-            this.savedPlanId = null;
-            this.planMessage = 'Plan generado. Puedes editarlo antes de guardar.';
-        },
-        async analyzeOverload() {
-            if (!this.planDraft || !this.planForm.course_id) return;
-            const res = await fetch('{{ route('teacher.communication.plans.overload') }}', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': this.csrf(), 'Accept': 'application/json' },
-                body: JSON.stringify({ course_id: this.planForm.course_id, items: this.planDraft.items || [] }),
-            });
-            const data = await res.json();
-            this.planWarning = data.message || '';
-            if (Array.isArray(data.warnings) && data.warnings.length) {
-                this.planWarning += ' ' + data.warnings.join(' | ');
-            }
-        },
-        async savePlan() {
-            if (!this.planDraft) return;
-            const payload = {
-                course_id: this.planForm.course_id,
-                title: this.planDraft.title || 'Plan de evaluación',
-                summary: this.planDraft.summary || '',
-                items: this.planDraft.items || [],
-            };
-            const res = await fetch('{{ route('teacher.communication.plans.store') }}', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': this.csrf(), 'Accept': 'application/json' },
-                body: JSON.stringify(payload),
-            });
-            const data = await res.json();
-            if (!data.success) { this.planWarning = data.error || 'No se pudo guardar.'; return; }
-            this.plans.unshift(data.plan);
-            this.savedPlanId = data.plan.id;
-            this.planMessage = 'Plan guardado correctamente.';
-        },
-        async publishToCalendar() {
-            if (!this.savedPlanId) return;
-            const res = await fetch(`/teacher/communication/plans/${this.savedPlanId}/publish-calendar`, {
-                method: 'POST',
-                headers: { 'X-CSRF-TOKEN': this.csrf(), 'Accept': 'application/json' },
-            });
-            const data = await res.json();
-            this.planMessage = data.message || 'Plan publicado en calendario.';
         },
     };
 }

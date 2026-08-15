@@ -6,23 +6,28 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-class CourseEvaluationPlan extends Model
+class Rubric extends Model
 {
     protected $fillable = [
         'teacher_id',
         'course_id',
+        'evaluation_id',
         'title',
-        'summary',
-        'formative_weight',
-        'summative_weight',
+        'description',
+        'task_type',
+        'type',
+        'levels',
+        'total_points',
+        'generated_by_ai',
         'status',
     ];
 
     protected function casts(): array
     {
         return [
-            'formative_weight' => 'float',
-            'summative_weight' => 'float',
+            'levels' => 'array',
+            'generated_by_ai' => 'boolean',
+            'total_points' => 'integer',
         ];
     }
 
@@ -36,8 +41,13 @@ class CourseEvaluationPlan extends Model
         return $this->belongsTo(Course::class);
     }
 
-    public function items(): HasMany
+    public function evaluation(): BelongsTo
     {
-        return $this->hasMany(CourseEvaluationPlanItem::class, 'plan_id');
+        return $this->belongsTo(Evaluation::class);
+    }
+
+    public function criteria(): HasMany
+    {
+        return $this->hasMany(RubricCriterion::class)->orderBy('sort_order');
     }
 }

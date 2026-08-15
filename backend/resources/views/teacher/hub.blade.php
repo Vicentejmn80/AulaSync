@@ -3468,6 +3468,11 @@
                 <span>Evaluaciones</span>
                 <i class="fa-solid fa-arrow-up-right-from-square" style="margin-left: auto; font-size: 10px; opacity: 0.4;"></i>
             </a>
+            <a href="{{ route('teacher.assessment.index') }}" class="nav-item">
+                <i class="fa-solid fa-diagram-project"></i>
+                <span>Estrategia de Evaluación</span>
+                <i class="fa-solid fa-arrow-up-right-from-square" style="margin-left: auto; font-size: 10px; opacity: 0.4;"></i>
+            </a>
             <a href="{{ route('teacher.communication.index') }}" class="nav-item">
                 <i class="fa-solid fa-comments"></i>
                 <span>Comunicación</span>
