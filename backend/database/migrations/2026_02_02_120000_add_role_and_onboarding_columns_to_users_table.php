@@ -13,7 +13,7 @@ return new class extends Migration
 
         Schema::table('users', function (Blueprint $table) use ($hasRole, $hasOnboardingCompleted) {
             if (! $hasRole) {
-                $table->enum('role', ['profesor', 'director'])->default('profesor')->after('email');
+                $table->enum('role', ['profesor', 'director', 'representante'])->default('profesor')->after('email');
             }
 
             if (! $hasOnboardingCompleted) {

@@ -27,6 +27,7 @@ class User extends Authenticatable
         'password',
         'role',
         'colegio_id',
+        'supabase_id',
         'nivel_educativo',
         'asignatura_principal',
         'horario_clases',
