@@ -3,129 +3,259 @@
 namespace App\Http\Controllers;
 
 use App\Models\AbsenceRequest;
-use App\Models\Attendance;
 use App\Models\AttendanceReason;
-use App\Models\Notification;
-use App\Models\Student;
+use App\Models\CommunicationThread;
+use App\Models\Course;
 use App\Services\AttendanceAlertService;
+use App\Services\RepresentanteDashboardService;
+use Barryvdh\DomPDF\Facade\Pdf;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\View\View;
+use Symfony\Component\HttpFoundation\Response;
 
 class RepresentanteController extends Controller
 {
+    public function __construct(private RepresentanteDashboardService $dashboard)
+    {
+    }
+
     public function index(): View
     {
         $user = auth()->user();
-        $familyCode = $user->family_code;
+        $user->loadMissing('settings');
+        $students = $this->dashboard->linkedStudents($user);
+        $reasons = $this->dashboard->reasons($user);
+        $school = optional($students->first())->colegio;
 
-        $students = collect();
-        $school = null;
-        $reasons = collect();
-        $attendance = [];
-        $alerts = collect();
+        return view('representante.hub', [
+            'students' => $students->map(fn ($s) => $this->dashboard->studentPayload($s))->values(),
+            'reasons' => $reasons,
+            'schoolName' => $school?->name,
+            'parent' => [
+                'name' => $user->name,
+                'email' => $user->email,
+                'initials' => mb_strtoupper(mb_substr($user->name, 0, 1)),
+                'phone' => data_get($user->settings?->preferencias, 'phone'),
+                'address' => data_get($user->settings?->preferencias, 'address'),
+                'emergency' => data_get($user->settings?->preferencias, 'emergency'),
+            ],
+        ]);
+    }
 
-        if (Schema::hasTable('guardian_student')) {
-            $students = $user->representedStudents()->with('colegio', 'courses')->get();
-        }
+    public function students(): JsonResponse
+    {
+        $students = $this->dashboard->linkedStudents(auth()->user());
 
-        if ($students->isEmpty() && $familyCode) {
-            $students = Student::where('family_code', $familyCode)
-                ->when($user->colegio_id, fn ($q) => $q->where('colegio_id', $user->colegio_id))
-                ->with('colegio', 'courses')
-                ->get();
-        }
+        return response()->json([
+            'ok' => true,
+            'students' => $students->map(fn ($s) => $this->dashboard->studentPayload($s))->values(),
+        ]);
+    }
 
-        $firstStudent = $students->first();
-        if ($firstStudent && $firstStudent->colegio) {
-            $school = $firstStudent->colegio;
-        }
+    public function resumen(int $estudiante): JsonResponse
+    {
+        $student = $this->dashboard->authorizeStudent(auth()->user(), $estudiante);
 
-        if (Schema::hasTable('attendance_reasons')) {
-            $reasons = AttendanceReason::query()
-                ->where(function ($q) use ($user) {
-                    $q->whereNull('colegio_id');
-                    if ($user->colegio_id) {
-                        $q->orWhere('colegio_id', $user->colegio_id);
-                    }
-                })
-                ->whereIn('category', ['excused', 'unexcused', 'tardy'])
-                ->orderBy('sort_order')
-                ->get(['id', 'code', 'label', 'category', 'requires_comment']);
-        }
+        return response()->json([
+            'ok' => true,
+            'student' => $this->dashboard->studentPayload($student),
+            'summary' => $this->dashboard->summary($student),
+        ]);
+    }
 
-        if (Schema::hasTable('attendances') && $students->isNotEmpty()) {
-            $studentIds = $students->pluck('id');
-            $monthStart = now()->startOfMonth()->toDateString();
-            $monthEnd = now()->endOfMonth()->toDateString();
+    public function calendario(Request $request, int $estudiante): JsonResponse
+    {
+        $student = $this->dashboard->authorizeStudent(auth()->user(), $estudiante);
 
-            $absenceCounts = Attendance::query()
-                ->whereIn('student_id', $studentIds)
-                ->where('status', Attendance::STATUS_ABSENT)
-                ->whereBetween('attended_on', [$monthStart, $monthEnd])
-                ->selectRaw('student_id, COUNT(DISTINCT attended_on) as absences')
-                ->groupBy('student_id')
-                ->pluck('absences', 'student_id');
+        return response()->json([
+            'ok' => true,
+            'calendar' => $this->dashboard->calendar($student, $request->query('month')),
+        ]);
+    }
 
-            $tardyCounts = Attendance::query()
-                ->whereIn('student_id', $studentIds)
-                ->where('status', Attendance::STATUS_TARDY)
-                ->whereBetween('attended_on', [$monthStart, $monthEnd])
-                ->selectRaw('student_id, COUNT(DISTINCT attended_on) as tardies')
-                ->groupBy('student_id')
-                ->pluck('tardies', 'student_id');
+    public function materias(int $estudiante): JsonResponse
+    {
+        $student = $this->dashboard->authorizeStudent(auth()->user(), $estudiante);
 
-            $histories = Attendance::query()
-                ->whereIn('student_id', $studentIds)
-                ->with(['course:id,subject_name', 'reason:id,label'])
-                ->latest('attended_on')
-                ->limit(80)
-                ->get()
-                ->groupBy('student_id');
+        return response()->json([
+            'ok' => true,
+            'subjects' => $this->dashboard->subjects($student),
+        ]);
+    }
 
-            $requests = Schema::hasTable('absence_requests')
-                ? AbsenceRequest::query()
-                    ->whereIn('student_id', $studentIds)
-                    ->with('reason:id,label')
-                    ->latest()
-                    ->limit(40)
-                    ->get()
-                    ->groupBy('student_id')
-                : collect();
+    public function materia(int $estudiante, int $materia): JsonResponse
+    {
+        $student = $this->dashboard->authorizeStudent(auth()->user(), $estudiante);
+        $course = Course::with('teacher:id,name')->findOrFail($materia);
 
-            foreach ($students as $student) {
-                $attendance[$student->id] = [
-                    'month_absences' => (int) ($absenceCounts[$student->id] ?? 0),
-                    'month_tardies' => (int) ($tardyCounts[$student->id] ?? 0),
-                    'history' => ($histories->get($student->id) ?? collect())->take(8)->values(),
-                    'requests' => ($requests->get($student->id) ?? collect())->take(5)->values(),
-                ];
-            }
-        }
+        return response()->json([
+            'ok' => true,
+            'subject' => $this->dashboard->subjectDetail($student, $course),
+        ]);
+    }
 
-        if (Schema::hasTable('notifications')) {
-            $alerts = Notification::where('user_id', $user->id)
-                ->where(function ($q) {
-                    $q->where('title', 'like', '%asistencia%')
-                        ->orWhere('title', 'like', '%ausencia%');
-                })
-                ->latest()
-                ->limit(6)
-                ->get(['id', 'title', 'message', 'created_at', 'read_at']);
-        }
+    public function anuncios(Request $request): JsonResponse
+    {
+        $parent = auth()->user();
+        $student = $this->dashboard->authorizeStudent($parent, (int) $request->query('estudiante_id'));
 
-        return view('representante.dashboard', compact(
-            'students',
-            'school',
-            'familyCode',
-            'reasons',
-            'attendance',
-            'alerts'
-        ));
+        return response()->json([
+            'ok' => true,
+            'announcements' => $this->dashboard->announcements($parent, $student),
+        ]);
+    }
+
+    public function leerAnuncio(Request $request, int $anuncio): JsonResponse
+    {
+        $parent = auth()->user();
+        $student = $this->dashboard->authorizeStudent($parent, (int) $request->input('estudiante_id', $request->query('estudiante_id')));
+        $this->dashboard->markAnnouncementRead($parent, $student, $anuncio);
+
+        return response()->json(['ok' => true]);
+    }
+
+    public function mensajes(Request $request): JsonResponse
+    {
+        $parent = auth()->user();
+        $student = $this->dashboard->authorizeStudent($parent, (int) $request->query('estudiante_id'));
+
+        return response()->json([
+            'ok' => true,
+            'threads' => $this->dashboard->threads($parent, $student),
+        ]);
+    }
+
+    public function thread(Request $request, CommunicationThread $thread): JsonResponse
+    {
+        $parent = auth()->user();
+        $student = $this->dashboard->authorizeStudent($parent, (int) $request->query('estudiante_id', $thread->student_id));
+
+        return response()->json([
+            'ok' => true,
+            'thread' => $this->dashboard->threadMessages($parent, $student, $thread),
+        ]);
+    }
+
+    public function sendMessage(Request $request, CommunicationThread $thread): JsonResponse
+    {
+        $data = $request->validate([
+            'estudiante_id' => 'required|integer',
+            'body' => 'required|string|min:1|max:3000',
+        ]);
+        $parent = auth()->user();
+        $student = $this->dashboard->authorizeStudent($parent, (int) $data['estudiante_id']);
+        $message = $this->dashboard->sendMessage($parent, $student, $thread, $data['body']);
+
+        return response()->json(['ok' => true, 'message' => $message]);
+    }
+
+    public function startMessage(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'estudiante_id' => 'required|integer',
+            'course_id' => 'required|integer',
+            'body' => 'required|string|min:1|max:3000',
+        ]);
+        $parent = auth()->user();
+        $student = $this->dashboard->authorizeStudent($parent, (int) $data['estudiante_id']);
+        $thread = $this->dashboard->startThread($parent, $student, (int) $data['course_id'], $data['body']);
+
+        return response()->json(['ok' => true, 'thread_id' => $thread->id]);
+    }
+
+    public function notifications(): JsonResponse
+    {
+        return response()->json([
+            'ok' => true,
+            ...$this->dashboard->notifications(auth()->user()),
+        ]);
+    }
+
+    public function markNotificationsRead(): JsonResponse
+    {
+        $this->dashboard->markNotificationsRead(auth()->user());
+
+        return response()->json(['ok' => true]);
+    }
+
+    public function storeAbsenceJson(Request $request, AttendanceAlertService $alerts): JsonResponse
+    {
+        $row = $this->createAbsence($request, $alerts);
+
+        return response()->json([
+            'ok' => true,
+            'message' => 'Ausencia reportada. El colegio ya fue notificado.',
+            'id' => $row->id,
+        ]);
     }
 
     public function storeAbsence(Request $request, AttendanceAlertService $alerts): RedirectResponse
+    {
+        $this->createAbsence($request, $alerts);
+
+        return back()->with('status', 'Ausencia reportada. El colegio ya fue notificado.');
+    }
+
+    public function boletin(int $estudiante): Response
+    {
+        $student = $this->dashboard->authorizeStudent(auth()->user(), $estudiante);
+        $payload = $this->dashboard->reportCardData($student);
+        $courseData = $payload['courseData'];
+        $globalAverage = $payload['globalAverage'];
+
+        $pdf = Pdf::loadView('director.report-card-pdf', compact('student', 'courseData', 'globalAverage'));
+        $pdf->setPaper('letter', 'portrait');
+
+        return $pdf->download('boletin-'.$student->id.'-'.now()->format('Ymd').'.pdf');
+    }
+
+    public function constancia(int $estudiante): Response
+    {
+        $student = $this->dashboard->authorizeStudent(auth()->user(), $estudiante);
+        $school = $student->colegio?->name ?? 'AulaSync';
+
+        $html = view('representante.constancia-pdf', [
+            'student' => $student,
+            'school' => $school,
+            'parent' => auth()->user(),
+            'issued' => now(),
+        ])->render();
+
+        $pdf = Pdf::loadHTML($html);
+        $pdf->setPaper('letter', 'portrait');
+
+        return $pdf->download('constancia-'.$student->id.'.pdf');
+    }
+
+    public function updateProfile(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'name' => 'required|string|max:255',
+            'phone' => 'nullable|string|max:40',
+            'address' => 'nullable|string|max:255',
+            'emergency' => 'nullable|string|max:80',
+        ]);
+
+        $user = $request->user();
+        $user->update(['name' => $data['name']]);
+
+        $prefs = $user->settings?->preferencias ?? [];
+        $prefs['phone'] = $data['phone'] ?? null;
+        $prefs['address'] = $data['address'] ?? null;
+        $prefs['emergency'] = $data['emergency'] ?? null;
+
+        $user->settings()->updateOrCreate(
+            ['user_id' => $user->id],
+            ['preferencias' => $prefs]
+        );
+
+        return response()->json(['ok' => true, 'message' => 'Perfil actualizado.']);
+    }
+
+    private function createAbsence(Request $request, AttendanceAlertService $alerts): AbsenceRequest
     {
         abort_unless(Schema::hasTable('absence_requests'), 503);
 
@@ -139,15 +269,13 @@ class RepresentanteController extends Controller
         ]);
 
         $parent = $request->user();
-        $student = Student::where('id', $data['student_id'])
-            ->where('family_code', $parent->family_code)
-            ->firstOrFail();
+        $student = $this->dashboard->authorizeStudent($parent, (int) $data['student_id']);
 
         $reason = AttendanceReason::findOrFail($data['reason_id']);
         if ($reason->requires_comment && blank($data['comment'] ?? null)) {
-            return back()
-                ->withErrors(['comment' => 'Este motivo requiere un comentario.'])
-                ->withInput();
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'comment' => 'Este motivo requiere un comentario.',
+            ]);
         }
 
         $row = AbsenceRequest::create([
@@ -169,6 +297,6 @@ class RepresentanteController extends Controller
 
         $alerts->notifyParentRequest($student, $parent, $row->kind, $range);
 
-        return back()->with('status', 'Ausencia reportada. El colegio ya fue notificado.');
+        return $row;
     }
 }

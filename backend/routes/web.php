@@ -131,6 +131,24 @@ Route::middleware(['auth'])->group(function () {
                     ->name('dashboard');
                 Route::post('/ausencias', [RepresentanteController::class, 'storeAbsence'])
                     ->name('ausencias.store');
+
+                Route::get('/api/estudiantes', [RepresentanteController::class, 'students'])->name('api.estudiantes');
+                Route::get('/api/{estudiante}/resumen', [RepresentanteController::class, 'resumen'])->name('api.resumen');
+                Route::get('/api/{estudiante}/calendario', [RepresentanteController::class, 'calendario'])->name('api.calendario');
+                Route::get('/api/{estudiante}/materias', [RepresentanteController::class, 'materias'])->name('api.materias');
+                Route::get('/api/{estudiante}/materia/{materia}', [RepresentanteController::class, 'materia'])->name('api.materia');
+                Route::get('/api/anuncios', [RepresentanteController::class, 'anuncios'])->name('api.anuncios');
+                Route::post('/api/anuncios/{anuncio}/leer', [RepresentanteController::class, 'leerAnuncio'])->name('api.anuncios.leer');
+                Route::get('/api/mensajes', [RepresentanteController::class, 'mensajes'])->name('api.mensajes');
+                Route::get('/api/mensajes/{thread}', [RepresentanteController::class, 'thread'])->name('api.mensajes.show');
+                Route::post('/api/mensajes/{thread}', [RepresentanteController::class, 'sendMessage'])->name('api.mensajes.send');
+                Route::post('/api/mensajes', [RepresentanteController::class, 'startMessage'])->name('api.mensajes.start');
+                Route::post('/api/ausencia', [RepresentanteController::class, 'storeAbsenceJson'])->name('api.ausencia');
+                Route::get('/api/notificaciones', [RepresentanteController::class, 'notifications'])->name('api.notificaciones');
+                Route::post('/api/notificaciones/leer', [RepresentanteController::class, 'markNotificationsRead'])->name('api.notificaciones.leer');
+                Route::post('/api/perfil', [RepresentanteController::class, 'updateProfile'])->name('api.perfil');
+                Route::get('/boletin/{estudiante}', [RepresentanteController::class, 'boletin'])->name('boletin');
+                Route::get('/constancia/{estudiante}', [RepresentanteController::class, 'constancia'])->name('constancia');
             });
 
         // Generador de IA y Herramientas
