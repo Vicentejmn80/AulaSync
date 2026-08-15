@@ -302,13 +302,20 @@ class OnboardingController extends Controller
             return response()->json(['error' => 'No autenticado'], 401);
         }
 
+        $demoInvite = 'DEMO-' . strtoupper(substr(md5(uniqid()), 0, 6));
         $demoColegio = Colegio::firstOrCreate(
             ['name' => 'Modo Demo Libre'],
             [
-                'invite_code' => 'DEMO-' . strtoupper(substr(md5(uniqid()), 0, 6)),
+                'invite_code' => $demoInvite,
+                'codes_pin' => Colegio::hashPinFromInvite($demoInvite),
                 'director_user_id' => null,
             ]
         );
+        if (! $demoColegio->codes_pin) {
+            $demoColegio->update([
+                'codes_pin' => Colegio::hashPinFromInvite($demoColegio->invite_code),
+            ]);
+        }
 
         $user->update([
             'role' => 'profesor',
@@ -349,14 +356,20 @@ class OnboardingController extends Controller
             if (! $colegio->invite_code) {
                 $colegio->invite_code = InviteCodeHelper::generateUnique($cleanName);
             }
+            if (! $colegio->codes_pin) {
+                $colegio->codes_pin = Colegio::hashPinFromInvite($colegio->invite_code);
+            }
             $colegio->save();
 
             return $colegio;
         }
 
+        $inviteCode = InviteCodeHelper::generateUnique($cleanName);
+
         return Colegio::create([
             'name' => $cleanName,
-            'invite_code' => InviteCodeHelper::generateUnique($cleanName),
+            'invite_code' => $inviteCode,
+            'codes_pin' => Colegio::hashPinFromInvite($inviteCode),
             'director_user_id' => $user->id,
         ]);
     }

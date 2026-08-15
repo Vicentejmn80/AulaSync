@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\CodesRevealController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\OnboardingController;
 use App\Http\Controllers\AIController;
@@ -70,6 +71,10 @@ Route::middleware(['auth'])->group(function () {
         
         // Dashboard Principal
         Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
+
+        // Códigos sensibles (colegio / familia) — revelación con PIN 20s
+        Route::post('/api/codes/reveal', [CodesRevealController::class, 'reveal'])->name('codes.reveal');
+        Route::post('/api/codes/pin', [CodesRevealController::class, 'updatePin'])->name('codes.pin.update');
 
         // Director — Centro de Mando
         Route::prefix('director')

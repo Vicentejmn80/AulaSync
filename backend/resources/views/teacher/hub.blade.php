@@ -4483,9 +4483,33 @@
                     Promedio Acumulado:
                     <strong x-text="studentSlideover.student?.promedio_acumulado ?? '—'"></strong>
                 </span>
+                <span class="meta-chip" x-show="studentSlideover.student?.document_id">
+                    <i class="fa-solid fa-id-card"></i>
+                    Cédula:
+                    <strong x-text="studentSlideover.student?.document_id"></strong>
+                </span>
+                <span class="meta-chip" x-show="studentSlideover.student?.grade">
+                    <i class="fa-solid fa-graduation-cap"></i>
+                    <strong x-text="[studentSlideover.student?.grade, studentSlideover.student?.section].filter(Boolean).join(' / ')"></strong>
+                </span>
             </div>
 
             <div class="grades-slideover-body">
+                <div x-show="studentSlideover.student?.has_family_code" class="mb-4 rounded-2xl border border-white/10 bg-white/[.04] p-3">
+                    <p class="text-[11px] font-bold uppercase tracking-widest text-cyan-300 mb-2">Código familiar (representante)</p>
+                    <div x-show="!studentSlideover.familyUnlocked">
+                        <button type="button" class="btn-secondary" @click="studentSlideover.showPin = true" style="font-size:12px;">
+                            <i class="fa-solid fa-lock" style="margin-right:6px;"></i> Ver código con PIN
+                        </button>
+                    </div>
+                    <div x-show="studentSlideover.familyUnlocked" x-cloak class="inline-flex items-center gap-2">
+                        <code class="select-all rounded-lg border border-cyan-500/20 bg-cyan-500/10 px-3 py-1.5 font-mono text-xs font-bold tracking-widest text-cyan-300" x-text="studentSlideover.familyCode"></code>
+                        <span class="text-xs text-slate-400" x-text="studentSlideover.familySeconds + 's'"></span>
+                        <button type="button" class="btn-secondary" style="font-size:11px;padding:4px 8px;" @click="navigator.clipboard.writeText(studentSlideover.familyCode)">Copiar</button>
+                    </div>
+                    <p x-show="studentSlideover.pinError" class="grades-inline-error mt-2" x-text="studentSlideover.pinError" style="margin-top:8px;"></p>
+                </div>
+
                 <template x-if="studentSlideover.loading">
                     <div class="skeleton-nova" style="height: 220px;"></div>
                 </template>
@@ -4494,7 +4518,11 @@
                     <p class="grades-inline-error" x-text="studentSlideover.error"></p>
                 </template>
 
-                <template x-if="!studentSlideover.loading && !studentSlideover.error">
+                <template x-if="!studentSlideover.loading && !studentSlideover.error && studentSlideover.activities.length === 0">
+                    <p class="text-sm text-slate-400" style="padding:12px 0;">Aún no hay actividades calificables en este curso. La ficha del alumno está activa.</p>
+                </template>
+
+                <template x-if="!studentSlideover.loading && !studentSlideover.error && studentSlideover.activities.length > 0">
                     <div class="grades-table-wrap">
                         <table class="grades-table">
                             <thead>
@@ -4526,6 +4554,24 @@
                 <button @click="closeStudentSlideover()" class="btn-secondary">Cerrar</button>
             </div>
         </aside>
+
+        <div x-show="studentSlideover.showPin" x-cloak class="modal-overlay" style="z-index:90;" @click.self="studentSlideover.showPin = false">
+            <div class="mini-modal" @click.stop>
+                <div class="modal-header">
+                    <h3><i class="fa-solid fa-lock" style="margin-right:8px;"></i> PIN del colegio</h3>
+                    <button @click="studentSlideover.showPin = false" class="modal-close"><i class="fa-solid fa-times"></i></button>
+                </div>
+                <div class="modal-body">
+                    <p style="font-size:13px;color:var(--text-secondary);margin-bottom:12px;">El código familiar se mostrará solo 20 segundos.</p>
+                    <input type="password" inputmode="numeric" maxlength="6" x-model="studentSlideover.pin" @keydown.enter="revealStudentFamilyCode()" placeholder="PIN de 4 a 6 dígitos" class="form-control" style="text-align:center;letter-spacing:.3em;font-family:monospace;">
+                    <p x-show="studentSlideover.pinError" class="grades-inline-error" x-text="studentSlideover.pinError" style="margin-top:8px;"></p>
+                </div>
+                <div class="modal-footer" style="display:flex;gap:8px;justify-content:flex-end;">
+                    <button type="button" class="btn-secondary" @click="studentSlideover.showPin = false">Cancelar</button>
+                    <button type="button" class="btn-primary" @click="revealStudentFamilyCode()">Desbloquear</button>
+                </div>
+            </div>
+        </div>
     </div>
 
     {{-- Mini modal: sugerencia de tarea --}}
@@ -4801,6 +4847,14 @@ function teacherHub() {
             student: null,
             activities: [],
             courseName: '',
+            has_family_code: false,
+            showPin: false,
+            pin: '',
+            pinError: '',
+            familyUnlocked: false,
+            familyCode: '',
+            familySeconds: 0,
+            familyTimer: null,
         },
         gradesSlideover: {
             open: false,
@@ -5451,12 +5505,24 @@ function teacherHub() {
         async openStudentSlideover(student) {
             if (!student?.id || !this.currentCourseId) return;
 
+            if (this.studentSlideover.familyTimer) clearInterval(this.studentSlideover.familyTimer);
+
             this.studentSlideover.open = true;
             this.studentSlideover.loading = true;
             this.studentSlideover.error = null;
+            this.studentSlideover.showPin = false;
+            this.studentSlideover.pin = '';
+            this.studentSlideover.pinError = '';
+            this.studentSlideover.familyUnlocked = false;
+            this.studentSlideover.familyCode = '';
+            this.studentSlideover.familySeconds = 0;
             this.studentSlideover.student = {
                 id: student.id,
                 name: student.name,
+                grade: student.grade ?? null,
+                section: student.section ?? null,
+                document_id: student.document_id ?? null,
+                has_family_code: !!(student.family_code || student.has_family_code),
                 promedio_acumulado: student.promedio_acumulado ?? student.nota_actual ?? student.avg_score ?? null,
             };
             this.studentSlideover.activities = [];
@@ -5466,16 +5532,25 @@ function teacherHub() {
                 const res = await fetch(`/teacher/api/courses/${this.currentCourseId}/students/${student.id}/grades`, {
                     headers: { 'Accept': 'application/json' }
                 });
-                const json = await res.json();
+                const json = await res.json().catch(() => ({}));
 
-                if (!res.ok || !json.success) {
-                    this.studentSlideover.error = json.error || 'No se pudo cargar el detalle del alumno.';
-                    return;
+                if (json.student) {
+                    this.studentSlideover.student = {
+                        ...this.studentSlideover.student,
+                        ...json.student,
+                    };
                 }
-
-                this.studentSlideover.student = json.student;
-                this.studentSlideover.courseName = json.course?.name || this.courseData?.name || '';
+                if (json.course?.name) {
+                    this.studentSlideover.courseName = json.course.name;
+                }
                 this.studentSlideover.activities = json.activities || [];
+
+                if (!res.ok || json.success === false) {
+                    // Keep profile visible; only warn if we truly have nothing useful.
+                    if (!this.studentSlideover.activities.length) {
+                        this.studentSlideover.error = json.error || null;
+                    }
+                }
             } catch (e) {
                 console.error('openStudentSlideover', e);
                 this.studentSlideover.error = 'Error al cargar el panel del alumno.';
@@ -5485,10 +5560,62 @@ function teacherHub() {
         },
 
         closeStudentSlideover() {
+            if (this.studentSlideover.familyTimer) clearInterval(this.studentSlideover.familyTimer);
             this.studentSlideover.open = false;
             this.studentSlideover.loading = false;
             this.studentSlideover.error = null;
             this.studentSlideover.activities = [];
+            this.studentSlideover.showPin = false;
+            this.studentSlideover.pin = '';
+            this.studentSlideover.pinError = '';
+            this.studentSlideover.familyUnlocked = false;
+            this.studentSlideover.familyCode = '';
+            this.studentSlideover.familySeconds = 0;
+        },
+
+        async revealStudentFamilyCode() {
+            const studentId = this.studentSlideover.student?.id;
+            if (!studentId || !this.studentSlideover.pin) return;
+
+            this.studentSlideover.pinError = '';
+            try {
+                const res = await fetch(@json(route('codes.reveal')), {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]')?.content || '',
+                    },
+                    body: JSON.stringify({
+                        pin: this.studentSlideover.pin,
+                        type: 'family',
+                        student_id: studentId,
+                    }),
+                });
+                const json = await res.json();
+                if (!res.ok || !json.ok) {
+                    this.studentSlideover.pinError = json.error || 'PIN incorrecto.';
+                    return;
+                }
+
+                this.studentSlideover.familyCode = json.code;
+                this.studentSlideover.familyUnlocked = true;
+                this.studentSlideover.showPin = false;
+                this.studentSlideover.pin = '';
+                this.studentSlideover.familySeconds = json.ttl_seconds || 20;
+                if (this.studentSlideover.familyTimer) clearInterval(this.studentSlideover.familyTimer);
+                this.studentSlideover.familyTimer = setInterval(() => {
+                    this.studentSlideover.familySeconds -= 1;
+                    if (this.studentSlideover.familySeconds <= 0) {
+                        clearInterval(this.studentSlideover.familyTimer);
+                        this.studentSlideover.familyTimer = null;
+                        this.studentSlideover.familyUnlocked = false;
+                        this.studentSlideover.familyCode = '';
+                    }
+                }, 1000);
+            } catch (e) {
+                this.studentSlideover.pinError = 'Error de conexión.';
+            }
         },
 
         async openGradesSlideover(activity) {

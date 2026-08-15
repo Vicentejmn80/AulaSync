@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Director;
 
 use App\Http\Controllers\Controller;
 use App\Models\Activity;
+use App\Models\Colegio;
 use App\Models\Course;
 use App\Models\Grade;
 use App\Models\Planificacion;
@@ -252,15 +253,20 @@ class DashboardController extends Controller
         $stuckCount = $stuckPlanificaciones->count();
         $inactiveTeachersCount = $teachersWithoutActivity->count();
 
+        $colegio = $colegioId ? Colegio::find($colegioId) : null;
+
         $institution = [
-            'name' => $settings?->nombre_institucion ?? 'Aulasync',
+            'name' => $colegio?->name ?? $settings?->nombre_institucion ?? 'Aulasync',
             'period' => data_get($settings?->preferencias, 'periodo_academico', now()->year . '-' . now()->copy()->addYear()->year),
             'campuses' => data_get($settings?->preferencias, 'cantidad_sedes', 1),
+            'invite_code_masked' => true,
+            'has_codes_pin' => filled($colegio?->codes_pin),
         ];
 
         return view('director.dashboard', compact(
             'user',
             'settings',
+            'colegio',
             'institution',
             'kpis',
             'gradePerformance',

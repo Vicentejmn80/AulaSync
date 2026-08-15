@@ -279,16 +279,7 @@
                                     </td>
                                     <td class="py-3.5 pr-4">
                                         @if($student->family_code)
-                                            <div x-data="{ copied: false }" class="inline-flex items-center gap-2">
-                                                <code class="select-all rounded-lg border border-cyan-500/20 bg-cyan-500/10 px-3 py-1 font-mono text-xs font-bold tracking-widest text-cyan-300">
-                                                    {{ $student->family_code }}
-                                                </code>
-                                                <button @click="navigator.clipboard.writeText('{{ $student->family_code }}'); copied = true; setTimeout(() => copied = false, 2000)"
-                                                        :title="copied ? 'Copiado!' : 'Copiar código'"
-                                                        class="flex h-7 w-7 items-center justify-center rounded-lg border border-white/10 text-slate-500 transition hover:border-cyan-500/40 hover:text-cyan-400">
-                                                    <i class="fa-solid text-xs" :class="copied ? 'fa-check text-emerald-400' : 'fa-copy'"></i>
-                                                </button>
-                                            </div>
+                                            <x-code-reveal type="family" :student-id="$student->id" label="Código familiar" />
                                         @else
                                             <span class="text-xs text-slate-600 italic">Sin código</span>
                                         @endif
