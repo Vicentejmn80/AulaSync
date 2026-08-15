@@ -19,6 +19,7 @@ use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\AICommandHandlerController;
 use App\Http\Controllers\Teacher\HubController;
 use App\Http\Controllers\Teacher\EvaluationController;
+use App\Http\Controllers\Teacher\CommunicationController;
 use App\Http\Controllers\RepresentanteController;
 use App\Http\Controllers\SmartPlannerController;
 use Illuminate\Http\Request;
@@ -185,6 +186,20 @@ Route::middleware(['auth'])->group(function () {
                 Route::post('/{evaluation}/regenerate-question', [EvaluationController::class, 'regenerateQuestion'])->name('regenerate');
                 Route::post('/regenerate-draft-question', [EvaluationController::class, 'regenerateDraftQuestion'])->name('regenerate_draft');
                 Route::post('/attempts/{attempt}/grade-ai', [EvaluationController::class, 'gradeOpen'])->name('grade_ai');
+            });
+
+            Route::prefix('teacher/communication')->name('teacher.communication.')->group(function () {
+                Route::get('/', [CommunicationController::class, 'index'])->name('index');
+                Route::post('/announcements/generate', [CommunicationController::class, 'generateAnnouncement'])->name('announcements.generate');
+                Route::post('/announcements', [CommunicationController::class, 'storeAnnouncement'])->name('announcements.store');
+                Route::post('/announcements/{announcement}/demo-read', [CommunicationController::class, 'markReadDemo'])->name('announcements.demo_read');
+                Route::post('/threads/{thread}/messages', [CommunicationController::class, 'sendMessage'])->name('messages.send');
+                Route::post('/threads/{thread}/simulate-incoming', [CommunicationController::class, 'simulateIncoming'])->name('messages.simulate_incoming');
+                Route::post('/threads/{thread}/quick-replies', [CommunicationController::class, 'suggestQuickReply'])->name('messages.quick_replies');
+                Route::post('/plans/generate', [CommunicationController::class, 'generateEvaluationPlan'])->name('plans.generate');
+                Route::post('/plans', [CommunicationController::class, 'saveEvaluationPlan'])->name('plans.store');
+                Route::post('/plans/analyze-overload', [CommunicationController::class, 'analyzeOverload'])->name('plans.overload');
+                Route::post('/plans/{plan}/publish-calendar', [CommunicationController::class, 'publishPlanToCalendar'])->name('plans.publish_calendar');
             });
 
             Route::prefix('teacher/planner')->name('teacher.planner.')->group(function () {
