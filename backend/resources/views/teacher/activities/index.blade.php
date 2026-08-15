@@ -78,6 +78,7 @@
     </style>
 </head>
 <body class="min-h-screen">
+@include('partials.theme-switcher')
 
 {{-- ── Top nav bar ─────────────────────────────────────── --}}
 <nav class="sticky top-0 z-30" style="background:var(--grad-nav);">

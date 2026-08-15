@@ -3370,17 +3370,7 @@
             border-radius: 16px;
         }
     </style>
-    <script>
-        // Theme initialization
-        (function() {
-            const savedTheme = localStorage.getItem('nova-theme');
-            if (savedTheme === 'dark') {
-                document.documentElement.classList.add('dark');
-            } else {
-                document.documentElement.classList.remove('dark');
-            }
-        })();
-    </script>
+    @include('partials.theme-system')
     <link rel="manifest" href="/manifest.json">
 </head>
 <body>
@@ -3471,6 +3461,11 @@
             <a href="{{ route('teacher.activities.index') }}" class="nav-item">
                 <i class="fa-solid fa-clipboard-list"></i>
                 <span>Actividades</span>
+                <i class="fa-solid fa-arrow-up-right-from-square" style="margin-left: auto; font-size: 10px; opacity: 0.4;"></i>
+            </a>
+            <a href="{{ route('teacher.evaluations.index') }}" class="nav-item">
+                <i class="fa-solid fa-file-pen"></i>
+                <span>Evaluaciones</span>
                 <i class="fa-solid fa-arrow-up-right-from-square" style="margin-left: auto; font-size: 10px; opacity: 0.4;"></i>
             </a>
         </nav>
@@ -4699,6 +4694,7 @@
 </div>
 
 {{-- AI Assistant bubble --}}
+@include('partials.theme-switcher')
 @include('components.ai-assistant-bubble')
 
 <script>
@@ -4779,14 +4775,9 @@ function teacherHub() {
 
         // Theme toggle method
         toggleTheme() {
-            this.isDarkMode = !this.isDarkMode;
-            if (this.isDarkMode) {
-                document.documentElement.classList.add('dark');
-                localStorage.setItem('nova-theme', 'dark');
-            } else {
-                document.documentElement.classList.remove('dark');
-                localStorage.setItem('nova-theme', 'light');
-            }
+            const next = this.isDarkMode ? 'light' : 'dark';
+            if (window.applyAulaTheme) window.applyAulaTheme(next);
+            this.isDarkMode = document.documentElement.classList.contains('dark');
         },
 
         async loadNotifications() {

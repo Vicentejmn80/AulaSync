@@ -55,23 +55,4 @@
         background: var(--bg-primary);
     }
 </style>
-<script>
-    (function() {
-        var t = localStorage.getItem('nova-theme');
-        if (!t) {
-            var legacy = localStorage.getItem('sp-dark-mode');
-            if (legacy === 'true') {
-                localStorage.setItem('nova-theme', 'dark');
-                t = 'dark';
-            } else if (legacy === 'false') {
-                localStorage.setItem('nova-theme', 'light');
-                t = 'light';
-            }
-        }
-        if (!t || t === 'dark') {
-            document.documentElement.classList.add('dark');
-        } else {
-            document.documentElement.classList.remove('dark');
-        }
-    })();
-</script>
+@include('partials.theme-system')
