@@ -82,6 +82,25 @@ class HubController extends Controller
         // Climate: computed from recent grade average
         $climate = $this->computeClimate($avgGrade);
 
+        // Grade trend: current week vs previous week average, only if both have data.
+        $gradeTrend = null;
+        if ($activityIds->isNotEmpty()) {
+            $currentWeekAvg = Grade::whereIn('activity_id', $activityIds)
+                ->whereBetween('created_at', [now()->startOfWeek(), now()->endOfWeek()])
+                ->avg('score');
+            $previousWeekAvg = Grade::whereIn('activity_id', $activityIds)
+                ->whereBetween('created_at', [now()->subWeek()->startOfWeek(), now()->subWeek()->endOfWeek()])
+                ->avg('score');
+
+            if ($currentWeekAvg !== null && $previousWeekAvg !== null) {
+                $gradeTrend = [
+                    'delta'             => round($currentWeekAvg - $previousWeekAvg, 1),
+                    'current_week_avg'  => round($currentWeekAvg, 1),
+                    'previous_week_avg' => round($previousWeekAvg, 1),
+                ];
+            }
+        }
+
         return response()->json([
             'total_courses'        => $totalCourses,
             'total_students'       => $totalStudents,
@@ -89,6 +108,7 @@ class HubController extends Controller
             'activities_this_week' => $activitiesThisWeek,
             'avg_grade'            => $avgGrade ? round($avgGrade, 1) : null,
             'climate'              => $climate,
+            'grade_trend'          => $gradeTrend,
             'next_activity'        => $nextActivity ? [
                 'title'       => $nextActivity->title,
                 'due_date'    => $nextActivity->due_date,
@@ -103,19 +123,37 @@ class HubController extends Controller
     {
         $courses = Course::where('teacher_id', auth()->id())
             ->withCount(['students', 'activities'])
-            ->with(['activities' => fn ($q) => $q->orderBy('due_date')->limit(3)])
+            ->with(['activities' => fn ($q) => $q
+                ->where('type', '!=', 'clase')
+                ->withCount('grades')
+                ->withAvg('grades', 'score')])
             ->latest()
             ->get()
-            ->map(fn ($c) => [
-                'id'               => $c->id,
-                'subject_name'     => $c->subject_name,
-                'grade'            => $c->grade,
-                'section'          => $c->section,
-                'school_year'      => $c->school_year,
-                'name'             => $c->subject_name . ' · ' . $c->grade . ($c->section ? ' / ' . $c->section : ''),
-                'students_count'   => $c->students_count,
-                'activities_count' => $c->activities_count,
-            ]);
+            ->map(function ($c) {
+                $gradableActivities = $c->activities;
+                $studentsCount = $c->students_count;
+
+                $avgScores = $gradableActivities->pluck('grades_avg_score')->filter(fn ($v) => $v !== null);
+                $avgScore = $avgScores->isNotEmpty() ? round((float) $avgScores->avg(), 1) : null;
+
+                // "Pendiente de calificar": actividades evaluables con menos calificaciones que alumnos inscritos.
+                $pendingGradingCount = $studentsCount > 0
+                    ? $gradableActivities->filter(fn ($a) => (int) $a->grades_count < $studentsCount)->count()
+                    : 0;
+
+                return [
+                    'id'                     => $c->id,
+                    'subject_name'           => $c->subject_name,
+                    'grade'                  => $c->grade,
+                    'section'                => $c->section,
+                    'school_year'            => $c->school_year,
+                    'name'                   => $c->subject_name . ' · ' . $c->grade . ($c->section ? ' / ' . $c->section : ''),
+                    'students_count'         => $c->students_count,
+                    'activities_count'       => $c->activities_count,
+                    'avg_score'              => $avgScore,
+                    'pending_grading_count'  => $pendingGradingCount,
+                ];
+            });
 
         return response()->json($courses);
     }
