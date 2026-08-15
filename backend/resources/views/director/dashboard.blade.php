@@ -75,6 +75,9 @@
             </div>
 
             <div class="flex flex-wrap items-center gap-3">
+                <a href="{{ route('director.boletines') }}" class="rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-white/10">
+                    <i class="fa-solid fa-file-lines mr-2 text-cyan-300"></i>Boletines
+                </a>
                 <a href="{{ route('director.attendance') }}" class="rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-white/10">
                     <i class="fa-solid fa-clipboard-user mr-2 text-cyan-300"></i>Asistencia
                 </a>
@@ -352,7 +355,7 @@
                    class="rounded-xl border border-white/10 px-4 py-2 text-sm font-semibold text-slate-300 transition hover:bg-white/10">
                     <i class="fa-regular fa-eye mr-2"></i>Ver todas las planificaciones
                 </a>
-                <a href="{{ route('director.students') }}"
+                <a href="{{ route('director.boletines') }}"
                    class="rounded-xl border border-white/10 px-4 py-2 text-sm font-semibold text-slate-300 transition hover:bg-white/10">
                     <i class="fa-regular fa-file-lines mr-2"></i>Generar boleta de calificaciones
                 </a>
@@ -460,7 +463,7 @@
                    class="rounded-xl border border-white/10 px-4 py-2 text-sm font-semibold text-slate-300 transition hover:bg-white/10">
                     <i class="fa-regular fa-eye mr-2"></i>Ver plantel completo
                 </a>
-                <a href="{{ route('director.students') }}"
+                <a href="{{ route('director.boletines') }}"
                    class="rounded-xl border border-white/10 px-4 py-2 text-sm font-semibold text-slate-300 transition hover:bg-white/10">
                     <i class="fa-regular fa-file-lines mr-2"></i>Boletas
                 </a>

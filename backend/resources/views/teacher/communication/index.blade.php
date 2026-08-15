@@ -49,7 +49,7 @@
 </head>
 <body>
 @include('partials.theme-switcher')
-<div class="wrap" x-data="communicationApp()" x-cloak>
+<div class="wrap" x-data="communicationApp()" x-init="init()" x-cloak>
     <div class="top">
         <div>
             <a href="{{ route('teacher.hub') }}" style="text-decoration:none;color:var(--nova-violet);font-weight:700;"><i class="fa-solid fa-arrow-left"></i> Volver al hub</a>
@@ -138,7 +138,9 @@
             <div class="thread-list">
                 <template x-for="t in threads" :key="t.id">
                     <div class="thread-row" :class="{ active: selectedThreadId === t.id }" @click="selectThread(t.id)">
-                        <strong x-text="t.contact_name"></strong><br>
+                        <strong x-text="t.contact_name"></strong>
+                        <span class="pill" x-show="t.contact_role === 'representante'">Familia</span>
+                        <br>
                         <small class="muted" x-text="t.last_message_preview || 'Sin mensajes'"></small>
                     </div>
                 </template>
@@ -202,6 +204,7 @@ function communicationApp() {
         selectedThreadId: @json($threads->first()['id'] ?? null),
         chatDraft: '',
         quickReplies: [],
+        poller: null,
         announcement: {
             idea: '',
             course_id: '',
@@ -307,6 +310,18 @@ function communicationApp() {
         },
         applySuggestion(text) {
             this.chatDraft = text;
+        },
+        async pollThreads() {
+            try {
+                const res = await fetch('{{ route('teacher.communication.threads') }}', { headers: { Accept: 'application/json' } });
+                const data = await res.json();
+                if (data.success) this.threads = data.threads || [];
+            } catch (_) {}
+        },
+        init() {
+            this.poller = setInterval(() => {
+                if (this.tab === 'messages') this.pollThreads();
+            }, 12000);
         },
     };
 }

@@ -4551,6 +4551,9 @@
             </div>
 
             <div class="grades-slideover-footer">
+                <a :href="`/teacher/report-card/${studentSlideover.student?.id}`" class="btn-secondary" x-show="studentSlideover.student?.id" style="text-decoration:none;display:inline-flex;align-items:center;">
+                    Ver boletín
+                </a>
                 <button @click="closeStudentSlideover()" class="btn-secondary">Cerrar</button>
             </div>
         </aside>

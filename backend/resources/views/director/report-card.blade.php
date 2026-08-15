@@ -78,7 +78,7 @@
     <main class="mx-auto max-w-5xl px-5 py-6 lg:px-8">
         <header class="mb-6 flex flex-col gap-4 rounded-[2rem] border border-white/10 bg-white/[.045] p-5 backdrop-blur-2xl lg:flex-row lg:items-center lg:justify-between no-print">
             <div class="flex items-center gap-4">
-                <a href="{{ route('director.students') }}" class="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-500 to-cyan-400 shadow-lg">
+                <a href="{{ auth()->user()?->role === 'director' ? route('director.boletines') : route('teacher.hub') }}" class="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-500 to-cyan-400 shadow-lg">
                     <i class="fa-solid fa-arrow-left text-white"></i>
                 </a>
                 <div>
@@ -87,7 +87,12 @@
                 </div>
             </div>
             <div class="flex gap-2">
-                <a href="{{ route('director.report-card.pdf', $student->id) }}"
+                @php
+                    $pdfUrl = auth()->user()?->role === 'profesor'
+                        ? route('teacher.report-card.pdf', $student->id)
+                        : route('director.report-card.pdf', $student->id);
+                @endphp
+                <a href="{{ $pdfUrl }}"
                    class="rounded-xl bg-gradient-to-r from-cyan-500 to-violet-500 px-5 py-2.5 text-sm font-bold text-white shadow-lg transition hover:scale-105">
                     <i class="fa-solid fa-file-pdf mr-2"></i>Descargar PDF
                 </a>

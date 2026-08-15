@@ -45,9 +45,10 @@
 </head>
 <body>
     @php
-        $settings = auth()->user()->settings;
-        $institutionName = $settings?->nombre_institucion ?? 'AulaSync';
-        $schoolYear = data_get($settings?->preferencias, 'periodo_academico', now()->year . '-' . now()->copy()->addYear()->year);
+        $institutionName = $student->colegio?->name
+            ?? auth()->user()?->settings?->nombre_institucion
+            ?? 'AulaSync';
+        $schoolYear = data_get(auth()->user()?->settings?->preferencias, 'periodo_academico', now()->year . '-' . now()->copy()->addYear()->year);
     @endphp
 
     <div class="header">

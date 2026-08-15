@@ -105,6 +105,7 @@ class RepresentanteDashboardService
         $average = $this->globalAverage($student);
         $pending = $this->pendingTasks($student, $courseIds);
         $upcomingEvals = $this->upcomingEvaluations($courseIds);
+        $absenceRequests = $this->absenceHistory($student);
 
         return [
             'attendance' => [
@@ -123,12 +124,15 @@ class RepresentanteDashboardService
                 'count' => $pending->count(),
                 'next_date' => optional($pending->first())['due_date'] ?? null,
                 'next_title' => optional($pending->first())['title'] ?? null,
+                'items' => $pending->take(5)->values(),
             ],
             'evaluations' => [
                 'count' => $upcomingEvals->count(),
                 'next_date' => optional($upcomingEvals->first())['date'] ?? null,
                 'next_title' => optional($upcomingEvals->first())['title'] ?? null,
+                'items' => $upcomingEvals->take(5)->values(),
             ],
+            'absence_requests' => $absenceRequests,
         ];
     }
 
@@ -409,7 +413,19 @@ class RepresentanteDashboardService
         $thread->update([
             'last_message_preview' => mb_substr($body, 0, 160),
             'last_message_at' => now(),
+            'contact_name' => $parent->name,
+            'contact_role' => 'representante',
         ]);
+
+        if (Schema::hasTable('notifications') && $thread->teacher_id) {
+            Notification::create([
+                'user_id' => $thread->teacher_id,
+                'colegio_id' => $student->colegio_id,
+                'title' => 'Mensaje de la familia',
+                'message' => $parent->name.' escribió sobre '.$student->name.': '.mb_substr($body, 0, 120),
+                'link' => route('teacher.communication.index'),
+            ]);
+        }
 
         return $message;
     }
@@ -488,52 +504,45 @@ class RepresentanteDashboardService
 
     public function reportCardData(Student $student): array
     {
-        $courseData = $student->courses->map(function (Course $course) use ($student) {
-            $items = $this->gradedItems($student, $course);
-            $average = $this->courseAverage($student, $course);
-
-            return [
-                'course_name' => $course->subject_name.' '.$course->grade.($course->section ? ' / '.$course->section : ''),
-                'teacher_name' => $course->teacher?->name ?? '—',
-                'promedio' => $average !== null ? round(($average / 20) * 100, 1) : 0,
-                'activities' => $items->map(fn ($row) => [
-                    'title' => $row['title'],
-                    'type' => $row['type'],
-                    'score' => $row['score'] ?? 0,
-                    'max_score' => $row['max_score'] ?? 20,
-                    'percentage' => ($row['max_score'] ?? 0) > 0 && $row['score'] !== null
-                        ? round(($row['score'] / $row['max_score']) * 100, 1)
-                        : 0,
-                    'due_date' => $row['date'] ? Carbon::parse($row['date'])->format('d/m/Y') : null,
-                ]),
-            ];
-        });
-
-        return [
-            'courseData' => $courseData,
-            'globalAverage' => $courseData->avg('promedio'),
-        ];
+        return app(ReportCardService::class)->build($student);
     }
 
-    private function publishedGrades(Student $student, Collection $activityIds): Collection
+    private function recordedGrades(Student $student, Collection $activityIds): Collection
     {
         if ($activityIds->isEmpty() || ! Schema::hasTable('grades')) {
             return collect();
         }
 
-        $query = Grade::query()
+        return Grade::query()
             ->where('student_id', $student->id)
-            ->whereIn('activity_id', $activityIds);
+            ->whereIn('activity_id', $activityIds)
+            ->whereNotNull('score')
+            ->get();
+    }
 
-        if (Schema::hasColumn('grades', 'status')) {
-            $query->where(function ($q) {
-                $q->where('status', 'published')->orWhereNotNull('published_at');
-            });
-        } elseif (Schema::hasColumn('grades', 'published_at')) {
-            $query->whereNotNull('published_at');
+    private function absenceHistory(Student $student): array
+    {
+        if (! Schema::hasTable('absence_requests')) {
+            return [];
         }
 
-        return $query->get();
+        return AbsenceRequest::query()
+            ->where('student_id', $student->id)
+            ->with('reason:id,label')
+            ->latest()
+            ->limit(8)
+            ->get()
+            ->map(fn (AbsenceRequest $row) => [
+                'id' => $row->id,
+                'kind' => $row->kind,
+                'status' => $row->status,
+                'reason' => $row->reason?->label,
+                'start' => optional($row->start_date)?->format('Y-m-d'),
+                'end' => optional($row->end_date)?->format('Y-m-d'),
+                'comment' => $row->comment,
+            ])
+            ->values()
+            ->all();
     }
 
     private function globalAverage(Student $student): ?float
@@ -555,7 +564,7 @@ class RepresentanteDashboardService
             ->where(fn ($q) => $q->whereNull('type')->orWhere('type', '!=', 'clase'))
             ->get(['id', 'weight_percentage', 'max_score']);
 
-        $grades = $this->publishedGrades($student, $activities->pluck('id'))->keyBy('activity_id');
+        $grades = $this->recordedGrades($student, $activities->pluck('id'))->keyBy('activity_id');
         if ($grades->isEmpty()) {
             $pivot = $course->pivot->promedio_acumulado ?? $course->pivot->nota_actual ?? null;
             if ($pivot === null || (float) $pivot <= 0) {
@@ -625,7 +634,7 @@ class RepresentanteDashboardService
             ->orderBy('due_date')
             ->get(['id', 'title', 'type', 'due_date', 'max_score', 'weight_percentage', 'director_notes']);
 
-        $grades = $this->publishedGrades($student, $activities->pluck('id'))->keyBy('activity_id');
+        $grades = $this->recordedGrades($student, $activities->pluck('id'))->keyBy('activity_id');
 
         return $activities->map(function (Activity $activity) use ($grades) {
             $grade = $grades->get($activity->id);
@@ -659,7 +668,7 @@ class RepresentanteDashboardService
             ->with('course:id,subject_name')
             ->get();
 
-        $gradedIds = $this->publishedGrades($student, $activities->pluck('id'))->pluck('activity_id');
+        $gradedIds = $this->recordedGrades($student, $activities->pluck('id'))->pluck('activity_id');
 
         return $activities
             ->reject(fn (Activity $a) => $gradedIds->contains($a->id))

@@ -9,6 +9,8 @@ use App\Models\CommunicationMessage;
 use App\Models\CommunicationThread;
 use App\Models\Course;
 use App\Models\Student;
+use App\Models\Notification;
+use App\Services\AttendanceAlertService;
 use Carbon\Carbon;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
@@ -28,8 +30,11 @@ class CommunicationController extends Controller
             ->orderBy('subject_name')
             ->get(['id', 'subject_name', 'grade', 'section']);
 
-        $students = Student::where('teacher_id', $teacher->id)
-            ->with(['grades' => fn ($q) => $q->latest()->limit(5)])
+        $students = Student::query()
+            ->where(function ($q) use ($teacher) {
+                $q->where('teacher_id', $teacher->id)
+                    ->orWhereHas('courses', fn ($c) => $c->where('teacher_id', $teacher->id));
+            })
             ->orderBy('name')
             ->get(['id', 'name', 'grade', 'section']);
 
@@ -49,28 +54,7 @@ class CommunicationController extends Controller
                     ->limit(30)
                     ->get();
 
-                $threads = CommunicationThread::where('teacher_id', $teacher->id)
-                    ->with(['student:id,name', 'messages' => fn ($q) => $q->latest()->limit(30)])
-                    ->orderByDesc('last_message_at')
-                    ->limit(30)
-                    ->get()
-                    ->map(function (CommunicationThread $thread) {
-                        $avg = $thread->student
-                            ? round((float) $thread->student->grades()->avg('score'), 1)
-                            : null;
-
-                        return [
-                            'id' => $thread->id,
-                            'contact_name' => $thread->contact_name,
-                            'contact_role' => $thread->contact_role,
-                            'last_message_preview' => $thread->last_message_preview,
-                            'last_message_at' => optional($thread->last_message_at)->toDateTimeString(),
-                            'student' => $thread->student,
-                            'student_avg' => $avg,
-                            'messages' => $thread->messages->sortBy('created_at')->values(),
-                        ];
-                    })
-                    ->values();
+                $threads = $this->threadPayloads($teacher->id);
             }
         } catch (QueryException $e) {
             Log::warning('Communication index skipped due to missing schema: ' . $e->getMessage());
@@ -233,6 +217,14 @@ class CommunicationController extends Controller
         return response()->json(['success' => true, 'announcement' => $announcement]);
     }
 
+    public function threads(): JsonResponse
+    {
+        return response()->json([
+            'success' => true,
+            'threads' => $this->threadPayloads(auth()->id()),
+        ]);
+    }
+
     public function sendMessage(Request $request, CommunicationThread $thread): JsonResponse
     {
         $this->authorizeThread($thread);
@@ -251,6 +243,19 @@ class CommunicationController extends Controller
             'last_message_preview' => mb_substr($data['body'], 0, 160),
             'last_message_at' => now(),
         ]);
+
+        if ($thread->student && Schema::hasTable('notifications')) {
+            $parents = app(AttendanceAlertService::class)->parentsFor($thread->student);
+            foreach ($parents as $parent) {
+                Notification::create([
+                    'user_id' => $parent->id,
+                    'colegio_id' => $thread->student->colegio_id,
+                    'title' => 'Nuevo mensaje del docente',
+                    'message' => auth()->user()->name.' respondió sobre '.$thread->student->name.': '.mb_substr($data['body'], 0, 120),
+                    'link' => route('representante.dashboard'),
+                ]);
+            }
+        }
 
         return response()->json(['success' => true, 'message' => $message]);
     }
@@ -322,6 +327,40 @@ class CommunicationController extends Controller
         } catch (\Throwable $e) {
             return response()->json(['success' => true, 'suggestions' => $this->fallbackSuggestions($incoming)]);
         }
+    }
+
+    private function threadPayloads(int $teacherId)
+    {
+        if (! Schema::hasTable('communication_threads')) {
+            return collect();
+        }
+
+        return CommunicationThread::where('teacher_id', $teacherId)
+            ->with(['student:id,name,grade,section,colegio_id', 'messages' => fn ($q) => $q->latest()->limit(40)])
+            ->orderByDesc('last_message_at')
+            ->limit(40)
+            ->get()
+            ->map(function (CommunicationThread $thread) {
+                $avg = $thread->student
+                    ? round((float) $thread->student->grades()->avg('score'), 1)
+                    : null;
+                $label = $thread->student?->name ?? $thread->contact_name;
+                if ($thread->contact_role === 'representante') {
+                    $label = ($thread->contact_name ?: 'Familia').' · '.$thread->student?->name;
+                }
+
+                return [
+                    'id' => $thread->id,
+                    'contact_name' => $label,
+                    'contact_role' => $thread->contact_role,
+                    'last_message_preview' => $thread->last_message_preview,
+                    'last_message_at' => optional($thread->last_message_at)->toDateTimeString(),
+                    'student' => $thread->student,
+                    'student_avg' => $avg,
+                    'messages' => $thread->messages->sortBy('created_at')->values(),
+                ];
+            })
+            ->values();
     }
 
     private function authorizeAnnouncement(CommunicationAnnouncement $announcement): void
