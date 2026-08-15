@@ -46,7 +46,7 @@
     {{-- ══════════════════════════════════════════
          MODAL DE MATRICULACIÓN (Alpine.js)
     ══════════════════════════════════════════ --}}
-    <div x-data="{ open: false }"
+    <div x-data="{ open: false, familyMode: 'new' }"
          x-cloak
          @keydown.escape.window="open = false">
 
@@ -69,7 +69,7 @@
                  x-transition:leave-start="opacity-100 scale-100"
                  x-transition:leave-end="opacity-0 scale-95"
                  @click.stop
-                 class="relative w-full max-w-lg rounded-3xl border border-white/15 bg-[#0f172a] shadow-2xl shadow-black/50 p-8">
+                 class="relative w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-3xl border border-white/15 bg-[#0f172a] shadow-2xl shadow-black/50 p-8">
 
                 {{-- Encabezado del modal --}}
                 <div class="mb-6 flex items-center justify-between">
@@ -92,60 +92,88 @@
                 <form method="POST" action="{{ route('director.students.store') }}" class="space-y-5">
                     @csrf
 
-                    {{-- Nombre completo --}}
                     <div>
                         <label class="mb-1.5 block text-sm font-semibold text-slate-300">
-                            Nombre Completo del Alumno <span class="text-cyan-400">*</span>
+                            Nombre completo <span class="text-cyan-400">*</span>
                         </label>
-                        <input type="text"
-                               name="name"
-                               required
-                               placeholder="Ej: María González Pérez"
+                        <input type="text" name="name" required placeholder="Ej: María González Pérez"
                                class="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white placeholder-slate-600 transition focus:border-cyan-500/50 focus:outline-none focus:ring-2 focus:ring-cyan-500/30">
                     </div>
 
-                    {{-- Curso / Grado --}}
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="mb-1.5 block text-sm font-semibold text-slate-300">Cédula escolar</label>
+                            <input type="text" name="document_id" placeholder="Opcional"
+                                   class="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white placeholder-slate-600 focus:outline-none">
+                        </div>
+                        <div>
+                            <label class="mb-1.5 block text-sm font-semibold text-slate-300">Fecha de nacimiento</label>
+                            <input type="date" name="birthdate"
+                                   class="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white focus:outline-none">
+                        </div>
+                    </div>
+
                     <div>
-                        <label class="mb-1.5 block text-sm font-semibold text-slate-300">
-                            Curso / Grado <span class="text-cyan-400">*</span>
-                        </label>
+                        <label class="mb-1.5 block text-sm font-semibold text-slate-300">Curso / grado</label>
                         <select name="course_id"
-                                required
-                                class="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-300 transition focus:border-cyan-500/50 focus:outline-none focus:ring-2 focus:ring-cyan-500/30">
-                            <option value="" disabled selected class="bg-[#0f172a]">— Selecciona un curso —</option>
+                                class="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-300 focus:outline-none">
+                            <option value="" class="bg-[#0f172a]">Sin curso todavía</option>
                             @foreach($courses as $course)
                                 <option value="{{ $course->id }}" class="bg-[#0f172a]">
                                     {{ $course->grade }}{{ $course->section ? ' / ' . $course->section : '' }} — {{ $course->subject_name }}
-                                    @if($course->school_year) ({{ $course->school_year }})@endif
                                 </option>
                             @endforeach
                         </select>
-                        @if($courses->isEmpty())
-                            <p class="mt-2 text-xs text-amber-400">
-                                <i class="fa-solid fa-triangle-exclamation mr-1"></i>
-                                No hay cursos registrados aún. Pide a los docentes que los creen.
-                            </p>
-                        @endif
                     </div>
 
-                    {{-- Nota informativa --}}
-                    <div class="rounded-xl border border-cyan-500/20 bg-cyan-500/5 px-4 py-3">
-                        <p class="text-xs text-cyan-300">
-                            <i class="fa-solid fa-circle-info mr-1.5"></i>
-                            El <strong>Código Representante</strong> se generará automáticamente (formato <code class="font-mono">NV-XXXX-XP</code>) y se mostrará en la tabla.
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="mb-1.5 block text-sm font-semibold text-slate-300">Grado</label>
+                            <input type="text" name="grade" placeholder="Ej: 3er año"
+                                   class="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white placeholder-slate-600 focus:outline-none">
+                        </div>
+                        <div>
+                            <label class="mb-1.5 block text-sm font-semibold text-slate-300">Sección</label>
+                            <input type="text" name="section" placeholder="A"
+                                   class="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white placeholder-slate-600 focus:outline-none">
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="mb-1.5 block text-sm font-semibold text-slate-300">Familia / representante</label>
+                        <div class="mb-3 flex gap-2">
+                            <button type="button" @click="familyMode = 'new'"
+                                    :class="familyMode === 'new' ? 'bg-violet-600 text-white' : 'bg-white/5 text-slate-300'"
+                                    class="flex-1 rounded-xl px-3 py-2 text-xs font-bold">Nueva familia</button>
+                            <button type="button" @click="familyMode = 'existing'"
+                                    :class="familyMode === 'existing' ? 'bg-violet-600 text-white' : 'bg-white/5 text-slate-300'"
+                                    class="flex-1 rounded-xl px-3 py-2 text-xs font-bold">Hermano ya matriculado</button>
+                        </div>
+                        <input type="hidden" name="family_mode" :value="familyMode">
+                        <div x-show="familyMode === 'existing'">
+                            <select name="sibling_student_id"
+                                    class="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-300 focus:outline-none">
+                                <option value="" class="bg-[#0f172a]">— Elige al hermano para compartir el código NV- —</option>
+                                @foreach($households ?? [] as $mate)
+                                    <option value="{{ $mate->id }}" class="bg-[#0f172a]">
+                                        {{ $mate->name }} · {{ $mate->family_code }}
+                                    </option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <p class="mt-2 text-xs text-cyan-300" x-show="familyMode === 'new'">
+                            Se genera un código familiar NV- para que el representante se registre y confirme a este alumno.
                         </p>
                     </div>
 
-                    {{-- Acciones --}}
                     <div class="flex gap-3 pt-1">
-                        <button type="button"
-                                @click="open = false"
+                        <button type="button" @click="open = false"
                                 class="flex-1 rounded-xl border border-white/10 py-3 text-sm font-semibold text-slate-300 transition hover:bg-white/5">
                             Cancelar
                         </button>
                         <button type="submit"
-                                class="flex-1 rounded-xl bg-gradient-to-r from-violet-500 to-cyan-500 py-3 text-sm font-bold text-white shadow-lg shadow-violet-500/25 transition hover:scale-[1.02] hover:shadow-violet-500/40">
-                            <i class="fa-solid fa-user-plus mr-2"></i>Matricular Alumno
+                                class="flex-1 rounded-xl bg-gradient-to-r from-violet-500 to-cyan-500 py-3 text-sm font-bold text-white">
+                            <i class="fa-solid fa-user-plus mr-2"></i>Matricular
                         </button>
                     </div>
                 </form>

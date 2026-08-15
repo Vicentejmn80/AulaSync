@@ -3478,6 +3478,11 @@
                 <span>Comunicación</span>
                 <i class="fa-solid fa-arrow-up-right-from-square" style="margin-left: auto; font-size: 10px; opacity: 0.4;"></i>
             </a>
+            <a href="{{ route('teacher.attendance.index') }}" class="nav-item">
+                <i class="fa-solid fa-clipboard-user"></i>
+                <span>Asistencia</span>
+                <i class="fa-solid fa-arrow-up-right-from-square" style="margin-left: auto; font-size: 10px; opacity: 0.4;"></i>
+            </a>
         </nav>
 
         <div class="courses-header">
@@ -3706,6 +3711,7 @@
                         </template>
                         <div class="quick-actions">
                             <a href="{{ route('teacher.planner.manual') }}" class="quick-action"><i class="fa-solid fa-wand-magic-sparkles"></i>Nueva planificación</a>
+                            <a href="{{ route('teacher.attendance.index') }}" class="quick-action"><i class="fa-solid fa-clipboard-user"></i>Tomar asistencia</a>
                             <a href="{{ route('teacher.activities.index') }}" class="quick-action"><i class="fa-solid fa-plus"></i>Crear actividad</a>
                             <button type="button" class="quick-action" @click="showNewCourseModal = true"><i class="fa-solid fa-book-open"></i>Nuevo curso</button>
                             <button type="button" class="quick-action" @click="openBubbleWithFocus()"><i class="fa-solid fa-robot"></i>Hablar con IA</button>
@@ -3854,9 +3860,9 @@
                         <div class="panel-header">
                             <h3><i class="fa-solid fa-users"></i> Alumnos</h3>
                             <span class="panel-count" x-text="courseData.students.length"></span>
-                            <a :href="`/teacher/courses`" class="panel-link">
-                                Importar <i class="fa-solid fa-plus"></i>
-                            </a>
+                            <button type="button" class="panel-link" @click="openEnrollModal()">
+                                Matricular <i class="fa-solid fa-plus"></i>
+                            </button>
                         </div>
                         <template x-if="courseData.students.length === 0">
                             <div style="padding: 40px 20px; text-align: center;">
@@ -4701,6 +4707,55 @@
         </div>
     </div>
 
+    <div x-show="showEnrollModal" x-cloak class="modal-overlay" @click.self="showEnrollModal = false">
+        <div class="modal-nova" style="max-width: 520px;">
+            <div class="modal-header">
+                <h3>Matricular alumno</h3>
+                <button @click="showEnrollModal = false" class="modal-close"><i class="fa-solid fa-times"></i></button>
+            </div>
+            <div class="modal-body" style="display:flex;flex-direction:column;gap:12px;">
+                <div class="stack" style="display:flex;gap:8px;">
+                    <button type="button" class="btn-secondary" :style="enrollTab === 'new' ? 'background:var(--nova-violet);color:#fff' : ''" @click="enrollTab = 'new'">Nuevo alumno</button>
+                    <button type="button" class="btn-secondary" :style="enrollTab === 'existing' ? 'background:var(--nova-violet);color:#fff' : ''" @click="enrollTab = 'existing'">Ya está en el colegio</button>
+                </div>
+                <template x-if="enrollTab === 'new'">
+                    <div style="display:flex;flex-direction:column;gap:10px;">
+                        <input x-model="enrollForm.name" placeholder="Nombre completo *" style="width:100%;background:var(--nova-glass);border:1px solid var(--nova-glass-border);border-radius:14px;padding:12px 15px;color:var(--text-primary);">
+                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+                            <input x-model="enrollForm.document_id" placeholder="Cédula escolar" style="width:100%;background:var(--nova-glass);border:1px solid var(--nova-glass-border);border-radius:14px;padding:12px 15px;color:var(--text-primary);">
+                            <input type="date" x-model="enrollForm.birthdate" style="width:100%;background:var(--nova-glass);border:1px solid var(--nova-glass-border);border-radius:14px;padding:12px 15px;color:var(--text-primary);">
+                        </div>
+                        <label style="font-size:12px;font-weight:700;color:var(--text-secondary);">Si es hermano de alguien ya matriculado</label>
+                        <input x-model="enrollSearch" @input="searchSchoolStudents()" placeholder="Buscar hermano para compartir código NV-" style="width:100%;background:var(--nova-glass);border:1px solid var(--nova-glass-border);border-radius:14px;padding:12px 15px;color:var(--text-primary);">
+                        <template x-for="hit in enrollHits" :key="hit.id">
+                            <button type="button" @click="enrollForm.sibling_student_id = hit.id; enrollSearch = hit.name + ' · ' + hit.family_code" style="text-align:left;background:var(--bg-secondary);border:0;border-radius:10px;padding:8px 10px;color:var(--text-primary);cursor:pointer;">
+                                <span x-text="hit.name"></span> · <span x-text="hit.family_code"></span>
+                            </button>
+                        </template>
+                    </div>
+                </template>
+                <template x-if="enrollTab === 'existing'">
+                    <div>
+                        <input x-model="enrollSearch" @input="searchSchoolStudents()" placeholder="Buscar por nombre o código NV-" style="width:100%;background:var(--nova-glass);border:1px solid var(--nova-glass-border);border-radius:14px;padding:12px 15px;color:var(--text-primary);">
+                        <template x-for="hit in enrollHits" :key="hit.id">
+                            <button type="button" @click="enrollExisting(hit.id)" style="display:block;width:100%;text-align:left;margin-top:8px;background:var(--bg-secondary);border:0;border-radius:10px;padding:8px 10px;color:var(--text-primary);cursor:pointer;">
+                                Inscribir a <span x-text="hit.name"></span>
+                            </button>
+                        </template>
+                    </div>
+                </template>
+                <p x-show="enrollNotice" style="color:#0F766E;font-weight:700;font-size:13px;" x-text="enrollNotice"></p>
+                <p x-show="enrollError" style="color:#B45309;font-weight:700;font-size:13px;" x-text="enrollError"></p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" @click="showEnrollModal = false" class="btn-secondary">Cerrar</button>
+                <button type="button" class="btn-primary" x-show="enrollTab === 'new'" @click="submitEnroll()" :disabled="enrollSaving">
+                    Matricular y generar código
+                </button>
+            </div>
+        </div>
+    </div>
+
 </div>
 
 {{-- AI Assistant bubble --}}
@@ -4778,6 +4833,14 @@ function teacherHub() {
             texto: '',
         },
         showNewCourseModal: false,
+        showEnrollModal: false,
+        enrollTab: 'new',
+        enrollSaving: false,
+        enrollNotice: '',
+        enrollError: '',
+        enrollSearch: '',
+        enrollHits: [],
+        enrollForm: { name: '', document_id: '', birthdate: '', sibling_student_id: '' },
         isDarkMode:      false,
         notifications:   [],
         unreadCount:     0,
@@ -4996,6 +5059,72 @@ function teacherHub() {
             }
         },
 
+        openEnrollModal() {
+            this.showEnrollModal = true;
+            this.enrollTab = 'new';
+            this.enrollNotice = '';
+            this.enrollError = '';
+            this.enrollSearch = '';
+            this.enrollHits = [];
+            this.enrollForm = { name: '', document_id: '', birthdate: '', sibling_student_id: '' };
+        },
+
+        async searchSchoolStudents() {
+            const q = this.enrollSearch.trim();
+            if (q.length < 2) { this.enrollHits = []; return; }
+            const res = await fetch(`/teacher/api/school-students?q=${encodeURIComponent(q)}`, { headers: { 'Accept': 'application/json' } });
+            const data = await res.json();
+            this.enrollHits = data.students || [];
+        },
+
+        async submitEnroll() {
+            if (!this.enrollForm.name.trim()) { this.enrollError = 'Escribe el nombre completo.'; return; }
+            this.enrollSaving = true;
+            this.enrollError = '';
+            this.enrollNotice = '';
+            try {
+                const res = await fetch('/teacher/api/students', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]')?.content || '',
+                        'Accept': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        name: this.enrollForm.name,
+                        document_id: this.enrollForm.document_id || null,
+                        birthdate: this.enrollForm.birthdate || null,
+                        sibling_student_id: this.enrollForm.sibling_student_id || null,
+                        course_id: this.currentCourseId,
+                    }),
+                });
+                const data = await res.json();
+                if (!data.success) { this.enrollError = data.message || data.error || 'No se pudo matricular.'; return; }
+                this.enrollNotice = data.message;
+                await this.loadCourse(this.currentCourseId);
+            } catch (e) {
+                this.enrollError = 'Error de conexión.';
+            } finally {
+                this.enrollSaving = false;
+            }
+        },
+
+        async enrollExisting(studentId) {
+            const res = await fetch(`/teacher/api/courses/${this.currentCourseId}/enroll`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]')?.content || '',
+                    'Accept': 'application/json',
+                },
+                body: JSON.stringify({ student_id: studentId }),
+            });
+            const data = await res.json();
+            if (!data.success) { this.enrollError = data.message || 'No se pudo inscribir.'; return; }
+            this.enrollNotice = data.message;
+            await this.loadCourse(this.currentCourseId);
+        },
+
         async loadCourse(id) {
             this.canvasLoading   = true;
             this.courseData      = null;
@@ -5168,16 +5297,67 @@ function teacherHub() {
                 });
             }
 
-            insights.push({
-                id: 'attendance-soon',
-                type: 'proximamente',
-                chipLabel: 'Próximamente',
-                course: null,
-                text: 'El seguimiento de asistencia llegará pronto a AulaSync Intelligence.',
-                actionLabel: null,
-                actionType: null,
-                actionPayload: null,
-            });
+            const att = stats?.attendance;
+            if (att) {
+                if (att.last_alert) {
+                    insights.push({
+                        id: 'attendance-alert',
+                        type: 'logro',
+                        chipLabel: 'Asistencia',
+                        course: null,
+                        text: att.last_alert,
+                        actionLabel: 'Ver asistencia',
+                        actionType: 'href',
+                        actionPayload: @json(route('teacher.attendance.index')),
+                    });
+                } else if (att.family_reports > 0) {
+                    insights.push({
+                        id: 'attendance-family',
+                        type: 'atencion',
+                        chipLabel: 'Familia',
+                        course: null,
+                        text: `${att.family_reports} reporte${att.family_reports === 1 ? '' : 's'} de ausencia pendiente${att.family_reports === 1 ? '' : 's'} de la familia.`,
+                        actionLabel: 'Tomar asistencia',
+                        actionType: 'href',
+                        actionPayload: @json(route('teacher.attendance.index')),
+                    });
+                } else if (att.pending_courses > 0) {
+                    insights.push({
+                        id: 'attendance-pending',
+                        type: 'atencion',
+                        chipLabel: 'Asistencia',
+                        course: null,
+                        text: `Falta tomar asistencia en ${att.pending_courses} curso${att.pending_courses === 1 ? '' : 's'} hoy` + (att.absent_today ? ` · ${att.absent_today} ausente${att.absent_today === 1 ? '' : 's'} registrados.` : '.'),
+                        actionLabel: 'Tomar asistencia',
+                        actionType: 'href',
+                        actionPayload: @json(route('teacher.attendance.index')),
+                    });
+                } else if (att.taken_courses > 0) {
+                    insights.push({
+                        id: 'attendance-today',
+                        type: 'logro',
+                        chipLabel: 'Asistencia',
+                        course: null,
+                        text: att.absent_today
+                            ? `Asistencia tomada. ${att.absent_today} ausencia${att.absent_today === 1 ? '' : 's'} y ${att.tardy_today} retraso${att.tardy_today === 1 ? '' : 's'} hoy.`
+                            : 'Asistencia del día tomada. El representante ya recibe alerta automática si hay una falta.',
+                        actionLabel: 'Ver lista',
+                        actionType: 'href',
+                        actionPayload: @json(route('teacher.attendance.index')),
+                    });
+                } else {
+                    insights.push({
+                        id: 'attendance-start',
+                        type: 'tendencia',
+                        chipLabel: 'Asistencia',
+                        course: null,
+                        text: 'Toma asistencia en un toque. Si marcas una ausencia, el representante recibe el aviso al instante.',
+                        actionLabel: 'Tomar asistencia',
+                        actionType: 'href',
+                        actionPayload: @json(route('teacher.attendance.index')),
+                    });
+                }
+            }
 
             return insights;
         },
@@ -5191,6 +5371,7 @@ function teacherHub() {
             if (insight.actionType === 'course') this.loadCourse(insight.actionPayload);
             else if (insight.actionType === 'calendar') this.loadCalendar();
             else if (insight.actionType === 'ai') this.sendAICommand(insight.actionPayload);
+            else if (insight.actionType === 'href' && insight.actionPayload) window.location.href = insight.actionPayload;
         },
 
         scrollToInsights() {

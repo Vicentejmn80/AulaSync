@@ -5,6 +5,7 @@ namespace App\Models;
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
@@ -81,5 +82,23 @@ class User extends Authenticatable
     public function directedColegio(): HasOne
     {
         return $this->hasOne(Colegio::class, 'director_user_id');
+    }
+
+    public function appNotifications(): HasMany
+    {
+        return $this->hasMany(Notification::class);
+    }
+
+    public function absenceRequests(): HasMany
+    {
+        return $this->hasMany(AbsenceRequest::class, 'parent_id');
+    }
+
+    public function representedStudents(): BelongsToMany
+    {
+        return $this->belongsToMany(Student::class, 'guardian_student')
+            ->withPivot('relationship')
+            ->withTimestamps()
+            ->orderBy('name');
     }
 }

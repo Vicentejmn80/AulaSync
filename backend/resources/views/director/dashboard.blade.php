@@ -75,6 +75,9 @@
             </div>
 
             <div class="flex flex-wrap items-center gap-3">
+                <a href="{{ route('director.attendance') }}" class="rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-white/10">
+                    <i class="fa-solid fa-clipboard-user mr-2 text-cyan-300"></i>Asistencia
+                </a>
                 <a href="{{ route('dashboard') }}" class="rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-white/10">
                     <i class="fa-solid fa-layer-group mr-2 text-cyan-300"></i>App
                 </a>
@@ -440,6 +443,10 @@
                 <a href="{{ route('director.students') }}"
                    class="rounded-xl border border-white/10 px-4 py-2 text-sm font-semibold text-slate-300 transition hover:bg-white/10">
                     <i class="fa-regular fa-file-lines mr-2"></i>Boletas
+                </a>
+                <a href="{{ route('director.attendance') }}"
+                   class="rounded-xl border border-white/10 px-4 py-2 text-sm font-semibold text-slate-300 transition hover:bg-white/10">
+                    <i class="fa-solid fa-clipboard-user mr-2"></i>Asistencia
                 </a>
             </div>
         </section>

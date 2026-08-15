@@ -14,37 +14,53 @@ class FamilyCodeController extends Controller
     {
         $validated = $request->validate([
             'family_code' => 'required|string|max:20',
+            'school_code' => 'nullable|string|max:20',
         ]);
 
         $code = InviteCodeHelper::normalize($validated['family_code']);
 
-        // CNX- codes are institution codes, not family codes
-        if (str_starts_with($code, 'CNX-')) {
+        if (str_starts_with($code, 'CNX-') || str_starts_with($code, 'DEMO-')) {
             return response()->json([
                 'valid' => false,
-                'message' => 'Este código corresponde a una institución, no a un representante. Si eres docente o director, selecciona el rol correspondiente.',
+                'message' => 'Este código corresponde a una institución, no a una familia. Primero valida el código del colegio.',
             ], 422);
         }
 
-        $student = Student::where('family_code', $code)->first();
+        $colegio = null;
+        if (! empty($validated['school_code'])) {
+            $colegio = Colegio::where('invite_code', InviteCodeHelper::normalize($validated['school_code']))->first();
+            if (! $colegio) {
+                return response()->json([
+                    'valid' => false,
+                    'message' => 'El código de colegio no es válido.',
+                ], 404);
+            }
+        }
 
-        if (! $student) {
+        $query = Student::query()->where('family_code', $code);
+        if ($colegio) {
+            $query->where('colegio_id', $colegio->id);
+        }
+
+        $students = $query->orderBy('name')->get(['id', 'name', 'grade', 'section', 'family_code', 'colegio_id']);
+
+        if ($students->isEmpty()) {
             return response()->json([
                 'valid' => false,
-                'message' => 'Código no encontrado. Verifica el código en la boleta de tu representado.',
+                'message' => 'No encontramos alumnos con ese código familiar en este colegio. Pide el código NV- al director o al docente.',
             ], 404);
         }
 
-        $school = Colegio::find($student->colegio_id);
+        $school = $colegio ?? Colegio::find($students->first()->colegio_id);
 
         return response()->json([
             'valid' => true,
-            'student' => [
+            'students' => $students->map(fn (Student $student) => [
                 'id' => $student->id,
                 'name' => $student->name,
                 'grade' => $student->grade,
                 'section' => $student->section,
-            ],
+            ])->values(),
             'school' => $school ? [
                 'id' => $school->id,
                 'name' => $school->name,

@@ -41,7 +41,7 @@
 
         .glass-card {
             position:relative; z-index:1;
-            width:100%; max-width:440px;
+            width:100%; max-width:520px;
             background:rgba(255,255,255,.88);
             backdrop-filter:blur(24px); -webkit-backdrop-filter:blur(24px);
             border:1px solid rgba(237,221,247,.95);
@@ -107,7 +107,19 @@
         }
         .alert-box li { font-size:.8rem; color:#be185d; margin-left:1rem; list-style:disc; }
 
-        .row-2 { display:grid; grid-template-columns:1fr 1fr; gap:.75rem; }
+        .role-grid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:.55rem; margin-bottom:1.1rem; }
+        .role-pick {
+            border:1px solid rgba(237,221,247,.95); background:rgba(255,255,255,.7);
+            border-radius:1rem; padding:.7rem .4rem; text-align:center; cursor:pointer;
+            font-size:.72rem; font-weight:800; color:#6B4D87; transition:.15s;
+        }
+        .role-pick i { display:block; font-size:1.05rem; margin-bottom:.35rem; color:#8b5cf6; }
+        .role-pick input { display:none; }
+        .role-pick.active, .role-pick:has(input:checked) {
+            border-color:#d946ef; background:rgba(217,70,239,.08); color:#7c3aed;
+            box-shadow:0 0 0 3px rgba(217,70,239,.12);
+        }
+        @media (max-width: 520px) { .role-grid { grid-template-columns:1fr; } }
     </style>
 </head>
 <body>
@@ -122,7 +134,7 @@
         </div>
 
         <h1 class="card-title">Crear tu cuenta</h1>
-        <p class="card-sub">Únete a la nueva era de la planificación docente.</p>
+        <p class="card-sub">Elige tu rol. Luego te pediremos el código de tu colegio.</p>
 
         @php($errors = $errors ?? new \Illuminate\Support\ViewErrorBag())
         @if($errors->any())
@@ -133,6 +145,21 @@
 
         <form method="POST" action="{{ route('register', absolute: false) }}">
             @csrf
+            <div class="role-grid">
+                <label class="role-pick">
+                    <input type="radio" name="role" value="profesor" {{ old('role') === 'profesor' ? 'checked' : '' }} required>
+                    <i class="fa-solid fa-chalkboard-user"></i> Docente
+                </label>
+                <label class="role-pick">
+                    <input type="radio" name="role" value="representante" {{ old('role') === 'representante' ? 'checked' : '' }}>
+                    <i class="fa-solid fa-users"></i> Representante
+                </label>
+                <label class="role-pick">
+                    <input type="radio" name="role" value="director" {{ old('role') === 'director' ? 'checked' : '' }}>
+                    <i class="fa-solid fa-building-columns"></i> Director
+                </label>
+            </div>
+            @error('role')<span class="field-error" style="display:block;margin-bottom:.8rem;">{{ $message }}</span>@enderror
             <div class="field">
                 <label>Nombre Completo</label>
                 <input type="text" name="name" value="{{ old('name') }}" placeholder="Tu nombre" required autofocus>
@@ -167,6 +194,14 @@
 
     <script>
         (function () {
+            document.querySelectorAll('.role-pick').forEach(function (card) {
+                card.addEventListener('click', function () {
+                    document.querySelectorAll('.role-pick').forEach(function (el) { el.classList.remove('active'); });
+                    card.classList.add('active');
+                });
+            });
+            var checked = document.querySelector('.role-pick input:checked');
+            if (checked) checked.closest('.role-pick').classList.add('active');
             if (!('serviceWorker' in navigator)) return;
             navigator.serviceWorker.getRegistrations().then(function (regs) {
                 regs.forEach(function (r) { r.unregister(); });

@@ -21,7 +21,12 @@ class OnboardingController extends Controller
             return redirect()->route('dashboard');
         }
 
-        return view('onboarding.wizard');
+        $preselectedRole = Auth::user()?->role;
+        if (! in_array($preselectedRole, ['profesor', 'director', 'representante'], true)) {
+            $preselectedRole = '';
+        }
+
+        return view('onboarding.wizard', compact('preselectedRole'));
     }
 
     public function save(Request $request)
@@ -50,6 +55,8 @@ class OnboardingController extends Controller
             'clases_semana' => 'nullable|integer|min:1|max:20',
             'duracion_clase' => 'nullable|integer|min:15|max:240',
             'family_code' => 'nullable|string|max:20',
+            'student_ids' => 'nullable|array',
+            'student_ids.*' => 'integer',
         ]);
 
         if ($validated['role'] === 'profesor') {
@@ -73,11 +80,18 @@ class OnboardingController extends Controller
             }
             
             $validated['materias'] = $materias;
-        } else {
+        } elseif ($validated['role'] === 'director') {
             $request->validate([
                 'nombre_institucion' => 'required|string|max:255',
                 'cantidad_sedes' => 'required|integer|min:1|max:500',
                 'periodo_academico' => 'required|string|max:120',
+            ]);
+        } elseif ($validated['role'] === 'representante') {
+            $request->validate([
+                'school_code' => 'required|string|max:20',
+                'family_code' => 'required|string|max:20',
+                'student_ids' => 'required|array|min:1',
+                'student_ids.*' => 'integer',
             ]);
         }
 
@@ -95,6 +109,8 @@ class OnboardingController extends Controller
             $modeloPedagogico = $validated['modelo_pedagogico'] ?? null;
             $colegioId = null;
             $inviteCode = null;
+            $familyCode = null;
+            $linkedStudents = collect();
 
             if ($role === 'director') {
                 $colegio = $this->createOrUpdateDirectorSchool(
@@ -122,21 +138,31 @@ class OnboardingController extends Controller
             }
 
             if ($role === 'representante') {
-                $request->validate([
-                    'family_code' => 'required|string|max:20',
-                ]);
+                $colegio = Colegio::where('invite_code', InviteCodeHelper::normalize((string) $validated['school_code']))
+                    ->first();
 
-                $familyCode = InviteCodeHelper::normalize((string) $validated['family_code']);
-                $student = Student::where('family_code', $familyCode)->first();
-
-                if (! $student) {
+                if (! $colegio) {
                     return back()->withInput()->withErrors([
-                        'family_code' => 'El código familiar no es válido o no se encontró.',
+                        'school_code' => 'El código de colegio no es válido.',
                     ]);
                 }
 
-                $colegioId = $student->colegio_id;
-                $nombreInstitucion = optional(Colegio::find($colegioId))->name;
+                $familyCode = InviteCodeHelper::normalize((string) $validated['family_code']);
+                $studentIds = collect($validated['student_ids'] ?? [])->map(fn ($id) => (int) $id)->filter()->unique();
+
+                $linkedStudents = Student::where('colegio_id', $colegio->id)
+                    ->where('family_code', $familyCode)
+                    ->whereIn('id', $studentIds)
+                    ->get();
+
+                if ($linkedStudents->isEmpty() || $linkedStudents->count() !== $studentIds->count()) {
+                    return back()->withInput()->withErrors([
+                        'family_code' => 'Los alumnos seleccionados no coinciden con ese código familiar en este colegio.',
+                    ]);
+                }
+
+                $colegioId = $colegio->id;
+                $nombreInstitucion = $colegio->name;
             }
 
             if ($role !== 'representante') {
@@ -180,6 +206,14 @@ class OnboardingController extends Controller
             }
 
             $user->update($updateData);
+
+            if ($role === 'representante' && $linkedStudents->isNotEmpty()) {
+                $user->representedStudents()->sync(
+                    $linkedStudents->mapWithKeys(fn (Student $student) => [
+                        $student->id => ['relationship' => 'representante'],
+                    ])->all()
+                );
+            }
 
             $user = auth()->user();
             DB::table('users')->where('id', $user->id)->update(['onboarding_completed' => DB::raw('true')]);

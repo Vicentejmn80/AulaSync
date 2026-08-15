@@ -1,4 +1,5 @@
 ﻿<x-onboarding-layout>
+    @php($preselectedRole = $preselectedRole ?? '')
     <div class="onboarding-shell py-5">
         <button type="button" class="theme-toggle-btn" id="themeToggleBtn" aria-label="Cambiar tema">
             <i class="fa-solid fa-moon" id="themeToggleIcon"></i>
@@ -20,6 +21,9 @@
                     <input type="hidden" name="role" x-model="role">
                     <input type="hidden" name="school_code" x-model="schoolCode">
                     <input type="hidden" name="family_code" x-model="familyValidated ? familyCode : ''">
+                    <template x-for="id in selectedStudentIds" :key="id">
+                        <input type="hidden" name="student_ids[]" :value="id">
+                    </template>
 
                     @php($errors = $errors ?? new \Illuminate\Support\ViewErrorBag())
                     @if($errors->any())
@@ -282,15 +286,42 @@
                         </div>
                     </div>
 
-                    {{-- PASO 2 (Representante): Código Familiar --}}
+                    {{-- PASO 2 (Representante): Colegio + familia + confirmar hijos --}}
                     <div x-show="step === 2 && role === 'representante'" x-cloak>
                         <div class="animate__animated animate__fadeIn">
-                            <h2 class="h5 fw-bold mb-3 text-center">Paso 2 · Código Familiar</h2>
-                            <p class="text-muted text-center mb-4">Ingresa el código único que encontraste en la boleta o comunicación de tu representado.</p>
+                            <h2 class="h5 fw-bold mb-3 text-center">Paso 2 · Vincula a tu familia</h2>
+                            <p class="text-muted text-center mb-4">Primero el código del colegio (el mismo que usan los docentes). Después el código familiar NV- que te dio la escuela.</p>
 
-                            <div class="mx-auto" style="max-width:420px;">
-                                <div class="rounded-2xl border border-violet-200/30 bg-white/[.045] p-5 mb-4">
-                                    <label class="form-label fw-semibold mb-2">Código Familiar Único</label>
+                            <div class="mx-auto" style="max-width:520px;">
+                                <div class="rounded-2xl border border-violet-200/30 bg-white/[.045] p-4 mb-4">
+                                    <label class="form-label fw-semibold mb-2">Código de colegio</label>
+                                    <div class="d-flex flex-column flex-md-row gap-2">
+                                        <input type="text"
+                                               class="form-control rounded-3 flex-grow-1"
+                                               x-model="schoolCode"
+                                               placeholder="Ej: NIC-4620"
+                                               @input="onSchoolCodeInput(); resetFamilyValidation()">
+                                        <button type="button"
+                                                class="btn btn-outline-primary rounded-3 px-3"
+                                                :disabled="!schoolCode.trim() || validatingCode"
+                                                @click="validateSchoolCode">
+                                            <span x-show="!validatingCode">Validar colegio</span>
+                                            <span x-show="validatingCode"><i class="fa-solid fa-spinner fa-spin"></i></span>
+                                        </button>
+                                    </div>
+                                    <p class="small mt-2 mb-0"
+                                       :class="{ 'text-success': schoolValidationStatus === 'ok', 'text-danger': schoolValidationStatus === 'error', 'text-muted': schoolValidationStatus === 'idle' }"
+                                       x-text="schoolValidationMessage || 'Te lo comparte el director o aparece en las circulares del colegio.'"></p>
+                                    <template x-if="schoolValidated">
+                                        <div class="small text-success mt-2">
+                                            <i class="fa-solid fa-check-circle me-1"></i>
+                                            Colegio: <strong x-text="validatedSchoolName"></strong>
+                                        </div>
+                                    </template>
+                                </div>
+
+                                <div class="rounded-2xl border border-violet-200/30 bg-white/[.045] p-4 mb-4" x-show="schoolValidated" x-cloak>
+                                    <label class="form-label fw-semibold mb-2">Código familiar</label>
                                     <input type="text"
                                            class="form-control rounded-3 mb-3"
                                            x-model="familyCode"
@@ -301,34 +332,19 @@
                                             class="btn btn-primary rounded-3 w-100 py-2"
                                             :disabled="!familyCode.trim() || validatingFamilyCode"
                                             @click="validateFamilyCode">
-                                        <span x-show="!validatingFamilyCode">Validar y Vincular <i class="fa-solid fa-arrow-right ms-1"></i></span>
-                                        <span x-show="validatingFamilyCode">
-                                            <i class="fa-solid fa-spinner fa-spin"></i> Validando...
-                                        </span>
+                                        <span x-show="!validatingFamilyCode">Buscar a mis representados</span>
+                                        <span x-show="validatingFamilyCode"><i class="fa-solid fa-spinner fa-spin"></i> Buscando...</span>
                                     </button>
                                     <p class="small mt-3 mb-0"
-                                       :class="{
-                                           'text-success': familyValidationStatus === 'ok',
-                                           'text-danger': familyValidationStatus === 'error',
-                                           'text-muted': familyValidationStatus === 'idle'
-                                       }"
-                                       x-text="familyValidationMessage || 'El código está en el perfil de calificaciones de tu representado.'"></p>
-                                    <template x-if="familyValidated && familyValidatedStudent">
-                                        <div class="small text-success mt-2 p-3 rounded-2 border border-success/30 bg-success/5">
-                                            <i class="fa-solid fa-check-circle me-1"></i>
-                                            Vinculado a: <strong x-text="familyValidatedStudent.name"></strong>
-                                            <template x-if="familyValidatedSchool">
-                                                <span>· <span x-text="familyValidatedSchool"></span></span>
-                                            </template>
-                                        </div>
-                                    </template>
+                                       :class="{ 'text-success': familyValidationStatus === 'ok', 'text-danger': familyValidationStatus === 'error', 'text-muted': familyValidationStatus === 'idle' }"
+                                       x-text="familyValidationMessage || 'Está en la boleta o te lo envió el docente al matricular al alumno.'"></p>
                                 </div>
                             </div>
 
                             <div class="d-flex justify-content-between mt-4">
                                 <button type="button" class="btn btn-light rounded-3 px-4" @click="step = 1">Atrás</button>
-                                <button type="button" class="btn btn-primary rounded-3 px-4" :disabled="!familyValidated" @click="handleSubmit">
-                                    Finalizar <i class="fa-solid fa-arrow-right ms-1"></i>
+                                <button type="button" class="btn btn-primary rounded-3 px-4" :disabled="!familyConfirmed" @click="handleSubmit">
+                                    Entrar al panel familiar <i class="fa-solid fa-arrow-right ms-1"></i>
                                 </button>
                             </div>
                         </div>
@@ -384,6 +400,42 @@
                                 Cancelar
                             </button>
                         </div>
+                    </div>
+                </div>
+
+                {{-- MODAL: Confirmar representados --}}
+                <div x-show="showFamilyModal" x-cloak
+                     class="fixed inset-0 z-50 flex items-center justify-center p-4"
+                     @click.self="showFamilyModal = false">
+                    <div class="fixed inset-0 bg-black/60 backdrop-blur-sm"></div>
+                    <div class="relative w-full max-w-lg rounded-[2rem] border border-white/10 bg-slate-900 p-8 shadow-2xl"
+                         @click.stop>
+                        <button @click="showFamilyModal = false" class="absolute right-4 top-4 text-slate-400 hover:text-white transition">
+                            <i class="fa-solid fa-xmark text-xl"></i>
+                        </button>
+                        <p class="text-xs font-bold uppercase tracking-widest text-cyan-300 mb-2">Confirmación familiar</p>
+                        <h3 class="text-xl font-bold text-white mb-2">Eres representante de:</h3>
+                        <p class="text-sm text-slate-400 mb-4">
+                            Selecciona a los alumnos de esta familia en
+                            <strong class="text-white" x-text="familyValidatedSchool || validatedSchoolName"></strong>.
+                        </p>
+                        <div class="space-y-2 max-h-72 overflow-y-auto mb-5">
+                            <template x-for="student in familyStudents" :key="student.id">
+                                <label class="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 cursor-pointer">
+                                    <input type="checkbox" :value="String(student.id)" x-model="selectedStudentIds">
+                                    <span>
+                                        <strong class="text-white" x-text="student.name"></strong>
+                                        <span class="block text-xs text-slate-400" x-text="[student.grade, student.section].filter(Boolean).join(' / ')"></span>
+                                    </span>
+                                </label>
+                            </template>
+                        </div>
+                        <button type="button"
+                                class="w-full rounded-2xl bg-gradient-to-r from-violet-600 to-cyan-500 px-5 py-3.5 text-sm font-bold text-white"
+                                :disabled="selectedStudentIds.length === 0"
+                                @click="confirmFamily()">
+                            Confirmar y continuar
+                        </button>
                     </div>
                 </div>
             </div>
@@ -575,10 +627,10 @@
 
         function onboardingWizard() {
             return {
-                step: 1,
-                role: '',
-                teacherPath: '',
-                showSchoolCode: false,
+                step: @json($preselectedRole ? 2 : 1),
+                role: @json($preselectedRole ?? ''),
+                teacherPath: @json(($preselectedRole ?? '') === 'profesor' ? 'code' : ''),
+                showSchoolCode: @json(($preselectedRole ?? '') === 'profesor' || ($preselectedRole ?? '') === 'representante'),
                 showDemoModal: false,
                 licenseCode: '',
                 selectedSubjects: [],
@@ -605,6 +657,10 @@
                 familyValidationMessage: '',
                 familyValidatedStudent: null,
                 familyValidatedSchool: '',
+                familyStudents: [],
+                selectedStudentIds: [],
+                familyConfirmed: false,
+                showFamilyModal: false,
 
                 get progress() {
                     if (this.role === 'director' || this.role === 'representante') {
@@ -625,12 +681,10 @@
                         this.showSchoolCode = false;
                     }
                     if (value !== 'representante') {
-                        this.familyCode = '';
-                        this.familyValidated = false;
-                        this.familyValidationStatus = 'idle';
-                        this.familyValidationMessage = '';
-                        this.familyValidatedStudent = null;
-                        this.familyValidatedSchool = '';
+                        this.resetFamilyValidation();
+                    }
+                    if (value === 'representante' || value === 'profesor') {
+                        this.showSchoolCode = true;
                     }
                 },
 
@@ -766,12 +820,16 @@
                         }
                     }
                     if (this.role === 'representante') {
+                        if (!this.schoolValidated) {
+                            alert('Primero valida el código de tu colegio.');
+                            return false;
+                        }
                         if (!this.familyCode.trim()) {
                             alert('Ingresa el código familiar para continuar');
                             return false;
                         }
-                        if (!this.familyValidated) {
-                            alert('Debes validar un código familiar válido antes de finalizar');
+                        if (!this.familyConfirmed || this.selectedStudentIds.length === 0) {
+                            alert('Confirma a qué alumnos representas.');
                             return false;
                         }
                     }
@@ -816,10 +874,28 @@
 
                 onFamilyCodeInput() {
                     this.familyValidated = false;
+                    this.familyConfirmed = false;
                     this.familyValidationStatus = 'idle';
                     this.familyValidationMessage = '';
                     this.familyValidatedStudent = null;
                     this.familyValidatedSchool = '';
+                    this.familyStudents = [];
+                    this.selectedStudentIds = [];
+                },
+
+                resetFamilyValidation() {
+                    this.familyCode = '';
+                    this.onFamilyCodeInput();
+                },
+
+                confirmFamily() {
+                    this.selectedStudentIds = this.selectedStudentIds.map(id => Number(id));
+                    if (this.selectedStudentIds.length === 0) return;
+                    this.familyConfirmed = true;
+                    this.familyValidated = true;
+                    this.showFamilyModal = false;
+                    this.familyValidationMessage = 'Familia confirmada. Ya puedes entrar a tu panel.';
+                    this.familyValidationStatus = 'ok';
                 },
 
                 async validateFamilyCode() {
@@ -829,11 +905,9 @@
                         this.familyValidationMessage = 'Debes ingresar un código familiar.';
                         return;
                     }
-
-                    if (code.startsWith('CNX-')) {
-                        this.familyValidated = false;
+                    if (!this.schoolValidated) {
                         this.familyValidationStatus = 'error';
-                        this.familyValidationMessage = 'Este código corresponde a una institución, no a un representante. Si eres docente o director, selecciona el rol correspondiente.';
+                        this.familyValidationMessage = 'Primero valida el código de tu colegio.';
                         return;
                     }
 
@@ -849,30 +923,32 @@
                                 'X-CSRF-TOKEN': document.querySelector('input[name="_token"]')?.value ?? '',
                                 'Accept': 'application/json',
                             },
-                            body: JSON.stringify({ family_code: code }),
+                            body: JSON.stringify({ family_code: code, school_code: this.schoolCode }),
                         });
                         const payload = await response.json();
 
                         if (!response.ok || !payload.valid) {
                             this.familyValidated = false;
+                            this.familyConfirmed = false;
                             this.familyValidationStatus = 'error';
-                            this.familyValidationMessage = payload.message || 'Código no encontrado. Verifica el código en la boleta de tu representado.';
-                            this.familyValidatedStudent = null;
-                            this.familyValidatedSchool = '';
+                            this.familyValidationMessage = payload.message || 'Código no encontrado.';
+                            this.familyStudents = [];
                             return;
                         }
 
+        $this->familyStudents = payload.students || (payload.student ? [payload.student] : []);
+                        this.selectedStudentIds = this.familyStudents.map(s => String(s.id));
+                        this.familyValidatedStudent = this.familyStudents[0] || null;
+                        this.familyValidatedSchool = payload.school?.name || this.validatedSchoolName;
                         this.familyValidated = true;
                         this.familyValidationStatus = 'ok';
-                        this.familyValidatedStudent = payload.student || null;
-                        this.familyValidatedSchool = payload.school?.name || '';
-                        this.familyValidationMessage = 'Código válido. Representante vinculado correctamente.';
+                        this.familyValidationMessage = 'Encontramos a tu familia. Confirma los nombres.';
+                        this.showFamilyModal = true;
                     } catch {
                         this.familyValidated = false;
                         this.familyValidationStatus = 'error';
                         this.familyValidationMessage = 'No se pudo validar el código. Intenta nuevamente.';
-                        this.familyValidatedStudent = null;
-                        this.familyValidatedSchool = '';
+                        this.familyStudents = [];
                     } finally {
                         this.validatingFamilyCode = false;
                     }

@@ -21,6 +21,9 @@ use App\Http\Controllers\Teacher\HubController;
 use App\Http\Controllers\Teacher\EvaluationController;
 use App\Http\Controllers\Teacher\CommunicationController;
 use App\Http\Controllers\Teacher\AssessmentStrategyController;
+use App\Http\Controllers\Teacher\AttendanceController;
+use App\Http\Controllers\Teacher\StudentController as TeacherStudentController;
+use App\Http\Controllers\Director\AttendanceDashboardController;
 use App\Http\Controllers\RepresentanteController;
 use App\Http\Controllers\SmartPlannerController;
 use Illuminate\Http\Request;
@@ -49,7 +52,8 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/onboarding', [OnboardingController::class, 'show'])->name('onboarding');
         // RUTA TEMPORAL: Para ver el diseño sin loguearse
     Route::get('/debug-onboarding', function () {
-        return view('onboarding.wizard');
+        $preselectedRole = '';
+        return view('onboarding.wizard', compact('preselectedRole'));
     })->name('debug.onboarding');
     Route::post('/api/validate-school-code', [OnboardingController::class, 'validateSchoolCode'])
         ->name('api.validate-school-code');
@@ -99,6 +103,9 @@ Route::middleware(['auth'])->group(function () {
                 Route::get('/report-card/{student}/pdf', [DirectorReportCardController::class, 'pdf'])
                     ->name('report-card.pdf');
 
+                Route::get('/attendance', [AttendanceDashboardController::class, 'index'])
+                    ->name('attendance');
+
                 // Feedback y co-edición del director
                 Route::post('/activities/{id}/feedback', [ActivityFeedbackController::class, 'storeFeedback'])
                     ->name('activities.feedback');
@@ -117,6 +124,8 @@ Route::middleware(['auth'])->group(function () {
             ->group(function () {
                 Route::get('/dashboard', [RepresentanteController::class, 'index'])
                     ->name('dashboard');
+                Route::post('/ausencias', [RepresentanteController::class, 'storeAbsence'])
+                    ->name('ausencias.store');
             });
 
         // Generador de IA y Herramientas
@@ -199,6 +208,13 @@ Route::middleware(['auth'])->group(function () {
                 Route::post('/threads/{thread}/quick-replies', [CommunicationController::class, 'suggestQuickReply'])->name('messages.quick_replies');
             });
 
+            Route::prefix('teacher/attendance')->name('teacher.attendance.')->group(function () {
+                Route::get('/', [AttendanceController::class, 'index'])->name('index');
+                Route::get('/roster', [AttendanceController::class, 'roster'])->name('roster');
+                Route::post('/', [AttendanceController::class, 'save'])->name('save');
+                Route::get('/students/{student}', [AttendanceController::class, 'history'])->name('history');
+            });
+
             Route::prefix('teacher/assessment')->name('teacher.assessment.')->group(function () {
                 Route::get('/', [AssessmentStrategyController::class, 'index'])->name('index');
                 Route::post('/plans/generate', [AssessmentStrategyController::class, 'generatePlan'])->name('plans.generate');
@@ -234,28 +250,10 @@ Route::middleware(['auth'])->group(function () {
                 return response()->json(['success' => true, 'lesson_template' => $data['lesson_template']]);
             })->name('teacher.api.lesson-template');
 
-            // API: Crear estudiante
-            Route::post('/teacher/api/students', function (Illuminate\Http\Request $request) {
-                $name = $request->validate(['name' => 'required|string|max:255'])['name'];
-                abort_unless($request->user()?->role === 'profesor' && $request->user()?->colegio_id, 403);
-                $student = \App\Models\Student::create([
-                    'teacher_id' => \Auth::id(),
-                    'colegio_id' => \Auth::user()->colegio_id,
-                    'name' => $name,
-                    'grade' => \Auth::user()->grade ?? '1',
-                    'section' => \Auth::user()->section ?? 'A',
-                ]);
-                foreach (\App\Models\User::where('role', 'director')->where('colegio_id', \Auth::user()->colegio_id)->get(['id']) as $director) {
-                    \App\Models\Notification::create([
-                        'user_id' => $director->id,
-                        'colegio_id' => \Auth::user()->colegio_id,
-                        'title' => 'Nuevo alumno registrado',
-                        'message' => "El/La docente " . (\Auth::user()->name ?? '—') . " registró a {$student->name}.",
-                        'link' => route('director.students'),
-                    ]);
-                }
-                return response()->json(['success' => true, 'student' => $student]);
-            })->name('api.students.create');
+            // API: Alumnos / matrícula
+            Route::get('/teacher/api/school-students', [TeacherStudentController::class, 'search'])->name('teacher.api.school-students');
+            Route::post('/teacher/api/students', [TeacherStudentController::class, 'store'])->name('api.students.create');
+            Route::post('/teacher/api/courses/{course}/enroll', [TeacherStudentController::class, 'enrollExisting'])->name('teacher.api.courses.enroll');
 
             // Gestión Académica — Notas
             Route::prefix('teacher/grades')->name('teacher.grades.')->group(function () {
