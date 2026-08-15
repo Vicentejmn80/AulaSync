@@ -85,6 +85,26 @@
             </div>
         </header>
 
+        <section class="mb-8 rounded-[2rem] border border-white/10 bg-white/[.045] p-5 shadow-2xl shadow-black/20 backdrop-blur-2xl">
+            <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                    <p class="text-[11px] font-bold uppercase tracking-[.25em] text-cyan-300">Acceso institucional</p>
+                    <h2 class="mt-1 text-xl font-black text-white">Código del colegio</h2>
+                    <p class="mt-1 max-w-xl text-sm text-slate-400">
+                        Compártelo con docentes y representantes. Está protegido con el PIN del colegio: se revela 20 segundos y vuelve a bloquearse.
+                        PIN por defecto: los <strong class="text-slate-200">últimos 4 dígitos</strong> del código de invitación.
+                    </p>
+                </div>
+                <div class="flex flex-col items-start gap-3 sm:items-end">
+                    @if($colegio)
+                        <x-code-reveal type="school" label="Código de colegio" />
+                    @else
+                        <p class="text-sm text-slate-500">Sin colegio vinculado.</p>
+                    @endif
+                </div>
+            </div>
+        </section>
+
         <section class="mb-8 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             @foreach($kpis as $kpi)
                 <article class="glass-card group rounded-[1.75rem] p-5 transition duration-300 hover:-translate-y-1">

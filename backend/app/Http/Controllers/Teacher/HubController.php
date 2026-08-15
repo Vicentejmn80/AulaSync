@@ -220,7 +220,7 @@ class HubController extends Controller
 
         $course->load([
             'students' => fn ($q) => $q
-                ->select('students.id', 'students.name')
+                ->select('students.id', 'students.name', 'students.grade', 'students.section', 'students.document_id', 'students.family_code')
                 ->orderBy('students.name'),
             'activities' => fn ($q) => $q
                 ->with('tareas')
@@ -241,6 +241,10 @@ class HubController extends Controller
             'students'     => $course->students->map(fn ($s) => [
                 'id'   => $s->id,
                 'name' => $s->name,
+                'grade' => $s->grade,
+                'section' => $s->section,
+                'document_id' => $s->document_id,
+                'has_family_code' => filled($s->family_code),
                 'avg_score' => $s->pivot?->promedio_acumulado !== null
                     ? round((float) $s->pivot->promedio_acumulado, 2)
                     : ($s->pivot?->nota_actual !== null ? round((float) $s->pivot->nota_actual, 2) : null),
@@ -279,59 +283,91 @@ class HubController extends Controller
 
     public function apiCourseStudentGrades(Course $course, Student $student): JsonResponse
     {
-        if ($course->teacher_id !== auth()->id()) {
-            return response()->json(['error' => 'No autorizado.'], 403);
+        try {
+            if ((int) $course->teacher_id !== (int) auth()->id()) {
+                return response()->json(['success' => false, 'error' => 'No autorizado.'], 403);
+            }
+
+            $isEnrolled = $course->students()->where('students.id', $student->id)->exists();
+            if (! $isEnrolled) {
+                return response()->json(['success' => false, 'error' => 'El alumno no pertenece a este curso.'], 404);
+            }
+
+            $activities = $course->activities()
+                ->where(function ($q) {
+                    $q->whereNull('type')->orWhere('type', '!=', 'clase');
+                })
+                ->orderBy('due_date')
+                ->get(['id', 'title', 'type', 'weight_percentage', 'due_date', 'max_score']);
+
+            $gradesByActivity = Grade::where('student_id', $student->id)
+                ->whereIn('activity_id', $activities->pluck('id')->filter()->values())
+                ->get(['activity_id', 'score'])
+                ->keyBy('activity_id');
+
+            $rows = $activities->map(function ($activity) use ($gradesByActivity) {
+                $grade = $gradesByActivity->get($activity->id);
+                $score = $grade?->score !== null ? (float) $grade->score : null;
+                $weight = (float) ($activity->weight_percentage ?? 0);
+                $contribution = $score !== null ? round(($score * $weight) / 100, 2) : null;
+                $dueDate = $activity->due_date;
+
+                return [
+                    'activity_id' => $activity->id,
+                    'title' => $activity->title,
+                    'type' => $activity->type,
+                    'weight_percentage' => $weight,
+                    'score' => $score,
+                    'due_date' => $dueDate instanceof \Carbon\Carbon
+                        ? $dueDate->format('Y-m-d')
+                        : ($dueDate ? (string) $dueDate : null),
+                    'contribution' => $contribution,
+                ];
+            })->values();
+
+            $accumulated = round((float) $rows->sum(fn ($row) => $row['contribution'] ?? 0), 2);
+            $pivot = $course->students()->where('students.id', $student->id)->first()?->pivot;
+
+            return response()->json([
+                'success' => true,
+                'student' => [
+                    'id' => $student->id,
+                    'name' => $student->name,
+                    'grade' => $student->grade,
+                    'section' => $student->section,
+                    'document_id' => $student->document_id,
+                    'has_family_code' => filled($student->family_code),
+                    'promedio_acumulado' => $accumulated,
+                    'nota_actual' => $pivot?->nota_actual !== null ? (float) $pivot->nota_actual : null,
+                ],
+                'course' => [
+                    'id' => $course->id,
+                    'name' => $course->subject_name.' · '.$course->grade.($course->section ? ' / '.$course->section : ''),
+                ],
+                'activities' => $rows,
+            ]);
+        } catch (\Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'success' => false,
+                'error' => 'No se pudo cargar el detalle del alumno.',
+                'student' => [
+                    'id' => $student->id,
+                    'name' => $student->name,
+                    'grade' => $student->grade,
+                    'section' => $student->section,
+                    'document_id' => $student->document_id ?? null,
+                    'has_family_code' => filled($student->family_code ?? null),
+                    'promedio_acumulado' => null,
+                ],
+                'course' => [
+                    'id' => $course->id,
+                    'name' => trim(($course->subject_name ?? '').' · '.($course->grade ?? '')),
+                ],
+                'activities' => [],
+            ], 500);
         }
-
-        $isEnrolled = $course->students()->where('students.id', $student->id)->exists();
-        if (! $isEnrolled) {
-            return response()->json(['error' => 'El alumno no pertenece a este curso.'], 404);
-        }
-
-        $activities = $course->activities()
-            ->where('type', '!=', 'clase')
-            ->orderBy('due_date')
-            ->get(['id', 'title', 'type', 'weight_percentage', 'due_date', 'max_score']);
-
-        $gradesByActivity = Grade::where('student_id', $student->id)
-            ->whereIn('activity_id', $activities->pluck('id'))
-            ->get(['activity_id', 'score'])
-            ->keyBy('activity_id');
-
-        $rows = $activities->map(function ($activity) use ($gradesByActivity) {
-            $grade = $gradesByActivity->get($activity->id);
-            $score = $grade?->score !== null ? (float) $grade->score : null;
-            $weight = (float) ($activity->weight_percentage ?? 0);
-            $contribution = $score !== null ? round(($score * $weight) / 100, 2) : null;
-
-            return [
-                'activity_id' => $activity->id,
-                'title' => $activity->title,
-                'type' => $activity->type,
-                'weight_percentage' => $weight,
-                'score' => $score,
-                'due_date' => $activity->due_date instanceof \Carbon\Carbon
-                    ? $activity->due_date->format('Y-m-d')
-                    : (string) $activity->due_date,
-                'contribution' => $contribution,
-            ];
-        })->values();
-
-        $accumulated = round((float) $rows->sum(fn ($row) => $row['contribution'] ?? 0), 2);
-
-        return response()->json([
-            'success' => true,
-            'student' => [
-                'id' => $student->id,
-                'name' => $student->name,
-                'promedio_acumulado' => $accumulated,
-            ],
-            'course' => [
-                'id' => $course->id,
-                'name' => $course->subject_name . ' · ' . $course->grade . ($course->section ? ' / ' . $course->section : ''),
-            ],
-            'activities' => $rows,
-        ]);
     }
 
     // ─── Canvas API — Calendar ───────────────────────────────────────────────
