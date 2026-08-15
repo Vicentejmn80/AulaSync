@@ -42,7 +42,7 @@
     </table>
 
     <footer style="margin-top: 24px; font-size: 11px; color: #475569;">
-        Documento generado automáticamente por Aulasync.
+        Documento generado automáticamente por AulaSync.
     </footer>
 </body>
 </html>

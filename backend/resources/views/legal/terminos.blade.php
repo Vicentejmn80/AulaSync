@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Términos de Servicio · AULASYNC</title>
+    <title>Términos de Servicio · AulaSync</title>
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     <style>
         :root { --ink: #12143A; --indigo: #2D3494; --border: #E4E3F0; --bg: #FBFAF7; --text: #52577C; }
@@ -24,14 +24,14 @@
         <span class="badge">Documento en preparación</span>
         <h1>Términos de Servicio</h1>
         <p>
-            AULASYNC se encuentra en etapa de programa piloto. Estamos formalizando los términos de servicio
+            AulaSync se encuentra en etapa de programa piloto. Estamos formalizando los términos de servicio
             definitivos junto con los primeros colegios aliados. Este documento se actualizará antes del
             lanzamiento comercial.
         </p>
 
         <h2>Uso de la plataforma</h2>
         <p>
-            El acceso a AULASYNC está destinado a colegios, docentes, representantes y estudiantes autorizados
+            El acceso a AulaSync está destinado a colegios, docentes, representantes y estudiantes autorizados
             por una institución educativa participante en el programa piloto.
         </p>
 

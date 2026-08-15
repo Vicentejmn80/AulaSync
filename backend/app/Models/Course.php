@@ -36,6 +36,11 @@ class Course extends Model
         return $this->hasMany(Activity::class);
     }
 
+    public function evaluations(): HasMany
+    {
+        return $this->hasMany(Evaluation::class);
+    }
+
     public function subjects(): HasMany
     {
         return $this->hasMany(Subject::class);

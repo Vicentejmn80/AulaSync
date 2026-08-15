@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     
-    <title>{{ config('app.name', 'Aulasync') }} - Dashboard</title>
+    <title>{{ config('app.name', 'AulaSync') }} - Dashboard</title>
     
     <!-- Font Awesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -81,7 +81,7 @@
     <nav class="navbar navbar-expand-lg navbar-light bg-white py-3 shadow-sm sticky-top">
         <div class="container">
             <a class="navbar-brand" href="{{ route('dashboard') }}">
-                <i class="fas fa-robot me-2"></i>Aulasync
+                <i class="fas fa-robot me-2"></i>AulaSync
             </a>
             
             <div class="ms-auto d-flex align-items-center">
@@ -124,7 +124,7 @@
     <!-- Footer -->
     <footer class="bg-white py-4 mt-5 border-top">
         <div class="container text-center">
-            <p class="mb-0 text-muted text-xs">© {{ date('Y') }} Aulasync. Todos los derechos reservados.</p>
+            <p class="mb-0 text-muted text-xs">© {{ date('Y') }} AulaSync. Todos los derechos reservados.</p>
         </div>
     </footer>
 

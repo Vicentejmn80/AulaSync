@@ -18,6 +18,7 @@ use App\Http\Controllers\Director\ActivityFeedbackController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\AICommandHandlerController;
 use App\Http\Controllers\Teacher\HubController;
+use App\Http\Controllers\Teacher\EvaluationController;
 use App\Http\Controllers\RepresentanteController;
 use App\Http\Controllers\SmartPlannerController;
 use Illuminate\Http\Request;
@@ -29,6 +30,9 @@ Route::get('/', function () {
 
 Route::post('/solicitar-demo', [App\Http\Controllers\DemoRequestController::class, 'store'])
     ->name('demo.request');
+
+Route::get('/e/{token}', [EvaluationController::class, 'take'])->name('evaluations.take');
+Route::post('/e/{token}', [EvaluationController::class, 'submitTake'])->name('evaluations.take.submit');
 
 Route::view('/privacidad', 'legal.privacidad')->name('legal.privacidad');
 Route::view('/terminos', 'legal.terminos')->name('legal.terminos');
@@ -170,6 +174,18 @@ Route::middleware(['auth'])->group(function () {
             });
 
             // --- PLANIFICADOR MANUAL (CORREGIDO) ---
+            Route::prefix('teacher/evaluations')->name('teacher.evaluations.')->group(function () {
+                Route::get('/', [EvaluationController::class, 'index'])->name('index');
+                Route::post('/generate', [EvaluationController::class, 'generate'])->name('generate');
+                Route::post('/', [EvaluationController::class, 'store'])->name('store');
+                Route::patch('/{evaluation}', [EvaluationController::class, 'update'])->name('update');
+                Route::delete('/{evaluation}', [EvaluationController::class, 'destroy'])->name('destroy');
+                Route::post('/{evaluation}/duplicate', [EvaluationController::class, 'duplicate'])->name('duplicate');
+                Route::get('/{evaluation}/print', [EvaluationController::class, 'print'])->name('print');
+                Route::post('/{evaluation}/regenerate-question', [EvaluationController::class, 'regenerateQuestion'])->name('regenerate');
+                Route::post('/attempts/{attempt}/grade-ai', [EvaluationController::class, 'gradeOpen'])->name('grade_ai');
+            });
+
             Route::prefix('teacher/planner')->name('teacher.planner.')->group(function () {
                 // El {id?} permite que el Hub entre a /manual sin error
                 Route::get('/manual/{id?}', [ManualPlanningController::class, 'show'])->name('manual'); 

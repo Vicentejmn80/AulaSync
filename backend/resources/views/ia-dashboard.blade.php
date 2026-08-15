@@ -83,7 +83,7 @@
             <aside class="dashboard-sidebar">
                 <div class="dashboard-sidebar-header">
                     <a href="{{ route('dashboard') }}" class="dashboard-sidebar-brand">
-                        <i class="fas fa-robot me-2"></i>Aulasync
+                        <i class="fas fa-robot me-2"></i>AulaSync
                     </a>
                 </div>
                 @if(($role ?? 'profesor') === 'director')

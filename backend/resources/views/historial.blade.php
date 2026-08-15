@@ -240,7 +240,7 @@
         <div class="hist-banner">
             <div>
                 <h1>📚 Historial de Planificaciones</h1>
-                <p>Gestiona, visualiza y mejora tus clases guardadas bajo el sello Aulasync.</p>
+                <p>Gestiona, visualiza y mejora tus clases guardadas bajo el sello AulaSync.</p>
             </div>
             <div class="flex flex-wrap gap-3">
                 <a href="{{ route('teacher.hub') }}" class="btn-hist-secondary">
