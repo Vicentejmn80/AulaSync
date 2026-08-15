@@ -183,6 +183,7 @@ Route::middleware(['auth'])->group(function () {
                 Route::post('/{evaluation}/duplicate', [EvaluationController::class, 'duplicate'])->name('duplicate');
                 Route::get('/{evaluation}/print', [EvaluationController::class, 'print'])->name('print');
                 Route::post('/{evaluation}/regenerate-question', [EvaluationController::class, 'regenerateQuestion'])->name('regenerate');
+                Route::post('/regenerate-draft-question', [EvaluationController::class, 'regenerateDraftQuestion'])->name('regenerate_draft');
                 Route::post('/attempts/{attempt}/grade-ai', [EvaluationController::class, 'gradeOpen'])->name('grade_ai');
             });
 

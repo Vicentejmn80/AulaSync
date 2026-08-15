@@ -7,19 +7,29 @@
     <title>{{ $evaluation->title }}</title>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
     <style>
-        body { font-family: Inter, system-ui, sans-serif; background: #F8F6F0; color: #2D2D3A; margin: 0; }
-        .box { max-width: 720px; margin: 32px auto; background: #fff; padding: 28px; border-radius: 20px; box-shadow: 0 10px 28px rgba(0,0,0,.06); }
-        h1 { margin-top: 0; }
-        .q { margin: 18px 0; }
-        input, textarea { width: 100%; box-sizing: border-box; padding: 10px; border-radius: 10px; border: 1px solid #E8E6F0; }
-        button { background: #6C63FF; color: #fff; border: 0; border-radius: 999px; padding: 10px 16px; font-weight: 800; cursor: pointer; }
-        .ok { color: #159A79; font-weight: 700; }
+        body { font-family: Inter, system-ui, sans-serif; background: radial-gradient(circle at top right, rgba(108,99,255,.2), transparent 30%), #F4F6FA; color: #1E293B; margin: 0; }
+        .box { max-width: 860px; margin: 24px auto; background: rgba(255,255,255,.95); padding: 28px; border-radius: 24px; box-shadow: 0 14px 36px rgba(15,23,42,.1); border: 1px solid rgba(99,102,241,.18); }
+        h1 { margin-top: 0; margin-bottom: 8px; font-size: 30px; }
+        .lead { color: #475569; margin-bottom: 10px; }
+        .meta { display:flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
+        .pill { background: #EEF2FF; color: #4338CA; border-radius: 999px; padding: 5px 10px; font-size: 12px; font-weight: 700; }
+        .q { margin: 18px 0; border: 1px solid #E2E8F0; border-radius: 14px; padding: 14px; background: #fff; }
+        input, textarea { width: 100%; box-sizing: border-box; padding: 10px; border-radius: 10px; border: 1px solid #CBD5E1; }
+        button { background: #4F46E5; color: #fff; border: 0; border-radius: 999px; padding: 11px 18px; font-weight: 800; cursor: pointer; }
+        button:disabled { opacity: .6; cursor:not-allowed; }
+        .ok { color: #0F766E; font-weight: 700; }
+        .err { color: #B45309; font-weight: 700; }
     </style>
 </head>
 <body>
 <div class="box" x-data="takeApp()" x-cloak>
     <h1>{{ $evaluation->title }}</h1>
-    <p>{{ $evaluation->instructions }}</p>
+    <p class="lead">{{ $evaluation->instructions }}</p>
+    <div class="meta">
+        <span class="pill">Evaluación digital</span>
+        <span class="pill">{{ $evaluation->questions->count() }} preguntas</span>
+        <span class="pill">{{ $evaluation->total_points }} puntos</span>
+    </div>
     <template x-if="!done">
         <form @submit.prevent="submit()">
             <label>Tu nombre</label>
@@ -30,7 +40,7 @@
                     @if(in_array($question->type, ['multiple_choice', 'true_false']) && is_array($question->options))
                         @foreach($question->options as $option)
                             <label style="display:block;margin-top:6px;">
-                                <input type="radio" name="q{{ $question->id }}" value="{{ $option }}" @change="answers[{{ $question->id }}] = '{{ addslashes($option) }}'" style="width:auto">
+                                <input type="radio" name="q{{ $question->id }}" value="{{ $option }}" @change="answers[{{ $question->id }}] = '{{ addslashes($option) }}'" style="width:auto;margin-right:6px;">
                                 {{ $option }}
                             </label>
                         @endforeach
@@ -39,10 +49,11 @@
                     @endif
                 </div>
             @endforeach
-            <button type="submit">Enviar</button>
+            <button type="submit" :disabled="sending"><span x-text="sending ? 'Enviando...' : 'Enviar evaluación'"></span></button>
         </form>
     </template>
     <p class="ok" x-show="done" x-text="result"></p>
+    <p class="err" x-show="error" x-text="error"></p>
 </div>
 <script>
 function takeApp() {
@@ -51,19 +62,30 @@ function takeApp() {
         answers: {},
         done: false,
         result: '',
+        error: '',
+        sending: false,
         async submit() {
-            const res = await fetch('{{ route('evaluations.take.submit', $evaluation->public_token) }}', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
-                    'Accept': 'application/json',
-                },
-                body: JSON.stringify({ student_name: this.name, answers: this.answers }),
-            });
-            const data = await res.json();
-            this.done = true;
-            this.result = data.success ? `Enviado. Puntaje automático: ${data.score}/${data.total}` : 'No se pudo enviar.';
+            this.error = '';
+            this.sending = true;
+            try {
+                const res = await fetch('{{ route('evaluations.take.submit', $evaluation->public_token) }}', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+                        'Accept': 'application/json',
+                    },
+                    body: JSON.stringify({ student_name: this.name, answers: this.answers }),
+                });
+                const data = await res.json();
+                this.done = true;
+                this.result = data.success ? `Tu evaluación fue enviada correctamente. Puntaje automático: ${data.score}/${data.total}` : 'No se pudo enviar.';
+                if (!data.success) this.error = data.error || 'Hubo un problema al enviar.';
+            } catch (e) {
+                this.error = 'Error de red. Intenta nuevamente.';
+            } finally {
+                this.sending = false;
+            }
         }
     };
 }

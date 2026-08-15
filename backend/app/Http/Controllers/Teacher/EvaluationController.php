@@ -83,14 +83,23 @@ class EvaluationController extends Controller
 
         $count = $data['question_count'] ?? 10;
         $mix = $data['question_mix'] ?? 'mixto';
-        $system = 'Eres un experto en evaluación educativa. Responde SOLO JSON válido, sin markdown. '
-            . 'Estructura: {"title":"","instructions":"","questions":[{"type":"multiple_choice|true_false|open|completion","text":"","options":[],"correct_answer":"","points":1}],"rubric":{"total_points":0,"passing_score":0}}. '
-            . 'Si type no es multiple_choice o true_false, options puede ser [].';
+        $context = $this->teacherContext();
+        $system = 'Eres un experto en evaluación educativa de alta calidad para colegios latinoamericanos. '
+            . 'Responde SOLO JSON válido, sin markdown. '
+            . 'Estructura exacta: {"title":"","instructions":"","questions":[{"type":"multiple_choice|true_false|open|completion","text":"","options":[],"correct_answer":"","points":1,"topic":""}],"rubric":{"total_points":0,"passing_score":0}}. '
+            . 'Redacción profesional, clara y sin ambigüedades. '
+            . 'Si type no es multiple_choice o true_false, options debe ser [].';
+
+        $modeGuide = $data['mode'] === 'physical'
+            ? 'Modo físico: redacta preguntas con formato apto para impresión, espacios de respuesta claros y lenguaje formal de hoja de examen.'
+            : 'Modo digital: redacta preguntas con instrucciones claras para responder en plataforma, priorizando precisión y legibilidad.';
 
         $user = "Crea una evaluación modo {$data['mode']}. "
+            . "Contexto: {$context}. "
             . "Tema: " . ($data['topic'] ?: 'según la descripción') . ". "
             . "Dificultad: " . ($data['difficulty'] ?: 'intermedio') . ". "
             . "Tipo de preguntas: {$mix}. Número: {$count}. "
+            . "{$modeGuide} "
             . "Descripción del profesor: {$data['prompt']}";
 
         try {
@@ -307,6 +316,68 @@ class EvaluationController extends Controller
         }
     }
 
+    public function regenerateDraftQuestion(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'mode' => 'required|in:digital,physical',
+            'topic' => 'nullable|string|max:255',
+            'difficulty' => 'nullable|in:basico,intermedio,avanzado',
+            'question' => 'required|array',
+            'question.type' => 'required|string',
+            'question.text' => 'required|string|min:5',
+            'question.options' => 'nullable|array',
+            'question.correct_answer' => 'nullable|string',
+            'instruction' => 'nullable|string|max:400',
+        ]);
+
+        $apiKey = config('services.openai.key');
+        if (empty($apiKey)) {
+            return response()->json(['success' => false, 'error' => 'OPENAI_API_KEY no está configurada.'], 200);
+        }
+
+        $context = $this->teacherContext();
+        $question = $data['question'];
+        $instruction = $data['instruction'] ?: 'Mejora claridad, nivel pedagógico y calidad de redacción sin cambiar el tema.';
+
+        $prompt = "Contexto: {$context}\n"
+            . "Modo: {$data['mode']}\n"
+            . 'Tema: ' . ($data['topic'] ?: 'General') . "\n"
+            . 'Dificultad: ' . ($data['difficulty'] ?: 'intermedio') . "\n"
+            . "Pregunta actual (tipo {$question['type']}): {$question['text']}\n"
+            . 'Opciones actuales: ' . json_encode($question['options'] ?? [], JSON_UNESCAPED_UNICODE) . "\n"
+            . 'Respuesta esperada actual: ' . ($question['correct_answer'] ?? 'N/A') . "\n"
+            . "Instrucción del docente: {$instruction}\n"
+            . 'Devuelve una versión mejorada, profesional y lista para usar.';
+
+        try {
+            $response = Http::withToken($apiKey)
+                ->timeout(45)
+                ->post('https://api.openai.com/v1/chat/completions', [
+                    'model' => 'gpt-4o-mini',
+                    'temperature' => 0.4,
+                    'response_format' => ['type' => 'json_object'],
+                    'messages' => [
+                        ['role' => 'system', 'content' => 'Responde solo JSON: {"type":"","text":"","options":[],"correct_answer":"","points":1,"topic":""}'],
+                        ['role' => 'user', 'content' => $prompt],
+                    ],
+                ]);
+
+            if (! $response->successful()) {
+                return response()->json(['success' => false, 'error' => 'La IA no pudo mejorar la pregunta.'], 200);
+            }
+
+            $payload = json_decode((string) data_get($response->json(), 'choices.0.message.content', '{}'), true);
+            if (! is_array($payload) || empty($payload['text'])) {
+                return response()->json(['success' => false, 'error' => 'La IA devolvió una pregunta inválida.'], 200);
+            }
+
+            return response()->json(['success' => true, 'question' => $payload]);
+        } catch (\Throwable $e) {
+            Log::error('Evaluation draft regenerate exception: ' . $e->getMessage());
+            return response()->json(['success' => false, 'error' => 'Error al regenerar la pregunta con IA.'], 200);
+        }
+    }
+
     public function gradeOpen(Request $request, EvaluationAttempt $attempt): JsonResponse
     {
         $evaluation = $attempt->evaluation;
@@ -422,5 +493,14 @@ class EvaluationController extends Controller
             ->pluck('score');
 
         return $scores->isNotEmpty() ? round((float) $scores->avg(), 1) : null;
+    }
+
+    private function teacherContext(): string
+    {
+        $teacher = auth()->user();
+        $institution = $teacher?->settings?->nombre_institucion ?: 'Institución educativa';
+        $teacherName = $teacher?->name ?: 'Docente';
+
+        return "Institución: {$institution}. Docente: {$teacherName}.";
     }
 }
