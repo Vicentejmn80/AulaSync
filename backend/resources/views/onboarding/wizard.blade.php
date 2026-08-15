@@ -5,7 +5,7 @@
             <i class="fa-solid fa-moon" id="themeToggleIcon"></i>
         </button>
         <div class="container">
-            <div class="onboarding-card mx-auto animate__animated animate__fadeIn" x-data="onboardingWizard()">
+            <div class="onboarding-card mx-auto animate__animated animate__fadeIn" x-data="onboardingWizard">
                 <div class="text-center mb-4">
                     <p class="onboarding-kicker mb-2">AulaSync</p>
                     <h1 class="onboarding-title mb-2">Configura tu asistente inteligente</h1>
@@ -608,7 +608,6 @@
     @endpush
 
     @push('scripts')
-    <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
     <script>
         (function () {
             const btn = document.getElementById('themeToggleBtn');
@@ -625,8 +624,8 @@
             });
         })();
 
-        function onboardingWizard() {
-            return {
+        document.addEventListener('alpine:init', () => {
+            Alpine.data('onboardingWizard', () => ({
                 step: @json($preselectedRole ? 2 : 1),
                 role: @json($preselectedRole ?? ''),
                 teacherPath: @json(($preselectedRole ?? '') === 'profesor' ? 'code' : ''),
@@ -936,7 +935,7 @@
                             return;
                         }
 
-        $this->familyStudents = payload.students || (payload.student ? [payload.student] : []);
+                        this.familyStudents = payload.students || (payload.student ? [payload.student] : []);
                         this.selectedStudentIds = this.familyStudents.map(s => String(s.id));
                         this.familyValidatedStudent = this.familyStudents[0] || null;
                         this.familyValidatedSchool = payload.school?.name || this.validatedSchoolName;
@@ -953,8 +952,8 @@
                         this.validatingFamilyCode = false;
                     }
                 },
-            };
-        }
+            }));
+        });
     </script>
     @endpush
 </x-onboarding-layout>
