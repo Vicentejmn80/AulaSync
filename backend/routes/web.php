@@ -25,6 +25,7 @@ use App\Http\Controllers\Teacher\AssessmentStrategyController;
 use App\Http\Controllers\Teacher\AttendanceController;
 use App\Http\Controllers\Teacher\StudentController as TeacherStudentController;
 use App\Http\Controllers\Director\AttendanceDashboardController;
+use App\Http\Controllers\Director\AcademicPeriodController as DirectorAcademicPeriodController;
 use App\Http\Controllers\RepresentanteController;
 use App\Http\Controllers\SmartPlannerController;
 use Illuminate\Http\Request;
@@ -113,6 +114,32 @@ Route::middleware(['auth'])->group(function () {
                 Route::get('/attendance', [AttendanceDashboardController::class, 'index'])
                     ->name('attendance');
 
+                // Períodos académicos y boletas inteligentes
+                Route::get('/periodos', [DirectorAcademicPeriodController::class, 'index'])
+                    ->name('periodos');
+                Route::get('/api/periods', [DirectorAcademicPeriodController::class, 'apiPeriods'])
+                    ->name('api.periods');
+                Route::post('/api/periods', [DirectorAcademicPeriodController::class, 'storePeriod'])
+                    ->name('api.periods.store');
+                Route::put('/api/periods/{period}', [DirectorAcademicPeriodController::class, 'updatePeriod'])
+                    ->name('api.periods.update');
+                Route::get('/api/periods/{period}/grades-summary', [DirectorAcademicPeriodController::class, 'gradesSummary'])
+                    ->name('api.periods.grades');
+                Route::post('/api/periods/{period}/generate', [DirectorAcademicPeriodController::class, 'generate'])
+                    ->name('api.periods.generate');
+                Route::post('/api/periods/{period}/publish', [DirectorAcademicPeriodController::class, 'publish'])
+                    ->name('api.periods.publish');
+                Route::get('/api/periods/{period}/cards', [DirectorAcademicPeriodController::class, 'listCards'])
+                    ->name('api.periods.cards');
+                Route::get('/api/periods/{period}/export-pdf', [DirectorAcademicPeriodController::class, 'pdfBulk'])
+                    ->name('api.periods.pdf.bulk');
+                Route::get('/api/report-cards/{card}', [DirectorAcademicPeriodController::class, 'getCard'])
+                    ->name('api.report-cards.show');
+                Route::put('/api/report-cards/{card}', [DirectorAcademicPeriodController::class, 'updateCard'])
+                    ->name('api.report-cards.update');
+                Route::get('/api/report-cards/{card}/pdf', [DirectorAcademicPeriodController::class, 'pdfCard'])
+                    ->name('api.report-cards.pdf');
+
                 // Feedback y co-edición del director
                 Route::post('/activities/{id}/feedback', [ActivityFeedbackController::class, 'storeFeedback'])
                     ->name('activities.feedback');
@@ -149,6 +176,7 @@ Route::middleware(['auth'])->group(function () {
                 Route::get('/api/notificaciones', [RepresentanteController::class, 'notifications'])->name('api.notificaciones');
                 Route::post('/api/notificaciones/leer', [RepresentanteController::class, 'markNotificationsRead'])->name('api.notificaciones.leer');
                 Route::post('/api/perfil', [RepresentanteController::class, 'updateProfile'])->name('api.perfil');
+                Route::get('/api/{estudiante}/boletas-oficiales', [RepresentanteController::class, 'boletasOficiales'])->name('api.boletas');
                 Route::get('/boletin/{estudiante}', [RepresentanteController::class, 'boletin'])->name('boletin');
                 Route::get('/api/{estudiante}/boletin', [RepresentanteController::class, 'boletinPreview'])->name('api.boletin');
                 Route::get('/constancia/{estudiante}', [RepresentanteController::class, 'constancia'])->name('constancia');

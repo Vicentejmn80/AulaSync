@@ -75,8 +75,11 @@
             </div>
 
             <div class="flex flex-wrap items-center gap-3">
+                <a href="{{ route('director.periodos') }}" class="rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-white/10">
+                    <i class="fa-solid fa-file-invoice mr-2 text-cyan-300"></i>Boletas
+                </a>
                 <a href="{{ route('director.boletines') }}" class="rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-white/10">
-                    <i class="fa-solid fa-file-lines mr-2 text-cyan-300"></i>Boletines
+                    <i class="fa-solid fa-file-lines mr-2 text-violet-300"></i>Ver notas
                 </a>
                 <a href="{{ route('director.attendance') }}" class="rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-white/10">
                     <i class="fa-solid fa-clipboard-user mr-2 text-cyan-300"></i>Asistencia
@@ -355,9 +358,9 @@
                    class="rounded-xl border border-white/10 px-4 py-2 text-sm font-semibold text-slate-300 transition hover:bg-white/10">
                     <i class="fa-regular fa-eye mr-2"></i>Ver todas las planificaciones
                 </a>
-                <a href="{{ route('director.boletines') }}"
+                <a href="{{ route('director.periodos') }}"
                    class="rounded-xl border border-white/10 px-4 py-2 text-sm font-semibold text-slate-300 transition hover:bg-white/10">
-                    <i class="fa-regular fa-file-lines mr-2"></i>Generar boleta de calificaciones
+                    <i class="fa-solid fa-file-invoice mr-2"></i>Boletas inteligentes
                 </a>
             </div>
         </section>
@@ -463,9 +466,9 @@
                    class="rounded-xl border border-white/10 px-4 py-2 text-sm font-semibold text-slate-300 transition hover:bg-white/10">
                     <i class="fa-regular fa-eye mr-2"></i>Ver plantel completo
                 </a>
-                <a href="{{ route('director.boletines') }}"
+                <a href="{{ route('director.periodos') }}"
                    class="rounded-xl border border-white/10 px-4 py-2 text-sm font-semibold text-slate-300 transition hover:bg-white/10">
-                    <i class="fa-regular fa-file-lines mr-2"></i>Boletas
+                    <i class="fa-solid fa-file-invoice mr-2"></i>Boletas
                 </a>
                 <a href="{{ route('director.attendance') }}"
                    class="rounded-xl border border-white/10 px-4 py-2 text-sm font-semibold text-slate-300 transition hover:bg-white/10">
