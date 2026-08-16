@@ -12,6 +12,7 @@ class Evaluation extends Model
     protected $fillable = [
         'teacher_id',
         'course_id',
+        'activity_id',
         'colegio_id',
         'title',
         'description',
@@ -60,6 +61,11 @@ class Evaluation extends Model
     public function course(): BelongsTo
     {
         return $this->belongsTo(Course::class);
+    }
+
+    public function activity(): BelongsTo
+    {
+        return $this->belongsTo(Activity::class);
     }
 
     public function questions(): HasMany

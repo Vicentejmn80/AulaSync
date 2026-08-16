@@ -246,6 +246,8 @@ Route::middleware(['auth'])->group(function () {
                 Route::patch('/{evaluation}', [EvaluationController::class, 'update'])->name('update');
                 Route::delete('/{evaluation}', [EvaluationController::class, 'destroy'])->name('destroy');
                 Route::post('/{evaluation}/duplicate', [EvaluationController::class, 'duplicate'])->name('duplicate');
+                Route::get('/{evaluation}/roster', [EvaluationController::class, 'roster'])->name('roster');
+                Route::post('/{evaluation}/grades', [EvaluationController::class, 'saveGrades'])->name('grades');
                 Route::get('/{evaluation}/print', [EvaluationController::class, 'print'])->name('print');
                 Route::post('/{evaluation}/regenerate-question', [EvaluationController::class, 'regenerateQuestion'])->name('regenerate');
                 Route::post('/regenerate-draft-question', [EvaluationController::class, 'regenerateDraftQuestion'])->name('regenerate_draft');

@@ -7,6 +7,7 @@ use App\Models\Course;
 use App\Models\Evaluation;
 use App\Models\EvaluationAttempt;
 use App\Models\EvaluationQuestion;
+use App\Services\EvaluationSyncService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
@@ -15,14 +16,33 @@ use Illuminate\View\View;
 
 class EvaluationController extends Controller
 {
+    public function __construct(private EvaluationSyncService $sync)
+    {
+    }
+
     public function index(): View
     {
         $teacher = auth()->user();
         $evaluations = Evaluation::where('teacher_id', $teacher->id)
-            ->with(['course:id,subject_name,grade,section', 'questions'])
+            ->with(['course:id,subject_name,grade,section', 'questions', 'activity:id,title,max_score,weight_percentage,due_date'])
             ->withCount('attempts')
             ->latest()
             ->get();
+
+        foreach ($evaluations as $evaluation) {
+            if (! $evaluation->activity_id && $evaluation->course_id) {
+                try {
+                    $this->sync->ensureActivityMirror($evaluation, $teacher);
+                } catch (\Throwable $e) {
+                    Log::warning('Could not mirror evaluation activity', [
+                        'evaluation_id' => $evaluation->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+        }
+
+        $evaluations = $evaluations->fresh(['course:id,subject_name,grade,section', 'questions', 'activity:id,title,max_score,weight_percentage,due_date']);
 
         $pendingAttempts = EvaluationAttempt::whereHas('evaluation', fn ($q) => $q->where('teacher_id', $teacher->id))
             ->where(function ($q) {
@@ -167,36 +187,15 @@ class EvaluationController extends Controller
             abort_unless(Course::where('id', $data['course_id'])->where('teacher_id', $teacher->id)->exists(), 403);
         }
 
-        $questions = $data['questions'];
-        $total = collect($questions)->sum(fn ($q) => (int) ($q['points'] ?? 1));
-
-        $evaluation = Evaluation::create([
-            'teacher_id' => $teacher->id,
-            'course_id' => $data['course_id'] ?? null,
-            'colegio_id' => $teacher->colegio_id,
-            'title' => $data['title'],
-            'description' => $data['description'] ?? null,
-            'topic' => $data['topic'] ?? null,
-            'mode' => $data['mode'],
-            'status' => $data['status'] ?? 'draft',
-            'difficulty' => $data['difficulty'] ?? null,
-            'question_mix' => $data['question_mix'] ?? null,
-            'question_count' => count($questions),
+        $evaluation = $this->sync->persist($teacher, array_merge($data, [
             'generated_by_ai' => (bool) ($data['generated_by_ai'] ?? false),
-            'instructions' => $data['instructions'] ?? null,
-            'scheduled_at' => $data['scheduled_at'] ?? null,
-            'total_points' => $total,
-            'passing_score' => (int) data_get($data, 'rubric.passing_score', max(1, (int) floor($total * 0.6))),
-            'rubric' => $data['rubric'] ?? ['total_points' => $total, 'passing_score' => max(1, (int) floor($total * 0.6))],
-            'physical_format' => $data['physical_format'] ?? ['paper_size' => 'A4', 'orientation' => 'portrait', 'font_size' => 12, 'include_qr' => true],
-            'large_print' => (bool) ($data['large_print'] ?? false),
-        ]);
-
-        $this->syncQuestions($evaluation, $questions);
+            'add_to_plan' => true,
+            'weight_percentage' => 20,
+        ]));
 
         return response()->json([
             'success' => true,
-            'evaluation' => $evaluation->fresh(['questions', 'course']),
+            'evaluation' => $evaluation,
         ]);
     }
 
@@ -228,33 +227,88 @@ class EvaluationController extends Controller
         }
 
         $evaluation->update($data);
+        $this->sync->ensureActivityMirror($evaluation->fresh(), auth()->user());
 
-        return response()->json(['success' => true, 'evaluation' => $evaluation->fresh(['questions', 'course'])]);
+        return response()->json(['success' => true, 'evaluation' => $evaluation->fresh(['questions', 'course', 'activity'])]);
     }
 
     public function destroy(Evaluation $evaluation): JsonResponse
     {
         $this->authorizeTeacher($evaluation);
-        $evaluation->delete();
+        $this->sync->delete($evaluation);
         return response()->json(['success' => true]);
     }
 
     public function duplicate(Evaluation $evaluation): JsonResponse
     {
         $this->authorizeTeacher($evaluation);
-        $copy = $evaluation->replicate();
-        $copy->title = $evaluation->title . ' (copia)';
-        $copy->status = 'draft';
-        $copy->public_token = null;
-        $copy->save();
+        $copy = $this->sync->persist(auth()->user(), [
+            'title' => $evaluation->title.' (copia)',
+            'description' => $evaluation->description,
+            'topic' => $evaluation->topic,
+            'course_id' => $evaluation->course_id,
+            'mode' => $evaluation->mode,
+            'status' => 'draft',
+            'difficulty' => $evaluation->difficulty,
+            'question_mix' => $evaluation->question_mix,
+            'instructions' => $evaluation->instructions,
+            'scheduled_at' => $evaluation->scheduled_at,
+            'generated_by_ai' => $evaluation->generated_by_ai,
+            'large_print' => $evaluation->large_print,
+            'physical_format' => $evaluation->physical_format,
+            'rubric' => $evaluation->rubric,
+            'questions' => $evaluation->questions->map(fn ($q) => [
+                'type' => $q->type,
+                'text' => $q->text,
+                'options' => $q->options,
+                'correct_answer' => $q->correct_answer,
+                'points' => $q->points,
+                'topic' => $q->topic,
+            ])->all(),
+            'add_to_plan' => true,
+            'weight_percentage' => $evaluation->activity?->weight_percentage ?? 20,
+        ]);
 
-        foreach ($evaluation->questions as $question) {
-            $clone = $question->replicate();
-            $clone->evaluation_id = $copy->id;
-            $clone->save();
-        }
+        return response()->json(['success' => true, 'evaluation' => $copy]);
+    }
 
-        return response()->json(['success' => true, 'evaluation' => $copy->fresh(['questions', 'course'])]);
+    public function roster(Evaluation $evaluation): JsonResponse
+    {
+        $this->authorizeTeacher($evaluation);
+        $roster = $this->sync->roster($evaluation->fresh(['course', 'activity']));
+
+        return response()->json([
+            'success' => true,
+            'evaluation' => [
+                'id' => $evaluation->id,
+                'title' => $evaluation->title,
+                'activity_id' => $evaluation->activity_id,
+                'max_score' => $evaluation->activity?->max_score ?? $evaluation->total_points,
+                'total_points' => $evaluation->total_points,
+                'course' => $evaluation->course?->only(['id', 'subject_name', 'grade', 'section']),
+            ],
+            'students' => $roster,
+        ]);
+    }
+
+    public function saveGrades(Request $request, Evaluation $evaluation): JsonResponse
+    {
+        $this->authorizeTeacher($evaluation);
+        $data = $request->validate([
+            'grades' => 'required|array|min:1',
+            'grades.*.student_id' => 'required|integer',
+            'grades.*.score' => 'nullable|numeric|min:0',
+            'grades.*.feedback' => 'nullable|string|max:1000',
+        ]);
+
+        $result = $this->sync->saveGrades($evaluation, auth()->user(), $data['grades']);
+
+        return response()->json([
+            'success' => true,
+            'saved' => $result['saved'],
+            'activity_id' => $result['activity_id'],
+            'message' => "{$result['saved']} notas guardadas. Ya cuentan para el acumulado y las boletas.",
+        ]);
     }
 
     public function print(Evaluation $evaluation): View
