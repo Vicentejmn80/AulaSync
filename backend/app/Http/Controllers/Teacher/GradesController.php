@@ -8,6 +8,7 @@ use App\Models\Grade;
 use App\Models\Notification;
 use App\Models\User;
 use App\Services\GradeProcessingService;
+use App\Services\StudentGradeAccumulationService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Http\JsonResponse;
@@ -18,7 +19,10 @@ use Illuminate\Support\Facades\Log;
 
 class GradesController extends Controller
 {
-    public function __construct(private GradeProcessingService $gradeService) {}
+    public function __construct(
+        private GradeProcessingService $gradeService,
+        private StudentGradeAccumulationService $accumulation,
+    ) {}
 
     /**
      * List activities for the authenticated teacher.
@@ -123,7 +127,7 @@ class GradesController extends Controller
 
         if ($request->wantsJson()) {
             $studentId = $data['grades'][0]['student_id'] ?? null;
-            $acumulated = $this->updateCourseStudentAccumulated($activity->course_id, $studentId);
+            $acumulated = $this->accumulation->updateForStudent((int) $activity->course_id, (int) $studentId);
 
             return response()->json([
                 'success' => true,
@@ -244,7 +248,7 @@ class GradesController extends Controller
 
         $gradedCount = Grade::where('activity_id', $activity->id)->count();
         $totalStudents = $course->students()->count();
-        $accumulated = $this->updateCourseStudentAccumulated(
+        $accumulated = $this->accumulation->updateForStudent(
             courseId: (int) $course->id,
             studentId: (int) $data['student_id']
         );
@@ -309,33 +313,6 @@ class GradesController extends Controller
             'activity_id' => $activity->id,
             'published_count' => $totalGrades,
         ]);
-    }
-
-    private function updateCourseStudentAccumulated(int $courseId, int $studentId): float
-    {
-        if (! $this->supportsCourseStudentAccumulated()) {
-            return 0.0;
-        }
-
-        $weighted = Grade::query()
-            ->join('activities', 'grades.activity_id', '=', 'activities.id')
-            ->where('activities.course_id', $courseId)
-            ->where('grades.student_id', $studentId)
-            ->where('activities.type', '!=', 'clase')
-            ->selectRaw('COALESCE(SUM((grades.score * activities.weight_percentage) / 100.0), 0) as weighted_total')
-            ->value('weighted_total');
-
-        $weighted = round((float) $weighted, 2);
-
-        DB::table('course_student')
-            ->where('course_id', $courseId)
-            ->where('student_id', $studentId)
-            ->update([
-                'nota_actual' => $weighted,
-                'promedio_acumulado' => $weighted,
-            ]);
-
-        return $weighted;
     }
 
     private function supportsGradeWorkflow(): bool

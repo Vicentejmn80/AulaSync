@@ -167,13 +167,21 @@
 
     .theme-fab {
         position: fixed;
-        top: 18px;
-        right: 18px;
-        z-index: 140;
+        bottom: 96px;
+        right: 24px;
+        top: auto;
+        z-index: 120;
         display: flex;
         flex-direction: column;
         align-items: flex-end;
         gap: 8px;
+    }
+
+    @media (max-width: 767px) {
+        .theme-fab {
+            bottom: 84px;
+            right: 16px;
+        }
     }
 
     .theme-fab-btn {

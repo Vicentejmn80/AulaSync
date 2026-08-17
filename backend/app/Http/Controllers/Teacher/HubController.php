@@ -10,6 +10,7 @@ use App\Models\Course;
 use App\Models\Grade;
 use App\Models\Notification;
 use App\Models\Student;
+use App\Services\StudentGradeAccumulationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -19,6 +20,10 @@ use Illuminate\View\View;
 
 class HubController extends Controller
 {
+    public function __construct(private StudentGradeAccumulationService $accumulation)
+    {
+    }
+
     // ─── Main hub view ───────────────────────────────────────────────────────
 
     public function index(Request $request): View
@@ -230,6 +235,7 @@ class HubController extends Controller
         ]);
 
         $totalStudents = $course->students->count();
+        $accumulatedByStudent = $this->accumulation->calculateForCourse((int) $course->id);
 
         return response()->json([
             'id'           => $course->id,
@@ -238,19 +244,25 @@ class HubController extends Controller
             'section'      => $course->section,
             'school_year'  => $course->school_year,
             'name'         => $course->subject_name . ' · ' . $course->grade . ($course->section ? ' / ' . $course->section : ''),
-            'students'     => $course->students->map(fn ($s) => [
-                'id'   => $s->id,
-                'name' => $s->name,
-                'grade' => $s->grade,
-                'section' => $s->section,
-                'document_id' => $s->document_id,
-                'has_family_code' => filled($s->family_code),
-                'avg_score' => $s->pivot?->promedio_acumulado !== null
+            'students'     => $course->students->map(function ($s) use ($accumulatedByStudent) {
+                $liveAccumulated = $accumulatedByStudent[$s->id] ?? null;
+                $pivotAccumulated = $s->pivot?->promedio_acumulado !== null
                     ? round((float) $s->pivot->promedio_acumulado, 2)
-                    : ($s->pivot?->nota_actual !== null ? round((float) $s->pivot->nota_actual, 2) : null),
-                'nota_actual' => $s->pivot?->nota_actual !== null ? round((float) $s->pivot->nota_actual, 2) : null,
-                'promedio_acumulado' => $s->pivot?->promedio_acumulado !== null ? round((float) $s->pivot->promedio_acumulado, 2) : null,
-            ]),
+                    : ($s->pivot?->nota_actual !== null ? round((float) $s->pivot->nota_actual, 2) : null);
+                $accumulated = $liveAccumulated ?? $pivotAccumulated;
+
+                return [
+                    'id'   => $s->id,
+                    'name' => $s->name,
+                    'grade' => $s->grade,
+                    'section' => $s->section,
+                    'document_id' => $s->document_id,
+                    'has_family_code' => filled($s->family_code),
+                    'avg_score' => $accumulated,
+                    'nota_actual' => $accumulated,
+                    'promedio_acumulado' => $accumulated,
+                ];
+            }),
             'activities'   => $course->activities->map(fn ($a) => [
                 'id'                => $a->id,
                 'type'              => $a->type ?? 'actividad',

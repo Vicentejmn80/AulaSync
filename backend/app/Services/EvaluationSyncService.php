@@ -20,6 +20,10 @@ use Illuminate\Support\Str;
 
 class EvaluationSyncService
 {
+    public function __construct(private StudentGradeAccumulationService $accumulation)
+    {
+    }
+
     /**
      * Persist an evaluation, its questions, a gradeable activity mirror, and optionally the plan item.
      */
@@ -231,6 +235,7 @@ class EvaluationSyncService
 
         $saved = 0;
         $max = (float) ($activity->max_score ?: 20);
+        $updatedStudentIds = [];
 
         foreach ($rows as $row) {
             $studentId = (int) ($row['student_id'] ?? 0);
@@ -266,6 +271,13 @@ class EvaluationSyncService
             );
 
             $saved++;
+            $updatedStudentIds[] = $studentId;
+        }
+
+        if ($evaluation->course_id && ! empty($updatedStudentIds)) {
+            foreach (array_unique($updatedStudentIds) as $studentId) {
+                $this->accumulation->updateForStudent((int) $evaluation->course_id, (int) $studentId);
+            }
         }
 
         return ['saved' => $saved, 'activity_id' => $activity->id];

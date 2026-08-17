@@ -29,7 +29,7 @@
             --nova-shadow: 0 10px 28px rgba(28, 20, 60, 0.07);
             --text-primary: #1C1233;
             --text-secondary: #5B4B72;
-            --text-tertiary: #9D89B6;
+            --text-tertiary: #75648F;
             --text-inverse: #FFFFFF;
             --bg-primary: #F4F6FB;
             --bg-secondary: #FFFFFF;
@@ -61,8 +61,8 @@
             --nova-glass-border: rgba(196, 85, 237, 0.18);
             --nova-shadow: 0 25px 50px -12px rgba(59, 7, 100, 0.5);
             --text-primary: rgba(255, 255, 255, 0.92);
-            --text-secondary: rgba(255, 255, 255, 0.58);
-            --text-tertiary: rgba(255, 255, 255, 0.3);
+            --text-secondary: rgba(255, 255, 255, 0.78);
+            --text-tertiary: rgba(255, 255, 255, 0.52);
             --text-inverse: #0C1225;
             --bg-primary: #0F0A1F;
             --bg-secondary: #170F2E;
@@ -2301,13 +2301,33 @@
 
         .activity-date {
             font-size: 10px;
-            color: var(--text-tertiary);
+            color: var(--text-secondary);
+            font-weight: 600;
         }
 
         .activity-weight {
             font-size: 11px;
             font-weight: 700;
-            color: var(--nova-cyan);
+            color: var(--nova-violet);
+        }
+
+        .acum-badge {
+            display: inline-flex;
+            align-items: center;
+            border-radius: 999px;
+            border: 1px solid color-mix(in srgb, var(--nova-violet) 28%, transparent);
+            background: color-mix(in srgb, var(--nova-violet) 10%, var(--bg-card));
+            padding: 4px 10px;
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--nova-violet);
+            white-space: nowrap;
+        }
+
+        html.dark .acum-badge {
+            border-color: color-mix(in srgb, var(--nova-cyan) 35%, transparent);
+            background: color-mix(in srgb, var(--nova-cyan) 12%, transparent);
+            color: #f0abfc;
         }
 
         .activity-chevron {
@@ -2687,9 +2707,12 @@
         /* ── Calendario ─────────────────────────────────────── */
         .calendar-header {
             display: flex;
-            align-items: center;
+            align-items: flex-start;
             justify-content: space-between;
             margin-bottom: 25px;
+            gap: 16px;
+            flex-wrap: wrap;
+            padding-right: 0;
         }
 
         .calendar-title h2 {
@@ -2708,6 +2731,20 @@
             display: flex;
             align-items: center;
             gap: 8px;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+            max-width: 100%;
+        }
+
+        .calendar-nav-btn--wide {
+            width: auto;
+            min-width: 40px;
+            height: 40px;
+            padding: 0 14px;
+            gap: 8px;
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--text-primary);
         }
 
         .calendar-nav-btn {
@@ -2985,18 +3022,31 @@
         .modal-section-label {
             font-size: 12px;
             font-weight: 600;
-            color: #64748b;
+            color: var(--text-secondary);
             text-transform: uppercase;
             letter-spacing: 0.08em;
+        }
+
+        .modal-prose {
+            color: var(--text-secondary);
+            font-size: 13.5px;
+            line-height: 1.7;
+            margin-bottom: 0;
+        }
+
+        .modal-prose-empty {
+            color: var(--text-tertiary);
+            font-style: italic;
+            margin: 0;
         }
 
         .modal-ai-lab {
             margin: 0 28px 16px;
             border-radius: 16px;
-            border: 1px solid rgba(99,102,241,0.2);
-            background: rgba(15,23,42,0.6);
+            border: 1px solid color-mix(in srgb, var(--nova-violet) 22%, transparent);
+            background: color-mix(in srgb, var(--nova-violet) 6%, var(--bg-card));
             padding: 16px 18px;
-            box-shadow: 0 0 24px rgba(99,102,241,0.08);
+            box-shadow: var(--nova-shadow);
         }
 
         .modal-ai-lab-header {
@@ -3042,11 +3092,11 @@
         .modal-ai-btn {
             padding: 8px 14px;
             border-radius: 8px;
-            border: 1px solid rgba(255,255,255,0.06);
-            background: rgba(255,255,255,0.02);
+            border: 1px solid var(--nova-glass-border);
+            background: var(--bg-secondary);
             color: var(--text-primary);
             font-size: 12px;
-            font-weight: 500;
+            font-weight: 600;
             cursor: pointer;
             transition: all 0.15s ease;
             display: inline-flex;
@@ -3057,8 +3107,8 @@
         }
 
         .modal-ai-btn:hover {
-            background: rgba(108,74,224,0.08);
-            border-color: rgba(108,74,224,0.3);
+            background: color-mix(in srgb, var(--nova-violet) 10%, var(--bg-secondary));
+            border-color: color-mix(in srgb, var(--nova-violet) 35%, transparent);
         }
 
         .modal-footer-btn {
@@ -3134,9 +3184,9 @@
             position: relative;
             width: min(720px, 100%);
             height: 100%;
-            background: linear-gradient(160deg, rgba(18, 18, 43, 0.95), rgba(9, 12, 28, 0.96));
+            background: var(--bg-card);
             border-left: 1px solid var(--nova-glass-border);
-            box-shadow: -20px 0 60px rgba(0, 0, 0, 0.45);
+            box-shadow: -20px 0 60px rgba(0, 0, 0, 0.25);
             display: flex;
             flex-direction: column;
             animation: slide-up 0.25s ease;
@@ -3148,7 +3198,7 @@
             align-items: flex-start;
             padding: 22px 24px 16px;
             border-bottom: 1px solid var(--nova-glass-border);
-            background: rgba(108, 74, 224, 0.09);
+            background: color-mix(in srgb, var(--nova-violet) 8%, var(--bg-card));
         }
 
         .grades-slideover-eyebrow {
@@ -3189,8 +3239,12 @@
             border-radius: 999px;
             padding: 7px 12px;
             font-size: 12px;
-            color: var(--text-secondary);
-            background: rgba(255, 255, 255, 0.02);
+            color: var(--text-primary);
+            background: var(--bg-secondary);
+        }
+
+        .meta-chip strong {
+            color: var(--nova-violet);
         }
 
         .grades-slideover-body {
@@ -3203,7 +3257,7 @@
             border: 1px solid var(--nova-glass-border);
             border-radius: 18px;
             overflow: hidden;
-            background: rgba(255, 255, 255, 0.02);
+            background: var(--bg-secondary);
         }
 
         .grades-table {
@@ -3214,18 +3268,19 @@
         .grades-table th,
         .grades-table td {
             padding: 12px 14px;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+            border-bottom: 1px solid var(--nova-glass-border);
             color: var(--text-primary);
             font-size: 13px;
             text-align: left;
         }
 
         .grades-table th {
-            background: rgba(108, 74, 224, 0.12);
+            background: color-mix(in srgb, var(--nova-violet) 10%, var(--bg-secondary));
             color: var(--text-secondary);
             font-size: 11px;
             text-transform: uppercase;
             letter-spacing: 0.07em;
+            font-weight: 700;
         }
 
         .grades-table tbody tr:last-child td {
@@ -3242,15 +3297,21 @@
             width: 32px;
             height: 32px;
             border-radius: 999px;
-            border: 1px solid rgba(59, 201, 219, 0.35);
-            color: #9be7f5;
-            background: linear-gradient(130deg, rgba(108, 74, 224, 0.35), rgba(59, 201, 219, 0.22));
+            border: 1px solid color-mix(in srgb, var(--nova-violet) 35%, transparent);
+            color: var(--nova-violet);
+            background: color-mix(in srgb, var(--nova-violet) 12%, var(--bg-secondary));
             display: flex;
             align-items: center;
             justify-content: center;
             font-size: 11px;
             font-weight: 700;
             text-transform: uppercase;
+        }
+
+        html.dark .student-avatar {
+            color: #c4b5fd;
+            border-color: color-mix(in srgb, var(--nova-cyan) 35%, transparent);
+            background: color-mix(in srgb, var(--nova-violet) 22%, transparent);
         }
 
         .grade-input-wrap {
@@ -3885,7 +3946,7 @@
                                             class="student-name text-left transition-colors duration-150 hover:text-cyan-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60 rounded-md">
                                             <span x-text="s.name"></span>
                                         </button>
-                                        <span class="inline-flex items-center rounded-full border border-cyan-400/30 bg-cyan-500/10 px-2.5 py-1 text-[11px] font-semibold text-cyan-200"
+                                        <span class="acum-badge"
                                             x-text="`Acum: ${s.promedio_acumulado ?? s.nota_actual ?? s.avg_score ?? '—'}`"></span>
                                     </div>
                                 </div>
@@ -4034,10 +4095,10 @@
                         <span class="calendar-stats">
                             <span x-text="calendarData?.total_activities ?? 0"></span> entregas
                         </span>
-                        <button type="button" class="calendar-nav-btn" title="Cambiar estilo de clase"
+                        <button type="button" class="calendar-nav-btn calendar-nav-btn--wide" title="Cambiar estilo de clase"
                                 @click="window.dispatchEvent(new CustomEvent('nova-lesson-template-picker'))">
                             <i class="fa-solid fa-palette"></i>
-                            <span style="font-size:12px;font-weight:700;">Estilo de clase</span>
+                            <span>Estilo de clase</span>
                         </button>
                     </div>
                 </div>
@@ -4172,12 +4233,12 @@
                 <div style="margin-bottom: 8px;">
                     <span class="modal-section-label">DESCRIPCIÓN</span>
                 </div>
-                <div class="markdown-body" style="color: #cbd5e1; font-size: 13.5px; line-height: 1.7; margin-bottom: 0;">
+                <div class="markdown-body modal-prose">
                     <template x-if="activityModal?.description">
                         <div x-html="renderMarkdown(activityModal.description)"></div>
                     </template>
                     <template x-if="!activityModal?.description">
-                        <p style="color: #94a3b8; font-style: italic; margin: 0;">Sin descripción.</p>
+                        <p class="modal-prose-empty">Sin descripción.</p>
                     </template>
                 </div>
             </div>
@@ -4435,8 +4496,8 @@
             </div>
 
             <div class="grades-slideover-body">
-                <div x-show="studentSlideover.student?.has_family_code" class="mb-4 rounded-2xl border border-white/10 bg-white/[.04] p-3">
-                    <p class="text-[11px] font-bold uppercase tracking-widest text-cyan-300 mb-2">Código familiar (representante)</p>
+                <div x-show="studentSlideover.student?.has_family_code" class="mb-4 rounded-2xl border p-3" style="border-color: var(--nova-glass-border); background: var(--bg-secondary);">
+                    <p class="text-[11px] font-bold uppercase tracking-widest mb-2" style="color: var(--nova-violet);">Código familiar (representante)</p>
                     <div x-show="!studentSlideover.familyUnlocked">
                         <button type="button" class="btn-secondary" @click="studentSlideover.showPin = true" style="font-size:12px;">
                             <i class="fa-solid fa-lock" style="margin-right:6px;"></i> Ver código con PIN
