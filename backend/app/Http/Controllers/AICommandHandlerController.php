@@ -616,14 +616,53 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
         }
 
         $today = now()->format('Y-m-d');
+        $screenContextArray = is_array($screenContext) ? $screenContext : [];
+        $hasPendingEvaluationDraft = session()->has('nova_pending_evaluation_draft');
 
-        if ($hasCreateEvaluationIntent) {
-            $evalArgs = $this->extractEvaluationArgsFromIntent($intentText, is_array($screenContext) ? $screenContext : [], $teacher);
+        if ($hasPendingEvaluationDraft && preg_match('/\b(cancela|cancelar|olvida|det[eé]n)\b/u', mb_strtolower($intentText))) {
+            session()->forget('nova_pending_evaluation_draft');
+
+            return $this->jsonOut([
+                'success' => true,
+                'status' => 'success',
+                'message' => 'Listo, cancelé la creación de la evaluación pendiente.',
+                'data' => [],
+            ]);
+        }
+
+        if ($hasCreateEvaluationIntent || $hasPendingEvaluationDraft) {
+            $baseDraft = session()->get('nova_pending_evaluation_draft', []);
+            $evalArgs = $this->mergeEvaluationDraft(
+                is_array($baseDraft) ? $baseDraft : [],
+                $this->extractEvaluationArgsFromIntent($intentText, $screenContextArray, $teacher),
+                $intentText
+            );
+
+            $missing = $this->missingEvaluationDraftFields($evalArgs);
+            if (! empty($missing)) {
+                session()->put('nova_pending_evaluation_draft', $evalArgs);
+
+                return $this->jsonOut([
+                    'success' => true,
+                    'status' => 'pending',
+                    'message' => $this->evaluationFollowupQuestion($missing[0], $evalArgs),
+                    'requires_followup' => true,
+                    'data' => [
+                        'pending_type' => 'create_evaluation',
+                        'missing' => $missing,
+                        'draft' => $evalArgs,
+                    ],
+                ]);
+            }
+
+            session()->forget('nova_pending_evaluation_draft');
+
             try {
                 $results = [DB::transaction(fn () => $this->doCreateEvaluation($evalArgs, $teacher->id))];
             } catch (\Throwable $e) {
                 Log::error('AICommandHandler local createEvaluation failed', [
                     'teacher_id' => $teacher->id,
+                    'args' => $evalArgs,
                     'error' => $e->getMessage(),
                 ]);
                 $results = [[
@@ -1423,23 +1462,23 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             $prompt = 'Evaluación del curso '.$course->subject_name;
         }
 
-        $mode = in_array(($args['mode'] ?? 'digital'), ['digital', 'physical'], true) ? $args['mode'] : 'digital';
+        $mode = in_array(($args['mode'] ?? 'digital'), ['digital', 'physical'], true) ? ($args['mode'] ?? 'digital') : 'digital';
         $difficulty = in_array(($args['difficulty'] ?? 'intermedio'), ['basico', 'intermedio', 'avanzado'], true)
-            ? $args['difficulty']
+            ? ($args['difficulty'] ?? 'intermedio')
             : 'intermedio';
         $mix = in_array(($args['question_mix'] ?? 'mixto'), ['mixto', 'multiple_choice', 'true_false', 'open', 'completion'], true)
-            ? $args['question_mix']
+            ? ($args['question_mix'] ?? 'mixto')
             : 'mixto';
         $count = max(3, min(20, (int) ($args['question_count'] ?? 8)));
         $status = in_array(($args['status'] ?? 'published'), ['draft', 'published', 'scheduled'], true)
-            ? $args['status']
+            ? ($args['status'] ?? 'published')
             : 'published';
         $addToPlan = array_key_exists('add_to_plan', $args)
             ? filter_var($args['add_to_plan'], FILTER_VALIDATE_BOOLEAN)
             : true;
         $weight = (float) ($args['weight_percentage'] ?? 20);
         $category = in_array(($args['category'] ?? 'summative'), ['formative', 'summative'], true)
-            ? $args['category']
+            ? ($args['category'] ?? 'summative')
             : 'summative';
         $topic = trim((string) ($args['topic'] ?? ''));
         $title = trim((string) ($args['title'] ?? '')) ?: ('Evaluación · '.($topic !== '' ? $topic : \Illuminate\Support\Str::limit($prompt, 40, '')));
@@ -3743,7 +3782,7 @@ MD;
         if (preg_match('/plan\s+de\s+evaluaci/u', $value)) {
             return false;
         }
-        $wantsCreate = (bool) preg_match('/\b(crea|crear|genera|generar|hazme|haz|hacer|arma|armar|prepara|preparar|diseña|diseñar|elabora|elaborar)\b/u', $value);
+        $wantsCreate = (bool) preg_match('/\b(crea|crear|cr[eé]ame|genera|generar|gen[eé]rame|hazme|haz|hacer|arma|armar|prepara|preparar|prep[aá]rame|diseña|diseñar|elabora|elaborar)\b/u', $value);
         $wantsExam = (bool) preg_match('/\b(examen|exámenes|examenes|prueba|pruebas|quiz|evaluaci[oó]n|evaluaciones)\b/u', $value);
 
         return $wantsCreate && $wantsExam;
@@ -3890,12 +3929,20 @@ MD;
         }
 
         $lower = mb_strtolower($intentText);
+        if (preg_match('/\b(f[ií]sica|física|imprimible|papel|impresa)\b/u', $lower)) {
+            $args['mode'] = 'physical';
+        } elseif (preg_match('/\b(digital|online|en l[ií]nea|virtual)\b/u', $lower)) {
+            $args['mode'] = 'digital';
+        }
+
         if (preg_match('/\bhoy\b/u', $lower)) {
             $args['due_date'] = now()->toDateString();
         } elseif (preg_match('/\bma[nñ]ana\b/u', $lower)) {
             $args['due_date'] = now()->addDay()->toDateString();
         } elseif (preg_match('/\b(\d{4}-\d{2}-\d{2})\b/', $intentText, $m)) {
             $args['due_date'] = $m[1];
+        } elseif ($parsedDate = $this->extractSingleDateFromText($intentText)) {
+            $args['due_date'] = $parsedDate;
         }
 
         if ((int) $args['course_id'] <= 0) {
@@ -3906,5 +3953,79 @@ MD;
         }
 
         return $args;
+    }
+
+    private function extractSingleDateFromText(string $text): ?string
+    {
+        if (! preg_match('/\b(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?\b/u', $text, $m)) {
+            return null;
+        }
+
+        $day = (int) $m[1];
+        $month = (int) $m[2];
+        $year = isset($m[3]) ? (int) $m[3] : (int) now()->format('Y');
+        if ($year < 100) {
+            $year += 2000;
+        }
+
+        try {
+            return Carbon::createFromDate($year, $month, $day)->toDateString();
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    private function mergeEvaluationDraft(array $baseDraft, array $incomingDraft, string $intentText): array
+    {
+        $draft = array_merge($baseDraft, array_filter($incomingDraft, function ($value) {
+            return $value !== null && $value !== '' && $value !== 0;
+        }));
+
+        if (empty($draft['prompt'])) {
+            $draft['prompt'] = trim($intentText);
+        }
+        if (empty($draft['topic'])) {
+            $draft['topic'] = Str::limit(trim($intentText), 120, '');
+        }
+
+        $draft['mode'] = in_array(($draft['mode'] ?? 'digital'), ['digital', 'physical'], true)
+            ? ($draft['mode'] ?? 'digital')
+            : 'digital';
+        $draft['weight_percentage'] = isset($draft['weight_percentage'])
+            ? (float) $draft['weight_percentage']
+            : null;
+
+        return $draft;
+    }
+
+    private function missingEvaluationDraftFields(array $draft): array
+    {
+        $missing = [];
+        if (((int) ($draft['course_id'] ?? 0)) <= 0) {
+            $missing[] = 'course';
+        }
+        if (empty($draft['due_date'])) {
+            $missing[] = 'date';
+        }
+        $weight = $draft['weight_percentage'] ?? null;
+        if (! is_numeric($weight) || (float) $weight <= 0 || (float) $weight > 100) {
+            $missing[] = 'weight';
+        }
+        if (empty($draft['mode']) || ! in_array($draft['mode'], ['digital', 'physical'], true)) {
+            $missing[] = 'mode';
+        }
+
+        return $missing;
+    }
+
+    private function evaluationFollowupQuestion(string $missingField, array $draft): string
+    {
+        return match ($missingField) {
+            'course' => 'Para crearla bien, ¿en qué curso la registramos? Puedes decirme materia y grado (ej: Matemáticas 1er grado).',
+            'date' => 'Perfecto. ¿Qué fecha tendrá la evaluación? (ej: 2026-08-25, hoy o mañana).',
+            'weight' => '¿Qué porcentaje/peso tendrá en la nota final? (ej: 25%).',
+            'mode' => '¿La quieres digital o física imprimible?',
+            default => 'Necesito un dato más para crear la evaluación. ¿Me lo compartes?',
+        };
     }
 }

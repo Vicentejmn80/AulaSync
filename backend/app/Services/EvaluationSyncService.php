@@ -74,6 +74,13 @@ class EvaluationSyncService
             $courseId = null;
         }
 
+        $mode = in_array(($payload['mode'] ?? 'digital'), ['digital', 'physical'], true)
+            ? ($payload['mode'] ?? 'digital')
+            : 'digital';
+        $status = in_array(($payload['status'] ?? 'draft'), ['draft', 'scheduled', 'published', 'graded'], true)
+            ? ($payload['status'] ?? 'draft')
+            : 'draft';
+
         $data = $this->onlyExistingColumns('evaluations', [
             'teacher_id' => $teacher->id,
             'course_id' => $courseId,
@@ -81,14 +88,12 @@ class EvaluationSyncService
             'title' => Str::limit(trim((string) ($payload['title'] ?? 'Evaluación')), 240, ''),
             'description' => $payload['description'] ?? $payload['prompt'] ?? null,
             'topic' => $payload['topic'] ?? null,
-            'mode' => in_array(($payload['mode'] ?? 'digital'), ['digital', 'physical'], true) ? $payload['mode'] : 'digital',
-            'status' => in_array(($payload['status'] ?? 'draft'), ['draft', 'scheduled', 'published', 'graded'], true)
-                ? $payload['status']
-                : 'draft',
+            'mode' => $mode,
+            'status' => $status,
             'difficulty' => $payload['difficulty'] ?? null,
             'question_mix' => $payload['question_mix'] ?? null,
             'question_count' => count($questions),
-            'generated_by_ai' => (bool) ($payload['generated_by_ai'] ?? false),
+            'generated_by_ai' => $this->booleanForDatabase((bool) ($payload['generated_by_ai'] ?? false)),
             'instructions' => $payload['instructions'] ?? null,
             'scheduled_at' => $scheduledAt,
             'total_points' => $total,
@@ -100,7 +105,7 @@ class EvaluationSyncService
                 'font_size' => 12,
                 'include_qr' => true,
             ],
-            'large_print' => (bool) ($payload['large_print'] ?? false),
+            'large_print' => $this->booleanForDatabase((bool) ($payload['large_print'] ?? false)),
         ]);
 
         /** @var Evaluation $evaluation */
@@ -355,12 +360,12 @@ class EvaluationSyncService
             EvaluationQuestion::create([
                 'evaluation_id' => $evaluation->id,
                 'sort_order' => $index,
-                'type' => $question['type'],
-                'text' => $question['text'],
-                'options' => $question['options'],
-                'correct_answer' => $question['correct_answer'],
-                'points' => $question['points'],
-                'topic' => $question['topic'],
+                'type' => $question['type'] ?? 'open',
+                'text' => (string) ($question['text'] ?? 'Pregunta'),
+                'options' => is_array($question['options'] ?? null) ? $question['options'] : [],
+                'correct_answer' => $question['correct_answer'] ?? null,
+                'points' => max(1, (int) ($question['points'] ?? 1)),
+                'topic' => $question['topic'] ?? null,
             ]);
         }
     }
@@ -483,5 +488,20 @@ class EvaluationSyncService
         } catch (\Throwable) {
             return now();
         }
+    }
+
+    private function booleanForDatabase(bool $value): bool|string
+    {
+        $driver = config('database.default');
+        if (is_string($driver)) {
+            $driver = config("database.connections.{$driver}.driver", $driver);
+        }
+
+        // PostgreSQL no acepta 0/1 enteros para columnas boolean.
+        if ($driver === 'pgsql') {
+            return $value ? 'true' : 'false';
+        }
+
+        return $value;
     }
 }
