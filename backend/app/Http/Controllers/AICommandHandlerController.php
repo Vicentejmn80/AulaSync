@@ -15,6 +15,8 @@ use App\Models\Student;
 use App\Models\Tarea;
 use App\Models\User;
 use App\Services\DirectorAlertService;
+use App\Services\StudentGradeAccumulationService;
+use App\Support\GradingScale;
 use App\Support\LessonTemplate;
 use Illuminate\Support\Carbon;
 use Illuminate\Http\JsonResponse;
@@ -31,6 +33,10 @@ class AICommandHandlerController extends Controller
 private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'deleteResource', 'deleteActivities'];
 
     private ?string $activeLessonTemplate = null;
+
+    public function __construct(private StudentGradeAccumulationService $accumulation)
+    {
+    }
 
     private function jsonOut(array $payload, int $status = 200): JsonResponse
     {
@@ -687,13 +693,14 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
         $courses = Course::where('teacher_id', $teacher->id)
             ->withCount('students')
             ->with(['students:id,name'])
-            ->get(['id', 'subject_name', 'grade']);
+            ->get(['id', 'subject_name', 'grade', 'grading_scale']);
         $coursesContext = "Cursos existentes del profesor (USA estos IDs exactos; NO crees cursos que ya existan en esta lista):\n"
             . ($courses->isEmpty()
                 ? '(sin cursos creados todavía)'
                 : $courses->map(function ($c) {
                     $names = $c->students->take(15)->pluck('name')->implode(', ');
-                    $line = "ID:{$c->id} · {$c->subject_name} · grado: " . ($c->grade ?: 's/grado') . " · {$c->students_count} alumno(s)";
+                    $scale = GradingScale::label($c->grading_scale ?? null);
+                    $line = "ID:{$c->id} · {$c->subject_name} · grado: " . ($c->grade ?: 's/grado') . " · escala: {$scale} · {$c->students_count} alumno(s)";
                     if ($names !== '') {
                         $line .= " → [{$names}]";
                     }
@@ -701,6 +708,12 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
                 })->join("\n"));
 
         $contextJson = $screenContext ? json_encode($screenContext, JSON_UNESCAPED_UNICODE) : '{}';
+        $activeGradingScale = $this->resolveActiveGradingScale($screenContext, $teacher->id);
+        $gradingScaleLine = 'Escala de calificación activa del curso en pantalla: '
+            . GradingScale::label($activeGradingScale)
+            . ' (notas válidas de 0 a '
+            . GradingScale::maxFor($activeGradingScale)
+            . '). Rechaza o ajusta notas fuera de ese rango.';
 
         $calendarMonth = isset($screenContext['month']) ? $screenContext['month'] : null;
         $calStart = Carbon::today();
@@ -740,7 +753,7 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             "",
             "MODO PODER DE DECISIÓN (estricto):",
             "- PRIORIDAD DE EJECUCIÓN: si el usuario dice «hazlo tú», «como consideres», «genera todo» o equivalente, usa valores por defecto razonables y llama createActivity inmediatamente.",
-            "- Defaults al crear actividades cuando falten datos secundarios: weight_percentage=10, max_score=20, due_date=fecha más cercana del contexto/calendario o hoy+1, type='clase' (o 'tarea' si el usuario pide tarea).",
+            "- Defaults al crear actividades cuando falten datos secundarios: weight_percentage=10, max_score=".GradingScale::maxFor($activeGradingScale).", due_date=fecha más cercana del contexto/calendario o hoy+1, type='clase' (o 'tarea' si el usuario pide tarea).",
             "- MEMORIA DE CONTEXTO: está PROHIBIDO volver a preguntar datos ya presentes en historial o contexto vivo. Si el usuario ya dijo «1er grado» y «sports», reutilízalos directamente.",
             "- UNA SOLA PREGUNTA: solo puedes hacer una pregunta a la vez. Si faltan 3 datos, pregunta solo el más crítico (normalmente course_id) y para los demás usa defaults.",
             "- CONCISIÓN EXTREMA: sin bienvenida larga ni explicaciones de proceso. 1–2 líneas máximo cuando no ejecutes herramienta.",
@@ -829,6 +842,8 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             "2. Cuando el usuario dé nombres de alumnos (ej: «ponle 15 a Jason y 20 a Vicente»), NO llames findStudent. Pasa directamente los nombres en setGradeBatch usando student_name. Ej: grades=[{student_name:'Jason', score:15}, {student_name:'Vicente', score:20}].",
             "3. La herramienta setGradeBatch resuelve student_name automáticamente. Solo usa findStudent si el nombre no se encuentra y necesitas depurar.",
             "4. Si encuentras la actividad en el calendario inyectado y el usuario dio nombres + notas, llama setGradeBatch DE INMEDIATO en el mismo turno, sin preguntar confirmación.",
+            "5. Valida cada nota contra la escala del curso (1-5, 1-10 o 1-20). Si el usuario pide una nota fuera de rango, explica el máximo permitido sin guardarla.",
+            $gradingScaleLine,
             "",
             "Fecha actual: $today.",
             "Cursos del profesor:",
@@ -3139,6 +3154,20 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
         $score = $args['score'];
         $feedback = $args['feedback'] ?? null;
 
+        $activity->loadMissing('course:id,grading_scale');
+        $scale = $activity->course?->grading_scale;
+        if (! GradingScale::isValidScore($scale, $score, (int) $activity->max_score)) {
+            $max = GradingScale::effectiveMax($scale, (int) $activity->max_score);
+
+            return [
+                'success'     => false,
+                'message'     => "La nota {$score} está fuera de la escala del curso (0–{$max}, ".GradingScale::label($scale).').',
+                'action_type' => 'grade',
+                'icon'        => '⚠️',
+            ];
+        }
+        $score = GradingScale::clampScore($scale, $score, (int) $activity->max_score);
+
         $grade = Grade::updateOrCreate(
             ['activity_id' => $activity->id, 'student_id' => $student->id],
             ['colegio_id' => $colegioId, 'score' => $score, 'status' => 'published', 'published_at' => now(), 'feedback_text' => $feedback]
@@ -3149,6 +3178,10 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
                 ['evaluation_id' => $activity->evaluation_id, 'student_id' => $student->id],
                 ['student_name' => $student->name, 'score' => $score, 'status' => 'graded', 'answers' => []]
             );
+        }
+
+        if ($activity->course_id) {
+            $this->accumulation->updateForStudent((int) $activity->course_id, (int) $student->id);
         }
 
         return [
@@ -3179,6 +3212,10 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             ];
         }
 
+        $activity->loadMissing('course:id,grading_scale');
+        $scale = $activity->course?->grading_scale;
+        $scaleMax = GradingScale::effectiveMax($scale, (int) $activity->max_score);
+
         $gradesInput = $args['grades'] ?? [];
         if (empty($gradesInput) || ! is_array($gradesInput)) {
             return [
@@ -3199,6 +3236,12 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             if ($score === null) {
                 continue;
             }
+            if (! GradingScale::isValidScore($scale, $score, (int) $activity->max_score)) {
+                $errName = $studentName ?? "ID {$studentId}";
+                $errors[] = "Nota {$score} fuera de rango (0–{$scaleMax}) para «{$errName}».";
+                continue;
+            }
+            $score = GradingScale::clampScore($scale, $score, (int) $activity->max_score);
             if ($studentId) {
                 $student = $this->resolveEnrolledStudent($activity, ['student_id' => $studentId], $teacherId, $colegioId);
             } elseif ($studentName) {
@@ -3223,6 +3266,9 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
                 );
             }
             $graded++;
+            if ($activity->course_id) {
+                $this->accumulation->updateForStudent((int) $activity->course_id, (int) $student->id);
+            }
         }
 
         $msg = "{$graded} calificaciones guardadas en «{$activity->title}».";
@@ -4027,5 +4073,27 @@ MD;
             'mode' => '¿La quieres digital o física imprimible?',
             default => 'Necesito un dato más para crear la evaluación. ¿Me lo compartes?',
         };
+    }
+
+    private function resolveActiveGradingScale(mixed $screenContext, int $teacherId): string
+    {
+        if (is_array($screenContext)) {
+            if (! empty($screenContext['grading_scale'])) {
+                return GradingScale::normalize((string) $screenContext['grading_scale']);
+            }
+            if (! empty($screenContext['id'])) {
+                $scale = Course::where('id', (int) $screenContext['id'])
+                    ->where('teacher_id', $teacherId)
+                    ->value('grading_scale');
+
+                if ($scale) {
+                    return GradingScale::normalize($scale);
+                }
+            }
+        }
+
+        $onlyCourse = Course::where('teacher_id', $teacherId)->value('grading_scale');
+
+        return GradingScale::normalize($onlyCourse);
     }
 }

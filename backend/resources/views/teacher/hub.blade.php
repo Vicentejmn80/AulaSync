@@ -3904,6 +3904,7 @@
                         <h1 x-text="courseData.subject_name"></h1>
                         <div class="course-detail-meta">
                             <span class="meta-badge" x-text="courseData.grade + (courseData.section ? ' / Sección ' + courseData.section : '')"></span>
+                            <span class="meta-badge" x-text="courseData.grading_scale_label || '1 al 20'"></span>
                             <span class="action-badge">
                                 <i class="fa-regular fa-calendar"></i>
                                 <span x-text="courseData.school_year ?? ''"></span>
@@ -3911,10 +3912,10 @@
                         </div>
                     </div>
                     <div style="display: flex; gap: 10px;">
-                        <a href="{{ route('teacher.courses.index') }}" class="btn-primary" style="padding: 10px 20px;">
+                        <button type="button" class="btn-primary" style="padding: 10px 20px;" @click="openCourseSettings()">
                             <i class="fa-solid fa-pen-to-square"></i>
                             Gestionar
-                        </a>
+                        </button>
                     </div>
                 </div>
 
@@ -3947,7 +3948,7 @@
                                             <span x-text="s.name"></span>
                                         </button>
                                         <span class="acum-badge"
-                                            x-text="`Acum: ${s.promedio_acumulado ?? s.nota_actual ?? s.avg_score ?? '—'}`"></span>
+                                            x-text="`Acum: ${formatAcum(s.promedio_acumulado ?? s.nota_actual ?? s.avg_score)}`"></span>
                                     </div>
                                 </div>
                             </template>
@@ -4095,10 +4096,10 @@
                         <span class="calendar-stats">
                             <span x-text="calendarData?.total_activities ?? 0"></span> entregas
                         </span>
-                        <button type="button" class="calendar-nav-btn calendar-nav-btn--wide" title="Cambiar estilo de clase"
+                        <button type="button" class="calendar-nav-btn calendar-nav-btn--wide" title="Cambiar modelo pedagógico de planificación"
                                 @click="window.dispatchEvent(new CustomEvent('nova-lesson-template-picker'))">
-                            <i class="fa-solid fa-palette"></i>
-                            <span>Estilo de clase</span>
+                            <i class="fa-solid fa-book-open"></i>
+                            <span>Modelo pedagógico</span>
                         </button>
                     </div>
                 </div>
@@ -4364,7 +4365,8 @@
             <div class="grades-slideover-meta">
                 <span class="meta-chip">
                     <i class="fa-solid fa-star"></i>
-                    Máx: <strong x-text="gradesSlideover.activity?.max_score ?? 20"></strong>
+                    Máx: <strong x-text="gradeMaxForActivity(gradesSlideover.activity)"></strong>
+                    <span style="opacity:.75;">(<span x-text="courseData?.grading_scale_label || '1 al 20'"></span>)</span>
                 </span>
                 <span class="meta-chip">
                     <i class="fa-solid fa-chart-line"></i>
@@ -4420,7 +4422,7 @@
                                             <div class="grade-input-wrap">
                                                 <input type="number"
                                                     class="grade-input"
-                                                    :max="gradesSlideover.activity?.max_score ?? 20"
+                                                    :max="gradeMaxForActivity(gradesSlideover.activity)"
                                                     min="0"
                                                     step="0.01"
                                                     x-model="student.score"
@@ -4482,7 +4484,7 @@
                 <span class="meta-chip">
                     <i class="fa-solid fa-chart-line"></i>
                     Promedio Acumulado:
-                    <strong x-text="studentSlideover.student?.promedio_acumulado ?? '—'"></strong>
+                    <strong x-text="formatAcum(studentSlideover.student?.promedio_acumulado)"></strong>
                 </span>
                 <span class="meta-chip" x-show="studentSlideover.student?.document_id">
                     <i class="fa-solid fa-id-card"></i>
@@ -4806,10 +4808,41 @@
         </div>
     </div>
 
+    <div x-show="showCourseSettingsModal" x-cloak class="modal-overlay" @click.self="showCourseSettingsModal = false" @keydown.escape.window="showCourseSettingsModal = false">
+        <div class="modal-nova" style="max-width: 480px;">
+            <div class="modal-header">
+                <h3>Gestionar curso</h3>
+                <button type="button" @click="showCourseSettingsModal = false" class="modal-close"><i class="fa-solid fa-times"></i></button>
+            </div>
+            <div class="modal-body">
+                <p style="font-size:13px;color:var(--text-secondary);margin-bottom:16px;">
+                    Configura la escala de calificación de <strong x-text="courseData?.subject_name"></strong>.
+                    Las notas ya guardadas no se modifican.
+                </p>
+                <label style="display:block;font-size:12px;font-weight:700;color:var(--text-secondary);margin-bottom:8px;">Escala de notas</label>
+                <select x-model="courseSettingsForm.grading_scale" style="width:100%;padding:12px 14px;border-radius:14px;border:1px solid var(--nova-glass-border);background:var(--bg-secondary);color:var(--text-primary);">
+                    <option value="1-5">1 al 5</option>
+                    <option value="1-10">1 al 10</option>
+                    <option value="1-20">1 al 20</option>
+                </select>
+                <p style="font-size:12px;color:var(--text-tertiary);margin-top:10px;line-height:1.5;">
+                    Afecta validaciones de nuevas calificaciones, el asistente IA y la visualización del acumulado.
+                </p>
+            </div>
+            <div class="modal-footer">
+                <a href="{{ route('teacher.courses.index') }}" class="btn-secondary" style="margin-right:auto;text-decoration:none;">Gestión avanzada</a>
+                <button type="button" class="btn-secondary" @click="showCourseSettingsModal = false">Cancelar</button>
+                <button type="button" class="btn-primary" @click="saveCourseGradingScale()" :disabled="courseSettingsSaving">
+                    <span x-show="!courseSettingsSaving">Guardar escala</span>
+                    <span x-show="courseSettingsSaving">Guardando…</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
 </div>
 
 {{-- AI Assistant bubble --}}
-@include('partials.theme-switcher')
 @include('components.ai-assistant-bubble')
 
 <script>
@@ -4891,6 +4924,9 @@ function teacherHub() {
         },
         showNewCourseModal: false,
         showEnrollModal: false,
+        showCourseSettingsModal: false,
+        courseSettingsSaving: false,
+        courseSettingsForm: { grading_scale: '1-20' },
         enrollTab: 'new',
         enrollSaving: false,
         enrollNotice: '',
@@ -5201,6 +5237,9 @@ function teacherHub() {
                     subject_name: this.courseData.subject_name,
                     grade:        this.courseData.grade,
                     section:      this.courseData.section,
+                    grading_scale: this.courseData.grading_scale,
+                    grading_scale_max: this.courseData.grading_scale_max,
+                    grading_scale_label: this.courseData.grading_scale_label,
                 };
                 this.setNovaContext(ctx);
 
@@ -5220,6 +5259,80 @@ function teacherHub() {
                 this.$nextTick(() => {
                     document.querySelector('#ai-assistant-root textarea')?.focus();
                 });
+            }
+        },
+
+        courseScaleMax() {
+            return Number(this.courseData?.grading_scale_max ?? 20);
+        },
+
+        formatAcum(value) {
+            if (value === null || value === undefined || value === '' || value === '—') {
+                return '—';
+            }
+            const num = Number(value);
+            if (Number.isNaN(num)) {
+                return '—';
+            }
+            return `${num.toFixed(1)} / ${this.courseScaleMax()}`;
+        },
+
+        gradeMaxForActivity(activity) {
+            const scaleMax = this.courseScaleMax();
+            const actMax = Number(activity?.max_score ?? scaleMax);
+            return Math.min(actMax, scaleMax);
+        },
+
+        openCourseSettings() {
+            this.courseSettingsForm.grading_scale = this.courseData?.grading_scale || '1-20';
+            this.showCourseSettingsModal = true;
+        },
+
+        async saveCourseGradingScale() {
+            if (!this.courseData?.id || this.courseSettingsSaving) {
+                return;
+            }
+
+            this.courseSettingsSaving = true;
+            try {
+                const res = await fetch(`/teacher/api/courses/${this.courseData.id}/grading-scale`, {
+                    method: 'PATCH',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').content,
+                    },
+                    body: JSON.stringify({
+                        grading_scale: this.courseSettingsForm.grading_scale,
+                    }),
+                });
+                const json = await res.json();
+                if (!res.ok || !json.success) {
+                    throw new Error(json.error || json.message || 'No se pudo guardar la escala.');
+                }
+
+                this.courseData.grading_scale = json.grading_scale;
+                this.courseData.grading_scale_max = json.grading_scale_max;
+                this.courseData.grading_scale_label = json.grading_scale_label;
+
+                this.setNovaContext({
+                    type: 'course',
+                    id: this.courseData.id,
+                    name: this.courseData.name,
+                    subject_name: this.courseData.subject_name,
+                    grade: this.courseData.grade,
+                    section: this.courseData.section,
+                    grading_scale: json.grading_scale,
+                    grading_scale_max: json.grading_scale_max,
+                    grading_scale_label: json.grading_scale_label,
+                });
+
+                this.showCourseSettingsModal = false;
+                this.showToast('Escala de calificación actualizada.', 'success', 'fa-check');
+            } catch (e) {
+                this.showToast(e.message || 'Error al guardar la escala.', 'error', 'fa-exclamation-triangle');
+            } finally {
+                this.courseSettingsSaving = false;
             }
         },
 

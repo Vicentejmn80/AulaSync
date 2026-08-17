@@ -8,6 +8,7 @@ use App\Models\Evaluation;
 use App\Models\EvaluationAttempt;
 use App\Models\EvaluationQuestion;
 use App\Services\EvaluationSyncService;
+use App\Support\GradingScale;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
@@ -390,10 +391,16 @@ class EvaluationController extends Controller
     public function saveGrades(Request $request, Evaluation $evaluation): JsonResponse
     {
         $this->authorizeTeacher($evaluation);
+        $evaluation->loadMissing('course:id,grading_scale', 'activity:id,max_score');
+        $maxAllowed = GradingScale::effectiveMax(
+            $evaluation->course?->grading_scale,
+            (int) ($evaluation->activity?->max_score ?: GradingScale::maxFor($evaluation->course?->grading_scale))
+        );
+
         $data = $request->validate([
             'grades' => 'required|array|min:1',
             'grades.*.student_id' => 'required|integer',
-            'grades.*.score' => 'nullable|numeric|min:0',
+            'grades.*.score' => "nullable|numeric|min:0|max:{$maxAllowed}",
             'grades.*.feedback' => 'nullable|string|max:1000',
         ]);
 

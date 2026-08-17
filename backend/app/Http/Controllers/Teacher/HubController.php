@@ -11,6 +11,7 @@ use App\Models\Grade;
 use App\Models\Notification;
 use App\Models\Student;
 use App\Services\StudentGradeAccumulationService;
+use App\Support\GradingScale;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -243,6 +244,9 @@ class HubController extends Controller
             'grade'        => $course->grade,
             'section'      => $course->section,
             'school_year'  => $course->school_year,
+            'grading_scale' => GradingScale::normalize($course->grading_scale ?? null),
+            'grading_scale_max' => GradingScale::maxFor($course->grading_scale ?? null),
+            'grading_scale_label' => GradingScale::label($course->grading_scale ?? null),
             'name'         => $course->subject_name . ' · ' . $course->grade . ($course->section ? ' / ' . $course->section : ''),
             'students'     => $course->students->map(function ($s) use ($accumulatedByStudent) {
                 $liveAccumulated = $accumulatedByStudent[$s->id] ?? null;
@@ -355,6 +359,9 @@ class HubController extends Controller
                 'course' => [
                     'id' => $course->id,
                     'name' => $course->subject_name.' · '.$course->grade.($course->section ? ' / '.$course->section : ''),
+                    'grading_scale' => GradingScale::normalize($course->grading_scale ?? null),
+                    'grading_scale_max' => GradingScale::maxFor($course->grading_scale ?? null),
+                    'grading_scale_label' => GradingScale::label($course->grading_scale ?? null),
                 ],
                 'activities' => $rows,
             ]);
@@ -380,6 +387,29 @@ class HubController extends Controller
                 'activities' => [],
             ], 500);
         }
+    }
+
+    public function updateGradingScale(Request $request, Course $course): JsonResponse
+    {
+        if ((int) $course->teacher_id !== (int) auth()->id()) {
+            return response()->json(['success' => false, 'error' => 'No autorizado.'], 403);
+        }
+
+        $data = $request->validate([
+            'grading_scale' => ['required', 'in:1-5,1-10,1-20'],
+        ]);
+
+        $course->update([
+            'grading_scale' => GradingScale::normalize($data['grading_scale']),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Escala de calificación actualizada.',
+            'grading_scale' => $course->grading_scale,
+            'grading_scale_max' => GradingScale::maxFor($course->grading_scale),
+            'grading_scale_label' => GradingScale::label($course->grading_scale),
+        ]);
     }
 
     // ─── Canvas API — Calendar ───────────────────────────────────────────────

@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use App\Models\Subject;
+use App\Support\GradingScale;
 
 class Course extends Model
 {
@@ -17,6 +18,11 @@ class Course extends Model
         'grade',
         'section',
         'school_year',
+        'grading_scale',
+    ];
+
+    protected $attributes = [
+        'grading_scale' => GradingScale::SCALE_1_20,
     ];
 
     public function teacher(): BelongsTo

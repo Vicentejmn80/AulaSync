@@ -9,6 +9,7 @@ use App\Models\Notification;
 use App\Models\User;
 use App\Services\GradeProcessingService;
 use App\Services\StudentGradeAccumulationService;
+use App\Support\GradingScale;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Http\JsonResponse;
@@ -106,11 +107,13 @@ class GradesController extends Controller
     {
         abort_unless($activity->teacher_id === auth()->id(), 403);
         abort_unless((int) $activity->colegio_id === (int) auth()->user()->colegio_id, 403);
+        $course = $activity->course()->firstOrFail();
+        $maxAllowed = GradingScale::effectiveMax($course->grading_scale, (int) $activity->max_score);
 
         $data = $request->validate([
             'grades'                => ['required', 'array'],
             'grades.*.student_id'   => ['required', 'exists:students,id'],
-            'grades.*.score'        => ['required', 'numeric', 'min:0', "max:{$activity->max_score}"],
+            'grades.*.score'        => ['required', 'numeric', 'min:0', "max:{$maxAllowed}"],
             'grades.*.feedback'     => ['nullable', 'string', 'max:500'],
         ]);
 
@@ -207,10 +210,11 @@ class GradesController extends Controller
         abort_unless($activity->teacher_id === auth()->id(), 403);
         abort_unless((int) $activity->colegio_id === (int) auth()->user()->colegio_id, 403);
         $course = $activity->course()->firstOrFail();
+        $maxAllowed = GradingScale::effectiveMax($course->grading_scale, (int) $activity->max_score);
 
         $data = $request->validate([
             'student_id' => ['required', 'integer', 'exists:students,id'],
-            'score' => ['required', 'numeric', 'min:0', "max:{$activity->max_score}"],
+            'score' => ['required', 'numeric', 'min:0', "max:{$maxAllowed}"],
         ]);
 
         $isEnrolled = $course

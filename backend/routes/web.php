@@ -203,6 +203,7 @@ Route::middleware(['auth'])->group(function () {
             Route::get('/teacher/api/stats', [HubController::class, 'apiStats'])->name('teacher.api.stats');
             Route::get('/teacher/api/courses', [HubController::class, 'apiCourses'])->name('teacher.api.courses');
             Route::get('/teacher/api/courses/{course}', [HubController::class, 'apiCourse'])->name('teacher.api.course');
+            Route::patch('/teacher/api/courses/{course}/grading-scale', [HubController::class, 'updateGradingScale'])->name('teacher.api.course.grading_scale');
             Route::get('/teacher/api/courses/{course}/students/{student}/grades', [HubController::class, 'apiCourseStudentGrades'])->name('teacher.api.course.student.grades');
             Route::get('/teacher/api/calendar', [HubController::class, 'apiCalendar'])->name('teacher.api.calendar');
             Route::get('/teacher/api/activities/{activity}', [HubController::class, 'apiActivity'])->name('teacher.api.activity');

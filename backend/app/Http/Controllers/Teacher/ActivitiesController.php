@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Teacher;
 use App\Http\Controllers\Controller;
 use App\Models\Activity;
 use App\Models\Course;
+use App\Support\GradingScale;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -134,6 +135,13 @@ class ActivitiesController extends Controller
             ->where('teacher_id', auth()->id())
             ->where('colegio_id', auth()->user()->colegio_id)
             ->firstOrFail();
+
+        $scaleMax = GradingScale::maxFor($course->grading_scale);
+        if ((int) $data['max_score'] > $scaleMax) {
+            return back()
+                ->withInput()
+                ->withErrors(['max_score' => "La nota máxima no puede superar la escala del curso ({$scaleMax})."]);
+        }
 
         $isHomework = $request->boolean('is_homework');
         $requestedType = trim((string) ($data['type'] ?? 'actividad'));

@@ -11,6 +11,7 @@ use App\Models\EvaluationQuestion;
 use App\Models\Grade;
 use App\Models\Student;
 use App\Models\User;
+use App\Support\GradingScale;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -224,6 +225,7 @@ class EvaluationSyncService
      */
     public function saveGrades(Evaluation $evaluation, User $teacher, array $rows): array
     {
+        $evaluation->loadMissing('course:id,grading_scale');
         $activity = $this->ensureActivityMirror($evaluation, $teacher);
         if (! $activity) {
             throw new \RuntimeException('La evaluación no tiene un curso asignado para calificar.');
@@ -234,7 +236,10 @@ class EvaluationSyncService
             : collect();
 
         $saved = 0;
-        $max = (float) ($activity->max_score ?: 20);
+        $max = (float) GradingScale::effectiveMax(
+            $evaluation->course?->grading_scale,
+            (int) ($activity->max_score ?: GradingScale::maxFor($evaluation->course?->grading_scale))
+        );
         $updatedStudentIds = [];
 
         foreach ($rows as $row) {
@@ -312,10 +317,11 @@ class EvaluationSyncService
             ? $evaluation->scheduled_at->toDateString()
             : now()->toDateString();
 
-        $maxScore = max(1, (int) ($evaluation->total_points ?: 20));
-        if ($maxScore > 100) {
-            $maxScore = 100;
-        }
+        $evaluation->loadMissing('course:id,grading_scale');
+        $scaleMax = GradingScale::maxFor($evaluation->course?->grading_scale);
+
+        $maxScore = max(1, (int) ($evaluation->total_points ?: $scaleMax));
+        $maxScore = min($maxScore, $scaleMax);
 
         $title = Str::limit('Examen: '.$evaluation->title, 240, '');
         $payload = $this->onlyExistingColumns('activities', [
