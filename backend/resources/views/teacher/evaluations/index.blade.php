@@ -140,6 +140,14 @@
                 <label>Número de preguntas</label>
                 <input type="number" min="3" max="40" x-model.number="form.question_count">
             </div>
+            <div>
+                <label>Peso / porcentaje</label>
+                <input type="number" min="1" max="100" x-model.number="form.weight_percentage" placeholder="20">
+            </div>
+            <div>
+                <label>Fecha</label>
+                <input type="date" x-model="form.scheduled_at">
+            </div>
         </div>
         <div class="row2" x-show="form.mode === 'physical'">
             <div>
@@ -386,6 +394,8 @@ function evaluationsApp() {
             difficulty: 'intermedio',
             question_mix: 'mixto',
             question_count: 10,
+            weight_percentage: 20,
+            scheduled_at: '',
             large_print: false,
             paper_size: 'A4',
             orientation: 'portrait',

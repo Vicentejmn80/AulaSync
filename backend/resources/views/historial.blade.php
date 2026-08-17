@@ -249,6 +249,9 @@
                 <a href="{{ route('teacher.planner.manual') }}" class="btn-hist-primary">
                     <i class="fas fa-plus"></i> Nueva Planificación
                 </a>
+                <button type="button" class="btn-hist-secondary" onclick="window.dispatchEvent(new CustomEvent('nova-lesson-template-picker'))">
+                    <i class="fas fa-palette"></i> Estilo de clase
+                </button>
             </div>
         </div>
 

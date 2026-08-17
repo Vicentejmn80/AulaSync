@@ -30,6 +30,36 @@ class AICommandHandlerController extends Controller
 {
 private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'deleteResource', 'deleteActivities'];
 
+    private ?string $activeLessonTemplate = null;
+
+    private function jsonOut(array $payload, int $status = 200): JsonResponse
+    {
+        $success = (bool) ($payload['success'] ?? false);
+        $payload['status'] = $payload['status'] ?? ($success ? 'success' : 'error');
+        if (! array_key_exists('data', $payload)) {
+            $payload['data'] = $payload['actions'] ?? [];
+        }
+
+        return response()->json(
+            $payload,
+            $status,
+            ['Content-Type' => 'application/json; charset=UTF-8'],
+            JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE
+        );
+    }
+
+    private function activeLessonTemplateFor(?int $teacherId = null): string
+    {
+        if ($this->activeLessonTemplate) {
+            return LessonTemplate::normalize($this->activeLessonTemplate);
+        }
+        if ($teacherId) {
+            return LessonTemplate::forUser(User::find($teacherId));
+        }
+
+        return LessonTemplate::CLASSIC;
+    }
+
     /**
      * Definiciones de herramientas para OpenAI
      */
@@ -397,8 +427,12 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
         );
         $teacher = auth()->user();
         if (! $teacher) {
-            return response()->json(['error' => 'No autenticado.'], 401);
+            return $this->jsonOut(['success' => false, 'error' => 'No autenticado.', 'message' => 'No autenticado.'], 401);
         }
+        $requestedTemplate = $request->input('lesson_template');
+        $this->activeLessonTemplate = is_string($requestedTemplate) && $requestedTemplate !== ''
+            ? LessonTemplate::normalize($requestedTemplate)
+            : LessonTemplate::forUser($teacher);
         $prompt = (string) (
             $request->input('prompt')
             ?? data_get($payload, 'payload.mensaje_usuario')
@@ -451,6 +485,7 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             'conversation.*.role' => ['required_with:conversation', 'in:user,assistant'],
             'conversation.*.content' => ['required_with:conversation', 'string', 'max:12000'],
             'pending_actions' => ['sometimes', 'array', 'max:20'],
+            'lesson_template' => ['sometimes', 'nullable', 'string', 'max:50'],
         ]);
 
         $wrappedPayload = $request->input('payload', []);
@@ -539,14 +574,14 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             $anySuccess = collect($actions)->contains(fn ($action) => $action['success']);
             $bulkMeta = $this->extractBulkPlanResponseMeta($results);
 
-            return response()->json(array_filter([
+            return $this->jsonOut(array_filter([
                 'success'      => true,
                 'status'       => $bulkMeta ? 'success' : ($anySuccess ? 'success' : 'partial'),
-                'results'      => $results,
                 'actions'      => $actions,
                 'any_success'  => $anySuccess,
                 'bulk_plan'    => $bulkMeta,
                 'message'      => $bulkMeta['assistant_message'] ?? null,
+                'data'         => $actions,
             ], fn ($v) => $v !== null));
         }
 
@@ -583,17 +618,9 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
         $today = now()->format('Y-m-d');
 
         if ($hasCreateEvaluationIntent) {
-            $evalArgs = [
-                'prompt' => $intentText,
-                'course_id' => is_array($screenContext) && ! empty($screenContext['id']) ? (int) $screenContext['id'] : 0,
-                'course_name_hint' => is_array($screenContext) && is_string($screenContext['subject_name'] ?? null)
-                    ? trim(($screenContext['subject_name'] ?? '').' '.($screenContext['grade'] ?? ''))
-                    : null,
-                'add_to_plan' => true,
-                'status' => 'published',
-            ];
+            $evalArgs = $this->extractEvaluationArgsFromIntent($intentText, is_array($screenContext) ? $screenContext : [], $teacher);
             try {
-                $results = [$this->doCreateEvaluation($evalArgs, $teacher->id)];
+                $results = [DB::transaction(fn () => $this->doCreateEvaluation($evalArgs, $teacher->id))];
             } catch (\Throwable $e) {
                 Log::error('AICommandHandler local createEvaluation failed', [
                     'teacher_id' => $teacher->id,
@@ -601,18 +628,21 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
                 ]);
                 $results = [[
                     'success' => false,
-                    'message' => 'No se pudo crear la evaluación: '.Str::limit($e->getMessage(), 180, ''),
+                    'status' => 'error',
+                    'message' => 'No se pudo completar esta acción en este momento. Inténtalo de nuevo.',
                     'action_type' => 'evaluation',
                     'icon' => '⚠️',
+                    'data' => [],
                 ]];
             }
 
-            return response()->json($this->buildActionResponsePayload($results));
+            return $this->jsonOut($this->buildActionResponsePayload($results));
         }
 
         // Plantilla de clase del profesor
-        $lessonTemplate = \App\Models\UserSettings::where('user_id', $teacher->id)->value('lesson_template') ?? 'clasica';
+        $lessonTemplate = $this->activeLessonTemplateFor($teacher->id);
         $templateSections = LessonTemplate::promptLine($lessonTemplate);
+        $templateLabel = LessonTemplate::label($lessonTemplate);
 
         // Contexto de cursos para la IA (incluye alumnos para evitar duplicados y dar contexto real)
         $courses = Course::where('teacher_id', $teacher->id)
@@ -712,10 +742,11 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             "- Si bulkPlan devuelve requires_confirmation, significa que faltaban datos o había conflictos; repregunta entonces. Pero si la instrucción original era completa y clara, evita ese paso pasando confirmed desde el inicio.",
             "- CRÍTICO: el target_month es OBLIGATORIO para bulkPlan. Si el usuario menciona un mes (abril, mayo, junio, etc.), DEBES incluirlo en el llamado a la herramienta.",
             "",
-            "REGLAS DE ORO — DESCRIPCIONES PEDAGÓGICAS (solo al rellenar createActivity / textos largos; bulkPlan lo arma el sistema):",
-            "- Plantilla activa del profesor: {$lessonTemplate}. Estructura obligatoria en Markdown: secciones {$templateSections} en negrita como encabezados exactos.",
-            "- CRÍTICO: usa ÚNICAMENTE los encabezados de esa plantilla, en MAYÚSCULAS y negrita: {$templateSections}. No uses los encabezados de otra plantilla.",
-            "- Riqueza: al menos tres párrafos sustantivos separados por línea en blanco cuando el usuario pide desarrollar; listas y **negritas**.",
+            "REGLAS DE ORO — DESCRIPCIONES PEDAGÓGICAS (createActivity Y bulkPlan):",
+            "- OBLIGATORIO: la plantilla activa del profesor es «{$templateLabel}» (id interno: {$lessonTemplate}).",
+            "- Estructura EXACTA en Markdown, encabezados en MAYÚSCULAS y negrita, en este orden: {$templateSections}.",
+            "- PROHIBIDO usar encabezados de otra plantilla (INICIO/DESARROLLO/CIERRE, MOTIVACIÓN/PRESENTACIÓN, o 5E) si no coinciden con la plantilla activa.",
+            "- Riqueza: al menos tres párrafos sustantivos separados por línea en blanco; listas y **negritas**.",
             "",
             "MAPA DE INTENCIONES → HERRAMIENTA:",
             "- crear curso / sección → createCourse",
@@ -993,24 +1024,26 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
         $bulkMeta = $this->extractBulkPlanResponseMeta($results);
         $summaryMessage = $bulkMeta['assistant_message'] ?? $this->buildMultiActionSummary($results);
 
-        return response()->json(array_filter([
+        return $this->jsonOut(array_filter([
             'success'      => true,
             'status'       => $bulkMeta ? 'success' : ($anySuccess ? 'success' : 'partial'),
-            'results'      => $results,
             'actions'      => $actions,
             'any_success'  => $anySuccess,
             'bulk_plan'    => $bulkMeta,
             'message'      => $summaryMessage,
+            'data'         => $actions,
         ], fn ($v) => $v !== null));
         } catch (\Throwable $e) {
             Log::error('AICommandHandler error', ['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
-            return response()->json([
+            return $this->jsonOut([
                 'success' => false,
-                'message' => 'Ocurrió un error al procesar el comando de IA.',
+                'status'  => 'error',
+                'message' => 'No se pudo completar esta acción en este momento. Inténtalo de nuevo.',
                 'error'   => config('app.debug')
                     ? $e->getMessage()
                     : 'Error interno al procesar la solicitud.',
-            ], 500);
+                'data'    => [],
+            ]);
         }
     }
 
@@ -1019,27 +1052,37 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
      */
     private function executeAction(string $fn, array $args, int $teacherId, array &$createdCourseMap): array
     {
+        $writes = [
+            'createCourse', 'createActivity', 'modifyActivity', 'registerStudent',
+            'bulkPlan', 'deleteActivities', 'deleteResource', 'setGrade', 'setGradeBatch',
+            'publishGrades', 'createEvaluation', 'attachEvaluationToPlan',
+        ];
+
         try {
-            return match ($fn) {
-                'createCourse'    => $this->doCreateCourse($args, $teacherId, $createdCourseMap),
-                'createActivity'  => $this->doCreateActivity($args, $teacherId),
-                'modifyActivity'  => $this->doModifyActivity($args, $teacherId),
-                'registerStudent' => $this->doRegisterStudent($args, $teacherId),
-                'bulkPlan'        => $this->doBulkPlan($args, $teacherId),
-                'deleteActivities'=> $this->doDeleteActivities($args, $teacherId),
-                'deleteResource'  => $this->doDeleteResource($args, $teacherId),
-                'getCalendarContext' => $this->getCalendarContext($args, $teacherId),
-                'setGrade'        => $this->setGrade($args, $teacherId),
-                'setGradeBatch'   => $this->setGradeBatch($args, $teacherId),
-                'publishGrades'   => $this->publishGrades($args, $teacherId),
-                'findStudent'     => $this->findStudent($args, $teacherId),
-                'getGradebookContext' => $this->getGradebookContext($args, $teacherId),
-                'getPedagogicalHistory' => $this->getPedagogicalHistory($args, $teacherId),
-                'getCurrentWeek' => $this->getCurrentWeek($args, $teacherId),
-                'createEvaluation' => $this->doCreateEvaluation($args, $teacherId),
-                'attachEvaluationToPlan' => $this->doAttachEvaluationToPlan($args, $teacherId),
-                default           => ['success' => false, 'message' => "Acción $fn no definida."],
+            $run = function () use ($fn, $args, $teacherId, &$createdCourseMap) {
+                return match ($fn) {
+                    'createCourse'    => $this->doCreateCourse($args, $teacherId, $createdCourseMap),
+                    'createActivity'  => $this->doCreateActivity($args, $teacherId),
+                    'modifyActivity'  => $this->doModifyActivity($args, $teacherId),
+                    'registerStudent' => $this->doRegisterStudent($args, $teacherId),
+                    'bulkPlan'        => $this->doBulkPlan($args, $teacherId),
+                    'deleteActivities'=> $this->doDeleteActivities($args, $teacherId),
+                    'deleteResource'  => $this->doDeleteResource($args, $teacherId),
+                    'getCalendarContext' => $this->getCalendarContext($args, $teacherId),
+                    'setGrade'        => $this->setGrade($args, $teacherId),
+                    'setGradeBatch'   => $this->setGradeBatch($args, $teacherId),
+                    'publishGrades'   => $this->publishGrades($args, $teacherId),
+                    'findStudent'     => $this->findStudent($args, $teacherId),
+                    'getGradebookContext' => $this->getGradebookContext($args, $teacherId),
+                    'getPedagogicalHistory' => $this->getPedagogicalHistory($args, $teacherId),
+                    'getCurrentWeek' => $this->getCurrentWeek($args, $teacherId),
+                    'createEvaluation' => $this->doCreateEvaluation($args, $teacherId),
+                    'attachEvaluationToPlan' => $this->doAttachEvaluationToPlan($args, $teacherId),
+                    default           => ['success' => false, 'message' => "Acción $fn no definida."],
+                };
             };
+
+            return in_array($fn, $writes, true) ? DB::transaction($run) : $run();
         } catch (\Throwable $e) {
             Log::error('AICommandHandler executeAction failed', [
                 'function' => $fn,
@@ -1049,9 +1092,11 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             ]);
             return [
                 'success' => false,
-                'message' => 'No se pudo completar esta acción: '.Str::limit($e->getMessage(), 180, ''),
+                'status' => 'error',
+                'message' => 'No se pudo completar esta acción en este momento. Inténtalo de nuevo.',
                 'action_type' => $fn,
                 'icon' => '⚠️',
+                'data' => [],
             ];
         }
     }
@@ -1729,7 +1774,13 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
         $neeAdaptation = $neeType ? $this->buildNeeAdaptation($neeType) : null;
 
         $description = (string) ($normalizedArgs['description'] ?? '');
-        $lessonTemplate = \App\Models\UserSettings::where('user_id', $teacherId)->value('lesson_template') ?? 'clasica';
+        $lessonTemplate = $this->activeLessonTemplateFor($teacherId);
+        if ($description !== '' && ! LessonTemplate::hasRequiredHeaders($description, $lessonTemplate)) {
+            $rewritten = LessonTemplate::rewrite($description, $lessonTemplate);
+            if ($rewritten !== '') {
+                $description = $rewritten;
+            }
+        }
         $descError = $this->validateLessonDescriptionForNova($description, $semanticType, $lessonTemplate);
         if ($descError !== null) {
             return [
@@ -2071,7 +2122,12 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
                     'date' => $cursor->format('Y-m-d'),
                     'title' => $titleDescriptive,
                     'type' => $isThursday ? 'actividad' : 'clase',
-                    'description' => $this->buildBulkPlanSessionDescription($topic, $isThursday, $teacherId),
+                    'description' => $this->buildBulkPlanSessionDescription(
+                        $topic,
+                        $isThursday,
+                        $teacherId,
+                        $this->activeLessonTemplateFor($teacherId)
+                    ),
                     'weight_percentage' => $isThursday ? 15 : 0,
                     'max_score' => $isThursday ? 20 : 0,
                 ];
@@ -3504,12 +3560,12 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
     /**
      * Plantilla rica en Markdown para cada hueco de bulkPlan.
      */
-    private function buildBulkPlanSessionDescription(string $topic, bool $isThursday, int $teacherId = 0): string
+    private function buildBulkPlanSessionDescription(string $topic, bool $isThursday, int $teacherId = 0, ?string $template = null): string
     {
         $topicEsc = trim($topic) !== '' ? $topic : 'el tema del curso';
-        $template = $teacherId
-            ? (\App\Models\UserSettings::where('user_id', $teacherId)->value('lesson_template') ?? 'clasica')
-            : 'clasica';
+        $template = LessonTemplate::normalize(
+            $template ?: $this->activeLessonTemplateFor($teacherId)
+        );
 
         if ($template === 'directa') {
             if ($isThursday) {
@@ -3678,7 +3734,7 @@ MD;
     private function hasPlanningIntent(?string $text): bool
     {
         $value = mb_strtolower((string) $text);
-        return (bool) preg_match('/\b(planifica|planificar|planificación|planificacion|cronograma|calendario|genera.*mes|organiza.*mes|mes de)\b/u', $value);
+        return (bool) preg_match('/\b(planifica|planificar|planificación|planificacion|cronograma|calendario|genera.*mes|organiza.*mes|mes de|desglosa|desglosar|siguientes d[ií]as|pr[oó]ximos d[ií]as)\b/u', $value);
     }
 
     private function hasCreateEvaluationIntent(?string $text): bool
@@ -3800,11 +3856,55 @@ MD;
         return array_filter([
             'success' => true,
             'status' => $bulkMeta ? 'success' : ($anySuccess ? 'success' : 'partial'),
-            'results' => $results,
             'actions' => $actions,
             'any_success' => $anySuccess,
             'bulk_plan' => $bulkMeta,
             'message' => $bulkMeta['assistant_message'] ?? null,
+            'data' => $actions,
         ], fn ($v) => $v !== null);
+    }
+
+    private function extractEvaluationArgsFromIntent(string $intentText, array $screenContext, User $teacher): array
+    {
+        $args = [
+            'prompt' => $intentText,
+            'course_id' => ! empty($screenContext['id']) ? (int) $screenContext['id'] : 0,
+            'course_name_hint' => null,
+            'add_to_plan' => true,
+            'status' => 'published',
+        ];
+
+        if (is_string($screenContext['subject_name'] ?? null)) {
+            $args['course_name_hint'] = trim(($screenContext['subject_name'] ?? '').' '.($screenContext['grade'] ?? ''));
+        }
+        if (empty($args['course_name_hint'])) {
+            $args['course_name_hint'] = $intentText;
+        }
+
+        if (preg_match('/(?:peso|weight|porcentaje|percentage)\D{0,16}(\d{1,3})\s*%?/iu', $intentText, $m)
+            || preg_match('/(\d{1,3})\s*%/u', $intentText, $m)) {
+            $weight = (float) $m[1];
+            if ($weight > 0 && $weight <= 100) {
+                $args['weight_percentage'] = $weight;
+            }
+        }
+
+        $lower = mb_strtolower($intentText);
+        if (preg_match('/\bhoy\b/u', $lower)) {
+            $args['due_date'] = now()->toDateString();
+        } elseif (preg_match('/\bma[nñ]ana\b/u', $lower)) {
+            $args['due_date'] = now()->addDay()->toDateString();
+        } elseif (preg_match('/\b(\d{4}-\d{2}-\d{2})\b/', $intentText, $m)) {
+            $args['due_date'] = $m[1];
+        }
+
+        if ((int) $args['course_id'] <= 0) {
+            $resolved = $this->lookupCourseByHint($teacher->id, $teacher->colegio_id, $intentText, '');
+            if ($resolved) {
+                $args['course_id'] = $resolved;
+            }
+        }
+
+        return $args;
     }
 }

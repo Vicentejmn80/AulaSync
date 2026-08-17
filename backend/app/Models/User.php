@@ -65,6 +65,14 @@ class User extends Authenticatable
         return $this->hasOne(UserSettings::class);
     }
 
+    /**
+     * Plantilla pedagógica activa (Clásica, Instrucción Directa o Modelo 5E).
+     */
+    public function getPreferredLessonStructureAttribute(): string
+    {
+        return \App\Support\LessonTemplate::forUser($this);
+    }
+
     public function planificaciones(): HasMany
     {
         return $this->hasMany(Planificacion::class);

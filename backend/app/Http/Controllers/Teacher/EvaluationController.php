@@ -13,6 +13,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
 class EvaluationController extends Controller
@@ -191,60 +192,102 @@ class EvaluationController extends Controller
                 'points' => (int) ($question['points'] ?? 1),
                 'topic' => isset($question['topic']) && is_scalar($question['topic']) ? (string) $question['topic'] : null,
             ];
-        })->all();
+        })->filter(fn ($question) => is_array($question) && trim((string) ($question['text'] ?? '')) !== '')->values()->all();
+
+        $courseId = $request->input('course_id');
+        $courseId = ($courseId === '' || $courseId === null) ? null : (int) $courseId;
+        $weight = $request->input('weight_percentage', $request->input('percentage', $request->input('weight', 20)));
+        $scheduledAt = $request->input('scheduled_at', $request->input('date', $request->input('due_date')));
 
         $request->merge([
             'questions' => $questions,
-            'course_id' => $request->filled('course_id') ? (int) $request->input('course_id') : null,
+            'course_id' => $courseId,
+            'title' => $request->input('title') ?: ($request->input('topic') ?: 'Evaluación'),
+            'mode' => $request->input('mode') ?: 'digital',
+            'weight_percentage' => is_numeric($weight) ? (float) $weight : 20,
+            'scheduled_at' => $scheduledAt ?: null,
+            'description' => $request->input('description') ?: $request->input('prompt'),
         ]);
 
-        $data = $request->validate([
-            'title' => 'required|string|max:255',
-            'description' => 'nullable|string',
-            'topic' => 'nullable|string|max:255',
-            'course_id' => 'nullable|integer',
-            'mode' => 'required|in:digital,physical',
-            'status' => 'nullable|in:draft,scheduled,published',
-            'difficulty' => 'nullable|string|max:20',
-            'question_mix' => 'nullable|string|max:30',
-            'instructions' => 'nullable|string',
-            'scheduled_at' => 'nullable|date',
-            'generated_by_ai' => 'nullable|boolean',
-            'large_print' => 'nullable|boolean',
-            'physical_format' => 'nullable|array',
-            'rubric' => 'nullable|array',
-            'questions' => 'required|array|min:1',
-            'questions.*.type' => 'required|string',
-            'questions.*.text' => 'required|string',
-            'questions.*.options' => 'nullable|array',
-            'questions.*.correct_answer' => 'nullable|string',
-            'questions.*.points' => 'nullable|integer|min:1',
-        ]);
+        try {
+            $data = $request->validate([
+                'title' => 'required|string|max:255',
+                'description' => 'nullable|string',
+                'topic' => 'nullable|string|max:255',
+                'course_id' => 'nullable|integer',
+                'mode' => 'nullable|in:digital,physical',
+                'status' => 'nullable|in:draft,scheduled,published',
+                'difficulty' => 'nullable|string|max:20',
+                'question_mix' => 'nullable|string|max:30',
+                'instructions' => 'nullable|string',
+                'scheduled_at' => 'nullable|date',
+                'generated_by_ai' => 'nullable|boolean',
+                'large_print' => 'nullable|boolean',
+                'physical_format' => 'nullable|array',
+                'rubric' => 'nullable|array',
+                'weight_percentage' => 'nullable|numeric|min:0|max:100',
+                'percentage' => 'nullable|numeric|min:0|max:100',
+                'weight' => 'nullable|numeric|min:0|max:100',
+                'date' => 'nullable|date',
+                'due_date' => 'nullable|date',
+                'questions' => 'nullable|array',
+                'questions.*.type' => 'nullable|string',
+                'questions.*.text' => 'required_with:questions|string',
+                'questions.*.options' => 'nullable|array',
+                'questions.*.correct_answer' => 'nullable|string',
+                'questions.*.points' => 'nullable|integer|min:1',
+            ]);
+        } catch (ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'status' => 'error',
+                'message' => 'Revisa los datos de la evaluación.',
+                'error' => collect($e->errors())->flatten()->first() ?: 'Datos inválidos.',
+                'errors' => $e->errors(),
+                'data' => [],
+            ], 200);
+        }
 
         $teacher = auth()->user();
-        if (! empty($data['course_id'])) {
-            abort_unless(Course::where('id', $data['course_id'])->where('teacher_id', $teacher->id)->exists(), 403);
+        if (! empty($data['course_id']) && ! Course::where('id', $data['course_id'])->where('teacher_id', $teacher->id)->exists()) {
+            return response()->json([
+                'success' => false,
+                'status' => 'error',
+                'message' => 'El curso seleccionado no pertenece a este docente.',
+                'error' => 'Curso inválido.',
+                'data' => [],
+            ], 200);
         }
 
         try {
             $evaluation = $this->sync->persist($teacher, array_merge($data, [
                 'generated_by_ai' => (bool) ($data['generated_by_ai'] ?? false),
                 'add_to_plan' => true,
-                'weight_percentage' => 20,
+                'weight_percentage' => (float) ($data['weight_percentage'] ?? $data['percentage'] ?? $data['weight'] ?? 20),
+                'scheduled_at' => $data['scheduled_at'] ?? $data['date'] ?? $data['due_date'] ?? null,
+                'description' => $data['description'] ?? null,
             ]));
         } catch (\Throwable $e) {
             Log::error('Evaluation store failed', ['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
 
             return response()->json([
                 'success' => false,
+                'status' => 'error',
+                'message' => 'No se pudo guardar la evaluación.',
                 'error' => 'No se pudo guardar la evaluación: '.$e->getMessage(),
+                'data' => [],
             ], 200);
         }
 
+        $payload = $this->serializeEvaluation($evaluation);
+
         return response()->json([
             'success' => true,
-            'evaluation' => $evaluation,
-        ]);
+            'status' => 'success',
+            'message' => 'Evaluación guardada con éxito.',
+            'data' => $payload,
+            'evaluation' => $payload,
+        ], 200, [], JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
     }
 
     public function update(Request $request, Evaluation $evaluation): JsonResponse
@@ -600,6 +643,51 @@ class EvaluationController extends Controller
             ->pluck('score');
 
         return $scores->isNotEmpty() ? round((float) $scores->avg(), 1) : null;
+    }
+
+    private function serializeEvaluation(Evaluation $evaluation): array
+    {
+        $evaluation->loadMissing(['course:id,subject_name,grade,section', 'questions']);
+        if (Schema::hasColumn('evaluations', 'activity_id')) {
+            $evaluation->loadMissing('activity:id,title,max_score,weight_percentage,due_date');
+        }
+
+        return [
+            'id' => $evaluation->id,
+            'title' => $evaluation->title,
+            'description' => $evaluation->description,
+            'topic' => $evaluation->topic,
+            'course_id' => $evaluation->course_id,
+            'activity_id' => $evaluation->activity_id,
+            'mode' => $evaluation->mode,
+            'status' => $evaluation->status,
+            'difficulty' => $evaluation->difficulty,
+            'question_mix' => $evaluation->question_mix,
+            'question_count' => $evaluation->question_count,
+            'instructions' => $evaluation->instructions,
+            'scheduled_at' => optional($evaluation->scheduled_at)?->toIso8601String(),
+            'total_points' => $evaluation->total_points,
+            'passing_score' => $evaluation->passing_score,
+            'large_print' => (bool) $evaluation->large_print,
+            'public_token' => $evaluation->public_token,
+            'course' => $evaluation->course?->only(['id', 'subject_name', 'grade', 'section']),
+            'activity' => $evaluation->activity ? [
+                'id' => $evaluation->activity->id,
+                'title' => $evaluation->activity->title,
+                'max_score' => $evaluation->activity->max_score,
+                'weight_percentage' => $evaluation->activity->weight_percentage,
+                'due_date' => optional($evaluation->activity->due_date)?->toDateString(),
+            ] : null,
+            'questions' => $evaluation->questions->map(fn ($q) => [
+                'id' => $q->id,
+                'type' => $q->type,
+                'text' => $q->text,
+                'options' => $q->options,
+                'correct_answer' => $q->correct_answer,
+                'points' => $q->points,
+                'topic' => $q->topic,
+            ])->values()->all(),
+        ];
     }
 
     private function teacherContext(): string

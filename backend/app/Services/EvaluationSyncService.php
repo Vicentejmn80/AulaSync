@@ -13,6 +13,7 @@ use App\Models\Student;
 use App\Models\User;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
@@ -28,10 +29,38 @@ class EvaluationSyncService
             throw new \RuntimeException('La tabla de evaluaciones aún no existe. Ejecuta las migraciones.');
         }
 
+        return DB::transaction(function () use ($teacher, $payload) {
+            return $this->persistInsideTransaction($teacher, $payload);
+        });
+    }
+
+    private function persistInsideTransaction(User $teacher, array $payload): Evaluation
+    {
         $questions = $this->normalizeQuestions($payload['questions'] ?? []);
+        if ($questions === []) {
+            $topic = trim((string) ($payload['title'] ?? $payload['topic'] ?? $payload['description'] ?? 'Evaluación'));
+            $questions = [[
+                'type' => 'open',
+                'text' => 'Desarrolla con claridad lo aprendido sobre '.$topic.'.',
+                'options' => [],
+                'correct_answer' => null,
+                'points' => 1,
+                'topic' => $topic !== '' ? $topic : null,
+            ]];
+        }
         $total = collect($questions)->sum(fn ($q) => (int) ($q['points'] ?? 1));
-        $scheduledAt = $this->parseDateTime($payload['scheduled_at'] ?? $payload['due_date'] ?? null);
-        $weight = (float) ($payload['weight_percentage'] ?? 20);
+        $scheduledAt = $this->parseDateTime(
+            $payload['scheduled_at']
+            ?? $payload['due_date']
+            ?? $payload['date']
+            ?? null
+        );
+        $weight = (float) (
+            $payload['weight_percentage']
+            ?? $payload['percentage']
+            ?? $payload['weight']
+            ?? 20
+        );
         if ($weight <= 0) {
             $weight = 20;
         }
@@ -82,14 +111,7 @@ class EvaluationSyncService
         $evaluation->forceFill($data);
         $evaluation->save();
 
-        try {
-            $this->syncQuestions($evaluation, $questions);
-        } catch (\Throwable $e) {
-            Log::error('EvaluationSyncService syncQuestions failed', [
-                'evaluation_id' => $evaluation->id,
-                'error' => $e->getMessage(),
-            ]);
-        }
+        $this->syncQuestions($evaluation, $questions);
 
         try {
             $this->mirrorActivity($evaluation->fresh(), $teacher, $weight);
@@ -98,6 +120,7 @@ class EvaluationSyncService
                 'evaluation_id' => $evaluation->id,
                 'error' => $e->getMessage(),
             ]);
+            throw $e;
         }
 
         if (! empty($payload['add_to_plan'])) {

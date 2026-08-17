@@ -10,11 +10,63 @@ class LessonTemplate
 
     public static function normalize(string $id): string
     {
-        return match ($id) {
-            self::DIRECT => self::DIRECT,
-            self::CONSTRUCTIVIST => self::CONSTRUCTIVIST,
-            default => self::CLASSIC,
-        };
+        return self::fromAny($id) ?? self::CLASSIC;
+    }
+
+    /**
+     * Interpreta ids cortos, etiquetas de UI y valores legacy de perfil.
+     */
+    public static function fromAny(?string $raw): ?string
+    {
+        $value = mb_strtolower(trim((string) $raw));
+        if ($value === '') {
+            return null;
+        }
+
+        if (in_array($value, [self::DIRECT, 'direct', 'directa', 'instruccion directa', 'instrucción directa'], true)
+            || str_contains($value, 'instrucci')) {
+            return self::DIRECT;
+        }
+
+        if (in_array($value, [self::CONSTRUCTIVIST, '5e', 'modelo 5e', 'constructivista', 'constructivism'], true)
+            || str_contains($value, 'constructiv')
+            || str_contains($value, '5e')) {
+            return self::CONSTRUCTIVIST;
+        }
+
+        if (in_array($value, [self::CLASSIC, 'clasica', 'clásica', 'classic', 'tradicional'], true)
+            || str_contains($value, 'clasic')) {
+            return self::CLASSIC;
+        }
+
+        return null;
+    }
+
+    /**
+     * Plantilla pedagógica preferida del docente (perfil / user_settings).
+     */
+    public static function forUser(?\App\Models\User $user): string
+    {
+        if (! $user) {
+            return self::CLASSIC;
+        }
+
+        $settings = $user->relationLoaded('settings')
+            ? $user->settings
+            : $user->settings()->first();
+
+        foreach ([
+            $settings?->lesson_template,
+            $settings?->modelo_pedagogico,
+            $settings?->estilo_pedagogico,
+        ] as $candidate) {
+            $normalized = self::fromAny(is_scalar($candidate) ? (string) $candidate : null);
+            if ($normalized) {
+                return $normalized;
+            }
+        }
+
+        return self::CLASSIC;
     }
 
     public static function label(string $id): string
