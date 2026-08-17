@@ -163,7 +163,7 @@
                 <i class="fa-solid fa-comments"></i> Comunicación
                 <span x-show="unreadAnnouncements > 0" x-text="unreadAnnouncements" style="margin-left:auto;background:#EC4899;color:#fff;border-radius:99px;padding:1px 7px;font-size:11px;"></span>
             </button>
-            <button class="nav-item" :class="{ active: view === 'docs' }" @click="view = 'docs'; sidebarOpen = false"><i class="fa-solid fa-folder-open"></i> Documentos</button>
+            <button class="nav-item" :class="{ active: view === 'docs' }" @click="view = 'docs'; sidebarOpen = false; loadBoletasOficiales()"><i class="fa-solid fa-folder-open"></i> Documentos</button>
             <div style="flex:1"></div>
             <button class="nav-item" @click="openProfile = true"><i class="fa-solid fa-user-gear"></i> Editar perfil</button>
             <form method="POST" action="{{ route('logout') }}">
@@ -404,14 +404,88 @@
 
                 <section class="panel" x-show="view === 'docs'">
                     <h2 class="section-title">Documentos de <span x-text="currentStudent?.name"></span></h2>
-                    <p class="empty">Descarga o previsualiza el boletín (las mismas notas que ve el docente y el director) y la constancia de estudio.</p>
-                    <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:12px">
+
+                    {{-- Boletas oficiales publicadas --}}
+                    <div style="margin-bottom:20px">
+                        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+                            <strong style="font-size:15px">Boletas oficiales</strong>
+                            <button @click="loadBoletasOficiales()" style="font-size:12px;color:var(--accent);background:none;border:none;cursor:pointer">
+                                <i class="fa-solid fa-rotate-right"></i> Actualizar
+                            </button>
+                        </div>
+
+                        <div x-show="loadingBoletas" style="text-align:center;padding:20px;color:var(--text-secondary);font-size:13px">
+                            <i class="fa-solid fa-circle-notch fa-spin"></i> Cargando…
+                        </div>
+
+                        <div x-show="!loadingBoletas && boletasOficiales.length === 0" style="padding:18px;background:var(--bg-secondary);border-radius:12px;text-align:center;color:var(--text-secondary);font-size:13px">
+                            <i class="fa-solid fa-file-circle-question" style="font-size:24px;opacity:.4;display:block;margin-bottom:8px"></i>
+                            <p>El director aún no ha publicado boletas oficiales para este período.</p>
+                            <p style="margin-top:4px;font-size:12px">Mientras tanto, puedes ver el boletín con las notas actuales del docente.</p>
+                        </div>
+
+                        <template x-for="boleta in boletasOficiales" :key="boleta.id">
+                            <div style="background:var(--bg-secondary);border-radius:14px;padding:14px 16px;margin-bottom:10px;border:1px solid rgba(124,58,237,.15)">
+                                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+                                    <div>
+                                        <strong x-text="boleta.period?.name ?? 'Período'"></strong>
+                                        <span style="margin-left:8px;font-size:11px;padding:2px 8px;border-radius:9999px;background:rgba(52,211,153,.15);color:#34d399;font-weight:700">PUBLICADA</span>
+                                    </div>
+                                    <div style="font-size:12px;color:var(--text-secondary)" x-text="boleta.published_at ?? ''"></div>
+                                </div>
+                                <div style="font-size:13px;color:var(--text-secondary);margin-bottom:10px">
+                                    Promedio general:
+                                    <strong :style="'color:' + gradeColorHex(boleta.global_average)" x-text="boleta.global_average + '%'"></strong>
+                                </div>
+                                <div style="overflow-x:auto">
+                                    <table style="width:100%;border-collapse:collapse;font-size:12px">
+                                        <thead>
+                                            <tr style="color:var(--text-secondary)">
+                                                <th style="text-align:left;padding:4px 8px;font-size:10px;text-transform:uppercase;letter-spacing:.06em">Asignatura</th>
+                                                <th style="text-align:center;padding:4px 8px;font-size:10px;">Nota</th>
+                                                <th style="text-align:center;padding:4px 8px;font-size:10px;">Literal</th>
+                                                <th style="padding:4px 8px;font-size:10px;">Obs.</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <template x-for="g in (boleta.grades ?? [])" :key="g.course_id">
+                                                <tr style="border-top:1px solid rgba(255,255,255,.05)">
+                                                    <td style="padding:5px 8px;font-weight:600" x-text="g.course_name"></td>
+                                                    <td style="text-align:center;font-weight:900;padding:5px 8px" :style="'color:' + gradeColorHex(g.grade)" x-text="g.grade + '%'"></td>
+                                                    <td style="text-align:center;font-weight:900;padding:5px 8px" :style="'color:' + gradeColorHex(g.grade)" x-text="g.letter_grade ?? '—'"></td>
+                                                    <td style="padding:5px 8px;color:var(--text-secondary);font-size:11px" x-text="g.teacher_observations || '—'"></td>
+                                                </tr>
+                                            </template>
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <div x-show="boleta.observations" style="margin-top:10px;padding:8px 10px;background:rgba(251,191,36,.08);border-radius:8px;font-size:12px;color:#fbbf24">
+                                    <i class="fa-solid fa-comment-dots"></i>
+                                    <span x-text="boleta.observations"></span>
+                                </div>
+                                <div style="margin-top:10px;display:flex;gap:8px">
+                                    <a :href="'/director/api/report-cards/' + boleta.id + '/pdf'"
+                                       style="font-size:12px;font-weight:700;color:#f87171;text-decoration:none;display:flex;align-items:center;gap:4px">
+                                        <i class="fa-solid fa-file-pdf"></i> Descargar PDF
+                                    </a>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+
+                    {{-- Separator --}}
+                    <div style="border-top:1px solid rgba(255,255,255,.08);margin:16px 0;"></div>
+
+                    {{-- Live report card --}}
+                    <p style="font-size:13px;font-weight:700;margin-bottom:10px">Boletín en tiempo real (notas actuales)</p>
+                    <p class="empty" style="margin-bottom:12px">Notas que han cargado los docentes hasta hoy.</p>
+                    <div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:14px">
                         <button class="btn btn-primary" @click="openBoletin()">Ver boletín</button>
                         <a class="btn btn-ghost" :href="boletinUrl" style="text-decoration:none">Descargar PDF</a>
                         <a class="btn btn-ghost" :href="constanciaUrl" style="text-decoration:none">Constancia de estudio</a>
                     </div>
-                    <div x-show="boletin" style="margin-top:18px">
-                        <p><strong>Promedio global:</strong> <span x-text="(boletin?.globalAverage ?? 0) + '%'"></span></p>
+                    <div x-show="boletin" style="margin-top:8px">
+                        <p style="font-size:13px"><strong>Promedio global:</strong> <span x-text="(boletin?.globalAverage ?? 0) + '%'"></span></p>
                         <template x-for="course in (boletin?.courses || [])" :key="course.course_id || course.course_name">
                             <div class="feed-item" style="cursor:default">
                                 <strong x-text="course.course_name"></strong>
@@ -558,6 +632,8 @@
                 newMessage: '',
                 composeCourseId: '',
                 boletin: null,
+                boletasOficiales: [],
+                loadingBoletas: false,
                 toast: '',
                 absenceError: '',
                 profileMsg: '',
@@ -711,7 +787,24 @@
                     this.view = 'docs';
                     const json = await fetch(`/representante/api/${this.studentId}/boletin`, { headers: { Accept: 'application/json' } }).then(r => r.json());
                     this.boletin = json;
+                    await this.loadBoletasOficiales();
                     this.showToast('Boletín actualizado con las notas del docente.');
+                },
+                async loadBoletasOficiales() {
+                    if (!this.studentId) return;
+                    this.loadingBoletas = true;
+                    try {
+                        const json = await fetch(`/representante/api/${this.studentId}/boletas-oficiales`, { headers: { Accept: 'application/json' } }).then(r => r.json());
+                        this.boletasOficiales = json.boletas ?? [];
+                    } catch { this.boletasOficiales = []; }
+                    this.loadingBoletas = false;
+                },
+                gradeColorHex(avg) {
+                    if (avg >= 90) return '#34d399';
+                    if (avg >= 80) return '#60a5fa';
+                    if (avg >= 70) return '#fbbf24';
+                    if (avg >= 60) return '#fb923c';
+                    return '#f87171';
                 },
                 showToast(text) {
                     this.toast = text;

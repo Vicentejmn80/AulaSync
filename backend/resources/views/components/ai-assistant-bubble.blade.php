@@ -1115,13 +1115,14 @@ function novaAIAssistant() {
                     'Accept': 'application/json',
                     'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
                 },
-                body: JSON.stringify({
+                    body: JSON.stringify({
                     prompt: '',
                     message: '',
                     confirmed: true,
                     pending_actions: this.confirmation?.pending_actions || undefined,
                     screen_context: liveContext,
                     conversation: conversation.length ? conversation : undefined,
+                    lesson_template: window.novaLessonTemplate || undefined,
                     payload: { mensaje_usuario: '[confirmación]', contexto: liveContext },
                 }),
             });
@@ -1140,7 +1141,11 @@ function novaAIAssistant() {
                 try {
                     const json = await this.executeConfirmed();
                     this.confirmation = null;
-                    this.handleResponse(json);
+                    try {
+                        this.handleResponse(json);
+                    } catch (handlerErr) {
+                        console.error('AI handleResponse', handlerErr);
+                    }
                 } catch (err) {
                     this.showToast('Error de conexión', 'error', 'fa-exclamation-triangle');
                     this.addMessage('assistant', '❌ Lo siento, hubo un error de conexión. Intenta de nuevo.');
@@ -1169,16 +1174,28 @@ function novaAIAssistant() {
                         'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
                     },
                     body: JSON.stringify({
-                        prompt: text,
-                        message: text,
-                        screen_context: liveContext,
-                        conversation: conversation.length ? conversation : undefined,
-                        payload: { mensaje_usuario: text, contexto: liveContext },
-                    }),
+                    prompt: text,
+                    message: text,
+                    screen_context: liveContext,
+                    conversation: conversation.length ? conversation : undefined,
+                    lesson_template: window.novaLessonTemplate || undefined,
+                    payload: { mensaje_usuario: text, contexto: liveContext },
+                }),
                 });
 
-                const json = await res.json();
-                this.handleResponse(json);
+                const raw = await res.text();
+                let json;
+                try {
+                    json = JSON.parse(raw);
+                } catch (parseErr) {
+                    this.addMessage('assistant', '❌ Lo siento, hubo un error de conexión. Intenta de nuevo.');
+                    return;
+                }
+                try {
+                    this.handleResponse(json);
+                } catch (handlerErr) {
+                    console.error('AI handleResponse', handlerErr);
+                }
             } catch (err) {
                 this.showToast('Error de conexión', 'error', 'fa-exclamation-triangle');
                 this.addMessage('assistant', '❌ Lo siento, hubo un error de conexión. Intenta de nuevo.');
@@ -1189,6 +1206,10 @@ function novaAIAssistant() {
         },
 
         handleResponse(json) {
+            if (!json || typeof json !== 'object') {
+                return;
+            }
+
             if (json.message && !json.actions && !json.requires_confirmation) {
                 this.addMessage('assistant', json.message);
                 return;
@@ -1201,12 +1222,12 @@ function novaAIAssistant() {
             }
 
             let hasDeleteSuccess = false;
+            let firstNewClass = null;
 
             if (Array.isArray(json.actions)) {
                 if (json.any_success || (json.status === 'success' && json.bulk_plan)) {
                     this.confirmation = null;
                 }
-                let firstNewClass = null;
                 json.actions.forEach(a => {
                     if (a.success) {
                         this.addMessage('action', `✅ ${a.message}`);
@@ -1266,7 +1287,7 @@ function novaAIAssistant() {
                 }, 800);
             }
 
-            if (json.error) {
+            if (json.error && !json.any_success && !Array.isArray(json.actions)) {
                 this.addMessage('assistant', `❌ Error: ${json.error}`);
                 this.showToast(json.error, 'error', 'fa-exclamation-triangle');
             }
@@ -1449,3 +1470,4 @@ function novaAIAssistant() {
     };
 }
 </script>
+@include('components.lesson-template-picker')

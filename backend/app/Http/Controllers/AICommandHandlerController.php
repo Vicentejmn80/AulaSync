@@ -6,6 +6,7 @@ use App\Models\Activity;
 use App\Models\Course;
 use App\Models\CourseEvaluationPlan;
 use App\Models\Evaluation;
+use App\Models\EvaluationAttempt;
 use App\Models\EvaluationQuestion;
 use App\Models\Grade;
 use App\Models\Notification;
@@ -14,6 +15,7 @@ use App\Models\Student;
 use App\Models\Tarea;
 use App\Models\User;
 use App\Services\DirectorAlertService;
+use App\Support\LessonTemplate;
 use Illuminate\Support\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -28,11 +30,45 @@ class AICommandHandlerController extends Controller
 {
 private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'deleteResource', 'deleteActivities'];
 
+    private ?string $activeLessonTemplate = null;
+
+    private function jsonOut(array $payload, int $status = 200): JsonResponse
+    {
+        $success = (bool) ($payload['success'] ?? false);
+        $payload['status'] = $payload['status'] ?? ($success ? 'success' : 'error');
+        if (! array_key_exists('data', $payload)) {
+            $payload['data'] = $payload['actions'] ?? [];
+        }
+
+        return response()->json(
+            $payload,
+            $status,
+            ['Content-Type' => 'application/json; charset=UTF-8'],
+            JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE
+        );
+    }
+
+    private function activeLessonTemplateFor(?int $teacherId = null): string
+    {
+        if ($this->activeLessonTemplate) {
+            return LessonTemplate::normalize($this->activeLessonTemplate);
+        }
+        if ($teacherId) {
+            return LessonTemplate::forUser(User::find($teacherId));
+        }
+
+        return LessonTemplate::CLASSIC;
+    }
+
     /**
      * Definiciones de herramientas para OpenAI
      */
-    private function toolDefinitions(): array
+    private function toolDefinitions(?string $lessonTemplate = null): array
     {
+        $lessonTemplate = LessonTemplate::normalize((string) $lessonTemplate);
+        $templateHeaders = LessonTemplate::promptLine($lessonTemplate);
+        $templateLabel = LessonTemplate::label($lessonTemplate);
+
         return [
             [
                 'type' => 'function',
@@ -67,7 +103,7 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
                             'title'             => ['type' => 'string'],
                             'description'       => [
                                 'type'        => 'string',
-                                'description' => 'Markdown obligatorio: secciones **INICIO**, **DESARROLLO**, **CIERRE** en negrita; mínimo 3 párrafos separados por línea en blanco; viñetas y **negritas** en conceptos clave.',
+                                'description' => "Markdown obligatorio con la plantilla activa del profesor ({$templateLabel}). Encabezados EXACTOS en negrita y en este orden: {$templateHeaders}. No uses encabezados de otra plantilla. Mínimo 3 párrafos, viñetas y negritas en conceptos clave.",
                             ],
                             'max_score'         => ['type' => 'integer'],
                             'weight_percentage' => ['type' => 'number'],
@@ -212,11 +248,12 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
                         'type'       => 'object',
                         'properties' => [
                             'student_id'  => ['type' => 'integer'],
-                            'activity_id' => ['type' => 'integer'],
+                            'activity_id' => ['type' => 'integer', 'description' => 'ID de la actividad o del examen espejo'],
+                            'evaluation_id' => ['type' => 'integer', 'description' => 'ID de la evaluación formal. Alternativa a activity_id.'],
                             'score'       => ['type' => 'number'],
                             'feedback'    => ['type' => 'string'],
                         ],
-                        'required' => ['student_id', 'activity_id', 'score'],
+                        'required' => ['score'],
                     ],
                 ],
             ],
@@ -289,6 +326,7 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
                         'type'       => 'object',
                         'properties' => [
                             'activity_id' => ['type' => 'integer', 'description' => 'ID de la actividad a calificar'],
+                            'evaluation_id' => ['type' => 'integer', 'description' => 'ID de la evaluación formal. Alternativa a activity_id.'],
                             'grades' => [
                                 'type'  => 'array',
                     'items' => [
@@ -389,8 +427,12 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
         );
         $teacher = auth()->user();
         if (! $teacher) {
-            return response()->json(['error' => 'No autenticado.'], 401);
+            return $this->jsonOut(['success' => false, 'error' => 'No autenticado.', 'message' => 'No autenticado.'], 401);
         }
+        $requestedTemplate = $request->input('lesson_template');
+        $this->activeLessonTemplate = is_string($requestedTemplate) && $requestedTemplate !== ''
+            ? LessonTemplate::normalize($requestedTemplate)
+            : LessonTemplate::forUser($teacher);
         $prompt = (string) (
             $request->input('prompt')
             ?? data_get($payload, 'payload.mensaje_usuario')
@@ -443,6 +485,7 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             'conversation.*.role' => ['required_with:conversation', 'in:user,assistant'],
             'conversation.*.content' => ['required_with:conversation', 'string', 'max:12000'],
             'pending_actions' => ['sometimes', 'array', 'max:20'],
+            'lesson_template' => ['sometimes', 'nullable', 'string', 'max:50'],
         ]);
 
         $wrappedPayload = $request->input('payload', []);
@@ -455,6 +498,7 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
         $hasDeleteIntent = $this->hasDeleteIntent($intentText);
         $hasModifyIntent = $this->hasModifyIntent($intentText);
         $hasPlanningIntent = $this->hasPlanningIntent($intentText);
+        $hasCreateEvaluationIntent = $this->hasCreateEvaluationIntent($intentText);
         $explicitProceed = $this->hasProceedIntent($intentText);
         $deleteRange = $this->extractDateRangeFromText($intentText);
 
@@ -505,7 +549,7 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
                     $args['confirmed'] = true;
                     $args = $this->enrichBulkPlanArgsFromIntent($args, $intentText, $teacher);
                 }
-                if (in_array($fn, ['createActivity', 'registerStudent', 'bulkPlan', 'deleteActivities', 'getCalendarContext'], true)) {
+                if (in_array($fn, ['createActivity', 'registerStudent', 'bulkPlan', 'deleteActivities', 'getCalendarContext', 'createEvaluation'], true)) {
                     $resolvedCourseId = $this->resolveCourseIdForArgs($args, $teacher->id, $createdCourseMap, $screenContext);
                     if ($resolvedCourseId > 0) {
                         $args['course_id'] = $resolvedCourseId;
@@ -530,14 +574,14 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             $anySuccess = collect($actions)->contains(fn ($action) => $action['success']);
             $bulkMeta = $this->extractBulkPlanResponseMeta($results);
 
-            return response()->json(array_filter([
+            return $this->jsonOut(array_filter([
                 'success'      => true,
                 'status'       => $bulkMeta ? 'success' : ($anySuccess ? 'success' : 'partial'),
-                'results'      => $results,
                 'actions'      => $actions,
                 'any_success'  => $anySuccess,
                 'bulk_plan'    => $bulkMeta,
                 'message'      => $bulkMeta['assistant_message'] ?? null,
+                'data'         => $actions,
             ], fn ($v) => $v !== null));
         }
 
@@ -572,14 +616,72 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
         }
 
         $today = now()->format('Y-m-d');
+        $screenContextArray = is_array($screenContext) ? $screenContext : [];
+        $hasPendingEvaluationDraft = session()->has('nova_pending_evaluation_draft');
+
+        if ($hasPendingEvaluationDraft && preg_match('/\b(cancela|cancelar|olvida|det[eé]n)\b/u', mb_strtolower($intentText))) {
+            session()->forget('nova_pending_evaluation_draft');
+
+            return $this->jsonOut([
+                'success' => true,
+                'status' => 'success',
+                'message' => 'Listo, cancelé la creación de la evaluación pendiente.',
+                'data' => [],
+            ]);
+        }
+
+        if ($hasCreateEvaluationIntent || $hasPendingEvaluationDraft) {
+            $baseDraft = session()->get('nova_pending_evaluation_draft', []);
+            $evalArgs = $this->mergeEvaluationDraft(
+                is_array($baseDraft) ? $baseDraft : [],
+                $this->extractEvaluationArgsFromIntent($intentText, $screenContextArray, $teacher),
+                $intentText
+            );
+
+            $missing = $this->missingEvaluationDraftFields($evalArgs);
+            if (! empty($missing)) {
+                session()->put('nova_pending_evaluation_draft', $evalArgs);
+
+                return $this->jsonOut([
+                    'success' => true,
+                    'status' => 'pending',
+                    'message' => $this->evaluationFollowupQuestion($missing[0], $evalArgs),
+                    'requires_followup' => true,
+                    'data' => [
+                        'pending_type' => 'create_evaluation',
+                        'missing' => $missing,
+                        'draft' => $evalArgs,
+                    ],
+                ]);
+            }
+
+            session()->forget('nova_pending_evaluation_draft');
+
+            try {
+                $results = [DB::transaction(fn () => $this->doCreateEvaluation($evalArgs, $teacher->id))];
+            } catch (\Throwable $e) {
+                Log::error('AICommandHandler local createEvaluation failed', [
+                    'teacher_id' => $teacher->id,
+                    'args' => $evalArgs,
+                    'error' => $e->getMessage(),
+                ]);
+                $results = [[
+                    'success' => false,
+                    'status' => 'error',
+                    'message' => 'No se pudo completar esta acción en este momento. Inténtalo de nuevo.',
+                    'action_type' => 'evaluation',
+                    'icon' => '⚠️',
+                    'data' => [],
+                ]];
+            }
+
+            return $this->jsonOut($this->buildActionResponsePayload($results));
+        }
 
         // Plantilla de clase del profesor
-        $lessonTemplate = \App\Models\UserSettings::where('user_id', $teacher->id)->value('lesson_template') ?? 'clasica';
-        $templateSections = match($lessonTemplate) {
-            'directa'         => '**MOTIVACIÓN** → **PRESENTACIÓN** → **PRÁCTICA GUIADA** → **CIERRE REFLEXIVO**',
-            'constructivista' => '**ACTIVACIÓN** → **EXPLORACIÓN** → **EXPLICACIÓN** → **APLICACIÓN** → **EVALUACIÓN**',
-            default           => '**INICIO** → **DESARROLLO** → **CIERRE**',
-        };
+        $lessonTemplate = $this->activeLessonTemplateFor($teacher->id);
+        $templateSections = LessonTemplate::promptLine($lessonTemplate);
+        $templateLabel = LessonTemplate::label($lessonTemplate);
 
         // Contexto de cursos para la IA (incluye alumnos para evitar duplicados y dar contexto real)
         $courses = Course::where('teacher_id', $teacher->id)
@@ -679,16 +781,17 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             "- Si bulkPlan devuelve requires_confirmation, significa que faltaban datos o había conflictos; repregunta entonces. Pero si la instrucción original era completa y clara, evita ese paso pasando confirmed desde el inicio.",
             "- CRÍTICO: el target_month es OBLIGATORIO para bulkPlan. Si el usuario menciona un mes (abril, mayo, junio, etc.), DEBES incluirlo en el llamado a la herramienta.",
             "",
-            "REGLAS DE ORO — DESCRIPCIONES PEDAGÓGICAS (solo al rellenar createActivity / textos largos; bulkPlan lo arma el sistema):",
-            "- Plantilla activa del profesor: {$lessonTemplate}. Estructura obligatoria en Markdown: secciones {$templateSections} en negrita como encabezados exactos.",
-            "- CRÍTICO: usa ÚNICAMENTE los encabezados de esa plantilla. Escríbelos en MAYÚSCULAS y en negrita: **INICIO**, **DESARROLLO**, etc.",
-            "- Riqueza: al menos tres párrafos sustantivos separados por línea en blanco cuando el usuario pide desarrollar; listas y **negritas**.",
+            "REGLAS DE ORO — DESCRIPCIONES PEDAGÓGICAS (createActivity Y bulkPlan):",
+            "- OBLIGATORIO: la plantilla activa del profesor es «{$templateLabel}» (id interno: {$lessonTemplate}).",
+            "- Estructura EXACTA en Markdown, encabezados en MAYÚSCULAS y negrita, en este orden: {$templateSections}.",
+            "- PROHIBIDO usar encabezados de otra plantilla (INICIO/DESARROLLO/CIERRE, MOTIVACIÓN/PRESENTACIÓN, o 5E) si no coinciden con la plantilla activa.",
+            "- Riqueza: al menos tres párrafos sustantivos separados por línea en blanco; listas y **negritas**.",
             "",
             "MAPA DE INTENCIONES → HERRAMIENTA:",
             "- crear curso / sección → createCourse",
             "- crear clase / actividad / tarea (NO examen formal) → createActivity  (type: clase|actividad|tarea)",
-            "- crear evaluación / examen / prueba / quiz formal → createEvaluation (NO uses createActivity)",
-            "- crear evaluación y agregarla al plan → createEvaluation con add_to_plan=true",
+            "- crear evaluación / examen / prueba / quiz formal → createEvaluation (NO uses createActivity). Eso la deja en Evaluaciones Y como actividad calificable.",
+            "- crear evaluación y agregarla al plan → createEvaluation con add_to_plan=true (es el default)",
             "- agregar evaluación existente al plan de evaluación → attachEvaluationToPlan",
             "- adaptación NEE / TDAH / TEA / dislexia / discalculia → createActivity con nee_type relleno",
             "- modificar / cambiar / editar actividad existente → modifyActivity",
@@ -706,11 +809,12 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             "- ver qué tengo esta semana / qué hay esta semana / mi agenda semanal → getCurrentWeek",
             "",
             "REGLAS DE EVALUACIONES Y PLAN:",
-            "1. Si el usuario pide un examen/evaluación/prueba y además dice «agrégala al plan», llama createEvaluation con add_to_plan=true en el mismo turno.",
-            "2. Si solo pide crear la evaluación, usa createEvaluation (add_to_plan=false) y menciona que puedes agregarla al plan si quiere.",
+            "1. Si el usuario pide un examen/evaluación/prueba, llama createEvaluation de inmediato. add_to_plan=true por defecto.",
+            "2. No uses createActivity para un examen formal.",
             "3. Si la evaluación ya existe y pide agregarla al plan, usa attachEvaluationToPlan.",
             "4. Resuelve el curso con course_id o course_name_hint. Si solo hay un curso, úsalo.",
-            "5. Defaults: mode=digital, difficulty=intermedio, question_mix=mixto, question_count=8, weight_percentage=10, category=summative, status=draft.",
+            "5. Defaults: mode=digital, difficulty=intermedio, question_mix=mixto, question_count=8, weight_percentage=20, category=summative, status=published, add_to_plan=true.",
+            "6. Para calificar un examen usa setGrade o setGradeBatch con evaluation_id o el activity_id del espejo (aparece en el calendario como «Examen: …»).",
             "",
             "REGLAS CRÍTICAS DE BORRADO:",
             "1. IDENTIFICACIÓN DE ID: Cada línea del calendario inyectado incluye 'actividad_id XXXX'. Cuando el usuario pida borrar una actividad específica (ej: 'borra la clase del jueves' o 'elimina la actividad de números'), primero localiza su activity_id en el calendario inyectado.",
@@ -761,14 +865,14 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             $chatMessages[] = ['role' => 'user', 'content' => $prompt !== '' ? $prompt : $rawMessage];
         }
 
-        $toolChoice = $hasDeleteIntent ? 'required' : 'auto';
+        $toolChoice = ($hasDeleteIntent || $hasCreateEvaluationIntent) ? 'required' : 'auto';
         $response = Http::timeout(120)
             ->withToken(env('OPENAI_API_KEY'))
             ->post('https://api.openai.com/v1/chat/completions', [
                 'model'       => 'gpt-4o',
                 'temperature' => 0.25,
                 'tool_choice' => $toolChoice,
-                'tools'       => $this->toolDefinitions(),
+                'tools'       => $this->toolDefinitions($lessonTemplate),
                 'messages'    => $chatMessages,
             ]);
 
@@ -959,24 +1063,26 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
         $bulkMeta = $this->extractBulkPlanResponseMeta($results);
         $summaryMessage = $bulkMeta['assistant_message'] ?? $this->buildMultiActionSummary($results);
 
-        return response()->json(array_filter([
+        return $this->jsonOut(array_filter([
             'success'      => true,
             'status'       => $bulkMeta ? 'success' : ($anySuccess ? 'success' : 'partial'),
-            'results'      => $results,
             'actions'      => $actions,
             'any_success'  => $anySuccess,
             'bulk_plan'    => $bulkMeta,
             'message'      => $summaryMessage,
+            'data'         => $actions,
         ], fn ($v) => $v !== null));
         } catch (\Throwable $e) {
             Log::error('AICommandHandler error', ['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
-            return response()->json([
+            return $this->jsonOut([
                 'success' => false,
-                'message' => 'Ocurrió un error al procesar el comando de IA.',
+                'status'  => 'error',
+                'message' => 'No se pudo completar esta acción en este momento. Inténtalo de nuevo.',
                 'error'   => config('app.debug')
                     ? $e->getMessage()
                     : 'Error interno al procesar la solicitud.',
-            ], 500);
+                'data'    => [],
+            ]);
         }
     }
 
@@ -985,27 +1091,37 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
      */
     private function executeAction(string $fn, array $args, int $teacherId, array &$createdCourseMap): array
     {
+        $writes = [
+            'createCourse', 'createActivity', 'modifyActivity', 'registerStudent',
+            'bulkPlan', 'deleteActivities', 'deleteResource', 'setGrade', 'setGradeBatch',
+            'publishGrades', 'createEvaluation', 'attachEvaluationToPlan',
+        ];
+
         try {
-            return match ($fn) {
-                'createCourse'    => $this->doCreateCourse($args, $teacherId, $createdCourseMap),
-                'createActivity'  => $this->doCreateActivity($args, $teacherId),
-                'modifyActivity'  => $this->doModifyActivity($args, $teacherId),
-                'registerStudent' => $this->doRegisterStudent($args, $teacherId),
-                'bulkPlan'        => $this->doBulkPlan($args, $teacherId),
-                'deleteActivities'=> $this->doDeleteActivities($args, $teacherId),
-                'deleteResource'  => $this->doDeleteResource($args, $teacherId),
-                'getCalendarContext' => $this->getCalendarContext($args, $teacherId),
-                'setGrade'        => $this->setGrade($args, $teacherId),
-                'setGradeBatch'   => $this->setGradeBatch($args, $teacherId),
-                'publishGrades'   => $this->publishGrades($args, $teacherId),
-                'findStudent'     => $this->findStudent($args, $teacherId),
-                'getGradebookContext' => $this->getGradebookContext($args, $teacherId),
-                'getPedagogicalHistory' => $this->getPedagogicalHistory($args, $teacherId),
-                'getCurrentWeek' => $this->getCurrentWeek($args, $teacherId),
-                'createEvaluation' => $this->doCreateEvaluation($args, $teacherId),
-                'attachEvaluationToPlan' => $this->doAttachEvaluationToPlan($args, $teacherId),
-                default           => ['success' => false, 'message' => "Acción $fn no definida."],
+            $run = function () use ($fn, $args, $teacherId, &$createdCourseMap) {
+                return match ($fn) {
+                    'createCourse'    => $this->doCreateCourse($args, $teacherId, $createdCourseMap),
+                    'createActivity'  => $this->doCreateActivity($args, $teacherId),
+                    'modifyActivity'  => $this->doModifyActivity($args, $teacherId),
+                    'registerStudent' => $this->doRegisterStudent($args, $teacherId),
+                    'bulkPlan'        => $this->doBulkPlan($args, $teacherId),
+                    'deleteActivities'=> $this->doDeleteActivities($args, $teacherId),
+                    'deleteResource'  => $this->doDeleteResource($args, $teacherId),
+                    'getCalendarContext' => $this->getCalendarContext($args, $teacherId),
+                    'setGrade'        => $this->setGrade($args, $teacherId),
+                    'setGradeBatch'   => $this->setGradeBatch($args, $teacherId),
+                    'publishGrades'   => $this->publishGrades($args, $teacherId),
+                    'findStudent'     => $this->findStudent($args, $teacherId),
+                    'getGradebookContext' => $this->getGradebookContext($args, $teacherId),
+                    'getPedagogicalHistory' => $this->getPedagogicalHistory($args, $teacherId),
+                    'getCurrentWeek' => $this->getCurrentWeek($args, $teacherId),
+                    'createEvaluation' => $this->doCreateEvaluation($args, $teacherId),
+                    'attachEvaluationToPlan' => $this->doAttachEvaluationToPlan($args, $teacherId),
+                    default           => ['success' => false, 'message' => "Acción $fn no definida."],
+                };
             };
+
+            return in_array($fn, $writes, true) ? DB::transaction($run) : $run();
         } catch (\Throwable $e) {
             Log::error('AICommandHandler executeAction failed', [
                 'function' => $fn,
@@ -1015,7 +1131,11 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             ]);
             return [
                 'success' => false,
+                'status' => 'error',
                 'message' => 'No se pudo completar esta acción en este momento. Inténtalo de nuevo.',
+                'action_type' => $fn,
+                'icon' => '⚠️',
+                'data' => [],
             ];
         }
     }
@@ -1302,6 +1422,15 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
         }
 
         $teacher = User::find($teacherId);
+        if (! $teacher) {
+            return [
+                'success' => false,
+                'message' => 'No se encontró el docente autenticado.',
+                'action_type' => 'evaluation',
+                'icon' => '⚠️',
+            ];
+        }
+
         $courseId = (int) ($args['course_id'] ?? 0);
         $course = null;
         if ($courseId > 0) {
@@ -1314,40 +1443,45 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             }
         }
         if (! $course) {
+            $only = Course::where('teacher_id', $teacherId)->orderBy('id')->get();
+            if ($only->count() === 1) {
+                $course = $only->first();
+            }
+        }
+        if (! $course) {
             return [
                 'success' => false,
-                'message' => 'Necesito saber el curso. Dime materia/grado (ej: Matemáticas 1er grado) o abre el curso y vuelve a pedirlo.',
+                'message' => 'Necesito saber el curso. Dime materia y grado (ej: Matemáticas 1er grado) o ábrelo en el hub y vuelve a pedirlo.',
                 'action_type' => 'evaluation',
                 'icon' => '⚠️',
             ];
         }
 
         $prompt = trim((string) ($args['prompt'] ?? $args['topic'] ?? $args['title'] ?? ''));
-        if (mb_strlen($prompt) < 8) {
-            return [
-                'success' => false,
-                'message' => 'Describe brevemente qué debe evaluar (tema, nivel o enfoque) para generar la evaluación.',
-                'action_type' => 'evaluation',
-                'icon' => '⚠️',
-            ];
+        if ($prompt === '') {
+            $prompt = 'Evaluación del curso '.$course->subject_name;
         }
 
-        $mode = in_array(($args['mode'] ?? 'digital'), ['digital', 'physical'], true) ? $args['mode'] : 'digital';
+        $mode = in_array(($args['mode'] ?? 'digital'), ['digital', 'physical'], true) ? ($args['mode'] ?? 'digital') : 'digital';
         $difficulty = in_array(($args['difficulty'] ?? 'intermedio'), ['basico', 'intermedio', 'avanzado'], true)
-            ? $args['difficulty']
+            ? ($args['difficulty'] ?? 'intermedio')
             : 'intermedio';
         $mix = in_array(($args['question_mix'] ?? 'mixto'), ['mixto', 'multiple_choice', 'true_false', 'open', 'completion'], true)
-            ? $args['question_mix']
+            ? ($args['question_mix'] ?? 'mixto')
             : 'mixto';
         $count = max(3, min(20, (int) ($args['question_count'] ?? 8)));
-        $status = in_array(($args['status'] ?? 'draft'), ['draft', 'published'], true) ? $args['status'] : 'draft';
-        $addToPlan = filter_var($args['add_to_plan'] ?? false, FILTER_VALIDATE_BOOLEAN);
-        $weight = (float) ($args['weight_percentage'] ?? 10);
+        $status = in_array(($args['status'] ?? 'published'), ['draft', 'published', 'scheduled'], true)
+            ? ($args['status'] ?? 'published')
+            : 'published';
+        $addToPlan = array_key_exists('add_to_plan', $args)
+            ? filter_var($args['add_to_plan'], FILTER_VALIDATE_BOOLEAN)
+            : true;
+        $weight = (float) ($args['weight_percentage'] ?? 20);
         $category = in_array(($args['category'] ?? 'summative'), ['formative', 'summative'], true)
-            ? $args['category']
+            ? ($args['category'] ?? 'summative')
             : 'summative';
         $topic = trim((string) ($args['topic'] ?? ''));
-        $title = trim((string) ($args['title'] ?? '')) ?: ('Evaluación · '.($topic !== '' ? $topic : Str::limit($prompt, 40, '')));
+        $title = trim((string) ($args['title'] ?? '')) ?: ('Evaluación · '.($topic !== '' ? $topic : \Illuminate\Support\Str::limit($prompt, 40, '')));
 
         $generated = $this->generateEvaluationPayloadForAi(
             prompt: $prompt,
@@ -1361,88 +1495,49 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
 
         $questions = $generated['questions'] ?? [];
         if (! is_array($questions) || count($questions) === 0) {
-            return [
-                'success' => false,
-                'message' => 'No pude generar las preguntas de la evaluación. Intenta de nuevo con más detalle del tema.',
-                'action_type' => 'evaluation',
-                'icon' => '⚠️',
-            ];
+            $questions = $this->fallbackEvaluationPayload($topic !== '' ? $topic : $title, $count, $mix)['questions'];
         }
 
         $title = trim((string) ($generated['title'] ?? $title)) ?: $title;
         $instructions = trim((string) ($generated['instructions'] ?? 'Lee cuidadosamente cada pregunta y responde con claridad.'));
-        $total = collect($questions)->sum(fn ($q) => (int) ($q['points'] ?? 1));
 
-        $evaluation = Evaluation::create([
-            'teacher_id' => $teacherId,
-            'course_id' => $course->id,
-            'colegio_id' => $teacher?->colegio_id,
+        $evaluation = app(\App\Services\EvaluationSyncService::class)->persist($teacher, [
             'title' => $title,
             'description' => $prompt,
             'topic' => $topic !== '' ? $topic : null,
+            'course_id' => $course->id,
             'mode' => $mode,
             'status' => $status,
             'difficulty' => $difficulty,
             'question_mix' => $mix,
-            'question_count' => count($questions),
-            'generated_by_ai' => true,
             'instructions' => $instructions,
-            'scheduled_at' => ! empty($args['due_date']) ? $args['due_date'] : null,
-            'total_points' => $total,
-            'passing_score' => max(1, (int) floor($total * 0.6)),
-            'rubric' => $generated['rubric'] ?? ['total_points' => $total, 'passing_score' => max(1, (int) floor($total * 0.6))],
-            'physical_format' => ['paper_size' => 'A4', 'orientation' => 'portrait', 'font_size' => 12, 'include_qr' => true],
-            'large_print' => false,
+            'scheduled_at' => $args['due_date'] ?? null,
+            'generated_by_ai' => true,
+            'rubric' => $generated['rubric'] ?? null,
+            'questions' => $questions,
+            'add_to_plan' => $addToPlan,
+            'weight_percentage' => $weight > 0 ? $weight : 20,
+            'category' => $category,
         ]);
 
-        foreach (array_values($questions) as $index => $question) {
-            EvaluationQuestion::create([
-                'evaluation_id' => $evaluation->id,
-                'sort_order' => $index,
-                'type' => $question['type'] ?? 'open',
-                'text' => $question['text'] ?? 'Pregunta',
-                'options' => $question['options'] ?? [],
-                'correct_answer' => $question['correct_answer'] ?? null,
-                'points' => (int) ($question['points'] ?? 1),
-                'topic' => $question['topic'] ?? $evaluation->topic,
-            ]);
-        }
-
-        $planMessage = '';
-        $planId = null;
-        if ($addToPlan && Schema::hasTable('course_evaluation_plans')) {
-            $attach = $this->attachEvaluationToCoursePlan(
-                teacherId: $teacherId,
-                evaluation: $evaluation,
-                planId: null,
-                weight: $weight,
-                category: $category,
-                unitName: $topic !== '' ? $topic : 'Unidad sincronizada',
-                dueDate: $args['due_date'] ?? null
-            );
-            $planMessage = ' '.$attach['message'];
-            $planId = $attach['plan_id'] ?? null;
-        }
-
         $evalUrl = route('teacher.evaluations.index');
-        $planUrl = route('teacher.assessment.index');
         $modeLabel = $mode === 'physical' ? 'física imprimible' : 'digital';
+        $planMessage = $addToPlan ? ' También quedó en el Plan de Evaluación del curso.' : '';
 
         return [
             'success' => true,
             'message' => "Evaluación creada: «{$evaluation->title}» ({$modeLabel}, {$evaluation->question_count} preguntas) en {$course->subject_name}."
                 .$planMessage
-                ." Puedes revisarla en Evaluaciones ({$evalUrl})".($addToPlan ? " y en Estrategia de Evaluación ({$planUrl})." : '.'),
+                ." Ya aparece en Evaluaciones ({$evalUrl}) y como actividad calificable en el hub. Puedes cargar notas y se acumulan en las boletas.",
             'action_type' => 'evaluation',
             'icon' => '📝',
             'data' => [
                 'evaluation_id' => $evaluation->id,
+                'activity_id' => $evaluation->activity_id,
                 'course_id' => $course->id,
-                'plan_id' => $planId,
                 'added_to_plan' => $addToPlan,
                 'public_token' => $evaluation->public_token,
                 'evaluations_url' => $evalUrl,
-                'assessment_url' => $planUrl,
             ],
         ];
     }
@@ -1718,7 +1813,14 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
         $neeAdaptation = $neeType ? $this->buildNeeAdaptation($neeType) : null;
 
         $description = (string) ($normalizedArgs['description'] ?? '');
-        $descError = $this->validateLessonDescriptionForNova($description, $semanticType);
+        $lessonTemplate = $this->activeLessonTemplateFor($teacherId);
+        if ($description !== '' && ! LessonTemplate::hasRequiredHeaders($description, $lessonTemplate)) {
+            $rewritten = LessonTemplate::rewrite($description, $lessonTemplate);
+            if ($rewritten !== '') {
+                $description = $rewritten;
+            }
+        }
+        $descError = $this->validateLessonDescriptionForNova($description, $semanticType, $lessonTemplate);
         if ($descError !== null) {
             return [
                 'success'     => false,
@@ -2059,7 +2161,12 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
                     'date' => $cursor->format('Y-m-d'),
                     'title' => $titleDescriptive,
                     'type' => $isThursday ? 'actividad' : 'clase',
-                    'description' => $this->buildBulkPlanSessionDescription($topic, $isThursday),
+                    'description' => $this->buildBulkPlanSessionDescription(
+                        $topic,
+                        $isThursday,
+                        $teacherId,
+                        $this->activeLessonTemplateFor($teacherId)
+                    ),
                     'weight_percentage' => $isThursday ? 15 : 0,
                     'max_score' => $isThursday ? 20 : 0,
                 ];
@@ -2319,6 +2426,7 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
                 'course_id' => $args['course_id'],
                 'planificacion_id' => $planificacion->id,
                 'activities_created' => $n,
+                'activity_ids' => collect($created)->pluck('id')->all(),
                 'month' => strtolower($monthLabel),
                 'year' => $yearLabel,
             ],
@@ -2347,6 +2455,9 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
                 'activities_created' => $n,
                 'month_label' => $piece !== '' ? $piece : null,
                 'assistant_message' => $result['message'] ?? null,
+                'planificacion_id' => $result['data']['planificacion_id'] ?? null,
+                'activity_ids' => $result['data']['activity_ids'] ?? [],
+                'course_id' => $result['data']['course_id'] ?? null,
             ];
         }
 
@@ -2887,24 +2998,83 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
         return $query->orderBy('due_date')->get();
     }
 
+    private function resolveGradableActivity(array $args, int $teacherId): ?Activity
+    {
+        return app(\App\Services\EvaluationSyncService::class)->findActivityForEvaluation(
+            $teacherId,
+            isset($args['evaluation_id']) ? (int) $args['evaluation_id'] : null,
+            isset($args['activity_id']) ? (int) $args['activity_id'] : null
+        );
+    }
+
+    private function resolveEnrolledStudent(Activity $activity, array $args, int $teacherId, $colegioId): ?Student
+    {
+        $studentId = (int) ($args['student_id'] ?? 0);
+        $name = trim((string) ($args['student_name'] ?? $args['query'] ?? ''));
+
+        $query = Student::query()
+            ->where('colegio_id', $colegioId)
+            ->where(function ($q) use ($activity, $teacherId) {
+                $q->where('teacher_id', $teacherId);
+                if ($activity->course_id) {
+                    $q->orWhereHas('courses', fn ($c) => $c->where('courses.id', $activity->course_id));
+                }
+            });
+
+        if ($studentId > 0) {
+            return (clone $query)->where('id', $studentId)->first();
+        }
+
+        if ($name !== '') {
+            $like = '%'.mb_strtolower($name).'%';
+            return (clone $query)->whereRaw('LOWER(name) LIKE ?', [$like])->orderBy('name')->first();
+        }
+
+        return null;
+    }
+
     /**
      * Lista legible para el system prompt (IDs explícitos para borrar/modificar sin adivinar).
      */
     private function buildCalendarSnapshotLines(int $teacherId, Carbon $start, Carbon $end, ?int $courseId = null): string
     {
         $items = $this->calendarActivitiesBetween($teacherId, $start, $end, $courseId);
-        if ($items->isEmpty()) {
-            return '(sin actividades en este rango)';
+        $evalLines = '';
+        if (Schema::hasTable('evaluations')) {
+            $evals = Evaluation::where('teacher_id', $teacherId)
+                ->when($courseId, fn ($q) => $q->where('course_id', $courseId))
+                ->where(function ($q) use ($start, $end) {
+                    $q->whereBetween('scheduled_at', [$start->copy()->startOfDay(), $end->copy()->endOfDay()])
+                        ->orWhereBetween('created_at', [$start->copy()->startOfDay(), $end->copy()->endOfDay()]);
+                })
+                ->with('course:id,subject_name,grade,section')
+                ->orderByDesc('id')
+                ->limit(30)
+                ->get();
+            if ($evals->isNotEmpty()) {
+                $evalLines = "\nEvaluaciones formales:\n".$evals->map(function (Evaluation $e) {
+                    $cn = trim(($e->course?->subject_name ?? '').' '.($e->course?->grade ?? ''));
+                    $date = optional($e->scheduled_at)->format('Y-m-d') ?: $e->created_at?->format('Y-m-d');
+                    return "- {$date} | evaluation_id {$e->id} | activity_id ".($e->activity_id ?: '—')." | course_id {$e->course_id} | {$cn} | {$e->title} | {$e->status}";
+                })->join("\n");
+            }
         }
 
-        return $items->map(function ($a) {
+        if ($items->isEmpty() && $evalLines === '') {
+            return '(sin actividades ni evaluaciones en este rango)';
+        }
+
+        $activityLines = $items->map(function ($a) {
             $d = $a->due_date instanceof Carbon ? $a->due_date->format('Y-m-d') : (string) $a->due_date;
             $cn = trim((optional($a->course)->subject_name ?? '') . ' ' . (optional($a->course)->grade ?? ''));
             $title = str_replace(["\r", "\n"], ' ', (string) $a->title);
             $type = $a->type ?? 'actividad';
+            $exam = $a->evaluation_id ? " | evaluation_id {$a->evaluation_id}" : '';
 
-            return "- {$d} | actividad_id {$a->id} | course_id {$a->course_id} | {$cn} | {$title} | {$type}";
+            return "- {$d} | actividad_id {$a->id}{$exam} | course_id {$a->course_id} | {$cn} | {$title} | {$type}";
         })->join("\n");
+
+        return trim($activityLines."\n".$evalLines);
     }
 
     private function getCalendarContext(array $args, int $teacherId): array
@@ -2946,27 +3116,21 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
     private function setGrade(array $args, int $teacherId): array
     {
         $colegioId = User::where('id', $teacherId)->value('colegio_id');
-        $activity = Activity::where('id', $args['activity_id'] ?? null)
-            ->where('teacher_id', $teacherId)
-            ->where('colegio_id', $colegioId)
-            ->first();
+        $activity = $this->resolveGradableActivity($args, $teacherId);
         if (! $activity) {
             return [
                 'success'     => false,
-                'message'     => 'No se encontró la actividad para calificar.',
+                'message'     => 'No se encontró la actividad o el examen para calificar.',
                 'action_type' => 'grade',
                 'icon'        => '⚠️',
             ];
         }
 
-        $student = Student::where('id', $args['student_id'] ?? null)
-            ->where('teacher_id', $teacherId)
-            ->where('colegio_id', $colegioId)
-            ->first();
+        $student = $this->resolveEnrolledStudent($activity, $args, $teacherId, $colegioId);
         if (! $student) {
             return [
                 'success'     => false,
-                'message'     => 'No se encontró el alumno para calificar.',
+                'message'     => 'No se encontró el alumno para calificar en ese curso.',
                 'action_type' => 'grade',
                 'icon'        => '⚠️',
             ];
@@ -2977,16 +3141,24 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
 
         $grade = Grade::updateOrCreate(
             ['activity_id' => $activity->id, 'student_id' => $student->id],
-            ['colegio_id' => $colegioId, 'score' => $score, 'feedback_text' => $feedback]
+            ['colegio_id' => $colegioId, 'score' => $score, 'status' => 'published', 'published_at' => now(), 'feedback_text' => $feedback]
         );
+
+        if ($activity->evaluation_id) {
+            EvaluationAttempt::updateOrCreate(
+                ['evaluation_id' => $activity->evaluation_id, 'student_id' => $student->id],
+                ['student_name' => $student->name, 'score' => $score, 'status' => 'graded', 'answers' => []]
+            );
+        }
 
         return [
             'success'     => true,
-            'message'     => "Calificación guardada para {$student->name}.",
+            'message'     => "Calificación guardada para {$student->name} en «{$activity->title}».",
             'action_type' => 'grade',
             'icon'        => '🧮',
             'data'        => [
                 'activity_id' => $activity->id,
+                'evaluation_id' => $activity->evaluation_id,
                 'student_id'  => $student->id,
                 'score'       => $grade->score,
                 'feedback'    => $grade->feedback_text,
@@ -2997,14 +3169,11 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
     private function setGradeBatch(array $args, int $teacherId): array
     {
         $colegioId = User::where('id', $teacherId)->value('colegio_id');
-        $activity = Activity::where('id', $args['activity_id'] ?? null)
-            ->where('teacher_id', $teacherId)
-            ->where('colegio_id', $colegioId)
-            ->first();
+        $activity = $this->resolveGradableActivity($args, $teacherId);
         if (! $activity) {
             return [
                 'success'     => false,
-                'message'     => 'No se encontró la actividad para calificar.',
+                'message'     => 'No se encontró la actividad o el examen para calificar.',
                 'action_type' => 'grade',
                 'icon'        => '⚠️',
             ];
@@ -3031,15 +3200,9 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
                 continue;
             }
             if ($studentId) {
-                $student = Student::where('id', $studentId)
-                    ->where('teacher_id', $teacherId)
-                    ->where('colegio_id', $colegioId)
-                    ->first();
+                $student = $this->resolveEnrolledStudent($activity, ['student_id' => $studentId], $teacherId, $colegioId);
             } elseif ($studentName) {
-                $student = Student::where('teacher_id', $teacherId)
-                    ->where('colegio_id', $colegioId)
-                    ->where('name', $studentName)
-                    ->first();
+                $student = $this->resolveEnrolledStudent($activity, ['student_name' => $studentName], $teacherId, $colegioId);
             } else {
                 $errors[] = 'Cada calificación debe incluir student_id o student_name.';
                 continue;
@@ -3051,8 +3214,14 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             }
             Grade::updateOrCreate(
                 ['activity_id' => $activity->id, 'student_id' => $student->id],
-                ['colegio_id' => $colegioId, 'score' => $score, 'feedback_text' => $feedback]
+                ['colegio_id' => $colegioId, 'score' => $score, 'status' => 'published', 'published_at' => now(), 'feedback_text' => $feedback]
             );
+            if ($activity->evaluation_id) {
+                EvaluationAttempt::updateOrCreate(
+                    ['evaluation_id' => $activity->evaluation_id, 'student_id' => $student->id],
+                    ['student_name' => $student->name, 'score' => $score, 'status' => 'graded', 'answers' => []]
+                );
+            }
             $graded++;
         }
 
@@ -3381,17 +3550,29 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
      * Valida descripciones Markdown para clases/actividades/tareas según reglas de Aulasync.
      * Devuelve null si es válida, o un mensaje de error en español.
      */
-    private function validateLessonDescriptionForNova(string $description, string $resolvedType): ?string
+    private function validateLessonDescriptionForNova(string $description, string $resolvedType, ?string $template = null): ?string
     {
         $trimmed = trim($description);
+        $template = $template ?: LessonTemplate::CLASSIC;
+        $headers = LessonTemplate::promptLine($template);
+
         if ($trimmed === '') {
-            return 'La descripción no puede estar vacía. Usa Markdown con **INICIO**, **DESARROLLO** y **CIERRE**.';
+            return "La descripción no puede estar vacía. Usa Markdown con {$headers}.";
         }
 
-        foreach (['INICIO', 'DESARROLLO', 'CIERRE'] as $label) {
-            if (! preg_match('/\*\*\s*' . preg_quote($label, '/') . '\s*\*\*/u', $trimmed)) {
-                return 'La descripción debe incluir tres secciones en negrita: **INICIO**, **DESARROLLO** y **CIERRE** (motivación y saberes previos; contenido para copiar; cierre o juego).';
+        $matchesPreferred = LessonTemplate::hasRequiredHeaders($trimmed, $template);
+        $matchesAny = $matchesPreferred;
+        if (! $matchesAny) {
+            foreach ([LessonTemplate::CLASSIC, LessonTemplate::DIRECT, LessonTemplate::CONSTRUCTIVIST] as $id) {
+                if (LessonTemplate::hasRequiredHeaders($trimmed, $id)) {
+                    $matchesAny = true;
+                    break;
+                }
             }
+        }
+
+        if (! $matchesAny) {
+            return "La descripción debe incluir las secciones de tu plantilla en negrita: {$headers}.";
         }
 
         $paragraphs = preg_split('/\R\s*\R/u', $trimmed, -1, PREG_SPLIT_NO_EMPTY);
@@ -3402,8 +3583,8 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
 
         if (count($paragraphs) < $minParagraphs) {
             return $resolvedType === 'tarea'
-                ? 'La descripción debe tener al menos dos párrafos separados por una línea en blanco, además de las secciones **INICIO**, **DESARROLLO** y **CIERRE**.'
-                : 'La descripción debe tener al menos tres párrafos detallados (separados por línea en blanco), con **INICIO**, **DESARROLLO** y **CIERRE** en Markdown.';
+                ? "La descripción debe tener al menos dos párrafos separados por una línea en blanco, además de las secciones {$headers}."
+                : "La descripción debe tener al menos tres párrafos detallados (separados por línea en blanco), con {$headers} en Markdown.";
         }
 
         if (mb_strlen($trimmed) < $minLen) {
@@ -3416,11 +3597,103 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
     }
 
     /**
-     * Plantilla rica en Markdown para cada hueco de bulkPlan (Lunes / Jueves).
+     * Plantilla rica en Markdown para cada hueco de bulkPlan.
      */
-    private function buildBulkPlanSessionDescription(string $topic, bool $isThursday): string
+    private function buildBulkPlanSessionDescription(string $topic, bool $isThursday, int $teacherId = 0, ?string $template = null): string
     {
         $topicEsc = trim($topic) !== '' ? $topic : 'el tema del curso';
+        $template = LessonTemplate::normalize(
+            $template ?: $this->activeLessonTemplateFor($teacherId)
+        );
+
+        if ($template === 'directa') {
+            if ($isThursday) {
+                return <<<MD
+**MOTIVACIÓN**
+
+Activamos saberes previos sobre {$topicEsc} con una pregunta-problema breve y dos ejemplos cotidianos. Se aclara el propósito de la práctica y por qué importa dominar el procedimiento hoy.
+
+**PRESENTACIÓN**
+
+El docente modela **un ejercicio resuelto** de {$topicEsc} en pizarra: enunciado, pasos numerados y resultado verificado. Se copian al cuaderno el formato y los **criterios de corrección** (procedimiento, exactitud, presentación).
+
+**PRÁCTICA GUIADA**
+
+Estaciones o trabajo en parejas: una ronda con apoyo del docente y otra de aplicación. Se corrigen errores frecuentes en voz alta y se deja un desafío opcional para quienes terminen primero.
+
+**CIERRE REFLEXIVO**
+
+Juego rápido o ronda de justificaciones sobre {$topicEsc}. Ticket de salida: “Lo más importante fue…” y una dificultad detectada. Se anuncia el puente con la próxima clase.
+MD;
+            }
+
+            return <<<MD
+**MOTIVACIÓN**
+
+Se presenta {$topicEsc} con una **pregunta disparadora** y un mapa mental colectivo. Se explicitan saberes previos y el objetivo: qué podrán explicar y aplicar al finalizar.
+
+**PRESENTACIÓN**
+
+Exposición **ordenada para el cuaderno**: definición en negrita, **dos ejemplos resueltos** y un **contraejemplo**. Incluye un esquema numerado y preguntas de procesamiento.
+
+**PRÁCTICA GUIADA**
+
+Los alumnos resuelven ítems con apoyo. El docente circula, corrige y pide justificar cada paso. Todo lo esencial queda redactado para copiar y subrayar.
+
+**CIERRE REFLEXIVO**
+
+Mini-resumen en parejas de tres frases. Juego breve de consolidación. Tarea puente opcional de un ítem para la próxima sesión práctica.
+MD;
+        }
+
+        if ($template === 'constructivista') {
+            if ($isThursday) {
+                return <<<MD
+**ACTIVACIÓN**
+
+Situación problemática breve sobre {$topicEsc} que conecta con la vida cotidiana. Se recogen hipótesis iniciales del grupo.
+
+**EXPLORACIÓN**
+
+Estaciones de laboratorio o práctica: los alumnos prueban, comparan resultados y registran evidencias en el cuaderno.
+
+**EXPLICACIÓN**
+
+Se formaliza el procedimiento correcto de {$topicEsc} con lenguaje disciplinar, un ejemplo modelo y criterios de calidad.
+
+**APLICACIÓN**
+
+Desafío en parejas o estaciones de transferencia. Incluye un ítem opcional de mayor complejidad.
+
+**EVALUACIÓN**
+
+Ticket de salida y autoevaluación: qué se dominó, qué falta y un ejemplo propio de {$topicEsc}.
+MD;
+            }
+
+            return <<<MD
+**ACTIVACIÓN**
+
+Pregunta provocadora sobre {$topicEsc}. Se activa la curiosidad y se registran ideas previas en un mapa colectivo.
+
+**EXPLORACIÓN**
+
+Los alumnos exploran el fenómeno o concepto con observaciones, lecturas cortas o ejemplos concretos antes de la definición formal.
+
+**EXPLICACIÓN**
+
+El docente sistematiza {$topicEsc}: definición, dos ejemplos resueltos y un error frecuente. Esquema numerado para copiar.
+
+**APLICACIÓN**
+
+Preguntas de procesamiento y un caso nuevo. Trabajo individual o en parejas para transferir el concepto.
+
+**EVALUACIÓN**
+
+Metacognición de tres frases y un ítem de cierre. Se deja puente opcional hacia la próxima práctica.
+MD;
+        }
+
         if ($isThursday) {
             return <<<MD
 **INICIO** (motivación y saberes previos)
@@ -3500,7 +3773,19 @@ MD;
     private function hasPlanningIntent(?string $text): bool
     {
         $value = mb_strtolower((string) $text);
-        return (bool) preg_match('/\b(planifica|planificar|planificación|planificacion|cronograma|calendario|genera.*mes|organiza.*mes|mes de)\b/u', $value);
+        return (bool) preg_match('/\b(planifica|planificar|planificación|planificacion|cronograma|calendario|genera.*mes|organiza.*mes|mes de|desglosa|desglosar|siguientes d[ií]as|pr[oó]ximos d[ií]as)\b/u', $value);
+    }
+
+    private function hasCreateEvaluationIntent(?string $text): bool
+    {
+        $value = mb_strtolower((string) $text);
+        if (preg_match('/plan\s+de\s+evaluaci/u', $value)) {
+            return false;
+        }
+        $wantsCreate = (bool) preg_match('/\b(crea|crear|cr[eé]ame|genera|generar|gen[eé]rame|hazme|haz|hacer|arma|armar|prepara|preparar|prep[aá]rame|diseña|diseñar|elabora|elaborar)\b/u', $value);
+        $wantsExam = (bool) preg_match('/\b(examen|exámenes|examenes|prueba|pruebas|quiz|evaluaci[oó]n|evaluaciones)\b/u', $value);
+
+        return $wantsCreate && $wantsExam;
     }
 
     /**
@@ -3610,11 +3895,137 @@ MD;
         return array_filter([
             'success' => true,
             'status' => $bulkMeta ? 'success' : ($anySuccess ? 'success' : 'partial'),
-            'results' => $results,
             'actions' => $actions,
             'any_success' => $anySuccess,
             'bulk_plan' => $bulkMeta,
             'message' => $bulkMeta['assistant_message'] ?? null,
+            'data' => $actions,
         ], fn ($v) => $v !== null);
+    }
+
+    private function extractEvaluationArgsFromIntent(string $intentText, array $screenContext, User $teacher): array
+    {
+        $args = [
+            'prompt' => $intentText,
+            'course_id' => ! empty($screenContext['id']) ? (int) $screenContext['id'] : 0,
+            'course_name_hint' => null,
+            'add_to_plan' => true,
+            'status' => 'published',
+        ];
+
+        if (is_string($screenContext['subject_name'] ?? null)) {
+            $args['course_name_hint'] = trim(($screenContext['subject_name'] ?? '').' '.($screenContext['grade'] ?? ''));
+        }
+        if (empty($args['course_name_hint'])) {
+            $args['course_name_hint'] = $intentText;
+        }
+
+        if (preg_match('/(?:peso|weight|porcentaje|percentage)\D{0,16}(\d{1,3})\s*%?/iu', $intentText, $m)
+            || preg_match('/(\d{1,3})\s*%/u', $intentText, $m)) {
+            $weight = (float) $m[1];
+            if ($weight > 0 && $weight <= 100) {
+                $args['weight_percentage'] = $weight;
+            }
+        }
+
+        $lower = mb_strtolower($intentText);
+        if (preg_match('/\b(f[ií]sica|física|imprimible|papel|impresa)\b/u', $lower)) {
+            $args['mode'] = 'physical';
+        } elseif (preg_match('/\b(digital|online|en l[ií]nea|virtual)\b/u', $lower)) {
+            $args['mode'] = 'digital';
+        }
+
+        if (preg_match('/\bhoy\b/u', $lower)) {
+            $args['due_date'] = now()->toDateString();
+        } elseif (preg_match('/\bma[nñ]ana\b/u', $lower)) {
+            $args['due_date'] = now()->addDay()->toDateString();
+        } elseif (preg_match('/\b(\d{4}-\d{2}-\d{2})\b/', $intentText, $m)) {
+            $args['due_date'] = $m[1];
+        } elseif ($parsedDate = $this->extractSingleDateFromText($intentText)) {
+            $args['due_date'] = $parsedDate;
+        }
+
+        if ((int) $args['course_id'] <= 0) {
+            $resolved = $this->lookupCourseByHint($teacher->id, $teacher->colegio_id, $intentText, '');
+            if ($resolved) {
+                $args['course_id'] = $resolved;
+            }
+        }
+
+        return $args;
+    }
+
+    private function extractSingleDateFromText(string $text): ?string
+    {
+        if (! preg_match('/\b(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?\b/u', $text, $m)) {
+            return null;
+        }
+
+        $day = (int) $m[1];
+        $month = (int) $m[2];
+        $year = isset($m[3]) ? (int) $m[3] : (int) now()->format('Y');
+        if ($year < 100) {
+            $year += 2000;
+        }
+
+        try {
+            return Carbon::createFromDate($year, $month, $day)->toDateString();
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    private function mergeEvaluationDraft(array $baseDraft, array $incomingDraft, string $intentText): array
+    {
+        $draft = array_merge($baseDraft, array_filter($incomingDraft, function ($value) {
+            return $value !== null && $value !== '' && $value !== 0;
+        }));
+
+        if (empty($draft['prompt'])) {
+            $draft['prompt'] = trim($intentText);
+        }
+        if (empty($draft['topic'])) {
+            $draft['topic'] = Str::limit(trim($intentText), 120, '');
+        }
+
+        $draft['mode'] = in_array(($draft['mode'] ?? 'digital'), ['digital', 'physical'], true)
+            ? ($draft['mode'] ?? 'digital')
+            : 'digital';
+        $draft['weight_percentage'] = isset($draft['weight_percentage'])
+            ? (float) $draft['weight_percentage']
+            : null;
+
+        return $draft;
+    }
+
+    private function missingEvaluationDraftFields(array $draft): array
+    {
+        $missing = [];
+        if (((int) ($draft['course_id'] ?? 0)) <= 0) {
+            $missing[] = 'course';
+        }
+        if (empty($draft['due_date'])) {
+            $missing[] = 'date';
+        }
+        $weight = $draft['weight_percentage'] ?? null;
+        if (! is_numeric($weight) || (float) $weight <= 0 || (float) $weight > 100) {
+            $missing[] = 'weight';
+        }
+        if (empty($draft['mode']) || ! in_array($draft['mode'], ['digital', 'physical'], true)) {
+            $missing[] = 'mode';
+        }
+
+        return $missing;
+    }
+
+    private function evaluationFollowupQuestion(string $missingField, array $draft): string
+    {
+        return match ($missingField) {
+            'course' => 'Para crearla bien, ¿en qué curso la registramos? Puedes decirme materia y grado (ej: Matemáticas 1er grado).',
+            'date' => 'Perfecto. ¿Qué fecha tendrá la evaluación? (ej: 2026-08-25, hoy o mañana).',
+            'weight' => '¿Qué porcentaje/peso tendrá en la nota final? (ej: 25%).',
+            'mode' => '¿La quieres digital o física imprimible?',
+            default => 'Necesito un dato más para crear la evaluación. ¿Me lo compartes?',
+        };
     }
 }

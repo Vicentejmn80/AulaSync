@@ -140,6 +140,14 @@
                 <label>Número de preguntas</label>
                 <input type="number" min="3" max="40" x-model.number="form.question_count">
             </div>
+            <div>
+                <label>Peso / porcentaje</label>
+                <input type="number" min="1" max="100" x-model.number="form.weight_percentage" placeholder="20">
+            </div>
+            <div>
+                <label>Fecha</label>
+                <input type="date" x-model="form.scheduled_at">
+            </div>
         </div>
         <div class="row2" x-show="form.mode === 'physical'">
             <div>
@@ -272,6 +280,7 @@
                     <a class="btn btn-ghost" :href="`/teacher/evaluations/${ev.id}/print`" target="_blank">Imprimir</a>
                     <a class="btn btn-soft" x-show="ev.mode === 'digital' && ev.public_token" :href="`/e/${ev.public_token}`" target="_blank">Abrir examen</a>
                     <button class="btn btn-soft" @click="addToPlan(ev.id)"><i class="fa-solid fa-diagram-project"></i> Agregar al plan</button>
+                    <button class="btn btn-ai" @click="openGrade(ev)"><i class="fa-solid fa-pen-to-square"></i> Calificar</button>
                     <button class="btn btn-ghost" @click="duplicate(ev.id)">Duplicar</button>
                     <button class="btn btn-ghost" @click="remove(ev.id)">Eliminar</button>
                 </div>
@@ -305,6 +314,56 @@
             </div>
         </template>
     </div>
+
+<div x-show="gradeModal.open" x-cloak @click.self="gradeModal.open = false"
+     style="position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:80;display:flex;align-items:flex-start;justify-content:center;padding:48px 16px;overflow:auto;">
+    <div @click.stop class="card" style="width:min(720px,100%);max-height:90vh;overflow:auto;">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;">
+            <div>
+                <p class="muted" style="margin:0;font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;">Cargar notas</p>
+                <h3 style="margin:4px 0 0;" x-text="gradeModal.title || 'Calificar evaluación'"></h3>
+                <p class="muted" style="margin:4px 0 0;" x-text="gradeModal.course || ''"></p>
+            </div>
+            <button class="btn btn-ghost" @click="gradeModal.open = false">Cerrar</button>
+        </div>
+        <p class="muted" style="margin:12px 0 0;">Escala: 0 a <span x-text="gradeModal.max_score"></span>. Estas notas se acumulan en el hub y en las boletas del director.</p>
+        <p class="err" x-show="gradeModal.error" x-text="gradeModal.error"></p>
+        <p class="ok" x-show="gradeModal.message" x-text="gradeModal.message"></p>
+        <div x-show="gradeModal.loading" class="muted" style="padding:24px 0;">Cargando alumnos…</div>
+        <div x-show="!gradeModal.loading && gradeModal.students.length === 0" class="muted" style="padding:18px 0;">
+            Este examen no tiene curso o el curso no tiene alumnos inscritos.
+        </div>
+        <table x-show="!gradeModal.loading && gradeModal.students.length" style="width:100%;border-collapse:collapse;margin-top:14px;font-size:14px;">
+            <thead>
+                <tr style="text-align:left;color:var(--text-secondary);font-size:11px;text-transform:uppercase;letter-spacing:.06em;">
+                    <th style="padding:8px 6px;">Alumno</th>
+                    <th style="padding:8px 6px;width:120px;">Nota</th>
+                    <th style="padding:8px 6px;">Comentario</th>
+                </tr>
+            </thead>
+            <tbody>
+                <template x-for="(row, i) in gradeModal.students" :key="row.student_id">
+                    <tr style="border-top:1px solid var(--nova-glass-border);">
+                        <td style="padding:8px 6px;font-weight:700;" x-text="row.name"></td>
+                        <td style="padding:8px 6px;">
+                            <input type="number" min="0" :max="gradeModal.max_score" step="0.01"
+                                   x-model.number="gradeModal.students[i].score">
+                        </td>
+                        <td style="padding:8px 6px;">
+                            <input type="text" placeholder="Opcional" x-model="gradeModal.students[i].feedback">
+                        </td>
+                    </tr>
+                </template>
+            </tbody>
+        </table>
+        <div style="margin-top:16px;display:flex;justify-content:flex-end;gap:8px;">
+            <button class="btn btn-ghost" @click="gradeModal.open = false">Cancelar</button>
+            <button class="btn btn-ai" :disabled="gradeModal.saving" @click="saveGrades()">
+                <span x-text="gradeModal.saving ? 'Guardando…' : 'Guardar notas'"></span>
+            </button>
+        </div>
+    </div>
+</div>
 </div>
 <script>
 function evaluationsApp() {
@@ -326,6 +385,7 @@ function evaluationsApp() {
         bank: @json($bank),
         courses: @json($courses),
         preview: null,
+        gradeModal: { open: false, loading: false, saving: false, id: null, title: '', course: '', max_score: 20, students: [], error: '', message: '' },
         form: {
             prompt: '',
             mode: 'digital',
@@ -334,6 +394,8 @@ function evaluationsApp() {
             difficulty: 'intermedio',
             question_mix: 'mixto',
             question_count: 10,
+            weight_percentage: 20,
+            scheduled_at: '',
             large_print: false,
             paper_size: 'A4',
             orientation: 'portrait',
@@ -388,14 +450,17 @@ function evaluationsApp() {
                     headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': this.csrf(), 'Accept': 'application/json' },
                     body: JSON.stringify(payload),
                 });
-                const data = await res.json();
-                if (!data.success) { this.error = data.error || 'No se pudo guardar.'; return; }
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok || !data.success) {
+                    this.error = data.error || data.message || `No se pudo guardar (${res.status}).`;
+                    return;
+                }
                 this.evaluations.unshift(data.evaluation);
                 this.message = 'Evaluación guardada con éxito.';
                 this.tab = 'list';
                 if (goPrint) window.open(`/teacher/evaluations/${data.evaluation.id}/print`, '_blank');
             } catch (e) {
-                this.error = 'Error de red al guardar.';
+                this.error = 'El servidor no pudo guardar la evaluación. Revisa el curso asignado e inténtalo de nuevo.';
             } finally {
                 this.saving = false;
             }
@@ -424,6 +489,51 @@ function evaluationsApp() {
                 this.message = data.message || 'Evaluación agregada al plan.';
             } catch (e) {
                 this.error = 'Error de red al sincronizar con el plan.';
+            }
+        },
+        async openGrade(ev) {
+            this.gradeModal = {
+                open: true, loading: true, saving: false, id: ev.id,
+                title: ev.title, course: ev.course?.subject_name || '', max_score: 20,
+                students: [], error: '', message: '',
+            };
+            try {
+                const res = await fetch(`/teacher/evaluations/${ev.id}/roster`, { headers: { Accept: 'application/json' } });
+                const data = await res.json();
+                if (!data.success) { this.gradeModal.error = data.error || 'No se pudo cargar el listado.'; this.gradeModal.loading = false; return; }
+                this.gradeModal.max_score = data.evaluation?.max_score || 20;
+                this.gradeModal.course = [data.evaluation?.course?.subject_name, data.evaluation?.course?.grade, data.evaluation?.course?.section].filter(Boolean).join(' · ');
+                this.gradeModal.students = (data.students || []).map(s => ({ ...s }));
+            } catch (e) {
+                this.gradeModal.error = 'Error de red al cargar alumnos.';
+            } finally {
+                this.gradeModal.loading = false;
+            }
+        },
+        async saveGrades() {
+            if (!this.gradeModal.id || this.gradeModal.saving) return;
+            this.gradeModal.saving = true;
+            this.gradeModal.error = '';
+            try {
+                const res = await fetch(`/teacher/evaluations/${this.gradeModal.id}/grades`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': this.csrf(), 'Accept': 'application/json' },
+                    body: JSON.stringify({
+                        grades: this.gradeModal.students.map(s => ({
+                            student_id: s.student_id,
+                            score: s.score,
+                            feedback: s.feedback,
+                        })),
+                    }),
+                });
+                const data = await res.json();
+                if (!data.success) { this.gradeModal.error = data.message || 'No se pudieron guardar las notas.'; return; }
+                this.gradeModal.message = data.message;
+                this.message = data.message;
+            } catch (e) {
+                this.gradeModal.error = 'Error de red al guardar.';
+            } finally {
+                this.gradeModal.saving = false;
             }
         },
         async gradeAi(id) {

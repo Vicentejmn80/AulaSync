@@ -15,6 +15,7 @@ class Activity extends Model
     protected $fillable = [
         'teacher_id',
         'course_id',
+        'evaluation_id',
         'plan_block_id',
         'title',
         'description',
@@ -27,7 +28,9 @@ class Activity extends Model
         'nee_adaptation',
         'id_curso',
         'id_docente',
+        'id_profesor',
         'id_modulo',
+        'estado',
         'colegio_id',
         'director_notes',
     ];
@@ -86,6 +89,11 @@ class Activity extends Model
     public function course(): BelongsTo
     {
         return $this->belongsTo(Course::class);
+    }
+
+    public function evaluation(): BelongsTo
+    {
+        return $this->belongsTo(Evaluation::class);
     }
 
     public function grades(): HasMany

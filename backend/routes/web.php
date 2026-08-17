@@ -25,6 +25,7 @@ use App\Http\Controllers\Teacher\AssessmentStrategyController;
 use App\Http\Controllers\Teacher\AttendanceController;
 use App\Http\Controllers\Teacher\StudentController as TeacherStudentController;
 use App\Http\Controllers\Director\AttendanceDashboardController;
+use App\Http\Controllers\Director\AcademicPeriodController as DirectorAcademicPeriodController;
 use App\Http\Controllers\RepresentanteController;
 use App\Http\Controllers\SmartPlannerController;
 use Illuminate\Http\Request;
@@ -113,6 +114,32 @@ Route::middleware(['auth'])->group(function () {
                 Route::get('/attendance', [AttendanceDashboardController::class, 'index'])
                     ->name('attendance');
 
+                // Períodos académicos y boletas inteligentes
+                Route::get('/periodos', [DirectorAcademicPeriodController::class, 'index'])
+                    ->name('periodos');
+                Route::get('/api/periods', [DirectorAcademicPeriodController::class, 'apiPeriods'])
+                    ->name('api.periods');
+                Route::post('/api/periods', [DirectorAcademicPeriodController::class, 'storePeriod'])
+                    ->name('api.periods.store');
+                Route::put('/api/periods/{period}', [DirectorAcademicPeriodController::class, 'updatePeriod'])
+                    ->name('api.periods.update');
+                Route::get('/api/periods/{period}/grades-summary', [DirectorAcademicPeriodController::class, 'gradesSummary'])
+                    ->name('api.periods.grades');
+                Route::post('/api/periods/{period}/generate', [DirectorAcademicPeriodController::class, 'generate'])
+                    ->name('api.periods.generate');
+                Route::post('/api/periods/{period}/publish', [DirectorAcademicPeriodController::class, 'publish'])
+                    ->name('api.periods.publish');
+                Route::get('/api/periods/{period}/cards', [DirectorAcademicPeriodController::class, 'listCards'])
+                    ->name('api.periods.cards');
+                Route::get('/api/periods/{period}/export-pdf', [DirectorAcademicPeriodController::class, 'pdfBulk'])
+                    ->name('api.periods.pdf.bulk');
+                Route::get('/api/report-cards/{card}', [DirectorAcademicPeriodController::class, 'getCard'])
+                    ->name('api.report-cards.show');
+                Route::put('/api/report-cards/{card}', [DirectorAcademicPeriodController::class, 'updateCard'])
+                    ->name('api.report-cards.update');
+                Route::get('/api/report-cards/{card}/pdf', [DirectorAcademicPeriodController::class, 'pdfCard'])
+                    ->name('api.report-cards.pdf');
+
                 // Feedback y co-edición del director
                 Route::post('/activities/{id}/feedback', [ActivityFeedbackController::class, 'storeFeedback'])
                     ->name('activities.feedback');
@@ -149,6 +176,7 @@ Route::middleware(['auth'])->group(function () {
                 Route::get('/api/notificaciones', [RepresentanteController::class, 'notifications'])->name('api.notificaciones');
                 Route::post('/api/notificaciones/leer', [RepresentanteController::class, 'markNotificationsRead'])->name('api.notificaciones.leer');
                 Route::post('/api/perfil', [RepresentanteController::class, 'updateProfile'])->name('api.perfil');
+                Route::get('/api/{estudiante}/boletas-oficiales', [RepresentanteController::class, 'boletasOficiales'])->name('api.boletas');
                 Route::get('/boletin/{estudiante}', [RepresentanteController::class, 'boletin'])->name('boletin');
                 Route::get('/api/{estudiante}/boletin', [RepresentanteController::class, 'boletinPreview'])->name('api.boletin');
                 Route::get('/constancia/{estudiante}', [RepresentanteController::class, 'constancia'])->name('constancia');
@@ -218,6 +246,8 @@ Route::middleware(['auth'])->group(function () {
                 Route::patch('/{evaluation}', [EvaluationController::class, 'update'])->name('update');
                 Route::delete('/{evaluation}', [EvaluationController::class, 'destroy'])->name('destroy');
                 Route::post('/{evaluation}/duplicate', [EvaluationController::class, 'duplicate'])->name('duplicate');
+                Route::get('/{evaluation}/roster', [EvaluationController::class, 'roster'])->name('roster');
+                Route::post('/{evaluation}/grades', [EvaluationController::class, 'saveGrades'])->name('grades');
                 Route::get('/{evaluation}/print', [EvaluationController::class, 'print'])->name('print');
                 Route::post('/{evaluation}/regenerate-question', [EvaluationController::class, 'regenerateQuestion'])->name('regenerate');
                 Route::post('/regenerate-draft-question', [EvaluationController::class, 'regenerateDraftQuestion'])->name('regenerate_draft');
@@ -268,13 +298,51 @@ Route::middleware(['auth'])->group(function () {
 
             // API: Guardar preferencia de plantilla de clase
             Route::post('/teacher/api/lesson-template', function (Illuminate\Http\Request $request) {
-                $data = $request->validate(['lesson_template' => 'required|in:clasica,directa,constructivista']);
+                $data = $request->validate([
+                    'lesson_template' => 'required|in:clasica,directa,constructivista',
+                    'activity_id' => 'nullable|integer',
+                    'activity_ids' => 'nullable|array',
+                    'activity_ids.*' => 'integer',
+                    'planificacion_id' => 'nullable|integer',
+                ]);
                 $settings = \App\Models\UserSettings::firstOrCreate(
                     ['user_id' => \Auth::id()],
                     []
                 );
                 $settings->update(['lesson_template' => $data['lesson_template']]);
-                return response()->json(['success' => true, 'lesson_template' => $data['lesson_template']]);
+
+                $ids = collect($data['activity_ids'] ?? [])
+                    ->when(! empty($data['activity_id']), fn ($c) => $c->push((int) $data['activity_id']))
+                    ->map(fn ($id) => (int) $id)
+                    ->filter()
+                    ->unique()
+                    ->values();
+
+                $query = \App\Models\Activity::where('teacher_id', \Auth::id());
+                if ($ids->isNotEmpty()) {
+                    $query->whereIn('id', $ids->all());
+                } elseif (! empty($data['planificacion_id'])) {
+                    $query->where('plan_block_id', (int) $data['planificacion_id']);
+                } else {
+                    $query = null;
+                }
+
+                $rewritten = 0;
+                if ($query) {
+                    foreach ($query->get() as $activity) {
+                        $next = \App\Support\LessonTemplate::rewrite((string) $activity->description, $data['lesson_template']);
+                        if ($next !== '' && $next !== (string) $activity->description) {
+                            $activity->update(['description' => $next]);
+                            $rewritten++;
+                        }
+                    }
+                }
+
+                return response()->json([
+                    'success' => true,
+                    'lesson_template' => $data['lesson_template'],
+                    'rewritten' => $rewritten,
+                ]);
             })->name('teacher.api.lesson-template');
 
             // API: Alumnos / matrícula

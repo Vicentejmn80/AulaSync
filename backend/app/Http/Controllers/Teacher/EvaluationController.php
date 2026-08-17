@@ -7,22 +7,49 @@ use App\Models\Course;
 use App\Models\Evaluation;
 use App\Models\EvaluationAttempt;
 use App\Models\EvaluationQuestion;
+use App\Services\EvaluationSyncService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
 class EvaluationController extends Controller
 {
+    public function __construct(private EvaluationSyncService $sync)
+    {
+    }
+
     public function index(): View
     {
         $teacher = auth()->user();
+        $with = ['course:id,subject_name,grade,section', 'questions'];
+        if (Schema::hasColumn('evaluations', 'activity_id')) {
+            $with[] = 'activity:id,title,max_score,weight_percentage,due_date';
+        }
+
         $evaluations = Evaluation::where('teacher_id', $teacher->id)
-            ->with(['course:id,subject_name,grade,section', 'questions'])
+            ->with($with)
             ->withCount('attempts')
             ->latest()
             ->get();
+
+        foreach ($evaluations as $evaluation) {
+            if (Schema::hasColumn('evaluations', 'activity_id') && ! $evaluation->activity_id && $evaluation->course_id) {
+                try {
+                    $this->sync->ensureActivityMirror($evaluation, $teacher);
+                } catch (\Throwable $e) {
+                    Log::warning('Could not mirror evaluation activity', [
+                        'evaluation_id' => $evaluation->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+        }
+
+        $evaluations = $evaluations->fresh($with);
 
         $pendingAttempts = EvaluationAttempt::whereHas('evaluation', fn ($q) => $q->where('teacher_id', $teacher->id))
             ->where(function ($q) {
@@ -139,65 +166,128 @@ class EvaluationController extends Controller
 
     public function store(Request $request): JsonResponse
     {
-        $data = $request->validate([
-            'title' => 'required|string|max:255',
-            'description' => 'nullable|string',
-            'topic' => 'nullable|string|max:255',
-            'course_id' => 'nullable|integer',
-            'mode' => 'required|in:digital,physical',
-            'status' => 'nullable|in:draft,scheduled,published',
-            'difficulty' => 'nullable|string|max:20',
-            'question_mix' => 'nullable|string|max:30',
-            'instructions' => 'nullable|string',
-            'scheduled_at' => 'nullable|date',
-            'generated_by_ai' => 'nullable|boolean',
-            'large_print' => 'nullable|boolean',
-            'physical_format' => 'nullable|array',
-            'rubric' => 'nullable|array',
-            'questions' => 'required|array|min:1',
-            'questions.*.type' => 'required|string',
-            'questions.*.text' => 'required|string',
-            'questions.*.options' => 'nullable|array',
-            'questions.*.correct_answer' => 'nullable|string',
-            'questions.*.points' => 'nullable|integer|min:1',
+        $questions = collect($request->input('questions', []))->map(function ($question) {
+            if (! is_array($question)) {
+                return $question;
+            }
+            $text = $question['text'] ?? 'Pregunta';
+            if (is_array($text)) {
+                $text = implode(' ', array_filter($text, 'is_scalar'));
+            }
+            $answer = $question['correct_answer'] ?? null;
+            if (is_array($answer)) {
+                $answer = implode(', ', array_filter($answer, 'is_scalar'));
+            }
+            $options = $question['options'] ?? [];
+            if (! is_array($options)) {
+                $options = $options ? [(string) $options] : [];
+            }
+            $options = array_values(array_map(fn ($opt) => is_scalar($opt) ? (string) $opt : json_encode($opt), $options));
+
+            return [
+                'type' => is_string($question['type'] ?? null) ? $question['type'] : 'open',
+                'text' => (string) $text,
+                'options' => $options,
+                'correct_answer' => $answer === null ? null : (string) $answer,
+                'points' => (int) ($question['points'] ?? 1),
+                'topic' => isset($question['topic']) && is_scalar($question['topic']) ? (string) $question['topic'] : null,
+            ];
+        })->filter(fn ($question) => is_array($question) && trim((string) ($question['text'] ?? '')) !== '')->values()->all();
+
+        $courseId = $request->input('course_id');
+        $courseId = ($courseId === '' || $courseId === null) ? null : (int) $courseId;
+        $weight = $request->input('weight_percentage', $request->input('percentage', $request->input('weight', 20)));
+        $scheduledAt = $request->input('scheduled_at', $request->input('date', $request->input('due_date')));
+
+        $request->merge([
+            'questions' => $questions,
+            'course_id' => $courseId,
+            'title' => $request->input('title') ?: ($request->input('topic') ?: 'Evaluación'),
+            'mode' => $request->input('mode') ?: 'digital',
+            'weight_percentage' => is_numeric($weight) ? (float) $weight : 20,
+            'scheduled_at' => $scheduledAt ?: null,
+            'description' => $request->input('description') ?: $request->input('prompt'),
         ]);
 
-        $teacher = auth()->user();
-        if (! empty($data['course_id'])) {
-            abort_unless(Course::where('id', $data['course_id'])->where('teacher_id', $teacher->id)->exists(), 403);
+        try {
+            $data = $request->validate([
+                'title' => 'required|string|max:255',
+                'description' => 'nullable|string',
+                'topic' => 'nullable|string|max:255',
+                'course_id' => 'nullable|integer',
+                'mode' => 'nullable|in:digital,physical',
+                'status' => 'nullable|in:draft,scheduled,published',
+                'difficulty' => 'nullable|string|max:20',
+                'question_mix' => 'nullable|string|max:30',
+                'instructions' => 'nullable|string',
+                'scheduled_at' => 'nullable|date',
+                'generated_by_ai' => 'nullable|boolean',
+                'large_print' => 'nullable|boolean',
+                'physical_format' => 'nullable|array',
+                'rubric' => 'nullable|array',
+                'weight_percentage' => 'nullable|numeric|min:0|max:100',
+                'percentage' => 'nullable|numeric|min:0|max:100',
+                'weight' => 'nullable|numeric|min:0|max:100',
+                'date' => 'nullable|date',
+                'due_date' => 'nullable|date',
+                'questions' => 'nullable|array',
+                'questions.*.type' => 'nullable|string',
+                'questions.*.text' => 'required_with:questions|string',
+                'questions.*.options' => 'nullable|array',
+                'questions.*.correct_answer' => 'nullable|string',
+                'questions.*.points' => 'nullable|integer|min:1',
+            ]);
+        } catch (ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'status' => 'error',
+                'message' => 'Revisa los datos de la evaluación.',
+                'error' => collect($e->errors())->flatten()->first() ?: 'Datos inválidos.',
+                'errors' => $e->errors(),
+                'data' => [],
+            ], 200);
         }
 
-        $questions = $data['questions'];
-        $total = collect($questions)->sum(fn ($q) => (int) ($q['points'] ?? 1));
+        $teacher = auth()->user();
+        if (! empty($data['course_id']) && ! Course::where('id', $data['course_id'])->where('teacher_id', $teacher->id)->exists()) {
+            return response()->json([
+                'success' => false,
+                'status' => 'error',
+                'message' => 'El curso seleccionado no pertenece a este docente.',
+                'error' => 'Curso inválido.',
+                'data' => [],
+            ], 200);
+        }
 
-        $evaluation = Evaluation::create([
-            'teacher_id' => $teacher->id,
-            'course_id' => $data['course_id'] ?? null,
-            'colegio_id' => $teacher->colegio_id,
-            'title' => $data['title'],
-            'description' => $data['description'] ?? null,
-            'topic' => $data['topic'] ?? null,
-            'mode' => $data['mode'],
-            'status' => $data['status'] ?? 'draft',
-            'difficulty' => $data['difficulty'] ?? null,
-            'question_mix' => $data['question_mix'] ?? null,
-            'question_count' => count($questions),
-            'generated_by_ai' => (bool) ($data['generated_by_ai'] ?? false),
-            'instructions' => $data['instructions'] ?? null,
-            'scheduled_at' => $data['scheduled_at'] ?? null,
-            'total_points' => $total,
-            'passing_score' => (int) data_get($data, 'rubric.passing_score', max(1, (int) floor($total * 0.6))),
-            'rubric' => $data['rubric'] ?? ['total_points' => $total, 'passing_score' => max(1, (int) floor($total * 0.6))],
-            'physical_format' => $data['physical_format'] ?? ['paper_size' => 'A4', 'orientation' => 'portrait', 'font_size' => 12, 'include_qr' => true],
-            'large_print' => (bool) ($data['large_print'] ?? false),
-        ]);
+        try {
+            $evaluation = $this->sync->persist($teacher, array_merge($data, [
+                'generated_by_ai' => (bool) ($data['generated_by_ai'] ?? false),
+                'add_to_plan' => true,
+                'weight_percentage' => (float) ($data['weight_percentage'] ?? $data['percentage'] ?? $data['weight'] ?? 20),
+                'scheduled_at' => $data['scheduled_at'] ?? $data['date'] ?? $data['due_date'] ?? null,
+                'description' => $data['description'] ?? null,
+            ]));
+        } catch (\Throwable $e) {
+            Log::error('Evaluation store failed', ['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
 
-        $this->syncQuestions($evaluation, $questions);
+            return response()->json([
+                'success' => false,
+                'status' => 'error',
+                'message' => 'No se pudo guardar la evaluación.',
+                'error' => 'No se pudo guardar la evaluación: '.$e->getMessage(),
+                'data' => [],
+            ], 200);
+        }
+
+        $payload = $this->serializeEvaluation($evaluation);
 
         return response()->json([
             'success' => true,
-            'evaluation' => $evaluation->fresh(['questions', 'course']),
-        ]);
+            'status' => 'success',
+            'message' => 'Evaluación guardada con éxito.',
+            'data' => $payload,
+            'evaluation' => $payload,
+        ], 200, [], JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
     }
 
     public function update(Request $request, Evaluation $evaluation): JsonResponse
@@ -228,33 +318,93 @@ class EvaluationController extends Controller
         }
 
         $evaluation->update($data);
+        $this->sync->ensureActivityMirror($evaluation->fresh(), auth()->user());
 
-        return response()->json(['success' => true, 'evaluation' => $evaluation->fresh(['questions', 'course'])]);
+        $with = ['questions', 'course'];
+        if (Schema::hasColumn('evaluations', 'activity_id')) {
+            $with[] = 'activity';
+        }
+
+        return response()->json(['success' => true, 'evaluation' => $evaluation->fresh($with)]);
     }
 
     public function destroy(Evaluation $evaluation): JsonResponse
     {
         $this->authorizeTeacher($evaluation);
-        $evaluation->delete();
+        $this->sync->delete($evaluation);
         return response()->json(['success' => true]);
     }
 
     public function duplicate(Evaluation $evaluation): JsonResponse
     {
         $this->authorizeTeacher($evaluation);
-        $copy = $evaluation->replicate();
-        $copy->title = $evaluation->title . ' (copia)';
-        $copy->status = 'draft';
-        $copy->public_token = null;
-        $copy->save();
+        $copy = $this->sync->persist(auth()->user(), [
+            'title' => $evaluation->title.' (copia)',
+            'description' => $evaluation->description,
+            'topic' => $evaluation->topic,
+            'course_id' => $evaluation->course_id,
+            'mode' => $evaluation->mode,
+            'status' => 'draft',
+            'difficulty' => $evaluation->difficulty,
+            'question_mix' => $evaluation->question_mix,
+            'instructions' => $evaluation->instructions,
+            'scheduled_at' => $evaluation->scheduled_at,
+            'generated_by_ai' => $evaluation->generated_by_ai,
+            'large_print' => $evaluation->large_print,
+            'physical_format' => $evaluation->physical_format,
+            'rubric' => $evaluation->rubric,
+            'questions' => $evaluation->questions->map(fn ($q) => [
+                'type' => $q->type,
+                'text' => $q->text,
+                'options' => $q->options,
+                'correct_answer' => $q->correct_answer,
+                'points' => $q->points,
+                'topic' => $q->topic,
+            ])->all(),
+            'add_to_plan' => true,
+            'weight_percentage' => $evaluation->activity?->weight_percentage ?? 20,
+        ]);
 
-        foreach ($evaluation->questions as $question) {
-            $clone = $question->replicate();
-            $clone->evaluation_id = $copy->id;
-            $clone->save();
-        }
+        return response()->json(['success' => true, 'evaluation' => $copy]);
+    }
 
-        return response()->json(['success' => true, 'evaluation' => $copy->fresh(['questions', 'course'])]);
+    public function roster(Evaluation $evaluation): JsonResponse
+    {
+        $this->authorizeTeacher($evaluation);
+        $roster = $this->sync->roster($evaluation->fresh(['course', 'activity']));
+
+        return response()->json([
+            'success' => true,
+            'evaluation' => [
+                'id' => $evaluation->id,
+                'title' => $evaluation->title,
+                'activity_id' => $evaluation->activity_id,
+                'max_score' => $evaluation->activity?->max_score ?? $evaluation->total_points,
+                'total_points' => $evaluation->total_points,
+                'course' => $evaluation->course?->only(['id', 'subject_name', 'grade', 'section']),
+            ],
+            'students' => $roster,
+        ]);
+    }
+
+    public function saveGrades(Request $request, Evaluation $evaluation): JsonResponse
+    {
+        $this->authorizeTeacher($evaluation);
+        $data = $request->validate([
+            'grades' => 'required|array|min:1',
+            'grades.*.student_id' => 'required|integer',
+            'grades.*.score' => 'nullable|numeric|min:0',
+            'grades.*.feedback' => 'nullable|string|max:1000',
+        ]);
+
+        $result = $this->sync->saveGrades($evaluation, auth()->user(), $data['grades']);
+
+        return response()->json([
+            'success' => true,
+            'saved' => $result['saved'],
+            'activity_id' => $result['activity_id'],
+            'message' => "{$result['saved']} notas guardadas. Ya cuentan para el acumulado y las boletas.",
+        ]);
     }
 
     public function print(Evaluation $evaluation): View
@@ -493,6 +643,51 @@ class EvaluationController extends Controller
             ->pluck('score');
 
         return $scores->isNotEmpty() ? round((float) $scores->avg(), 1) : null;
+    }
+
+    private function serializeEvaluation(Evaluation $evaluation): array
+    {
+        $evaluation->loadMissing(['course:id,subject_name,grade,section', 'questions']);
+        if (Schema::hasColumn('evaluations', 'activity_id')) {
+            $evaluation->loadMissing('activity:id,title,max_score,weight_percentage,due_date');
+        }
+
+        return [
+            'id' => $evaluation->id,
+            'title' => $evaluation->title,
+            'description' => $evaluation->description,
+            'topic' => $evaluation->topic,
+            'course_id' => $evaluation->course_id,
+            'activity_id' => $evaluation->activity_id,
+            'mode' => $evaluation->mode,
+            'status' => $evaluation->status,
+            'difficulty' => $evaluation->difficulty,
+            'question_mix' => $evaluation->question_mix,
+            'question_count' => $evaluation->question_count,
+            'instructions' => $evaluation->instructions,
+            'scheduled_at' => optional($evaluation->scheduled_at)?->toIso8601String(),
+            'total_points' => $evaluation->total_points,
+            'passing_score' => $evaluation->passing_score,
+            'large_print' => (bool) $evaluation->large_print,
+            'public_token' => $evaluation->public_token,
+            'course' => $evaluation->course?->only(['id', 'subject_name', 'grade', 'section']),
+            'activity' => $evaluation->activity ? [
+                'id' => $evaluation->activity->id,
+                'title' => $evaluation->activity->title,
+                'max_score' => $evaluation->activity->max_score,
+                'weight_percentage' => $evaluation->activity->weight_percentage,
+                'due_date' => optional($evaluation->activity->due_date)?->toDateString(),
+            ] : null,
+            'questions' => $evaluation->questions->map(fn ($q) => [
+                'id' => $q->id,
+                'type' => $q->type,
+                'text' => $q->text,
+                'options' => $q->options,
+                'correct_answer' => $q->correct_answer,
+                'points' => $q->points,
+                'topic' => $q->topic,
+            ])->values()->all(),
+        ];
     }
 
     private function teacherContext(): string

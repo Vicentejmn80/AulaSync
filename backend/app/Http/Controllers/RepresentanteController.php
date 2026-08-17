@@ -6,6 +6,7 @@ use App\Models\AbsenceRequest;
 use App\Models\AttendanceReason;
 use App\Models\CommunicationThread;
 use App\Models\Course;
+use App\Services\AcademicReportCardService;
 use App\Services\AttendanceAlertService;
 use App\Services\RepresentanteDashboardService;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -245,6 +246,15 @@ class RepresentanteController extends Controller
         $pdf->setPaper('letter', 'portrait');
 
         return $pdf->download('constancia-'.$student->id.'.pdf');
+    }
+
+    public function boletasOficiales(int $estudiante): JsonResponse
+    {
+        $student = $this->dashboard->authorizeStudent(auth()->user(), $estudiante);
+        $svc     = app(AcademicReportCardService::class);
+        $boletas = $svc->publishedForStudent($student);
+
+        return response()->json(['ok' => true, 'boletas' => $boletas]);
     }
 
     public function updateProfile(Request $request): JsonResponse
