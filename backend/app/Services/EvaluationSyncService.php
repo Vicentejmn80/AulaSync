@@ -24,6 +24,10 @@ class EvaluationSyncService
      */
     public function persist(User $teacher, array $payload): Evaluation
     {
+        if (! Schema::hasTable('evaluations')) {
+            throw new \RuntimeException('La tabla de evaluaciones aún no existe. Ejecuta las migraciones.');
+        }
+
         $questions = $this->normalizeQuestions($payload['questions'] ?? []);
         $total = collect($questions)->sum(fn ($q) => (int) ($q['points'] ?? 1));
         $scheduledAt = $this->parseDateTime($payload['scheduled_at'] ?? $payload['due_date'] ?? null);
@@ -32,9 +36,18 @@ class EvaluationSyncService
             $weight = 20;
         }
 
-        $data = [
+        $courseId = $payload['course_id'] ?? null;
+        if ($courseId === '' || $courseId === false) {
+            $courseId = null;
+        }
+        $courseId = $courseId !== null ? (int) $courseId : null;
+        if ($courseId <= 0) {
+            $courseId = null;
+        }
+
+        $data = $this->onlyExistingColumns('evaluations', [
             'teacher_id' => $teacher->id,
-            'course_id' => $payload['course_id'] ?? null,
+            'course_id' => $courseId,
             'colegio_id' => $teacher->colegio_id,
             'title' => Str::limit(trim((string) ($payload['title'] ?? 'Evaluación')), 240, ''),
             'description' => $payload['description'] ?? $payload['prompt'] ?? null,
@@ -59,24 +72,39 @@ class EvaluationSyncService
                 'include_qr' => true,
             ],
             'large_print' => (bool) ($payload['large_print'] ?? false),
-        ];
+        ]);
 
         /** @var Evaluation $evaluation */
         $evaluation = ! empty($payload['id'])
             ? Evaluation::where('teacher_id', $teacher->id)->findOrFail((int) $payload['id'])
             : new Evaluation();
 
-        $evaluation->fill($data);
+        $evaluation->forceFill($data);
         $evaluation->save();
 
-        $this->syncQuestions($evaluation, $questions);
-        $this->mirrorActivity($evaluation, $teacher, $weight);
+        try {
+            $this->syncQuestions($evaluation, $questions);
+        } catch (\Throwable $e) {
+            Log::error('EvaluationSyncService syncQuestions failed', [
+                'evaluation_id' => $evaluation->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        try {
+            $this->mirrorActivity($evaluation->fresh(), $teacher, $weight);
+        } catch (\Throwable $e) {
+            Log::error('EvaluationSyncService mirrorActivity failed', [
+                'evaluation_id' => $evaluation->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
 
         if (! empty($payload['add_to_plan'])) {
             try {
                 $this->attachToPlan(
                     $teacher,
-                    $evaluation,
+                    $evaluation->fresh(),
                     $weight,
                     in_array(($payload['category'] ?? 'summative'), ['formative', 'summative'], true)
                         ? $payload['category']
@@ -92,7 +120,12 @@ class EvaluationSyncService
             }
         }
 
-        return $evaluation->fresh(['questions', 'course', 'activity']);
+        $relations = ['questions', 'course'];
+        if (Schema::hasColumn('evaluations', 'activity_id')) {
+            $relations[] = 'activity';
+        }
+
+        return $evaluation->fresh($relations) ?: $evaluation;
     }
 
     public function ensureActivityMirror(Evaluation $evaluation, ?User $teacher = null): ?Activity
@@ -245,7 +278,7 @@ class EvaluationSyncService
         }
 
         $title = Str::limit('Examen: '.$evaluation->title, 240, '');
-        $payload = [
+        $payload = $this->onlyExistingColumns('activities', [
             'teacher_id' => $teacher->id,
             'course_id' => $evaluation->course_id,
             'colegio_id' => $teacher->colegio_id,
@@ -256,27 +289,36 @@ class EvaluationSyncService
             'weight_percentage' => $weight,
             'due_date' => $dueDate,
             'is_homework' => 0,
-        ];
-        if (Schema::hasColumn('activities', 'evaluation_id')) {
-            $payload['evaluation_id'] = $evaluation->id;
-        }
+        ]);
 
         $activity = null;
-        if ($evaluation->activity_id) {
-            $activity = Activity::where('id', $evaluation->activity_id)->first();
+        if (Schema::hasColumn('evaluations', 'activity_id') && $evaluation->getAttribute('activity_id')) {
+            $activity = Activity::where('id', $evaluation->getAttribute('activity_id'))->first();
         }
         if (! $activity && Schema::hasColumn('activities', 'evaluation_id')) {
             $activity = Activity::where('evaluation_id', $evaluation->id)->first();
         }
 
-        if ($activity) {
-            $activity->fill($payload);
-            $activity->save();
-        } else {
-            $activity = Activity::create($payload);
+        if (! $activity) {
+            $activity = new Activity();
         }
 
-        if ($evaluation->activity_id !== $activity->id && Schema::hasColumn('evaluations', 'activity_id')) {
+        $activity->forceFill($payload);
+        foreach ([
+            'id_curso' => $evaluation->course_id,
+            'id_docente' => $teacher->id,
+            'id_profesor' => $teacher->id,
+            'id_modulo' => null,
+            'estado' => 'publicado',
+            'evaluation_id' => $evaluation->id,
+        ] as $col => $val) {
+            if (Schema::hasColumn('activities', $col)) {
+                $activity->setAttribute($col, $val);
+            }
+        }
+        $activity->save();
+
+        if (Schema::hasColumn('evaluations', 'activity_id') && $evaluation->getAttribute('activity_id') !== $activity->id) {
             $evaluation->forceFill(['activity_id' => $activity->id])->save();
         }
 
@@ -313,24 +355,27 @@ class EvaluationSyncService
         }
 
         $course = Course::find($evaluation->course_id);
+        $createAttrs = $this->onlyExistingColumns('course_evaluation_plans', [
+            'title' => 'Plan de evaluación · '.($course?->subject_name ?? 'Curso'),
+            'summary' => 'Plan sincronizado automáticamente desde AulaSync.',
+            'status' => 'draft',
+        ]);
         $plan = CourseEvaluationPlan::firstOrCreate(
             [
                 'teacher_id' => $teacher->id,
                 'course_id' => $evaluation->course_id,
             ],
-            [
-                'title' => 'Plan de evaluación · '.($course?->subject_name ?? 'Curso'),
-                'summary' => 'Plan sincronizado automáticamente desde AulaSync.',
-                'status' => 'draft',
-            ]
+            $createAttrs
         );
 
-        $exists = $plan->items()->where('evaluation_id', $evaluation->id)->exists();
-        if ($exists) {
-            return;
+        if (Schema::hasColumn('course_evaluation_plan_items', 'evaluation_id')) {
+            $exists = $plan->items()->where('evaluation_id', $evaluation->id)->exists();
+            if ($exists) {
+                return;
+            }
         }
 
-        $plan->items()->create([
+        $plan->items()->create($this->onlyExistingColumns('course_evaluation_plan_items', [
             'evaluation_id' => $evaluation->id,
             'unit_name' => $unitName !== '' ? $unitName : 'Unidad',
             'assessment_type' => $evaluation->title,
@@ -338,7 +383,7 @@ class EvaluationSyncService
             'weight_percentage' => max(1, min(100, $weight)),
             'due_date' => $dueDate,
             'notes' => 'Sincronizado desde el módulo de Evaluaciones / chat IA.',
-        ]);
+        ]));
     }
 
     private function normalizeQuestions(array $questions): array
@@ -389,6 +434,17 @@ class EvaluationSyncService
         }
 
         return trim((string) $value);
+    }
+
+    private function onlyExistingColumns(string $table, array $data): array
+    {
+        if (! Schema::hasTable($table)) {
+            return [];
+        }
+
+        $columns = array_flip(Schema::getColumnListing($table));
+
+        return array_intersect_key($data, $columns);
     }
 
     private function parseDateTime(mixed $value): ?Carbon

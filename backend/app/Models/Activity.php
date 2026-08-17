@@ -28,7 +28,9 @@ class Activity extends Model
         'nee_adaptation',
         'id_curso',
         'id_docente',
+        'id_profesor',
         'id_modulo',
+        'estado',
         'colegio_id',
         'director_notes',
     ];

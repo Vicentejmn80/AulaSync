@@ -440,14 +440,17 @@ function evaluationsApp() {
                     headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': this.csrf(), 'Accept': 'application/json' },
                     body: JSON.stringify(payload),
                 });
-                const data = await res.json();
-                if (!data.success) { this.error = data.error || 'No se pudo guardar.'; return; }
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok || !data.success) {
+                    this.error = data.error || data.message || `No se pudo guardar (${res.status}).`;
+                    return;
+                }
                 this.evaluations.unshift(data.evaluation);
                 this.message = 'Evaluación guardada con éxito.';
                 this.tab = 'list';
                 if (goPrint) window.open(`/teacher/evaluations/${data.evaluation.id}/print`, '_blank');
             } catch (e) {
-                this.error = 'Error de red al guardar.';
+                this.error = 'El servidor no pudo guardar la evaluación. Revisa el curso asignado e inténtalo de nuevo.';
             } finally {
                 this.saving = false;
             }

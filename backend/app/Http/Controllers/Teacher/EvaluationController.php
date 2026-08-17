@@ -12,6 +12,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\View\View;
 
 class EvaluationController extends Controller
@@ -23,14 +24,19 @@ class EvaluationController extends Controller
     public function index(): View
     {
         $teacher = auth()->user();
+        $with = ['course:id,subject_name,grade,section', 'questions'];
+        if (Schema::hasColumn('evaluations', 'activity_id')) {
+            $with[] = 'activity:id,title,max_score,weight_percentage,due_date';
+        }
+
         $evaluations = Evaluation::where('teacher_id', $teacher->id)
-            ->with(['course:id,subject_name,grade,section', 'questions', 'activity:id,title,max_score,weight_percentage,due_date'])
+            ->with($with)
             ->withCount('attempts')
             ->latest()
             ->get();
 
         foreach ($evaluations as $evaluation) {
-            if (! $evaluation->activity_id && $evaluation->course_id) {
+            if (Schema::hasColumn('evaluations', 'activity_id') && ! $evaluation->activity_id && $evaluation->course_id) {
                 try {
                     $this->sync->ensureActivityMirror($evaluation, $teacher);
                 } catch (\Throwable $e) {
@@ -42,7 +48,7 @@ class EvaluationController extends Controller
             }
         }
 
-        $evaluations = $evaluations->fresh(['course:id,subject_name,grade,section', 'questions', 'activity:id,title,max_score,weight_percentage,due_date']);
+        $evaluations = $evaluations->fresh($with);
 
         $pendingAttempts = EvaluationAttempt::whereHas('evaluation', fn ($q) => $q->where('teacher_id', $teacher->id))
             ->where(function ($q) {
@@ -159,6 +165,39 @@ class EvaluationController extends Controller
 
     public function store(Request $request): JsonResponse
     {
+        $questions = collect($request->input('questions', []))->map(function ($question) {
+            if (! is_array($question)) {
+                return $question;
+            }
+            $text = $question['text'] ?? 'Pregunta';
+            if (is_array($text)) {
+                $text = implode(' ', array_filter($text, 'is_scalar'));
+            }
+            $answer = $question['correct_answer'] ?? null;
+            if (is_array($answer)) {
+                $answer = implode(', ', array_filter($answer, 'is_scalar'));
+            }
+            $options = $question['options'] ?? [];
+            if (! is_array($options)) {
+                $options = $options ? [(string) $options] : [];
+            }
+            $options = array_values(array_map(fn ($opt) => is_scalar($opt) ? (string) $opt : json_encode($opt), $options));
+
+            return [
+                'type' => is_string($question['type'] ?? null) ? $question['type'] : 'open',
+                'text' => (string) $text,
+                'options' => $options,
+                'correct_answer' => $answer === null ? null : (string) $answer,
+                'points' => (int) ($question['points'] ?? 1),
+                'topic' => isset($question['topic']) && is_scalar($question['topic']) ? (string) $question['topic'] : null,
+            ];
+        })->all();
+
+        $request->merge([
+            'questions' => $questions,
+            'course_id' => $request->filled('course_id') ? (int) $request->input('course_id') : null,
+        ]);
+
         $data = $request->validate([
             'title' => 'required|string|max:255',
             'description' => 'nullable|string',
@@ -187,11 +226,20 @@ class EvaluationController extends Controller
             abort_unless(Course::where('id', $data['course_id'])->where('teacher_id', $teacher->id)->exists(), 403);
         }
 
-        $evaluation = $this->sync->persist($teacher, array_merge($data, [
-            'generated_by_ai' => (bool) ($data['generated_by_ai'] ?? false),
-            'add_to_plan' => true,
-            'weight_percentage' => 20,
-        ]));
+        try {
+            $evaluation = $this->sync->persist($teacher, array_merge($data, [
+                'generated_by_ai' => (bool) ($data['generated_by_ai'] ?? false),
+                'add_to_plan' => true,
+                'weight_percentage' => 20,
+            ]));
+        } catch (\Throwable $e) {
+            Log::error('Evaluation store failed', ['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
+
+            return response()->json([
+                'success' => false,
+                'error' => 'No se pudo guardar la evaluación: '.$e->getMessage(),
+            ], 200);
+        }
 
         return response()->json([
             'success' => true,
@@ -229,7 +277,12 @@ class EvaluationController extends Controller
         $evaluation->update($data);
         $this->sync->ensureActivityMirror($evaluation->fresh(), auth()->user());
 
-        return response()->json(['success' => true, 'evaluation' => $evaluation->fresh(['questions', 'course', 'activity'])]);
+        $with = ['questions', 'course'];
+        if (Schema::hasColumn('evaluations', 'activity_id')) {
+            $with[] = 'activity';
+        }
+
+        return response()->json(['success' => true, 'evaluation' => $evaluation->fresh($with)]);
     }
 
     public function destroy(Evaluation $evaluation): JsonResponse

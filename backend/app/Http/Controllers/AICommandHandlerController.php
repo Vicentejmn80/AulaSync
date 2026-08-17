@@ -15,6 +15,7 @@ use App\Models\Student;
 use App\Models\Tarea;
 use App\Models\User;
 use App\Services\DirectorAlertService;
+use App\Support\LessonTemplate;
 use Illuminate\Support\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -32,8 +33,12 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
     /**
      * Definiciones de herramientas para OpenAI
      */
-    private function toolDefinitions(): array
+    private function toolDefinitions(?string $lessonTemplate = null): array
     {
+        $lessonTemplate = LessonTemplate::normalize((string) $lessonTemplate);
+        $templateHeaders = LessonTemplate::promptLine($lessonTemplate);
+        $templateLabel = LessonTemplate::label($lessonTemplate);
+
         return [
             [
                 'type' => 'function',
@@ -68,7 +73,7 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
                             'title'             => ['type' => 'string'],
                             'description'       => [
                                 'type'        => 'string',
-                                'description' => 'Markdown obligatorio: secciones **INICIO**, **DESARROLLO**, **CIERRE** en negrita; mínimo 3 párrafos separados por línea en blanco; viñetas y **negritas** en conceptos clave.',
+                                'description' => "Markdown obligatorio con la plantilla activa del profesor ({$templateLabel}). Encabezados EXACTOS en negrita y en este orden: {$templateHeaders}. No uses encabezados de otra plantilla. Mínimo 3 párrafos, viñetas y negritas en conceptos clave.",
                             ],
                             'max_score'         => ['type' => 'integer'],
                             'weight_percentage' => ['type' => 'number'],
@@ -458,6 +463,7 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
         $hasDeleteIntent = $this->hasDeleteIntent($intentText);
         $hasModifyIntent = $this->hasModifyIntent($intentText);
         $hasPlanningIntent = $this->hasPlanningIntent($intentText);
+        $hasCreateEvaluationIntent = $this->hasCreateEvaluationIntent($intentText);
         $explicitProceed = $this->hasProceedIntent($intentText);
         $deleteRange = $this->extractDateRangeFromText($intentText);
 
@@ -508,7 +514,7 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
                     $args['confirmed'] = true;
                     $args = $this->enrichBulkPlanArgsFromIntent($args, $intentText, $teacher);
                 }
-                if (in_array($fn, ['createActivity', 'registerStudent', 'bulkPlan', 'deleteActivities', 'getCalendarContext'], true)) {
+                if (in_array($fn, ['createActivity', 'registerStudent', 'bulkPlan', 'deleteActivities', 'getCalendarContext', 'createEvaluation'], true)) {
                     $resolvedCourseId = $this->resolveCourseIdForArgs($args, $teacher->id, $createdCourseMap, $screenContext);
                     if ($resolvedCourseId > 0) {
                         $args['course_id'] = $resolvedCourseId;
@@ -576,13 +582,37 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
 
         $today = now()->format('Y-m-d');
 
+        if ($hasCreateEvaluationIntent) {
+            $evalArgs = [
+                'prompt' => $intentText,
+                'course_id' => is_array($screenContext) && ! empty($screenContext['id']) ? (int) $screenContext['id'] : 0,
+                'course_name_hint' => is_array($screenContext) && is_string($screenContext['subject_name'] ?? null)
+                    ? trim(($screenContext['subject_name'] ?? '').' '.($screenContext['grade'] ?? ''))
+                    : null,
+                'add_to_plan' => true,
+                'status' => 'published',
+            ];
+            try {
+                $results = [$this->doCreateEvaluation($evalArgs, $teacher->id)];
+            } catch (\Throwable $e) {
+                Log::error('AICommandHandler local createEvaluation failed', [
+                    'teacher_id' => $teacher->id,
+                    'error' => $e->getMessage(),
+                ]);
+                $results = [[
+                    'success' => false,
+                    'message' => 'No se pudo crear la evaluación: '.Str::limit($e->getMessage(), 180, ''),
+                    'action_type' => 'evaluation',
+                    'icon' => '⚠️',
+                ]];
+            }
+
+            return response()->json($this->buildActionResponsePayload($results));
+        }
+
         // Plantilla de clase del profesor
         $lessonTemplate = \App\Models\UserSettings::where('user_id', $teacher->id)->value('lesson_template') ?? 'clasica';
-        $templateSections = match($lessonTemplate) {
-            'directa'         => '**MOTIVACIÓN** → **PRESENTACIÓN** → **PRÁCTICA GUIADA** → **CIERRE REFLEXIVO**',
-            'constructivista' => '**ACTIVACIÓN** → **EXPLORACIÓN** → **EXPLICACIÓN** → **APLICACIÓN** → **EVALUACIÓN**',
-            default           => '**INICIO** → **DESARROLLO** → **CIERRE**',
-        };
+        $templateSections = LessonTemplate::promptLine($lessonTemplate);
 
         // Contexto de cursos para la IA (incluye alumnos para evitar duplicados y dar contexto real)
         $courses = Course::where('teacher_id', $teacher->id)
@@ -684,7 +714,7 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             "",
             "REGLAS DE ORO — DESCRIPCIONES PEDAGÓGICAS (solo al rellenar createActivity / textos largos; bulkPlan lo arma el sistema):",
             "- Plantilla activa del profesor: {$lessonTemplate}. Estructura obligatoria en Markdown: secciones {$templateSections} en negrita como encabezados exactos.",
-            "- CRÍTICO: usa ÚNICAMENTE los encabezados de esa plantilla. Escríbelos en MAYÚSCULAS y en negrita: **INICIO**, **DESARROLLO**, etc.",
+            "- CRÍTICO: usa ÚNICAMENTE los encabezados de esa plantilla, en MAYÚSCULAS y negrita: {$templateSections}. No uses los encabezados de otra plantilla.",
             "- Riqueza: al menos tres párrafos sustantivos separados por línea en blanco cuando el usuario pide desarrollar; listas y **negritas**.",
             "",
             "MAPA DE INTENCIONES → HERRAMIENTA:",
@@ -765,14 +795,14 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             $chatMessages[] = ['role' => 'user', 'content' => $prompt !== '' ? $prompt : $rawMessage];
         }
 
-        $toolChoice = $hasDeleteIntent ? 'required' : 'auto';
+        $toolChoice = ($hasDeleteIntent || $hasCreateEvaluationIntent) ? 'required' : 'auto';
         $response = Http::timeout(120)
             ->withToken(env('OPENAI_API_KEY'))
             ->post('https://api.openai.com/v1/chat/completions', [
                 'model'       => 'gpt-4o',
                 'temperature' => 0.25,
                 'tool_choice' => $toolChoice,
-                'tools'       => $this->toolDefinitions(),
+                'tools'       => $this->toolDefinitions($lessonTemplate),
                 'messages'    => $chatMessages,
             ]);
 
@@ -1699,7 +1729,8 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
         $neeAdaptation = $neeType ? $this->buildNeeAdaptation($neeType) : null;
 
         $description = (string) ($normalizedArgs['description'] ?? '');
-        $descError = $this->validateLessonDescriptionForNova($description, $semanticType);
+        $lessonTemplate = \App\Models\UserSettings::where('user_id', $teacherId)->value('lesson_template') ?? 'clasica';
+        $descError = $this->validateLessonDescriptionForNova($description, $semanticType, $lessonTemplate);
         if ($descError !== null) {
             return [
                 'success'     => false,
@@ -2040,7 +2071,7 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
                     'date' => $cursor->format('Y-m-d'),
                     'title' => $titleDescriptive,
                     'type' => $isThursday ? 'actividad' : 'clase',
-                    'description' => $this->buildBulkPlanSessionDescription($topic, $isThursday),
+                    'description' => $this->buildBulkPlanSessionDescription($topic, $isThursday, $teacherId),
                     'weight_percentage' => $isThursday ? 15 : 0,
                     'max_score' => $isThursday ? 20 : 0,
                 ];
@@ -2300,6 +2331,7 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
                 'course_id' => $args['course_id'],
                 'planificacion_id' => $planificacion->id,
                 'activities_created' => $n,
+                'activity_ids' => collect($created)->pluck('id')->all(),
                 'month' => strtolower($monthLabel),
                 'year' => $yearLabel,
             ],
@@ -2328,6 +2360,9 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
                 'activities_created' => $n,
                 'month_label' => $piece !== '' ? $piece : null,
                 'assistant_message' => $result['message'] ?? null,
+                'planificacion_id' => $result['data']['planificacion_id'] ?? null,
+                'activity_ids' => $result['data']['activity_ids'] ?? [],
+                'course_id' => $result['data']['course_id'] ?? null,
             ];
         }
 
@@ -3420,17 +3455,29 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
      * Valida descripciones Markdown para clases/actividades/tareas según reglas de Aulasync.
      * Devuelve null si es válida, o un mensaje de error en español.
      */
-    private function validateLessonDescriptionForNova(string $description, string $resolvedType): ?string
+    private function validateLessonDescriptionForNova(string $description, string $resolvedType, ?string $template = null): ?string
     {
         $trimmed = trim($description);
+        $template = $template ?: LessonTemplate::CLASSIC;
+        $headers = LessonTemplate::promptLine($template);
+
         if ($trimmed === '') {
-            return 'La descripción no puede estar vacía. Usa Markdown con **INICIO**, **DESARROLLO** y **CIERRE**.';
+            return "La descripción no puede estar vacía. Usa Markdown con {$headers}.";
         }
 
-        foreach (['INICIO', 'DESARROLLO', 'CIERRE'] as $label) {
-            if (! preg_match('/\*\*\s*' . preg_quote($label, '/') . '\s*\*\*/u', $trimmed)) {
-                return 'La descripción debe incluir tres secciones en negrita: **INICIO**, **DESARROLLO** y **CIERRE** (motivación y saberes previos; contenido para copiar; cierre o juego).';
+        $matchesPreferred = LessonTemplate::hasRequiredHeaders($trimmed, $template);
+        $matchesAny = $matchesPreferred;
+        if (! $matchesAny) {
+            foreach ([LessonTemplate::CLASSIC, LessonTemplate::DIRECT, LessonTemplate::CONSTRUCTIVIST] as $id) {
+                if (LessonTemplate::hasRequiredHeaders($trimmed, $id)) {
+                    $matchesAny = true;
+                    break;
+                }
             }
+        }
+
+        if (! $matchesAny) {
+            return "La descripción debe incluir las secciones de tu plantilla en negrita: {$headers}.";
         }
 
         $paragraphs = preg_split('/\R\s*\R/u', $trimmed, -1, PREG_SPLIT_NO_EMPTY);
@@ -3441,8 +3488,8 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
 
         if (count($paragraphs) < $minParagraphs) {
             return $resolvedType === 'tarea'
-                ? 'La descripción debe tener al menos dos párrafos separados por una línea en blanco, además de las secciones **INICIO**, **DESARROLLO** y **CIERRE**.'
-                : 'La descripción debe tener al menos tres párrafos detallados (separados por línea en blanco), con **INICIO**, **DESARROLLO** y **CIERRE** en Markdown.';
+                ? "La descripción debe tener al menos dos párrafos separados por una línea en blanco, además de las secciones {$headers}."
+                : "La descripción debe tener al menos tres párrafos detallados (separados por línea en blanco), con {$headers} en Markdown.";
         }
 
         if (mb_strlen($trimmed) < $minLen) {
@@ -3455,11 +3502,103 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
     }
 
     /**
-     * Plantilla rica en Markdown para cada hueco de bulkPlan (Lunes / Jueves).
+     * Plantilla rica en Markdown para cada hueco de bulkPlan.
      */
-    private function buildBulkPlanSessionDescription(string $topic, bool $isThursday): string
+    private function buildBulkPlanSessionDescription(string $topic, bool $isThursday, int $teacherId = 0): string
     {
         $topicEsc = trim($topic) !== '' ? $topic : 'el tema del curso';
+        $template = $teacherId
+            ? (\App\Models\UserSettings::where('user_id', $teacherId)->value('lesson_template') ?? 'clasica')
+            : 'clasica';
+
+        if ($template === 'directa') {
+            if ($isThursday) {
+                return <<<MD
+**MOTIVACIÓN**
+
+Activamos saberes previos sobre {$topicEsc} con una pregunta-problema breve y dos ejemplos cotidianos. Se aclara el propósito de la práctica y por qué importa dominar el procedimiento hoy.
+
+**PRESENTACIÓN**
+
+El docente modela **un ejercicio resuelto** de {$topicEsc} en pizarra: enunciado, pasos numerados y resultado verificado. Se copian al cuaderno el formato y los **criterios de corrección** (procedimiento, exactitud, presentación).
+
+**PRÁCTICA GUIADA**
+
+Estaciones o trabajo en parejas: una ronda con apoyo del docente y otra de aplicación. Se corrigen errores frecuentes en voz alta y se deja un desafío opcional para quienes terminen primero.
+
+**CIERRE REFLEXIVO**
+
+Juego rápido o ronda de justificaciones sobre {$topicEsc}. Ticket de salida: “Lo más importante fue…” y una dificultad detectada. Se anuncia el puente con la próxima clase.
+MD;
+            }
+
+            return <<<MD
+**MOTIVACIÓN**
+
+Se presenta {$topicEsc} con una **pregunta disparadora** y un mapa mental colectivo. Se explicitan saberes previos y el objetivo: qué podrán explicar y aplicar al finalizar.
+
+**PRESENTACIÓN**
+
+Exposición **ordenada para el cuaderno**: definición en negrita, **dos ejemplos resueltos** y un **contraejemplo**. Incluye un esquema numerado y preguntas de procesamiento.
+
+**PRÁCTICA GUIADA**
+
+Los alumnos resuelven ítems con apoyo. El docente circula, corrige y pide justificar cada paso. Todo lo esencial queda redactado para copiar y subrayar.
+
+**CIERRE REFLEXIVO**
+
+Mini-resumen en parejas de tres frases. Juego breve de consolidación. Tarea puente opcional de un ítem para la próxima sesión práctica.
+MD;
+        }
+
+        if ($template === 'constructivista') {
+            if ($isThursday) {
+                return <<<MD
+**ACTIVACIÓN**
+
+Situación problemática breve sobre {$topicEsc} que conecta con la vida cotidiana. Se recogen hipótesis iniciales del grupo.
+
+**EXPLORACIÓN**
+
+Estaciones de laboratorio o práctica: los alumnos prueban, comparan resultados y registran evidencias en el cuaderno.
+
+**EXPLICACIÓN**
+
+Se formaliza el procedimiento correcto de {$topicEsc} con lenguaje disciplinar, un ejemplo modelo y criterios de calidad.
+
+**APLICACIÓN**
+
+Desafío en parejas o estaciones de transferencia. Incluye un ítem opcional de mayor complejidad.
+
+**EVALUACIÓN**
+
+Ticket de salida y autoevaluación: qué se dominó, qué falta y un ejemplo propio de {$topicEsc}.
+MD;
+            }
+
+            return <<<MD
+**ACTIVACIÓN**
+
+Pregunta provocadora sobre {$topicEsc}. Se activa la curiosidad y se registran ideas previas en un mapa colectivo.
+
+**EXPLORACIÓN**
+
+Los alumnos exploran el fenómeno o concepto con observaciones, lecturas cortas o ejemplos concretos antes de la definición formal.
+
+**EXPLICACIÓN**
+
+El docente sistematiza {$topicEsc}: definición, dos ejemplos resueltos y un error frecuente. Esquema numerado para copiar.
+
+**APLICACIÓN**
+
+Preguntas de procesamiento y un caso nuevo. Trabajo individual o en parejas para transferir el concepto.
+
+**EVALUACIÓN**
+
+Metacognición de tres frases y un ítem de cierre. Se deja puente opcional hacia la próxima práctica.
+MD;
+        }
+
         if ($isThursday) {
             return <<<MD
 **INICIO** (motivación y saberes previos)
@@ -3540,6 +3679,18 @@ MD;
     {
         $value = mb_strtolower((string) $text);
         return (bool) preg_match('/\b(planifica|planificar|planificación|planificacion|cronograma|calendario|genera.*mes|organiza.*mes|mes de)\b/u', $value);
+    }
+
+    private function hasCreateEvaluationIntent(?string $text): bool
+    {
+        $value = mb_strtolower((string) $text);
+        if (preg_match('/plan\s+de\s+evaluaci/u', $value)) {
+            return false;
+        }
+        $wantsCreate = (bool) preg_match('/\b(crea|crear|genera|generar|hazme|haz|hacer|arma|armar|prepara|preparar|diseña|diseñar|elabora|elaborar)\b/u', $value);
+        $wantsExam = (bool) preg_match('/\b(examen|exámenes|examenes|prueba|pruebas|quiz|evaluaci[oó]n|evaluaciones)\b/u', $value);
+
+        return $wantsCreate && $wantsExam;
     }
 
     /**

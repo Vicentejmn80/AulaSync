@@ -408,9 +408,16 @@ class ActivitiesController extends Controller
             'desarrollo' => ['nullable', 'string', 'max:10000'],
             'cierre' => ['nullable', 'string', 'max:10000'],
             'description' => ['nullable', 'string', 'max:30000'],
+            'phases' => ['nullable', 'array'],
+            'phases.*' => ['nullable', 'string', 'max:10000'],
+            'template' => ['nullable', 'string', 'in:clasica,directa,constructivista'],
         ]);
 
         $description = trim((string) ($data['description'] ?? ''));
+        if ($description === '' && ! empty($data['phases']) && is_array($data['phases'])) {
+            $template = $data['template'] ?? \App\Support\LessonTemplate::detect((string) $activity->description);
+            $description = \App\Support\LessonTemplate::build($data['phases'], $template);
+        }
         if ($description === '') {
             $parts = [];
             if (trim((string) ($data['inicio'] ?? '')) !== '') {

@@ -298,13 +298,51 @@ Route::middleware(['auth'])->group(function () {
 
             // API: Guardar preferencia de plantilla de clase
             Route::post('/teacher/api/lesson-template', function (Illuminate\Http\Request $request) {
-                $data = $request->validate(['lesson_template' => 'required|in:clasica,directa,constructivista']);
+                $data = $request->validate([
+                    'lesson_template' => 'required|in:clasica,directa,constructivista',
+                    'activity_id' => 'nullable|integer',
+                    'activity_ids' => 'nullable|array',
+                    'activity_ids.*' => 'integer',
+                    'planificacion_id' => 'nullable|integer',
+                ]);
                 $settings = \App\Models\UserSettings::firstOrCreate(
                     ['user_id' => \Auth::id()],
                     []
                 );
                 $settings->update(['lesson_template' => $data['lesson_template']]);
-                return response()->json(['success' => true, 'lesson_template' => $data['lesson_template']]);
+
+                $ids = collect($data['activity_ids'] ?? [])
+                    ->when(! empty($data['activity_id']), fn ($c) => $c->push((int) $data['activity_id']))
+                    ->map(fn ($id) => (int) $id)
+                    ->filter()
+                    ->unique()
+                    ->values();
+
+                $query = \App\Models\Activity::where('teacher_id', \Auth::id());
+                if ($ids->isNotEmpty()) {
+                    $query->whereIn('id', $ids->all());
+                } elseif (! empty($data['planificacion_id'])) {
+                    $query->where('plan_block_id', (int) $data['planificacion_id']);
+                } else {
+                    $query = null;
+                }
+
+                $rewritten = 0;
+                if ($query) {
+                    foreach ($query->get() as $activity) {
+                        $next = \App\Support\LessonTemplate::rewrite((string) $activity->description, $data['lesson_template']);
+                        if ($next !== '' && $next !== (string) $activity->description) {
+                            $activity->update(['description' => $next]);
+                            $rewritten++;
+                        }
+                    }
+                }
+
+                return response()->json([
+                    'success' => true,
+                    'lesson_template' => $data['lesson_template'],
+                    'rewritten' => $rewritten,
+                ]);
             })->name('teacher.api.lesson-template');
 
             // API: Alumnos / matrícula

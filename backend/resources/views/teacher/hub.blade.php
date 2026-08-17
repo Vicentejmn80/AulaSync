@@ -4113,119 +4113,50 @@
                 <span class="modal-meta-item" x-show="activityModal?.weight_percentage > 0"><i class="fa-solid fa-weight-scale" style="color: var(--nova-fuchsia);"></i><span x-text="activityModal?.weight_percentage"></span>%</span>
             </div>
 
-            {{-- Fases de la clase: tarjetas PRO + edición individual --}}
+            {{-- Fases de la clase: tarjetas según plantilla activa --}}
             <div x-show="activityModal?.type === 'clase'" class="phase-cards-stack">
                 <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 2px;">
                     <span class="modal-section-label">Planificación de la clase</span>
+                    <span style="font-size:11px;color:var(--text-tertiary)" x-text="lessonTemplateLabel()"></span>
                 </div>
 
-                {{-- INICIO --}}
-                <div class="phase-card phase-card--inicio"
-                     :class="{ 'phase-card--editing': phaseEdit.editing === 'inicio' }">
-                    <div class="phase-card-header">
-                        <div class="phase-card-badge">
-                            <i class="fa-solid fa-play"></i>
-                            <span>Inicio</span>
+                <template x-for="phase in lessonPhaseDefs()" :key="phase.key">
+                    <div class="phase-card"
+                         :class="{ 'phase-card--editing': phaseEdit.editing === phase.key }"
+                         :style="`border-left:3px solid ${phase.color}`">
+                        <div class="phase-card-header">
+                            <div class="phase-card-badge" :style="`color:${phase.color}`">
+                                <i :class="phase.icon"></i>
+                                <span x-text="phase.label"></span>
+                            </div>
+                            <div class="phase-card-actions">
+                                <button x-show="phaseEdit.editing !== phase.key"
+                                        @click="startPhaseEdit(phase.key)"
+                                        class="phase-edit-btn" :title="'Editar ' + phase.label" type="button">
+                                    <i class="fa-solid fa-pencil"></i>
+                                </button>
+                                <template x-if="phaseEdit.editing === phase.key">
+                                    <div class="phase-card-actions">
+                                        <button @click="savePhaseSection(phase.key)" class="phase-save-btn"
+                                                :disabled="phaseEdit.saving === phase.key" type="button">
+                                            <i class="fa-solid" :class="phaseEdit.saving === phase.key ? 'fa-spinner fa-spin' : 'fa-floppy-disk'"></i>
+                                            <span x-text="phaseEdit.saving === phase.key ? 'Guardando…' : 'Guardar'"></span>
+                                        </button>
+                                        <button @click="cancelPhaseEdit(phase.key)" class="phase-cancel-btn" type="button">Cancelar</button>
+                                    </div>
+                                </template>
+                            </div>
                         </div>
-                        <div class="phase-card-actions">
-                            <button x-show="phaseEdit.editing !== 'inicio'"
-                                    @click="startPhaseEdit('inicio')"
-                                    class="phase-edit-btn" title="Editar Inicio" type="button">
-                                <i class="fa-solid fa-pencil"></i>
-                            </button>
-                            <template x-if="phaseEdit.editing === 'inicio'">
-                                <div class="phase-card-actions">
-                                    <button @click="savePhaseSection('inicio')" class="phase-save-btn"
-                                            :disabled="phaseEdit.saving === 'inicio'" type="button">
-                                        <i class="fa-solid" :class="phaseEdit.saving === 'inicio' ? 'fa-spinner fa-spin' : 'fa-floppy-disk'"></i>
-                                        <span x-text="phaseEdit.saving === 'inicio' ? 'Guardando…' : 'Guardar'"></span>
-                                    </button>
-                                    <button @click="cancelPhaseEdit('inicio')" class="phase-cancel-btn" type="button">Cancelar</button>
-                                </div>
-                            </template>
-                        </div>
+                        <div x-show="phaseEdit.editing !== phase.key"
+                             class="phase-card-body markdown-body"
+                             x-html="renderPhaseMarkdown(phaseEdit.values[phase.key] || '')"></div>
+                        <textarea x-show="phaseEdit.editing === phase.key"
+                                  x-model="phaseEdit.draft[phase.key]"
+                                  class="phase-card-textarea"
+                                  rows="4"
+                                  :placeholder="phase.placeholder"></textarea>
                     </div>
-                    <div x-show="phaseEdit.editing !== 'inicio'"
-                         class="phase-card-body markdown-body"
-                         x-html="renderPhaseMarkdown(phaseEdit.inicio)"></div>
-                    <textarea x-show="phaseEdit.editing === 'inicio'"
-                              x-model="phaseEdit.draft.inicio"
-                              class="phase-card-textarea"
-                              rows="4"
-                              placeholder="Motivación, activación de saberes previos…"></textarea>
-                </div>
-
-                {{-- DESARROLLO --}}
-                <div class="phase-card phase-card--desarrollo"
-                     :class="{ 'phase-card--editing': phaseEdit.editing === 'desarrollo' }">
-                    <div class="phase-card-header">
-                        <div class="phase-card-badge">
-                            <i class="fa-solid fa-layer-group"></i>
-                            <span>Desarrollo</span>
-                        </div>
-                        <div class="phase-card-actions">
-                            <button x-show="phaseEdit.editing !== 'desarrollo'"
-                                    @click="startPhaseEdit('desarrollo')"
-                                    class="phase-edit-btn" title="Editar Desarrollo" type="button">
-                                <i class="fa-solid fa-pencil"></i>
-                            </button>
-                            <template x-if="phaseEdit.editing === 'desarrollo'">
-                                <div class="phase-card-actions">
-                                    <button @click="savePhaseSection('desarrollo')" class="phase-save-btn"
-                                            :disabled="phaseEdit.saving === 'desarrollo'" type="button">
-                                        <i class="fa-solid" :class="phaseEdit.saving === 'desarrollo' ? 'fa-spinner fa-spin' : 'fa-floppy-disk'"></i>
-                                        <span x-text="phaseEdit.saving === 'desarrollo' ? 'Guardando…' : 'Guardar'"></span>
-                                    </button>
-                                    <button @click="cancelPhaseEdit('desarrollo')" class="phase-cancel-btn" type="button">Cancelar</button>
-                                </div>
-                            </template>
-                        </div>
-                    </div>
-                    <div x-show="phaseEdit.editing !== 'desarrollo'"
-                         class="phase-card-body markdown-body"
-                         x-html="renderPhaseMarkdown(phaseEdit.desarrollo)"></div>
-                    <textarea x-show="phaseEdit.editing === 'desarrollo'"
-                              x-model="phaseEdit.draft.desarrollo"
-                              class="phase-card-textarea"
-                              rows="6"
-                              placeholder="Actividades principales, práctica guiada…"></textarea>
-                </div>
-
-                {{-- CIERRE --}}
-                <div class="phase-card phase-card--cierre"
-                     :class="{ 'phase-card--editing': phaseEdit.editing === 'cierre' }">
-                    <div class="phase-card-header">
-                        <div class="phase-card-badge">
-                            <i class="fa-solid fa-flag-checkered"></i>
-                            <span>Cierre</span>
-                        </div>
-                        <div class="phase-card-actions">
-                            <button x-show="phaseEdit.editing !== 'cierre'"
-                                    @click="startPhaseEdit('cierre')"
-                                    class="phase-edit-btn" title="Editar Cierre" type="button">
-                                <i class="fa-solid fa-pencil"></i>
-                            </button>
-                            <template x-if="phaseEdit.editing === 'cierre'">
-                                <div class="phase-card-actions">
-                                    <button @click="savePhaseSection('cierre')" class="phase-save-btn"
-                                            :disabled="phaseEdit.saving === 'cierre'" type="button">
-                                        <i class="fa-solid" :class="phaseEdit.saving === 'cierre' ? 'fa-spinner fa-spin' : 'fa-floppy-disk'"></i>
-                                        <span x-text="phaseEdit.saving === 'cierre' ? 'Guardando…' : 'Guardar'"></span>
-                                    </button>
-                                    <button @click="cancelPhaseEdit('cierre')" class="phase-cancel-btn" type="button">Cancelar</button>
-                                </div>
-                            </template>
-                        </div>
-                    </div>
-                    <div x-show="phaseEdit.editing !== 'cierre'"
-                         class="phase-card-body markdown-body"
-                         x-html="renderPhaseMarkdown(phaseEdit.cierre)"></div>
-                    <textarea x-show="phaseEdit.editing === 'cierre'"
-                              x-model="phaseEdit.draft.cierre"
-                              class="phase-card-textarea"
-                              rows="4"
-                              placeholder="Síntesis, evaluación formativa, tarea…"></textarea>
-                </div>
+                </template>
             </div>
 
             <div x-show="activityModal?.type !== 'clase'">
@@ -4836,10 +4767,9 @@ function teacherHub() {
         hiddenWidgets:   [],
         activityModal:   null,
         phaseEdit: {
-            inicio: '',
-            desarrollo: '',
-            cierre: '',
-            draft: { inicio: '', desarrollo: '', cierre: '' },
+            template: 'clasica',
+            values: {},
+            draft: {},
             editing: null,
             saving: null,
         },
@@ -6148,9 +6078,10 @@ function teacherHub() {
 
         parsePhasesFromDescription(description) {
             const text = String(description || '');
-            const names = ['INICIO', 'DESARROLLO', 'CIERRE'];
-            const out = { inicio: '', desarrollo: '', cierre: '' };
-            const keys = ['inicio', 'desarrollo', 'cierre'];
+            const defs = this.lessonPhaseDefsFor(this.detectLessonTemplate(text));
+            const names = defs.map(d => d.header);
+            const out = {};
+            defs.forEach(d => { out[d.key] = ''; });
 
             for (let i = 0; i < names.length; i++) {
                 const header = '**' + names[i] + '**';
@@ -6162,38 +6093,87 @@ function teacherHub() {
                     const next = text.indexOf('**' + names[j] + '**', contentStart);
                     if (next !== -1 && next < contentEnd) contentEnd = next;
                 }
-                out[keys[i]] = text.slice(contentStart, contentEnd).trim();
+                out[defs[i].key] = text.slice(contentStart, contentEnd).trim();
             }
 
-            // Fallback: si no hay headers, todo el texto va a Desarrollo
-            if (!out.inicio && !out.desarrollo && !out.cierre && text.trim()) {
-                out.desarrollo = text.trim();
+            if (!Object.values(out).some(v => v) && text.trim()) {
+                const fallback = defs[Math.min(1, defs.length - 1)];
+                out[fallback.key] = text.trim();
             }
             return out;
         },
 
+        detectLessonTemplate(description) {
+            const text = String(description || '');
+            const templates = {
+                clasica: ['INICIO', 'DESARROLLO', 'CIERRE'],
+                directa: ['MOTIVACIÓN', 'PRESENTACIÓN', 'PRÁCTICA GUIADA', 'CIERRE REFLEXIVO'],
+                constructivista: ['ACTIVACIÓN', 'EXPLORACIÓN', 'EXPLICACIÓN', 'APLICACIÓN', 'EVALUACIÓN'],
+            };
+            let best = window.novaLessonTemplate || 'clasica';
+            let bestCount = 0;
+            for (const [id, names] of Object.entries(templates)) {
+                const count = names.filter(n => text.includes('**' + n + '**')).length;
+                if (count > bestCount) {
+                    bestCount = count;
+                    best = id;
+                }
+            }
+            return best;
+        },
+
+        lessonPhaseDefs() {
+            return this.lessonPhaseDefsFor(this.phaseEdit?.template || window.novaLessonTemplate || 'clasica');
+        },
+
+        lessonPhaseDefsFor(id) {
+            const defs = {
+                clasica: [
+                    { key: 'inicio', header: 'INICIO', label: 'Inicio', color: '#7C3AED', icon: 'fa-solid fa-play', placeholder: 'Motivación, activación de saberes previos…' },
+                    { key: 'desarrollo', header: 'DESARROLLO', label: 'Desarrollo', color: '#06B6D4', icon: 'fa-solid fa-layer-group', placeholder: 'Actividades principales, práctica guiada…' },
+                    { key: 'cierre', header: 'CIERRE', label: 'Cierre', color: '#22C55E', icon: 'fa-solid fa-flag-checkered', placeholder: 'Síntesis, evaluación formativa, tarea…' },
+                ],
+                directa: [
+                    { key: 'motivacion', header: 'MOTIVACIÓN', label: 'Motivación', color: '#F59E0B', icon: 'fa-solid fa-bolt', placeholder: 'Enlace con la experiencia previa y propósito…' },
+                    { key: 'presentacion', header: 'PRESENTACIÓN', label: 'Presentación', color: '#7C3AED', icon: 'fa-solid fa-chalkboard-user', placeholder: 'El docente modela el contenido paso a paso…' },
+                    { key: 'practica', header: 'PRÁCTICA GUIADA', label: 'Práctica guiada', color: '#06B6D4', icon: 'fa-solid fa-people-group', placeholder: 'El alumno practica con apoyo y corrección…' },
+                    { key: 'cierre_reflexivo', header: 'CIERRE REFLEXIVO', label: 'Cierre reflexivo', color: '#22C55E', icon: 'fa-solid fa-flag-checkered', placeholder: 'Reflexión, aplicación autónoma y autoevaluación…' },
+                ],
+                constructivista: [
+                    { key: 'activacion', header: 'ACTIVACIÓN', label: 'Activación', color: '#EF4444', icon: 'fa-solid fa-lightbulb', placeholder: 'Pregunta provocadora o situación problemática…' },
+                    { key: 'exploracion', header: 'EXPLORACIÓN', label: 'Exploración', color: '#F59E0B', icon: 'fa-solid fa-magnifying-glass', placeholder: 'Los alumnos exploran el fenómeno o concepto…' },
+                    { key: 'explicacion', header: 'EXPLICACIÓN', label: 'Explicación', color: '#7C3AED', icon: 'fa-solid fa-book-open', placeholder: 'Se formaliza el concepto con lenguaje disciplinar…' },
+                    { key: 'aplicacion', header: 'APLICACIÓN', label: 'Aplicación', color: '#06B6D4', icon: 'fa-solid fa-puzzle-piece', placeholder: 'Transferencia a situaciones nuevas…' },
+                    { key: 'evaluacion', header: 'EVALUACIÓN', label: 'Evaluación', color: '#22C55E', icon: 'fa-solid fa-clipboard-check', placeholder: 'Verificación del aprendizaje logrado…' },
+                ],
+            };
+            return defs[id] || defs.clasica;
+        },
+
+        lessonTemplateLabel() {
+            const labels = { clasica: 'Clásica', directa: 'Instrucción Directa', constructivista: 'Modelo 5E' };
+            return labels[this.phaseEdit?.template] || labels.clasica;
+        },
+
         buildDescriptionFromPhases() {
             const parts = [];
-            if (this.phaseEdit.inicio.trim()) {
-                parts.push('**INICIO**\n' + this.phaseEdit.inicio.trim());
-            }
-            if (this.phaseEdit.desarrollo.trim()) {
-                parts.push('**DESARROLLO**\n' + this.phaseEdit.desarrollo.trim());
-            }
-            if (this.phaseEdit.cierre.trim()) {
-                parts.push('**CIERRE**\n' + this.phaseEdit.cierre.trim());
+            for (const phase of this.lessonPhaseDefs()) {
+                const value = String(this.phaseEdit.values?.[phase.key] || '').trim();
+                if (value) {
+                    parts.push('**' + phase.header + '**\n' + value);
+                }
             }
             return parts.join('\n\n');
         },
 
         openActivityModal(activity) {
             this.activityModal = activity;
-            const phases = this.parsePhasesFromDescription(activity?.description);
+            const template = this.detectLessonTemplate(activity?.description);
+            const values = this.parsePhasesFromDescription(activity?.description);
             this.phaseEdit = {
-                inicio: phases.inicio,
-                desarrollo: phases.desarrollo,
-                cierre: phases.cierre,
-                draft: { inicio: '', desarrollo: '', cierre: '' },
+                template,
+                values,
+                draft: {},
                 editing: null,
                 saving: null,
             };
@@ -6211,12 +6191,12 @@ function teacherHub() {
             if (this.phaseEdit.editing && this.phaseEdit.editing !== key) {
                 this.cancelPhaseEdit(this.phaseEdit.editing);
             }
-            this.phaseEdit.draft[key] = this.phaseEdit[key] ?? '';
+            this.phaseEdit.draft[key] = this.phaseEdit.values?.[key] ?? '';
             this.phaseEdit.editing = key;
         },
 
         cancelPhaseEdit(key) {
-            this.phaseEdit.draft[key] = this.phaseEdit[key] ?? '';
+            this.phaseEdit.draft[key] = this.phaseEdit.values?.[key] ?? '';
             if (this.phaseEdit.editing === key) {
                 this.phaseEdit.editing = null;
             }
@@ -6224,12 +6204,12 @@ function teacherHub() {
 
         async savePhaseSection(key) {
             if (!this.activityModal?.id || this.phaseEdit.saving) return;
-            this.phaseEdit[key] = this.phaseEdit.draft[key] ?? '';
+            this.phaseEdit.values[key] = this.phaseEdit.draft[key] ?? '';
             this.phaseEdit.saving = key;
             try {
                 await this.persistActivityPhases();
                 this.phaseEdit.editing = null;
-                const labels = { inicio: 'Inicio', desarrollo: 'Desarrollo', cierre: 'Cierre' };
+                const labels = Object.fromEntries(this.lessonPhaseDefs().map(p => [p.key, p.label]));
                 window.dispatchEvent(new CustomEvent('ai-toast', {
                     detail: { message: `${labels[key] || 'Fase'} guardada correctamente`, type: 'success', icon: 'fa-check' },
                 }));
@@ -6253,9 +6233,8 @@ function teacherHub() {
                     'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]')?.content || '',
                 },
                 body: JSON.stringify({
-                    inicio: this.phaseEdit.inicio,
-                    desarrollo: this.phaseEdit.desarrollo,
-                    cierre: this.phaseEdit.cierre,
+                    phases: this.phaseEdit.values,
+                    template: this.phaseEdit.template,
                     description,
                 }),
             });
@@ -6631,9 +6610,11 @@ function lessonTemplatePicker() {
         visible:   false,
         selected:  window.novaLessonTemplate || 'clasica',
         templates: TEMPLATES,
+        context:   {},
 
         open(detail = {}) {
             this.selected = window.novaLessonTemplate || 'clasica';
+            this.context = detail || {};
             this.visible  = true;
         },
 
@@ -6645,24 +6626,44 @@ function lessonTemplatePicker() {
             if (!this.selected) return;
 
             window.novaLessonTemplate = this.selected;
+            const ctx = this.context || {};
+            const activityIds = Array.isArray(ctx.activity_ids) ? ctx.activity_ids : [];
+            if (ctx.activity_id) activityIds.push(ctx.activity_id);
+            if (ctx.id && !ctx.planificacion_id) activityIds.push(ctx.id);
 
             try {
-                await fetch('/teacher/api/lesson-template', {
+                const res = await fetch('/teacher/api/lesson-template', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
+                        'Accept': 'application/json',
                         'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
                     },
-                    body: JSON.stringify({ lesson_template: this.selected }),
+                    body: JSON.stringify({
+                        lesson_template: this.selected,
+                        activity_id: ctx.activity_id || ctx.id || null,
+                        activity_ids: activityIds,
+                        planificacion_id: ctx.planificacion_id || null,
+                    }),
                 });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok || data.success === false) {
+                    console.warn('Could not save template preference', data);
+                }
             } catch (e) {
                 console.warn('Could not save template preference', e);
             }
 
             this.visible = false;
 
-            // Refresh page content so existing cards re-render with new template
             window.dispatchEvent(new CustomEvent('ai-canvas-refresh'));
+            window.dispatchEvent(new CustomEvent('ai-toast', {
+                detail: {
+                    message: 'Estilo aplicado. Las clases nuevas y las recién creadas usarán esta estructura.',
+                    type: 'success',
+                    icon: 'fa-check',
+                },
+            }));
         },
     };
 }
