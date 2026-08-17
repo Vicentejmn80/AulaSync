@@ -3247,6 +3247,49 @@
             color: var(--nova-violet);
         }
 
+        .attendance-status-btn {
+            border: 1px solid var(--nova-glass-border);
+            background: var(--bg-card);
+            color: var(--text-secondary);
+            border-radius: 999px;
+            padding: 6px 12px;
+            font-weight: 700;
+            font-size: 12px;
+            cursor: pointer;
+            transition: background .15s ease, color .15s ease, border-color .15s ease;
+        }
+
+        .attendance-status-btn:hover {
+            border-color: var(--nova-violet);
+        }
+
+        .attendance-status-btn.is-active.present {
+            background: #0F766E;
+            color: #fff;
+            border-color: transparent;
+        }
+
+        .attendance-status-btn.is-active.tardy {
+            background: #B45309;
+            color: #fff;
+            border-color: transparent;
+        }
+
+        .attendance-status-btn.is-active.absent {
+            background: var(--nova-fuchsia);
+            color: #fff;
+            border-color: transparent;
+        }
+
+        .attendance-reason-select {
+            border: 1px solid var(--nova-glass-border);
+            background: var(--bg-card);
+            color: var(--text-primary);
+            border-radius: 10px;
+            padding: 6px 10px;
+            font-size: 12px;
+        }
+
         .grades-slideover-body {
             flex: 1;
             overflow: auto;
@@ -4230,6 +4273,20 @@
                 </template>
             </div>
 
+            <div x-show="activityModal?.type === 'clase'" style="margin-top: 18px;">
+                <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px;">
+                    <span class="modal-section-label"><i class="fa-solid fa-pen-clip" style="margin-right:6px;"></i>Observación pedagógica</span>
+                    <button @click="saveActivityNotes()" :disabled="notesSaving" class="phase-save-btn" type="button">
+                        <i class="fa-solid" :class="notesSaving ? 'fa-spinner fa-spin' : 'fa-floppy-disk'"></i>
+                        <span x-text="notesSaving ? 'Guardando…' : 'Guardar'"></span>
+                    </button>
+                </div>
+                <textarea :value="activityModal?.notes || ''"
+                          @input="if (activityModal) activityModal.notes = $event.target.value"
+                          rows="3" class="phase-card-textarea"
+                          placeholder="Anota observaciones generales de esta clase: comportamiento, ritmo, ajustes para la próxima sesión…"></textarea>
+            </div>
+
             <div x-show="activityModal?.type !== 'clase'">
                 <div style="margin-bottom: 8px;">
                     <span class="modal-section-label">DESCRIPCIÓN</span>
@@ -4322,6 +4379,12 @@
         </div>
 
         <div class="modal-footer" style="padding: 16px 28px; display: flex; gap: 8px; justify-content: flex-end; align-items: center; border-top: 1px solid var(--nova-glass-border); flex-wrap: wrap;">
+            <template x-if="activityModal?.type === 'clase'">
+                <button @click="openClassAttendance(activityModal)" class="modal-footer-btn primary">
+                    <i class="fa-solid fa-clipboard-user"></i>
+                    Tomar asistencia
+                </button>
+            </template>
             <template x-if="activityModal?.type !== 'clase'">
                 <button @click="openGradesSlideover(activityModal)" class="modal-footer-btn primary">
                     <i class="fa-solid fa-table-cells"></i>
@@ -4464,6 +4527,105 @@
         </aside>
     </div>
 
+    {{-- Class Attendance Slide-over --}}
+    <div x-show="classAttendance.open" x-cloak class="grades-slideover-wrap" @keydown.escape.window="closeClassAttendance()">
+        <div class="grades-slideover-backdrop" @click="closeClassAttendance()"></div>
+        <aside class="grades-slideover-panel" @click.stop>
+            <div class="grades-slideover-header">
+                <div>
+                    <p class="grades-slideover-eyebrow">AulaSync · Tomar Asistencia</p>
+                    <h3 x-text="classAttendance.course_name || 'Asistencia'"></h3>
+                    <p class="grades-slideover-subtitle" x-text="classAttendance.date"></p>
+                </div>
+                <div style="display:flex; align-items:center; gap:10px;">
+                    <button class="btn-primary" style="padding: 10px 14px;"
+                        :disabled="classAttendance.loading || classAttendance.saving || !classAttendance.roster.length"
+                        @click="saveClassAttendance()">
+                        <span x-show="!classAttendance.saving">💾 Guardar asistencia</span>
+                        <span x-show="classAttendance.saving">Guardando…</span>
+                    </button>
+                    <button @click="closeClassAttendance()" class="modal-close">
+                        <i class="fa-solid fa-times"></i>
+                    </button>
+                </div>
+            </div>
+
+            <div class="grades-slideover-meta">
+                <span class="meta-chip">
+                    <i class="fa-solid fa-users"></i>
+                    <strong x-text="classAttendance.roster.length"></strong> estudiantes
+                </span>
+                <span class="meta-chip" x-show="classAttendance.taken">
+                    <i class="fa-solid fa-circle-check"></i>
+                    Ya registrada — puedes editarla
+                </span>
+            </div>
+
+            <div class="grades-slideover-body">
+                <p class="ok" x-show="classAttendance.message" x-text="classAttendance.message" style="margin: 0 0 10px;"></p>
+                <template x-if="classAttendance.loading">
+                    <div class="skeleton-nova" style="height: 240px;"></div>
+                </template>
+
+                <template x-if="!classAttendance.loading && classAttendance.error">
+                    <p class="grades-inline-error" x-text="classAttendance.error"></p>
+                </template>
+
+                <template x-if="!classAttendance.loading && !classAttendance.error">
+                    <div class="grades-table-wrap">
+                        <table class="grades-table">
+                            <thead>
+                                <tr>
+                                    <th>Alumno</th>
+                                    <th>Estado</th>
+                                    <th>Motivo</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <template x-for="row in classAttendance.roster" :key="row.student_id">
+                                    <tr>
+                                        <td>
+                                            <div class="student-grade-cell">
+                                                <div class="student-avatar" x-text="initials(row.name)"></div>
+                                                <span x-text="row.name"></span>
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <div class="status-btns" style="display:flex; gap:6px; flex-wrap:wrap;">
+                                                <button type="button" class="attendance-status-btn"
+                                                    :class="{ 'is-active present': row.status === 'present' }"
+                                                    @click="setClassAttendanceStatus(row, 'present')">Presente</button>
+                                                <button type="button" class="attendance-status-btn"
+                                                    :class="{ 'is-active tardy': row.status === 'tardy' }"
+                                                    @click="setClassAttendanceStatus(row, 'tardy')">Tarde</button>
+                                                <button type="button" class="attendance-status-btn"
+                                                    :class="{ 'is-active absent': row.status === 'absent' }"
+                                                    @click="setClassAttendanceStatus(row, 'absent')">Ausente</button>
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <select x-show="row.status === 'absent'" x-model="row.reason_id" class="attendance-reason-select">
+                                                <option value="">Sin justificar</option>
+                                                <template x-for="reason in attendanceReasons" :key="reason.id">
+                                                    <option :value="reason.id" x-text="reason.label"></option>
+                                                </template>
+                                            </select>
+                                            <span x-show="row.status !== 'absent'" style="color: var(--text-tertiary); font-size: 12px;">—</span>
+                                        </td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                    </div>
+                </template>
+            </div>
+
+            <div class="grades-slideover-footer">
+                <button @click="closeClassAttendance()" class="btn-secondary">Cerrar</button>
+            </div>
+        </aside>
+    </div>
+
     {{-- Student Slide-over --}}
     <div x-show="studentSlideover.open" x-cloak class="grades-slideover-wrap" @keydown.escape.window="closeStudentSlideover()">
         <div class="grades-slideover-backdrop" @click="closeStudentSlideover()"></div>
@@ -4494,6 +4656,12 @@
                 <span class="meta-chip" x-show="studentSlideover.student?.grade">
                     <i class="fa-solid fa-graduation-cap"></i>
                     <strong x-text="[studentSlideover.student?.grade, studentSlideover.student?.section].filter(Boolean).join(' / ')"></strong>
+                </span>
+                <span class="meta-chip" x-show="studentSlideover.student?.attendance_percentage !== null && studentSlideover.student?.attendance_percentage !== undefined">
+                    <i class="fa-solid fa-clipboard-user"></i>
+                    Asistencia:
+                    <strong x-text="studentSlideover.student?.attendance_percentage + '%'"></strong>
+                    <span style="opacity:.7; font-size:11px;" x-text="`(${studentSlideover.student?.attendance_present ?? 0} pres. · ${studentSlideover.student?.attendance_tardy ?? 0} tarde · ${studentSlideover.student?.attendance_absent ?? 0} aus.)`"></span>
                 </span>
             </div>
 
@@ -4903,6 +5071,21 @@ function teacherHub() {
             savedPulse: {},
             rowState: {},
         },
+        attendanceReasons: @json($attendanceReasons ?? []),
+        classAttendance: {
+            open: false,
+            loading: false,
+            saving: false,
+            activity_id: null,
+            course_id: null,
+            course_name: '',
+            date: '',
+            taken: false,
+            roster: [],
+            error: '',
+            message: '',
+        },
+        notesSaving: false,
         dayModal:        null,
         taskIdeaModalOpen: false,
         taskLoading:     false,
@@ -5823,6 +6006,119 @@ function teacherHub() {
                 this.loadCalendar(this.calendarMonth);
             }
             this.refreshCourseSidebar();
+        },
+
+        async openClassAttendance(activity) {
+            if (!activity?.course_id) {
+                this.classAttendance = { ...this.classAttendance, open: true, error: 'Esta clase no tiene un curso asignado.', roster: [] };
+                return;
+            }
+            this.classAttendance = {
+                open: true,
+                loading: true,
+                saving: false,
+                activity_id: activity.id,
+                course_id: activity.course_id,
+                course_name: activity.course_name || this.courseData?.name || '',
+                date: activity.due_date || new Date().toISOString().slice(0, 10),
+                taken: false,
+                roster: [],
+                error: '',
+                message: '',
+            };
+            try {
+                const params = new URLSearchParams({ course_id: this.classAttendance.course_id, date: this.classAttendance.date });
+                const res = await fetch(`{{ route('teacher.attendance.roster') }}?${params.toString()}`, {
+                    headers: { Accept: 'application/json' },
+                });
+                const json = await res.json();
+                if (!res.ok || !json.success) {
+                    this.classAttendance.error = json.error || 'No se pudo cargar la asistencia.';
+                    return;
+                }
+                this.classAttendance.taken = !!json.taken;
+                this.classAttendance.roster = (json.roster || []).map(r => ({ ...r }));
+            } catch (e) {
+                this.classAttendance.error = 'Error de red al cargar la asistencia.';
+            } finally {
+                this.classAttendance.loading = false;
+            }
+        },
+
+        closeClassAttendance() {
+            this.classAttendance.open = false;
+        },
+
+        setClassAttendanceStatus(row, status) {
+            row.status = status;
+            if (status !== 'absent') row.reason_id = null;
+        },
+
+        async saveClassAttendance() {
+            if (!this.classAttendance.course_id || this.classAttendance.saving) return;
+            this.classAttendance.saving = true;
+            this.classAttendance.error = '';
+            this.classAttendance.message = '';
+            try {
+                const res = await fetch('{{ route('teacher.attendance.save') }}', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]')?.content || '',
+                        'Accept': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        course_id: this.classAttendance.course_id,
+                        date: this.classAttendance.date,
+                        entries: this.classAttendance.roster.map(r => ({
+                            student_id: r.student_id,
+                            status: r.status || 'present',
+                            reason_id: r.reason_id || null,
+                            note: r.note || null,
+                            client_uuid: r.client_uuid || null,
+                        })),
+                    }),
+                });
+                const json = await res.json();
+                if (!res.ok || !json.success) {
+                    this.classAttendance.error = json.error || 'No se pudo guardar la asistencia.';
+                    return;
+                }
+                this.classAttendance.taken = true;
+                this.classAttendance.message = 'Asistencia guardada correctamente.';
+                if (this.classAttendance.activity_id) {
+                    this.refreshCourseSidebar();
+                }
+            } catch (e) {
+                this.classAttendance.error = 'Error de red al guardar la asistencia.';
+            } finally {
+                this.classAttendance.saving = false;
+            }
+        },
+
+        async saveActivityNotes() {
+            if (!this.activityModal?.id || this.notesSaving) return;
+            this.notesSaving = true;
+            try {
+                const res = await fetch(`/teacher/activities/${this.activityModal.id}/notes`, {
+                    method: 'PATCH',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]')?.content || '',
+                        'Accept': 'application/json',
+                    },
+                    body: JSON.stringify({ notes: this.activityModal.notes || '' }),
+                });
+                const json = await res.json();
+                if (json.success && this.courseData?.activities) {
+                    const idx = this.courseData.activities.findIndex(a => Number(a.id) === Number(this.activityModal.id));
+                    if (idx !== -1) this.courseData.activities[idx].notes = json.notes;
+                }
+            } catch (e) {
+                console.error('saveActivityNotes', e);
+            } finally {
+                this.notesSaving = false;
+            }
         },
 
         updateActivityGradeMeta(activityId, payload = {}) {

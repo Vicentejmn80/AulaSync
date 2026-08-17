@@ -19,6 +19,7 @@ class Activity extends Model
         'plan_block_id',
         'title',
         'description',
+        'notes',
         'max_score',
         'weight_percentage',
         'due_date',

@@ -10,6 +10,7 @@ use App\Models\Course;
 use App\Models\Grade;
 use App\Models\Notification;
 use App\Models\Student;
+use App\Services\AttendanceSummaryService;
 use App\Services\StudentGradeAccumulationService;
 use App\Support\GradingScale;
 use Illuminate\Http\JsonResponse;
@@ -21,8 +22,10 @@ use Illuminate\View\View;
 
 class HubController extends Controller
 {
-    public function __construct(private StudentGradeAccumulationService $accumulation)
-    {
+    public function __construct(
+        private StudentGradeAccumulationService $accumulation,
+        private AttendanceSummaryService $attendanceSummary
+    ) {
     }
 
     // ─── Main hub view ───────────────────────────────────────────────────────
@@ -51,7 +54,20 @@ class HubController extends Controller
         $initialCourseId  = $request->query('course');
         $initialPlanBlock = $request->query('plan_block');
 
-        return view('teacher.hub', compact('teacher', 'dailyQuote', 'initialCourseId', 'initialPlanBlock'));
+        $attendanceReasons = collect();
+        if (Schema::hasTable('attendance_reasons')) {
+            $attendanceReasons = \App\Models\AttendanceReason::query()
+                ->where(function ($q) use ($teacher) {
+                    $q->whereNull('colegio_id');
+                    if ($teacher->colegio_id) {
+                        $q->orWhere('colegio_id', $teacher->colegio_id);
+                    }
+                })
+                ->orderBy('sort_order')
+                ->get(['id', 'code', 'label', 'category', 'requires_comment']);
+        }
+
+        return view('teacher.hub', compact('teacher', 'dailyQuote', 'initialCourseId', 'initialPlanBlock', 'attendanceReasons'));
     }
 
     // ─── Canvas API — Stats ──────────────────────────────────────────────────
@@ -269,10 +285,12 @@ class HubController extends Controller
             }),
             'activities'   => $course->activities->map(fn ($a) => [
                 'id'                => $a->id,
+                'course_id'         => $a->course_id,
                 'type'              => $a->type ?? 'actividad',
                 'is_homework'       => (bool) $a->is_homework,
                 'title'             => $a->title,
                 'description'       => $a->description ?? '',
+                'notes'             => $a->notes,
                 'max_score'         => $a->max_score,
                 'weight_percentage' => $a->weight_percentage,
                 'due_date'          => $a->due_date instanceof \Carbon\Carbon
@@ -343,6 +361,7 @@ class HubController extends Controller
 
             $accumulated = round((float) $rows->sum(fn ($row) => $row['contribution'] ?? 0), 2);
             $pivot = $course->students()->where('students.id', $student->id)->first()?->pivot;
+            $attendance = $this->attendanceSummary->percentForStudentInCourse($student, $course);
 
             return response()->json([
                 'success' => true,
@@ -355,6 +374,11 @@ class HubController extends Controller
                     'has_family_code' => filled($student->family_code),
                     'promedio_acumulado' => $accumulated,
                     'nota_actual' => $pivot?->nota_actual !== null ? (float) $pivot->nota_actual : null,
+                    'attendance_percentage' => $attendance['percentage'],
+                    'attendance_present' => $attendance['present'],
+                    'attendance_absent' => $attendance['absent'],
+                    'attendance_tardy' => $attendance['tardy'],
+                    'attendance_total' => $attendance['total'],
                 ],
                 'course' => [
                     'id' => $course->id,
@@ -462,6 +486,7 @@ class HubController extends Controller
                 'grades_url'    => route('teacher.grades.create', $a->id),
                 'is_homework'   => (bool) $a->is_homework,
                 'director_notes'=> $a->director_notes,
+                'notes'         => $a->notes,
                 'nee_type'      => $a->nee_type,
                 'nee_adaptation'=> $a->nee_adaptation,
                 'tareas'        => $a->tareas->map(fn ($t) => [
@@ -518,6 +543,7 @@ class HubController extends Controller
                 'plan_block_id' => $activity->plan_block_id,
                 'is_homework' => (bool) $activity->is_homework,
                 'director_notes' => $activity->director_notes,
+                'notes' => $activity->notes,
                 'nee_type' => $activity->nee_type,
                 'nee_adaptation' => $activity->nee_adaptation,
                 'tareas' => $activity->tareas->map(fn ($t) => [

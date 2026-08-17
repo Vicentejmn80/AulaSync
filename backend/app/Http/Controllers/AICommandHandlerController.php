@@ -15,6 +15,7 @@ use App\Models\Student;
 use App\Models\Tarea;
 use App\Models\User;
 use App\Services\DirectorAlertService;
+use App\Services\EvaluationPlanService;
 use App\Services\StudentGradeAccumulationService;
 use App\Support\GradingScale;
 use App\Support\LessonTemplate;
@@ -34,8 +35,10 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
 
     private ?string $activeLessonTemplate = null;
 
-    public function __construct(private StudentGradeAccumulationService $accumulation)
-    {
+    public function __construct(
+        private StudentGradeAccumulationService $accumulation,
+        private EvaluationPlanService $planService
+    ) {
     }
 
     private function jsonOut(array $payload, int $status = 200): JsonResponse
@@ -1537,7 +1540,18 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
 
         $evalUrl = route('teacher.evaluations.index');
         $modeLabel = $mode === 'physical' ? 'física imprimible' : 'digital';
-        $planMessage = $addToPlan ? ' También quedó en el Plan de Evaluación del curso.' : '';
+        $planMessage = '';
+        $planTotal = null;
+        $planBalanced = null;
+        if ($addToPlan && $evaluation->course_id && Schema::hasTable('course_evaluation_plans')) {
+            $plan = $this->planService->resolvePlanForCourse($teacher, $evaluation->course_id);
+            $summary = $this->planService->planSummary($plan->fresh());
+            $planTotal = $summary['total_weight'];
+            $planBalanced = $summary['is_balanced'];
+            $planMessage = $summary['is_balanced']
+                ? ' También quedó en el Plan de Evaluación del curso, que suma 100% ✅.'
+                : " También quedó en el Plan de Evaluación del curso (suma {$planTotal}%".($planTotal < 100 ? ', te falta '.round(100 - $planTotal, 2).'% para llegar a 100%).' : ', supera el 100%, revísalo).');
+        }
 
         return [
             'success' => true,
@@ -1551,6 +1565,8 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
                 'activity_id' => $evaluation->activity_id,
                 'course_id' => $course->id,
                 'added_to_plan' => $addToPlan,
+                'plan_total_weight' => $planTotal,
+                'plan_is_balanced' => $planBalanced,
                 'public_token' => $evaluation->public_token,
                 'evaluations_url' => $evalUrl,
             ],
@@ -1615,6 +1631,8 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             'data' => [
                 'evaluation_id' => $evaluation->id,
                 'plan_id' => $attach['plan_id'] ?? null,
+                'plan_total_weight' => $attach['plan_total_weight'] ?? null,
+                'plan_is_balanced' => $attach['plan_is_balanced'] ?? null,
                 'assessment_url' => route('teacher.assessment.index'),
             ],
         ];
@@ -1629,53 +1647,42 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
         string $unitName,
         ?string $dueDate
     ): array {
-        $plan = null;
-        if ($planId) {
-            $plan = CourseEvaluationPlan::where('id', $planId)->where('teacher_id', $teacherId)->first();
+        if (! $planId && ! $evaluation->course_id) {
+            return ['success' => false, 'message' => 'La evaluación no tiene curso asignado.'];
         }
+
+        $plan = $planId
+            ? CourseEvaluationPlan::where('id', $planId)->where('teacher_id', $teacherId)->first()
+            : $this->planService->resolvePlanForCourse(User::find($teacherId), $evaluation->course_id);
 
         if (! $plan) {
-            if (! $evaluation->course_id) {
-                return ['success' => false, 'message' => 'La evaluación no tiene curso asignado.'];
-            }
-            $course = Course::find($evaluation->course_id);
-            $plan = CourseEvaluationPlan::firstOrCreate(
-                [
-                    'teacher_id' => $teacherId,
-                    'course_id' => $evaluation->course_id,
-                    'title' => 'Plan de evaluación · '.($course?->subject_name ?? 'Curso'),
-                ],
-                [
-                    'summary' => 'Plan sincronizado automáticamente desde AulaSync AI.',
-                    'status' => 'draft',
-                ]
-            );
+            return ['success' => false, 'message' => 'No se encontró el plan de evaluación indicado.'];
         }
 
-        $existing = $plan->items()->where('evaluation_id', $evaluation->id)->first();
-        if ($existing) {
-            return [
-                'success' => true,
-                'plan_id' => $plan->id,
-                'message' => "La evaluación «{$evaluation->title}» ya estaba en el plan.",
-            ];
-        }
+        $alreadyInPlan = $plan->items()->where('evaluation_id', $evaluation->id)->exists();
 
-        $plan->items()->create([
-            'evaluation_id' => $evaluation->id,
+        $this->planService->syncItemForEvaluation($evaluation, [
+            'plan_id' => $plan->id,
             'unit_name' => $unitName !== '' ? $unitName : 'Unidad sincronizada',
-            'assessment_type' => $evaluation->title,
             'category' => $category,
-            'weight_percentage' => max(1, min(100, $weight)),
+            'weight_percentage' => $weight,
             'due_date' => $dueDate,
             'notes' => 'Sincronizado automáticamente desde AulaSync AI.',
-            'learning_outcome' => null,
         ]);
+
+        $summary = $this->planService->planSummary($plan->fresh());
+        $balanceNote = $summary['is_balanced']
+            ? ' El plan suma 100% ✅.'
+            : " El plan suma {$summary['total_weight']}%".($summary['total_weight'] < 100 ? ' — te falta '.round(100 - $summary['total_weight'], 2).'% para llegar a 100%.' : ' — supera el 100%, revísalo.');
 
         return [
             'success' => true,
             'plan_id' => $plan->id,
-            'message' => "Agregada al Plan de Evaluación del curso (peso {$weight}%).",
+            'plan_total_weight' => $summary['total_weight'],
+            'plan_is_balanced' => $summary['is_balanced'],
+            'message' => $alreadyInPlan
+                ? "La evaluación «{$evaluation->title}» ya estaba en el plan; se actualizó su peso.".$balanceNote
+                : "Agregada al Plan de Evaluación (peso {$weight}%).".$balanceNote,
         ];
     }
 

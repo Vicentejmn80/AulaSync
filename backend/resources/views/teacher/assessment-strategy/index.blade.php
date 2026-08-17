@@ -644,6 +644,7 @@
                             <div class="stack" style="margin-top:8px">
                                 <span class="pill" x-text="(p.items || []).length + ' ítems'"></span>
                                 <span class="pill" :class="p.status === 'published' ? 'ok' : ''" x-text="p.status || 'draft'"></span>
+                                <span class="pill" :class="planIsBalanced(p) ? 'ok' : 'warn'" x-text="'Total: ' + planTotalWeight(p) + '%'"></span>
                             </div>
                         </div>
                         <div class="stack" style="margin-top:0">
@@ -1232,6 +1233,13 @@ function assessmentStrategyApp() {
             }
         },
 
+        planTotalWeight(p) {
+            const total = (p.items || []).reduce((sum, item) => sum + Number(item.weight_percentage || 0), 0);
+            return Math.round(total * 100) / 100;
+        },
+        planIsBalanced(p) {
+            return Math.abs(this.planTotalWeight(p) - 100) <= 0.5;
+        },
         async attachEvaluation() {
             this.attachMessage = '';
             this.attachError = '';

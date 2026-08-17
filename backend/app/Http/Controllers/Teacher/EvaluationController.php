@@ -7,6 +7,7 @@ use App\Models\Course;
 use App\Models\Evaluation;
 use App\Models\EvaluationAttempt;
 use App\Models\EvaluationQuestion;
+use App\Services\EvaluationPlanService;
 use App\Services\EvaluationSyncService;
 use App\Support\GradingScale;
 use Illuminate\Http\JsonResponse;
@@ -19,8 +20,10 @@ use Illuminate\View\View;
 
 class EvaluationController extends Controller
 {
-    public function __construct(private EvaluationSyncService $sync)
-    {
+    public function __construct(
+        private EvaluationSyncService $sync,
+        private EvaluationPlanService $planService
+    ) {
     }
 
     public function index(): View
@@ -309,7 +312,13 @@ class EvaluationController extends Controller
             'physical_format' => 'nullable|array',
             'rubric' => 'nullable|array',
             'questions' => 'sometimes|array|min:1',
+            'weight_percentage' => 'nullable|numeric|min:1|max:100',
+            'category' => 'nullable|in:formative,summative',
         ]);
+
+        $weightPercentage = $data['weight_percentage'] ?? null;
+        $category = $data['category'] ?? null;
+        unset($data['weight_percentage'], $data['category']);
 
         if (isset($data['questions'])) {
             $this->syncQuestions($evaluation, $data['questions']);
@@ -318,8 +327,33 @@ class EvaluationController extends Controller
             unset($data['questions']);
         }
 
+        $titleOrDateChanged = array_key_exists('title', $data) || array_key_exists('scheduled_at', $data);
+
         $evaluation->update($data);
-        $this->sync->ensureActivityMirror($evaluation->fresh(), auth()->user());
+        $fresh = $evaluation->fresh();
+        $this->sync->ensureActivityMirror($fresh, auth()->user());
+
+        // Keep the Evaluation Plan item in sync when the evaluation already has one,
+        // or when the caller explicitly asked to (re)assign a weight/category.
+        if ($fresh->course_id && Schema::hasTable('course_evaluation_plans')) {
+            $existingItem = $fresh->planItem;
+            if ($existingItem && ($titleOrDateChanged || $weightPercentage !== null || $category !== null)) {
+                $this->planService->syncItemForEvaluation($fresh, [
+                    'plan_id' => $existingItem->plan_id,
+                    'unit_name' => $existingItem->unit_name,
+                    'category' => $category ?? $existingItem->category,
+                    'weight_percentage' => $weightPercentage ?? $existingItem->weight_percentage,
+                    'due_date' => optional($fresh->scheduled_at)->toDateString(),
+                ]);
+            } elseif (! $existingItem && $weightPercentage !== null) {
+                $this->planService->syncItemForEvaluation($fresh, [
+                    'unit_name' => $fresh->topic ?: 'Unidad',
+                    'category' => $category ?? 'summative',
+                    'weight_percentage' => $weightPercentage,
+                    'due_date' => optional($fresh->scheduled_at)->toDateString(),
+                ]);
+            }
+        }
 
         $with = ['questions', 'course'];
         if (Schema::hasColumn('evaluations', 'activity_id')) {

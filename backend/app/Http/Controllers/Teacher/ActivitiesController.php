@@ -405,6 +405,26 @@ class ActivitiesController extends Controller
     }
 
     /**
+     * Guarda una observación pedagógica general de la clase/actividad (distinta del feedback por alumno).
+     */
+    public function updateNotes(Request $request, Activity $activity): JsonResponse
+    {
+        abort_unless($activity->teacher_id === auth()->id(), 403);
+
+        $data = $request->validate([
+            'notes' => ['nullable', 'string', 'max:5000'],
+        ]);
+
+        $activity->update(['notes' => $data['notes'] ?? null]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Observación guardada.',
+            'notes' => $activity->notes,
+        ]);
+    }
+
+    /**
      * Actualiza Inicio / Desarrollo / Cierre sin llamar a OpenAI.
      */
     public function updatePhases(Request $request, Activity $activity): JsonResponse

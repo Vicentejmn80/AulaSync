@@ -3,8 +3,6 @@
 namespace App\Services;
 
 use App\Models\Activity;
-use App\Models\Course;
-use App\Models\CourseEvaluationPlan;
 use App\Models\Evaluation;
 use App\Models\EvaluationAttempt;
 use App\Models\EvaluationQuestion;
@@ -21,8 +19,10 @@ use Illuminate\Support\Str;
 
 class EvaluationSyncService
 {
-    public function __construct(private StudentGradeAccumulationService $accumulation)
-    {
+    public function __construct(
+        private StudentGradeAccumulationService $accumulation,
+        private EvaluationPlanService $planService
+    ) {
     }
 
     /**
@@ -396,40 +396,13 @@ class EvaluationSyncService
         string $unitName,
         ?string $dueDate
     ): void {
-        if (! Schema::hasTable('course_evaluation_plans') || ! $evaluation->course_id) {
-            return;
-        }
-
-        $course = Course::find($evaluation->course_id);
-        $createAttrs = $this->onlyExistingColumns('course_evaluation_plans', [
-            'title' => 'Plan de evaluación · '.($course?->subject_name ?? 'Curso'),
-            'summary' => 'Plan sincronizado automáticamente desde AulaSync.',
-            'status' => 'draft',
-        ]);
-        $plan = CourseEvaluationPlan::firstOrCreate(
-            [
-                'teacher_id' => $teacher->id,
-                'course_id' => $evaluation->course_id,
-            ],
-            $createAttrs
-        );
-
-        if (Schema::hasColumn('course_evaluation_plan_items', 'evaluation_id')) {
-            $exists = $plan->items()->where('evaluation_id', $evaluation->id)->exists();
-            if ($exists) {
-                return;
-            }
-        }
-
-        $plan->items()->create($this->onlyExistingColumns('course_evaluation_plan_items', [
-            'evaluation_id' => $evaluation->id,
-            'unit_name' => $unitName !== '' ? $unitName : 'Unidad',
-            'assessment_type' => $evaluation->title,
+        $this->planService->syncItemForEvaluation($evaluation, [
+            'unit_name' => $unitName,
             'category' => $category,
-            'weight_percentage' => max(1, min(100, $weight)),
+            'weight_percentage' => $weight,
             'due_date' => $dueDate,
             'notes' => 'Sincronizado desde el módulo de Evaluaciones / chat IA.',
-        ]));
+        ]);
     }
 
     private function normalizeQuestions(array $questions): array

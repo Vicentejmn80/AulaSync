@@ -11,6 +11,7 @@ use App\Models\CommunicationAnnouncementRead;
 use App\Models\CommunicationMessage;
 use App\Models\CommunicationThread;
 use App\Models\Course;
+use App\Models\CourseEvaluationPlan;
 use App\Models\Evaluation;
 use App\Models\Grade;
 use App\Models\Notification;
@@ -23,6 +24,10 @@ use Symfony\Component\HttpKernel\Exception\HttpException;
 
 class RepresentanteDashboardService
 {
+    public function __construct(private AttendanceSummaryService $attendanceSummary)
+    {
+    }
+
     public function linkedStudents(User $parent): Collection
     {
         $students = collect();
@@ -106,6 +111,7 @@ class RepresentanteDashboardService
         $pending = $this->pendingTasks($student, $courseIds);
         $upcomingEvals = $this->upcomingEvaluations($courseIds);
         $absenceRequests = $this->absenceHistory($student);
+        $attendanceByCourse = $this->attendanceByCourse($student);
 
         return [
             'attendance' => [
@@ -113,6 +119,7 @@ class RepresentanteDashboardService
                 'label' => $attendanceLabel,
                 'absences' => $monthAbsences,
                 'tardies' => $monthTardies,
+                'by_course' => $attendanceByCourse,
             ],
             'average' => [
                 'value' => $average,
@@ -262,6 +269,8 @@ class RepresentanteDashboardService
             'trend' => $metrics['trend'],
             'history' => $history,
             'items' => $items->values(),
+            'evaluation_plan' => $this->evaluationPlanItems($course),
+            'attendance' => $this->attendanceSummary->percentForStudentInCourse($student, $course),
         ];
     }
 
@@ -504,7 +513,7 @@ class RepresentanteDashboardService
 
     public function reportCardData(Student $student): array
     {
-        return app(ReportCardService::class)->build($student);
+        return app(ReportCardService::class)->build($student, publishedOnly: true);
     }
 
     private function recordedGrades(Student $student, Collection $activityIds): Collection
@@ -517,6 +526,7 @@ class RepresentanteDashboardService
             ->where('student_id', $student->id)
             ->whereIn('activity_id', $activityIds)
             ->whereNotNull('score')
+            ->when(Schema::hasColumn('grades', 'status'), fn ($q) => $q->where('status', 'published'))
             ->get();
     }
 
@@ -625,6 +635,54 @@ class RepresentanteDashboardService
                 'date' => $next['date'],
             ] : null,
         ];
+    }
+
+    /**
+     * Evaluation Plan items for a course, so the family can see upcoming units/weights
+     * exactly as configured by the teacher (same source as the teacher and Director views).
+     */
+    private function evaluationPlanItems(Course $course): array
+    {
+        if (! Schema::hasTable('course_evaluation_plans')) {
+            return [];
+        }
+
+        $plan = CourseEvaluationPlan::where('course_id', $course->id)
+            ->where('teacher_id', $course->teacher_id)
+            ->with('items')
+            ->first();
+
+        if (! $plan) {
+            return [];
+        }
+
+        return $plan->items
+            ->sortBy('due_date')
+            ->map(fn ($item) => [
+                'unit_name' => $item->unit_name,
+                'assessment_type' => $item->assessment_type,
+                'category' => $item->category,
+                'weight_percentage' => (float) $item->weight_percentage,
+                'due_date' => optional($item->due_date)->format('Y-m-d'),
+            ])
+            ->values()
+            ->all();
+    }
+
+    private function attendanceByCourse(Student $student): array
+    {
+        return $student->courses->map(function (Course $course) use ($student) {
+            $stats = $this->attendanceSummary->percentForStudentInCourse($student, $course);
+
+            return [
+                'course_id' => $course->id,
+                'course' => $course->subject_name,
+                'percentage' => $stats['percentage'],
+                'present' => $stats['present'],
+                'absent' => $stats['absent'],
+                'tardy' => $stats['tardy'],
+            ];
+        })->values()->all();
     }
 
     private function gradedItems(Student $student, Course $course): Collection

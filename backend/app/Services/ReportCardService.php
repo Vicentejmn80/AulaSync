@@ -7,20 +7,24 @@ use App\Models\Course;
 use App\Models\Grade;
 use App\Models\Student;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Schema;
 
 class ReportCardService
 {
     /**
      * Same payload used by teacher, director and family so the boletin never diverges.
      */
-    public function build(Student $student): array
+    public function build(Student $student, bool $publishedOnly = false): array
     {
         $student->loadMissing(['courses.teacher', 'colegio']);
 
-        $courseData = $student->courses->map(function (Course $course) use ($student) {
+        $filterPublished = $publishedOnly && Schema::hasColumn('grades', 'status');
+
+        $courseData = $student->courses->map(function (Course $course) use ($student, $filterPublished) {
             $activities = Activity::where('course_id', $course->id)
                 ->where(fn ($q) => $q->whereNull('type')->orWhere('type', '!=', 'clase'))
-                ->with(['grades' => fn ($q) => $q->where('student_id', $student->id)])
+                ->with(['grades' => fn ($q) => $q->where('student_id', $student->id)
+                    ->when($filterPublished, fn ($gq) => $gq->where('status', 'published'))])
                 ->orderBy('due_date')
                 ->get(['id', 'title', 'type', 'max_score', 'weight_percentage', 'due_date']);
 

@@ -9,6 +9,7 @@ use App\Models\CourseEvaluationPlan;
 use App\Models\CourseEvaluationPlanItem;
 use App\Models\Evaluation;
 use App\Models\Rubric;
+use App\Services\EvaluationPlanService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -19,6 +20,10 @@ use Illuminate\View\View;
 
 class AssessmentStrategyController extends Controller
 {
+    public function __construct(private EvaluationPlanService $planService)
+    {
+    }
+
     public function index(): View
     {
         $teacher = auth()->user();
@@ -36,6 +41,12 @@ class AssessmentStrategyController extends Controller
                 ->latest()
                 ->limit(30)
                 ->get();
+
+            $plans->each(function (CourseEvaluationPlan $plan) {
+                $summary = $this->planService->planSummary($plan);
+                $plan->setAttribute('total_weight', $summary['total_weight']);
+                $plan->setAttribute('is_balanced', $summary['is_balanced']);
+            });
         }
 
         if (Schema::hasTable('rubrics')) {
@@ -148,15 +159,23 @@ class AssessmentStrategyController extends Controller
         $teacher = auth()->user();
         Course::where('id', $data['course_id'])->where('teacher_id', $teacher->id)->firstOrFail();
 
-        $plan = CourseEvaluationPlan::create([
-            'teacher_id' => $teacher->id,
-            'course_id' => $data['course_id'],
-            'title' => $data['title'],
-            'summary' => $data['summary'] ?? null,
-            'formative_weight' => $data['formative_weight'] ?? null,
-            'summative_weight' => $data['summative_weight'] ?? null,
-            'status' => $data['status'] ?? 'draft',
-        ]);
+        // Plans are unique per (teacher_id, course_id): saving a generated plan replaces
+        // the course's single plan and its items instead of creating a duplicate.
+        $plan = CourseEvaluationPlan::updateOrCreate(
+            [
+                'teacher_id' => $teacher->id,
+                'course_id' => $data['course_id'],
+            ],
+            [
+                'title' => $data['title'],
+                'summary' => $data['summary'] ?? null,
+                'formative_weight' => $data['formative_weight'] ?? null,
+                'summative_weight' => $data['summative_weight'] ?? null,
+                'status' => $data['status'] ?? 'draft',
+            ]
+        );
+
+        $plan->items()->delete();
 
         foreach ($data['items'] as $item) {
             $plan->items()->create([
@@ -171,7 +190,15 @@ class AssessmentStrategyController extends Controller
             ]);
         }
 
-        return response()->json(['success' => true, 'plan' => $plan->fresh(['course', 'items.evaluation'])]);
+        $plan = $plan->fresh(['course', 'items.evaluation']);
+        $summary = $this->planService->planSummary($plan);
+
+        return response()->json([
+            'success' => true,
+            'plan' => $plan,
+            'plan_total_weight' => $summary['total_weight'],
+            'plan_is_balanced' => $summary['is_balanced'],
+        ]);
     }
 
     public function attachEvaluation(Request $request): JsonResponse
@@ -190,50 +217,37 @@ class AssessmentStrategyController extends Controller
             ->where('teacher_id', $teacher->id)
             ->firstOrFail();
 
-        $plan = null;
         if (! empty($data['plan_id'])) {
             $plan = CourseEvaluationPlan::where('id', $data['plan_id'])
                 ->where('teacher_id', $teacher->id)
                 ->firstOrFail();
+        } elseif ($evaluation->course_id) {
+            $plan = $this->planService->resolvePlanForCourse($teacher, $evaluation->course_id);
         } else {
-            $courseId = $evaluation->course_id;
-            if (! $courseId) {
-                return response()->json(['success' => false, 'error' => 'La evaluación no tiene curso. Asígnale un curso primero.'], 200);
-            }
-            $plan = CourseEvaluationPlan::firstOrCreate(
-                [
-                    'teacher_id' => $teacher->id,
-                    'course_id' => $courseId,
-                    'title' => 'Plan de evaluación · '.$evaluation->course?->subject_name,
-                ],
-                [
-                    'summary' => 'Plan generado automáticamente al sincronizar evaluaciones.',
-                    'status' => 'draft',
-                ]
-            );
+            return response()->json(['success' => false, 'error' => 'La evaluación no tiene curso. Asígnale un curso primero.'], 200);
         }
 
-        $existing = $plan->items()->where('evaluation_id', $evaluation->id)->first();
-        if ($existing) {
-            return response()->json(['success' => true, 'item' => $existing, 'plan' => $plan->fresh(['items.evaluation', 'course']), 'message' => 'Esta evaluación ya estaba en el plan.']);
-        }
+        $alreadyInPlan = $plan->items()->where('evaluation_id', $evaluation->id)->exists();
 
-        $item = $plan->items()->create([
-            'evaluation_id' => $evaluation->id,
+        $item = $this->planService->syncItemForEvaluation($evaluation, [
+            'plan_id' => $plan->id,
             'unit_name' => $data['unit_name'] ?: ($evaluation->topic ?: 'Unidad sincronizada'),
-            'assessment_type' => $evaluation->title,
             'category' => $data['category'] ?? 'summative',
             'weight_percentage' => (float) ($data['weight_percentage'] ?? 10),
             'due_date' => $data['due_date'] ?? optional($evaluation->scheduled_at)->toDateString(),
             'notes' => 'Sincronizado desde el módulo de Evaluaciones.',
-            'learning_outcome' => null,
         ]);
+
+        $plan = $plan->fresh(['items.evaluation', 'course']);
+        $summary = $this->planService->planSummary($plan);
 
         return response()->json([
             'success' => true,
             'item' => $item,
-            'plan' => $plan->fresh(['items.evaluation', 'course']),
-            'message' => 'Evaluación agregada al plan correctamente.',
+            'plan' => $plan,
+            'plan_total_weight' => $summary['total_weight'],
+            'plan_is_balanced' => $summary['is_balanced'],
+            'message' => $alreadyInPlan ? 'Esta evaluación ya estaba en el plan; se actualizó su peso.' : 'Evaluación agregada al plan correctamente.',
         ]);
     }
 

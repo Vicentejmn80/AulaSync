@@ -84,6 +84,9 @@
                 <a href="{{ route('director.attendance') }}" class="rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-white/10">
                     <i class="fa-solid fa-clipboard-user mr-2 text-cyan-300"></i>Asistencia
                 </a>
+                <a href="{{ route('director.evaluation_plans') }}" class="rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-white/10">
+                    <i class="fa-solid fa-scale-balanced mr-2 text-cyan-300"></i>Planes de Evaluación
+                </a>
                 <a href="{{ route('dashboard') }}" class="rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-white/10">
                     <i class="fa-solid fa-layer-group mr-2 text-cyan-300"></i>App
                 </a>

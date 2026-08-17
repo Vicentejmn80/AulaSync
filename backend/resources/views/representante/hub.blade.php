@@ -555,6 +555,24 @@
                     <div style="font-size:12px;color:var(--text-secondary)" x-text="item.feedback || fmt(item.date)"></div>
                 </div>
             </template>
+
+            <div x-show="subjectModal?.attendance" style="margin-top:16px;padding:12px;border-radius:12px;border:1px solid var(--nova-glass-border);background:var(--bg-secondary)">
+                <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--nova-cyan);margin-bottom:6px">Asistencia en esta materia</div>
+                <div style="font-size:20px;font-weight:900" x-text="(subjectModal?.attendance?.percentage != null ? subjectModal.attendance.percentage + '%' : 'Sin registros')"></div>
+                <div style="font-size:12px;color:var(--text-secondary)" x-text="`${subjectModal?.attendance?.present ?? 0} presentes · ${subjectModal?.attendance?.tardy ?? 0} tarde · ${subjectModal?.attendance?.absent ?? 0} ausentes`"></div>
+            </div>
+
+            <div x-show="(subjectModal?.evaluation_plan || []).length > 0" style="margin-top:16px">
+                <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--nova-cyan);margin-bottom:8px">Plan de evaluación</div>
+                <template x-for="unit in (subjectModal?.evaluation_plan || [])" :key="unit.unit_name + unit.weight_percentage + (unit.due_date || '')">
+                    <div class="feed-item" style="cursor:default">
+                        <strong x-text="unit.unit_name"></strong>
+                        <span x-text="' · ' + unit.assessment_type + ' · ' + (unit.category === 'formative' ? 'Formativa' : 'Sumativa')"></span>
+                        <div style="font-size:12px;color:var(--text-secondary)" x-text="`Peso: ${unit.weight_percentage}%` + (unit.due_date ? ' · ' + fmt(unit.due_date) : '')"></div>
+                    </div>
+                </template>
+            </div>
+
             <div style="margin-top:12px">
                 <textarea rows="2" x-model="newMessage" placeholder="Escribirle al docente…"></textarea>
                 <button class="btn btn-primary" @click="messageTeacher(subjectModal.id)">Enviar mensaje</button>

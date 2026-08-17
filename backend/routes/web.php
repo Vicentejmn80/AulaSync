@@ -26,6 +26,7 @@ use App\Http\Controllers\Teacher\AttendanceController;
 use App\Http\Controllers\Teacher\StudentController as TeacherStudentController;
 use App\Http\Controllers\Director\AttendanceDashboardController;
 use App\Http\Controllers\Director\AcademicPeriodController as DirectorAcademicPeriodController;
+use App\Http\Controllers\Director\EvaluationPlanOverviewController;
 use App\Http\Controllers\RepresentanteController;
 use App\Http\Controllers\SmartPlannerController;
 use Illuminate\Http\Request;
@@ -113,6 +114,11 @@ Route::middleware(['auth'])->group(function () {
 
                 Route::get('/attendance', [AttendanceDashboardController::class, 'index'])
                     ->name('attendance');
+
+                Route::get('/evaluation-plans', [EvaluationPlanOverviewController::class, 'index'])
+                    ->name('evaluation_plans');
+                Route::get('/api/evaluation-plans', [EvaluationPlanOverviewController::class, 'api'])
+                    ->name('api.evaluation_plans');
 
                 // Períodos académicos y boletas inteligentes
                 Route::get('/periodos', [DirectorAcademicPeriodController::class, 'index'])
@@ -230,6 +236,7 @@ Route::middleware(['auth'])->group(function () {
                 Route::post('/{activity}/nee/save', [ActivitiesController::class, 'saveNee'])->name('nee_save');
                 Route::post('/{activity}/ai-edit', [ActivitiesController::class, 'editWithAI'])->name('ai_edit');
                 Route::patch('/{activity}/phases', [ActivitiesController::class, 'updatePhases'])->name('phases');
+                Route::patch('/{activity}/notes', [ActivitiesController::class, 'updateNotes'])->name('notes');
                 Route::delete('/{activity}', [ActivitiesController::class, 'destroy'])->name('destroy');
             });
 
