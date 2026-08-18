@@ -4,9 +4,7 @@ namespace App\Http\Controllers\Teacher;
 
 use App\Http\Controllers\Controller;
 use App\Models\Course;
-use App\Models\Notification;
 use App\Models\Student;
-use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -27,36 +25,20 @@ class CoursesController extends Controller
 
     public function store(Request $request): RedirectResponse
     {
-        $data = $request->validate([
-            'subject_name' => ['required', 'string', 'max:120'],
-            'grade'        => ['required', 'string', 'max:60'],
-            'section'      => ['nullable', 'string', 'max:10'],
-            'school_year'  => ['nullable', 'string', 'max:9'],
-        ]);
-
-        Course::create(array_merge($data, [
-            'teacher_id'  => auth()->id(),
-            'colegio_id'  => auth()->user()->colegio_id,
-            'school_year' => $data['school_year'] ?? date('Y') . '-' . (date('Y') + 1),
-        ]));
-
         return redirect()->route('teacher.courses.index')
-                         ->with('success', 'Curso creado correctamente.');
+            ->with('error', 'Solo el director puede crear cursos, grados o secciones. Pídele que te asigne la materia.');
     }
 
     public function destroy(Course $course): RedirectResponse
     {
         abort_unless($course->teacher_id === auth()->id(), 403);
-        abort_unless((int) $course->colegio_id === (int) auth()->user()->colegio_id, 403);
-        $course->delete();
 
         return redirect()->route('teacher.courses.index')
-                         ->with('success', 'Curso eliminado.');
+            ->with('error', 'Solo el director puede eliminar cursos. Si necesitas desvincularte, contacta a dirección.');
     }
 
     /**
-     * Bulk-import students from a newline-separated list of names.
-     * Uses firstOrCreate so existing students are simply re-enrolled, not duplicated.
+     * Inscribe alumnos ya matriculados en el colegio. Nunca crea registros nuevos.
      */
     public function importStudents(Request $request, Course $course): JsonResponse
     {
@@ -74,61 +56,48 @@ class CoursesController extends Controller
             return response()->json(['error' => 'La lista de nombres está vacía.'], 422);
         }
 
-        $created  = 0;
         $enrolled = 0;
-        $ids      = [];
+        $missing = [];
+        $colegioId = (int) auth()->user()->colegio_id;
 
         foreach ($lines as $name) {
-            if (mb_strlen($name) < 2) continue;
-
-            $student = Student::firstOrCreate(
-                ['teacher_id' => auth()->id(), 'name' => $name],
-                [
-                    'grade'   => $course->grade,
-                    'section' => $course->section,
-                    'colegio_id' => auth()->user()->colegio_id,
-                ]
-            );
-
-            if ((int) $student->colegio_id !== (int) auth()->user()->colegio_id) {
-                $student->update(['colegio_id' => auth()->user()->colegio_id]);
+            if (mb_strlen($name) < 2) {
+                continue;
             }
 
-            // firstOrCreate doesn't return whether it was created via boolean easily;
-            // check wasRecentlyCreated flag instead
-            if ($student->wasRecentlyCreated) $created++;
+            $student = Student::where('colegio_id', $colegioId)
+                ->whereRaw('LOWER(name) = ?', [mb_strtolower($name)])
+                ->first();
 
-            $alreadyEnrolled = $course->students()->where('student_id', $student->id)->exists();
-            if (! $alreadyEnrolled) {
+            if (! $student) {
+                $student = Student::where('colegio_id', $colegioId)
+                    ->where('name', 'like', $name.'%')
+                    ->orderBy('name')
+                    ->first();
+            }
+
+            if (! $student) {
+                $missing[] = $name;
+                continue;
+            }
+
+            if (! $course->students()->where('student_id', $student->id)->exists()) {
                 $course->students()->attach($student->id);
                 $enrolled++;
             }
-
-            $ids[] = $student->id;
         }
 
-        if ($created > 0) {
-            $directors = User::where('role', 'director')
-                ->where('colegio_id', auth()->user()->colegio_id)
-                ->get(['id']);
-
-            foreach ($directors as $director) {
-                Notification::create([
-                    'user_id' => $director->id,
-                    'colegio_id' => auth()->user()->colegio_id,
-                    'title' => 'Nuevos alumnos registrados',
-                    'message' => "El/La docente " . (auth()->user()->name ?? '—') . " registró {$created} alumno(s) en {$course->subject_name} · {$course->grade}.",
-                    'link' => route('director.students'),
-                ]);
-            }
+        $message = "{$enrolled} alumno(s) inscritos desde la nómina del colegio.";
+        if ($missing) {
+            $message .= ' No encontrados (pide al director que los matricule): '.implode(', ', $missing).'.';
         }
 
         return response()->json([
-            'created'  => $created,
+            'created' => 0,
             'enrolled' => $enrolled,
-            'skipped'  => count($ids) - $enrolled,
-            'total'    => count($ids),
-            'message'  => "{$created} alumnos nuevos creados, {$enrolled} inscritos en este curso.",
+            'missing' => $missing,
+            'total' => count($lines),
+            'message' => $message,
         ]);
     }
 

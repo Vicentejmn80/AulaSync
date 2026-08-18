@@ -1378,65 +1378,17 @@ function novaAIAssistant() {
         },
 
         async quickAddStudent() {
-            const name = prompt('Nombre del alumno:');
+            const name = prompt('Nombre del alumno (debe existir en la nómina del colegio):');
             if (!name) return;
-            this.loading = true;
-            this.addMessage('user', `Agregar aluno: ${name}`);
-            try {
-                const res = await fetch('/teacher/api/students', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
-                        'Accept': 'application/json'
-                    },
-                    body: JSON.stringify({ name })
-                });
-                const json = await res.json();
-                if (json.success) {
-                    this.addMessage('assistant', `✅ Alumno **${name}** agregado correctamente.`);
-                    this.showToast('Alumno agregado', 'success', 'fa-user-plus');
-                    window.dispatchEvent(new CustomEvent('ai-canvas-refresh'));
-                } else {
-                    this.addMessage('assistant', `⚠️ ${json.error || 'Error al agregar alumno'}`);
-                }
-            } catch (e) {
-                this.addMessage('assistant', '❌ Error de conexión');
-            } finally {
-                this.loading = false;
-            }
+            this.input = `Inscribe a ${name} en este curso solo si ya está matriculado en el colegio. No crees un alumno nuevo.`;
+            await this.sendCommand();
         },
 
         async quickAddStudents() {
-            const input = prompt('Nombres de alumnos separados por coma:\nEj: María, Pedro, Juan');
+            const input = prompt('Nombres separados por coma. Solo se vincularán si ya están en la nómina:\nEj: María, Pedro, Juan');
             if (!input) return;
-            const names = input.split(',').map(n => n.trim()).filter(n => n);
-            if (names.length === 0) return;
-            this.loading = true;
-            this.addMessage('user', `Agregar alumnos: ${names.join(', ')}`);
-            let success = 0;
-            try {
-                for (const name of names) {
-                    const res = await fetch('/teacher/api/students', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
-                            'Accept': 'application/json'
-                        },
-                        body: JSON.stringify({ name })
-                    });
-                    const json = await res.json();
-                    if (json.success) success++;
-                }
-                this.addMessage('assistant', `✅ ${success} alumno(s) agregado(s) correctamente.`);
-                this.showToast(`${success} alumnos agregados`, 'success', 'fa-users');
-                window.dispatchEvent(new CustomEvent('ai-canvas-refresh'));
-            } catch (e) {
-                this.addMessage('assistant', '❌ Error de conexión');
-            } finally {
-                this.loading = false;
-            }
+            this.input = `Inscribe a ${input} en este curso solo si ya están matriculados en el colegio. No crees alumnos nuevos.`;
+            await this.sendCommand();
         },
 
         quickLoadGrades() {

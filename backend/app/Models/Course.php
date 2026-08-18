@@ -18,6 +18,7 @@ class Course extends Model
         'grade',
         'section',
         'school_year',
+        'invite_code',
         'grading_scale',
     ];
 

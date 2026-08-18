@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Helpers\InviteCodeHelper;
 use App\Models\Colegio;
 use App\Models\Student;
+use App\Models\TeacherInvite;
 use App\Models\User;
 use App\Models\UserSettings;
 use Illuminate\Http\JsonResponse;
@@ -62,9 +63,17 @@ class OnboardingController extends Controller
         if ($validated['role'] === 'profesor') {
             $request->validate([
                 'school_code' => 'required|string|max:20',
-                'materias' => 'required|array|min:1',
-                'cursos' => 'required|array|min:1',
             ]);
+
+            $normalizedCode = InviteCodeHelper::normalize((string) $request->input('school_code'));
+            $teacherInvite = TeacherInvite::where('invite_code', $normalizedCode)->first();
+
+            if (! $teacherInvite) {
+                $request->validate([
+                    'materias' => 'required|array|min:1',
+                    'cursos' => 'required|array|min:1',
+                ]);
+            }
             
             // Procesar materias: Si "otro" está presente, validar y reemplazar
             $materias = $validated['materias'] ?? [];
@@ -111,6 +120,7 @@ class OnboardingController extends Controller
             $inviteCode = null;
             $familyCode = null;
             $linkedStudents = collect();
+            $teacherInvite = null;
 
             if ($role === 'director') {
                 $colegio = $this->createOrUpdateDirectorSchool(
@@ -124,12 +134,28 @@ class OnboardingController extends Controller
             }
 
             if ($role === 'profesor') {
-                $colegio = Colegio::where('invite_code', InviteCodeHelper::normalize((string) $validated['school_code']))
-                    ->first();
+                $code = InviteCodeHelper::normalize((string) $validated['school_code']);
+                $teacherInvite = TeacherInvite::where('invite_code', $code)->first();
+
+                if ($teacherInvite) {
+                    if ($teacherInvite->isClaimed() && (int) $teacherInvite->claimed_by !== (int) $user->id) {
+                        return back()->withInput()->withErrors([
+                            'school_code' => 'Ese código de docente ya fue utilizado.',
+                        ]);
+                    }
+                    $colegio = Colegio::find($teacherInvite->colegio_id);
+                    if (! $colegio) {
+                        return back()->withInput()->withErrors([
+                            'school_code' => 'El colegio de esa invitación ya no existe.',
+                        ]);
+                    }
+                } else {
+                    $colegio = Colegio::where('invite_code', $code)->first();
+                }
 
                 if (! $colegio) {
                     return back()->withInput()->withErrors([
-                        'school_code' => 'El código de escuela no es válido. Verifica e inténtalo de nuevo.',
+                        'school_code' => 'El código de escuela no es válido. Usa el código DOC- que te dio el director o el código institucional.',
                     ]);
                 }
 
@@ -207,6 +233,10 @@ class OnboardingController extends Controller
 
             $user->update($updateData);
 
+            if ($role === 'profesor' && $teacherInvite instanceof TeacherInvite) {
+                $teacherInvite->claimFor($user->fresh());
+            }
+
             if ($role === 'representante' && $linkedStudents->isNotEmpty()) {
                 $user->representedStudents()->sync(
                     $linkedStudents->mapWithKeys(fn (Student $student) => [
@@ -253,6 +283,41 @@ class OnboardingController extends Controller
         ]);
 
         $code = InviteCodeHelper::normalize($validated['school_code']);
+
+        $teacherInvite = TeacherInvite::where('invite_code', $code)->first();
+        if ($teacherInvite) {
+            if ($teacherInvite->isClaimed()) {
+                return response()->json([
+                    'valid' => false,
+                    'message' => 'Ese código de docente ya fue utilizado.',
+                ], 404);
+            }
+
+            $colegio = Colegio::with('director:id,name')->find($teacherInvite->colegio_id);
+            if (! $colegio) {
+                return response()->json([
+                    'valid' => false,
+                    'message' => 'Código no encontrado.',
+                ], 404);
+            }
+
+            $directorName = $colegio->director?->name
+                ?: User::where('colegio_id', $colegio->id)->where('role', 'director')->value('name');
+
+            return response()->json([
+                'valid' => true,
+                'type' => 'teacher_invite',
+                'school' => [
+                    'id' => $colegio->id,
+                    'name' => $colegio->name,
+                    'invite_code' => $colegio->invite_code,
+                ],
+                'director' => $directorName,
+                'teacher_name' => $teacherInvite->name,
+                'message' => 'Código de docente válido. Te vincularemos al colegio y a tus materias asignadas.',
+            ]);
+        }
+
         $colegio = Colegio::with('director:id,name')
             ->where('invite_code', $code)
             ->first();

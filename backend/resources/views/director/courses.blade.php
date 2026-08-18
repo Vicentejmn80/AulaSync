@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Cursos · Director</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>tailwind.config = { darkMode: 'class' };</script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    @include('partials.nova-theme')
+</head>
+<body class="min-h-screen bg-[var(--bg-primary)] text-[var(--text-primary)]">
+    <main class="mx-auto max-w-7xl px-5 py-6 lg:px-8">
+        <header class="mb-6 flex flex-col gap-4 rounded-[2rem] border border-white/10 bg-white/[.045] p-5 backdrop-blur-2xl lg:flex-row lg:items-center lg:justify-between">
+            <div class="flex items-center gap-4">
+                <a href="{{ route('director.dashboard') }}" class="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-500 to-cyan-400 shadow-lg">
+                    <i class="fa-solid fa-arrow-left text-white"></i>
+                </a>
+                <div>
+                    <p class="text-xs font-bold uppercase tracking-[.3em] text-cyan-200">Estructura escolar</p>
+                    <h1 class="mt-1 text-2xl font-black tracking-tight text-white">Cursos y secciones</h1>
+                    <p class="mt-1 text-sm text-slate-400">Solo dirección crea materias. Cada curso tiene un código para matricular alumnos del grado.</p>
+                </div>
+            </div>
+            @include('components.user-control-panel')
+        </header>
+
+        @if(session('success'))
+            <div class="mb-4 rounded-2xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-3 text-sm font-semibold text-emerald-200">{{ session('success') }}</div>
+        @endif
+        @if($errors->any())
+            <div class="mb-4 rounded-2xl border border-rose-400/30 bg-rose-400/10 px-4 py-3 text-sm text-rose-200">{{ $errors->first() }}</div>
+        @endif
+
+        <section class="mb-6 rounded-3xl border border-white/10 bg-white/[.045] p-5">
+            <h2 class="mb-3 text-lg font-bold text-white">Crear curso</h2>
+            @if($teachers->isEmpty())
+                <p class="text-sm text-slate-400">Primero invita a un docente en <a class="text-cyan-300" href="{{ route('director.profesores') }}">Plantel docente</a>.</p>
+            @else
+                <form method="POST" action="{{ route('director.courses.store') }}" class="grid gap-3 md:grid-cols-2 lg:grid-cols-5">
+                    @csrf
+                    <select name="teacher_id" required class="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white">
+                        <option value="">Docente *</option>
+                        @foreach($teachers as $teacher)
+                            <option value="{{ $teacher->id }}">{{ $teacher->name }}</option>
+                        @endforeach
+                    </select>
+                    <input name="subject_name" required placeholder="Materia *" class="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white">
+                    <input name="grade" required placeholder="Grado *" class="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white">
+                    <input name="section" placeholder="Sección" class="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white">
+                    <button class="rounded-xl bg-gradient-to-r from-violet-500 to-cyan-400 px-4 py-2 text-sm font-bold text-white">Crear</button>
+                </form>
+            @endif
+        </section>
+
+        <section class="space-y-3">
+            @forelse($courses as $course)
+                <article class="rounded-2xl border border-white/10 bg-white/[.045] p-4">
+                    <div class="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                            <h2 class="text-lg font-bold text-white">{{ $course->subject_name }} · {{ $course->grade }}{{ $course->section ? ' / '.$course->section : '' }}</h2>
+                            <p class="text-xs text-slate-400">Docente: {{ $course->teacher?->name ?? 'Sin asignar' }} · {{ $course->students_count }} alumnos</p>
+                            <p class="mt-1 font-mono text-sm font-bold tracking-wide text-cyan-200">{{ $course->invite_code }}</p>
+                        </div>
+                        <div class="flex flex-wrap gap-2">
+                            <form method="POST" action="{{ route('director.courses.enroll_roster', $course) }}">
+                                @csrf
+                                <button class="rounded-xl border border-cyan-400/30 px-3 py-2 text-xs font-semibold text-cyan-200">Inscribir grado</button>
+                            </form>
+                            <form method="POST" action="{{ route('director.courses.assign', $course) }}" class="flex gap-2">
+                                @csrf
+                                <select name="teacher_id" class="rounded-xl border border-white/10 bg-white/5 px-2 py-2 text-xs text-white">
+                                    @foreach($teachers as $teacher)
+                                        <option value="{{ $teacher->id }}" @selected($course->teacher_id === $teacher->id)>{{ $teacher->name }}</option>
+                                    @endforeach
+                                </select>
+                                <button class="rounded-xl border border-white/10 px-3 py-2 text-xs font-semibold text-slate-200">Asignar</button>
+                            </form>
+                            <form method="POST" action="{{ route('director.courses.destroy', $course) }}" onsubmit="return confirm('¿Eliminar este curso?')">
+                                @csrf
+                                @method('DELETE')
+                                <button class="rounded-xl border border-rose-400/30 px-3 py-2 text-xs font-semibold text-rose-200">Eliminar</button>
+                            </form>
+                        </div>
+                    </div>
+                </article>
+            @empty
+                <div class="rounded-2xl border border-white/10 bg-white/[.045] p-8 text-center text-slate-400">
+                    Aún no hay cursos. Créalos aquí y asígnalos a un docente.
+                </div>
+            @endforelse
+        </section>
+    </main>
+</body>
+</html>

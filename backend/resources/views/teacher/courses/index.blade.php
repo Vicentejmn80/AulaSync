@@ -43,16 +43,17 @@
         <div>
             <h1 class="text-2xl font-bold text-slate-800">Mis Cursos</h1>
             <p class="text-sm text-slate-500 mt-1">
-                Organiza tus secciones y gestiona la lista de alumnos de cada una.
+                Cursos asignados por el director. Puedes vincular alumnos de la nómina del colegio.
             </p>
         </div>
-        <button @click="openCreate = true"
-                class="inline-flex items-center gap-2 bg-violet-600 hover:bg-violet-700
-                       text-white font-semibold px-5 py-3 rounded-2xl shadow-lg
-                       hover:shadow-violet-200 transition-all shrink-0">
-            <i class="fa-solid fa-plus"></i> Nuevo curso
-        </button>
     </div>
+
+    @if(session('error'))
+        <div class="mb-6 flex items-center gap-3 bg-amber-50 border border-amber-200
+                    text-amber-800 rounded-2xl px-5 py-4 text-sm font-medium">
+            <i class="fa-solid fa-triangle-exclamation"></i> {{ session('error') }}
+        </div>
+    @endif
 
     {{-- ── Flash ──────────────────────────────────────────── --}}
     @if(session('success'))
@@ -68,13 +69,8 @@
             <div class="w-20 h-20 bg-violet-50 rounded-3xl flex items-center justify-center mx-auto mb-5">
                 <i class="fa-solid fa-chalkboard text-3xl text-violet-300"></i>
             </div>
-            <h3 class="text-lg font-semibold text-slate-700 mb-2">Aún no tienes cursos</h3>
-            <p class="text-slate-400 text-sm mb-6">Crea tu primer curso para empezar a registrar alumnos y actividades.</p>
-            <button @click="openCreate = true"
-                    class="inline-flex items-center gap-2 bg-violet-600 text-white
-                           font-semibold px-5 py-3 rounded-2xl hover:bg-violet-700 transition">
-                <i class="fa-solid fa-plus"></i> Crear primer curso
-            </button>
+            <h3 class="text-lg font-semibold text-slate-700 mb-2">Aún no tienes cursos asignados</h3>
+            <p class="text-slate-400 text-sm mb-6">El director debe crearte la materia y darte un código DOC- para vincularte.</p>
         </div>
     @else
 
@@ -99,17 +95,10 @@
                 <div class="flex items-center gap-2 ml-3">
                     {{-- Import students button --}}
                     <button @click="openImport = true"
-                            title="Importar alumnos"
+                            title="Vincular alumnos de la nómina"
                             class="w-8 h-8 rounded-xl bg-indigo-50 hover:bg-indigo-100
                                    text-indigo-500 flex items-center justify-center transition">
                         <i class="fa-solid fa-file-import text-xs"></i>
-                    </button>
-                    {{-- Delete course button --}}
-                    <button @click="deleteCourse()"
-                            title="Eliminar curso"
-                            class="w-8 h-8 rounded-xl bg-red-50 hover:bg-red-100
-                                   text-red-400 flex items-center justify-center transition">
-                        <i class="fa-solid fa-trash-alt text-xs"></i>
                     </button>
                 </div>
             </div>

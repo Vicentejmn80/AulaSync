@@ -12,6 +12,8 @@ use App\Http\Controllers\Teacher\ActivitiesController;
 use App\Http\Controllers\Teacher\TareaController;
 use App\Http\Controllers\Teacher\ManualPlanningController;
 use App\Http\Controllers\Director\DashboardController as DirectorDashboardController;
+use App\Http\Controllers\Director\StaffController as DirectorStaffController;
+use App\Http\Controllers\Director\CourseController as DirectorCourseController;
 use App\Http\Controllers\Director\PlanificacionesController as DirectorPlanificacionesController;
 use App\Http\Controllers\Director\ReportCardController as DirectorReportCardController;
 use App\Http\Controllers\Director\StudentController as DirectorStudentController;
@@ -85,8 +87,20 @@ Route::middleware(['auth'])->group(function () {
             ->group(function () {
                 Route::get('/dashboard', [DirectorDashboardController::class, 'index'])
                     ->name('dashboard');
-                Route::get('/profesores', [DirectorDashboardController::class, 'profesores'])
+                Route::get('/profesores', [DirectorStaffController::class, 'index'])
                     ->name('profesores');
+                Route::post('/profesores/invite', [DirectorStaffController::class, 'invite'])
+                    ->name('profesores.invite');
+                Route::get('/courses', [DirectorCourseController::class, 'index'])
+                    ->name('courses');
+                Route::post('/courses', [DirectorCourseController::class, 'store'])
+                    ->name('courses.store');
+                Route::delete('/courses/{course}', [DirectorCourseController::class, 'destroy'])
+                    ->name('courses.destroy');
+                Route::post('/courses/{course}/assign', [DirectorCourseController::class, 'assign'])
+                    ->name('courses.assign');
+                Route::post('/courses/{course}/enroll-roster', [DirectorCourseController::class, 'enrollByRoster'])
+                    ->name('courses.enroll_roster');
 
                 // Planificaciones feed + auditoría
                 Route::get('/planificaciones', [DirectorPlanificacionesController::class, 'index'])

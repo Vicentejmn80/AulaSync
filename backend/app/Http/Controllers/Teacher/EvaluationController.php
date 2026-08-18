@@ -6,7 +6,6 @@ use App\Http\Controllers\Controller;
 use App\Models\Course;
 use App\Models\Evaluation;
 use App\Models\EvaluationAttempt;
-use App\Models\EvaluationQuestion;
 use App\Services\EvaluationPlanService;
 use App\Services\EvaluationSyncService;
 use App\Support\GradingScale;
@@ -32,6 +31,9 @@ class EvaluationController extends Controller
         $with = ['course:id,subject_name,grade,section', 'questions'];
         if (Schema::hasColumn('evaluations', 'activity_id')) {
             $with[] = 'activity:id,title,max_score,weight_percentage,due_date';
+        }
+        if (Schema::hasTable('course_evaluation_plan_items')) {
+            $with[] = 'planItem:id,evaluation_id,plan_id,weight_percentage,category,due_date';
         }
 
         $evaluations = Evaluation::where('teacher_id', $teacher->id)
@@ -64,27 +66,66 @@ class EvaluationController extends Controller
             ->limit(20)
             ->get();
 
-        $bank = EvaluationQuestion::whereHas('evaluation', fn ($q) => $q->where('teacher_id', $teacher->id))
-            ->with('evaluation:id,title,topic')
-            ->latest()
-            ->limit(80)
-            ->get();
-
         $courses = Course::where('teacher_id', $teacher->id)
             ->orderBy('subject_name')
             ->get(['id', 'subject_name', 'grade', 'section']);
 
+        $today = now()->toDateString();
+        $activeEvals = $evaluations->whereIn('status', ['published', 'scheduled'])->values();
+
+        $activeCards = $activeEvals->map(function (Evaluation $evaluation) use ($today) {
+            $due = $evaluation->scheduled_at
+                ?? $evaluation->activity?->due_date
+                ?? $evaluation->planItem?->due_date;
+
+            $dueDate = $due ? \Illuminate\Support\Carbon::parse($due)->toDateString() : null;
+
+            return [
+                'id' => $evaluation->id,
+                'title' => $evaluation->title,
+                'status' => $evaluation->status,
+                'mode' => $evaluation->mode,
+                'scheduled_at' => $dueDate,
+                'is_upcoming' => $dueDate !== null && $dueDate >= $today,
+                'course_name' => trim(collect([
+                    $evaluation->course?->subject_name,
+                    $evaluation->course?->grade,
+                    $evaluation->course?->section,
+                ])->filter()->implode(' ')),
+                'activity_id' => $evaluation->activity_id,
+                'in_plan' => (bool) $evaluation->planItem,
+                'weight_percentage' => $evaluation->planItem?->weight_percentage
+                    ?? $evaluation->activity?->weight_percentage,
+                'question_count' => $evaluation->question_count ?? $evaluation->questions->count(),
+                'attempts_count' => $evaluation->attempts_count ?? 0,
+            ];
+        });
+
+        $upcoming = $activeCards
+            ->filter(fn (array $item) => $item['is_upcoming'])
+            ->sortBy('scheduled_at')
+            ->values();
+
+        // If nothing has a future date, still surface the active evaluations so the
+        // dashboard matches the "Activas" KPI instead of looking empty.
+        $spotlight = $upcoming->isNotEmpty()
+            ? $upcoming->take(8)->values()
+            : $activeCards->sortByDesc(fn (array $item) => $item['scheduled_at'] ?? '')->take(8)->values();
+
         $stats = [
-            'active' => $evaluations->whereIn('status', ['published', 'scheduled'])->count(),
+            'active' => $activeEvals->count(),
             'pending' => $pendingAttempts->count(),
-            'upcoming' => $evaluations->where('status', 'scheduled')->take(5)->values(),
+            'upcoming_count' => $upcoming->count(),
+            'drafts' => $evaluations->where('status', 'draft')->count(),
+            'in_plan' => $activeCards->where('in_plan', true)->count(),
+            'upcoming' => $spotlight,
+            'spotlight_mode' => $upcoming->isNotEmpty() ? 'upcoming' : 'active',
             'average' => $this->averageScore($evaluations),
         ];
 
         return view('teacher.evaluations.index', compact(
             'evaluations',
             'pendingAttempts',
-            'bank',
             'courses',
             'stats',
             'teacher'

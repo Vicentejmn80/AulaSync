@@ -125,13 +125,11 @@
                             {{-- Input de código escolar (se revela con animación) --}}
                             <div x-show="showSchoolCode" x-cloak x-transition:enter="fade-in-custom" class="mb-6">
                                 <div class="rounded-2xl border border-violet-200/30 bg-white/[.045] p-4">
-                                    <label class="form-label fw-semibold mb-2">Código de Escuela</label>
+                                    <label class="form-label fw-semibold mb-2">Código de invitación docente</label>
                                     <div class="d-flex flex-column flex-md-row gap-2">
                                         <input type="text"
                                                class="form-control rounded-3 flex-grow-1"
-                                               x-model="schoolCode"
-                                               placeholder="Ej: NIC-4620"
-                                               @input="onSchoolCodeInput">
+                                               placeholder="Ej: DOC-8X92K"
                                         <button type="button"
                                                 class="btn btn-outline-primary rounded-3 px-3"
                                                 :disabled="!schoolCode.trim() || validatingCode"
@@ -148,7 +146,7 @@
                                            'text-danger': schoolValidationStatus === 'error',
                                            'text-muted': schoolValidationStatus === 'idle'
                                        }"
-                                       x-text="schoolValidationMessage || 'Ingresa el código compartido por tu director.'"></p>
+                                       x-text="schoolValidationMessage || 'Usa el código DOC- que te dio el director. También sirve el código institucional del colegio.'"></p>
                                     <template x-if="schoolValidated">
                                         <div class="small text-success mt-2">
                                             <i class="fa-solid fa-check-circle me-1"></i>
@@ -165,7 +163,7 @@
                             <div x-show="schoolValidated" x-cloak x-transition:enter="fade-in-custom" class="mb-4">
                                 <hr class="border-white/10 my-6">
                                 <h3 class="h5 fw-bold mb-3 text-center">Completa tu perfil docente</h3>
-                                <p class="text-muted text-center mb-4">Configura las materias y cursos que impartes.</p>
+                                <p class="text-muted text-center mb-4">El director te asigna las materias. Completa solo tu perfil pedagógico.</p>
                                 <div class="row g-3">
                                     <div class="col-12 col-md-6">
                                         <label class="form-label">Nivel educativo</label>
@@ -789,7 +787,7 @@
                         this.schoolValidationStatus = 'ok';
                         this.validatedSchoolName = payload.school?.name ?? '';
                         this.validatedSchoolDirector = payload.director ?? '';
-                        this.schoolValidationMessage = 'Código válido. Colegio verificado correctamente.';
+                        this.schoolValidationMessage = payload.message || 'Código válido. Colegio verificado correctamente.';
                     } catch {
                         this.schoolValidated = false;
                         this.schoolValidationStatus = 'error';

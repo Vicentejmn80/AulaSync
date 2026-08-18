@@ -469,6 +469,10 @@
                    class="rounded-xl border border-white/10 px-4 py-2 text-sm font-semibold text-slate-300 transition hover:bg-white/10">
                     <i class="fa-regular fa-eye mr-2"></i>Ver plantel completo
                 </a>
+                <a href="{{ route('director.courses') }}"
+                   class="rounded-xl border border-white/10 px-4 py-2 text-sm font-semibold text-slate-300 transition hover:bg-white/10">
+                    <i class="fa-solid fa-chalkboard mr-2"></i>Cursos y secciones
+                </a>
                 <a href="{{ route('director.periodos') }}"
                    class="rounded-xl border border-white/10 px-4 py-2 text-sm font-semibold text-slate-300 transition hover:bg-white/10">
                     <i class="fa-solid fa-file-invoice mr-2"></i>Boletas

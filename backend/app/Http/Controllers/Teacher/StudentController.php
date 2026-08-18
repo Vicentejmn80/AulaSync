@@ -17,44 +17,10 @@ class StudentController extends Controller
 
     public function store(Request $request): JsonResponse
     {
-        $data = $request->validate([
-            'name' => 'required|string|max:180',
-            'grade' => 'nullable|string|max:60',
-            'section' => 'nullable|string|max:10',
-            'document_id' => 'nullable|string|max:40',
-            'birthdate' => 'nullable|date',
-            'family_code' => 'nullable|string|max:20',
-            'sibling_student_id' => 'nullable|integer',
-            'course_id' => 'nullable|integer',
-        ]);
-
-        $teacher = $request->user();
-        abort_unless($teacher?->role === 'profesor' && $teacher->colegio_id, 403);
-
-        $course = null;
-        if (! empty($data['course_id'])) {
-            $course = Course::where('id', $data['course_id'])
-                ->where('teacher_id', $teacher->id)
-                ->where('colegio_id', $teacher->colegio_id)
-                ->firstOrFail();
-            $data['grade'] = $data['grade'] ?? $course->grade;
-            $data['section'] = $data['section'] ?? $course->section;
-        }
-
-        $student = $this->enrollment->enroll($teacher, $data, $course);
-
         return response()->json([
-            'success' => true,
-            'student' => [
-                'id' => $student->id,
-                'name' => $student->name,
-                'grade' => $student->grade,
-                'section' => $student->section,
-                'family_code' => $student->family_code,
-                'document_id' => $student->document_id,
-            ],
-            'message' => "Alumno matriculado. Comparte el código familiar {$student->family_code} con el representante.",
-        ]);
+            'success' => false,
+            'error' => 'Solo el director puede registrar alumnos nuevos. Busca en la nómina del colegio o pide al director que lo matricule.',
+        ], 403);
     }
 
     public function search(Request $request): JsonResponse

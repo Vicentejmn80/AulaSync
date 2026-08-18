@@ -10,34 +10,55 @@
     @include('partials.nova-theme')
     <style>
         [x-cloak] { display: none !important; }
-        body { font-family: Inter, Nunito, system-ui, sans-serif; background: radial-gradient(circle at top right, color-mix(in srgb, var(--nova-violet) 16%, transparent) 0%, transparent 36%), var(--bg-primary); color: var(--text-primary); margin: 0; }
-        .wrap { max-width: 1220px; margin: 0 auto; padding: 28px 20px 80px; }
-        .top { display: flex; justify-content: space-between; gap: 16px; align-items: center; margin-bottom: 22px; flex-wrap: wrap; }
-        .top a { color: var(--nova-violet); text-decoration: none; font-weight: 700; }
-        h1 { margin: 0 0 6px; font-size: 30px; }
+        body {
+            font-family: 'Segoe UI', Inter, Nunito, system-ui, sans-serif;
+            background: radial-gradient(circle at top right, color-mix(in srgb, var(--nova-violet) 14%, transparent) 0%, transparent 42%), var(--bg-primary);
+            color: var(--text-primary);
+            margin: 0;
+        }
+        .wrap { max-width: 1180px; margin: 0 auto; padding: 24px 18px 72px; }
+        .top { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; margin-bottom: 18px; flex-wrap: wrap; }
+        .crumb { color: var(--nova-violet); text-decoration: none; font-weight: 700; font-size: 13px; }
+        h1 { margin: 8px 0 4px; font-size: 28px; letter-spacing: -0.02em; }
         .muted { color: var(--text-secondary); }
-        .tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 20px; }
-        .tab { border: 1px solid var(--nova-glass-border); background: var(--bg-card); color: var(--text-secondary); border-radius: 999px; padding: 8px 14px; cursor: pointer; font-weight: 700; }
-        .tab.active { background: var(--nova-gradient); color: #fff; border-color: transparent; }
-        .grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 22px; }
-        .card { background: var(--bg-card); border: 1px solid var(--nova-glass-border); box-shadow: var(--nova-shadow); border-radius: 20px; padding: 18px; backdrop-filter: blur(8px); }
-        .stat b { display: block; font-size: 28px; }
-        .btn { border: 0; border-radius: 999px; padding: 10px 16px; font-weight: 800; cursor: pointer; }
+        .subtle { color: var(--text-tertiary); font-size: 12px; }
+        .tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 18px; padding: 4px; background: color-mix(in srgb, var(--bg-card) 80%, transparent); border: 1px solid var(--nova-glass-border); border-radius: 14px; width: fit-content; max-width: 100%; }
+        .tab { border: 0; background: transparent; color: var(--text-secondary); border-radius: 10px; padding: 9px 14px; cursor: pointer; font-weight: 700; font-size: 13px; }
+        .tab.active { background: var(--nova-gradient); color: #fff; }
+        .grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
+        .card { background: var(--bg-card); border: 1px solid var(--nova-glass-border); box-shadow: var(--nova-shadow); border-radius: 18px; padding: 16px 18px; backdrop-filter: blur(8px); }
+        .stat { padding: 14px 16px; }
+        .stat .label { font-size: 12px; font-weight: 700; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.04em; }
+        .stat b { display: block; font-size: 26px; margin-top: 6px; letter-spacing: -0.03em; }
+        .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+        .panel-head h3 { margin: 0; font-size: 16px; }
+        .btn { border: 0; border-radius: 999px; padding: 9px 14px; font-weight: 800; cursor: pointer; font-size: 13px; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; }
         .btn-ai { background: var(--nova-violet); color: #fff; }
         .btn-print { background: var(--nova-fuchsia); color: #fff; }
         .btn-ghost { background: transparent; color: var(--nova-violet); }
         .btn-soft { background: color-mix(in srgb, var(--nova-violet) 13%, var(--bg-secondary)); color: var(--nova-violet); }
         .btn:disabled { opacity: .6; cursor: not-allowed; }
+        .links-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+        .chip-link { border: 1px solid var(--nova-glass-border); background: var(--bg-card); color: var(--text-secondary); border-radius: 999px; padding: 8px 12px; font-size: 12px; font-weight: 700; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; }
+        .chip-link:hover { border-color: var(--nova-violet); color: var(--text-primary); }
         label { display: block; font-size: 12px; font-weight: 700; margin: 10px 0 6px; color: var(--text-secondary); }
         input, select, textarea { width: 100%; box-sizing: border-box; border: 1px solid var(--nova-glass-border); background: var(--bg-secondary); color: var(--text-primary); border-radius: 12px; padding: 10px 12px; }
         .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
         .q { border: 1px solid var(--nova-glass-border); border-radius: 14px; padding: 12px; margin-bottom: 10px; }
-        .list-item { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--nova-glass-border); }
-        .pill { font-size: 11px; font-weight: 800; border-radius: 999px; padding: 4px 8px; background: color-mix(in srgb, var(--nova-violet) 12%, transparent); color: var(--nova-violet); }
+        .list-item { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; padding: 14px 0; border-bottom: 1px solid var(--nova-glass-border); }
+        .list-item:last-child { border-bottom: 0; }
+        .pill { font-size: 11px; font-weight: 800; border-radius: 999px; padding: 4px 9px; background: color-mix(in srgb, var(--nova-violet) 12%, transparent); color: var(--nova-violet); white-space: nowrap; }
+        .pill.ok { background: rgba(16,185,129,.15); color: #34d399; }
+        .pill.warn { background: rgba(245,158,11,.15); color: #fbbf24; }
+        .pill.muted-pill { background: rgba(148,163,184,.15); color: #94a3b8; }
         .ok { color: #159A79; font-weight: 700; }
         .err { color: #C2410C; }
         .spin { display: inline-block; animation: spin 1s linear infinite; }
-        .section-title { margin: 0 0 8px; font-size: 20px; }
+        .section-title { margin: 0 0 8px; font-size: 18px; }
+        .eval-meta { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; align-items: center; }
+        .eval-actions { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+        .empty-box { padding: 28px 8px; text-align: center; color: var(--text-tertiary); }
+        .empty-box i { font-size: 22px; margin-bottom: 8px; opacity: .7; }
         .preview-sheet { background: #fff; border: 1px solid #D5D9E2; border-radius: 16px; padding: 22px; color: #122033; box-shadow: 0 14px 30px rgba(17, 24, 39, 0.08); }
         .preview-header { display: grid; grid-template-columns: 58px 1fr; gap: 12px; align-items: center; margin-bottom: 10px; }
         .preview-logo { width: 58px; height: 58px; border-radius: 14px; background: linear-gradient(135deg, #6C63FF, #FF6B9D); display: flex; align-items: center; justify-content: center; }
@@ -48,7 +69,15 @@
         .preview-write { border-bottom: 1px dashed #98A2B3; min-height: 22px; margin-top: 6px; }
         .info-note { font-size: 12px; color: var(--text-tertiary); margin-top: 8px; }
         @keyframes spin { to { transform: rotate(360deg); } }
-        @media (max-width: 900px) { .grid4, .row2 { grid-template-columns: 1fr; } }
+        @media (max-width: 900px) {
+            .grid4, .row2 { grid-template-columns: 1fr 1fr; }
+            .tabs { width: 100%; }
+        }
+        @media (max-width: 640px) {
+            .grid4, .row2 { grid-template-columns: 1fr; }
+            .list-item { flex-direction: column; }
+            .eval-actions { justify-content: flex-start; }
+        }
     </style>
 </head>
 <body>
@@ -56,37 +85,73 @@
 <div class="wrap" x-data="evaluationsApp()" x-cloak>
     <div class="top">
         <div>
-            <a href="{{ route('teacher.hub') }}"><i class="fa-solid fa-arrow-left"></i> Volver al hub</a>
-            <h1><i class="fa-solid fa-file-signature"></i> Evaluaciones</h1>
-            <p class="muted">Crea evaluaciones con IA en modo digital o físico imprimible.</p>
+            <a class="crumb" href="{{ route('teacher.hub') }}"><i class="fa-solid fa-arrow-left"></i> Volver al hub</a>
+            <h1>Evaluaciones</h1>
+            <p class="muted" style="margin:0; max-width:560px;">Crea, publica y califica. Todo queda enlazado con el calendario, el plan de evaluación y las notas del curso.</p>
         </div>
         <button class="btn btn-ai" @click="tab = 'create'"><i class="fa-solid fa-wand-magic-sparkles"></i> Crear con IA</button>
     </div>
 
     <div class="tabs">
-        <button class="tab" :class="{ active: tab === 'dash' }" @click="tab = 'dash'"><i class="fa-solid fa-chart-line"></i> Dashboard</button>
+        <button class="tab" :class="{ active: tab === 'dash' }" @click="tab = 'dash'"><i class="fa-solid fa-gauge-high"></i> Resumen</button>
         <button class="tab" :class="{ active: tab === 'create' }" @click="tab = 'create'"><i class="fa-solid fa-wand-magic-sparkles"></i> Crear</button>
         <button class="tab" :class="{ active: tab === 'list' }" @click="tab = 'list'"><i class="fa-solid fa-rectangle-list"></i> Mis evaluaciones</button>
-        <button class="tab" :class="{ active: tab === 'pending' }" @click="tab = 'pending'"><i class="fa-solid fa-hourglass-half"></i> Pendientes</button>
-        <button class="tab" :class="{ active: tab === 'bank' }" @click="tab = 'bank'"><i class="fa-solid fa-brain"></i> Banco</button>
+        <button class="tab" :class="{ active: tab === 'pending' }" @click="tab = 'pending'">
+            <i class="fa-solid fa-hourglass-half"></i> Por calificar
+            <span x-show="pending.length > 0" x-text="`(${pending.length})`"></span>
+        </button>
+    </div>
+
+    <div class="links-row" x-show="tab === 'dash' || tab === 'list'">
+        <a class="chip-link" href="{{ route('teacher.hub') }}?view=calendar"><i class="fa-solid fa-calendar-days"></i> Ver en calendario</a>
+        <a class="chip-link" href="{{ route('teacher.assessment.index') }}"><i class="fa-solid fa-diagram-project"></i> Plan de evaluación</a>
+        <a class="chip-link" href="{{ route('teacher.activities.index') }}"><i class="fa-solid fa-clipboard-list"></i> Actividades del curso</a>
     </div>
 
     <div x-show="tab === 'dash'" class="grid4">
-        <div class="card stat"><span class="muted">Activas</span><b x-text="stats.active"></b></div>
-        <div class="card stat"><span class="muted">Pendientes de calificar</span><b x-text="stats.pending"></b></div>
-        <div class="card stat"><span class="muted">Próximas</span><b x-text="stats.upcoming.length"></b></div>
-        <div class="card stat"><span class="muted">Promedio general</span><b x-text="stats.average ?? '—'"></b></div>
+        <div class="card stat"><div class="label">Activas</div><b x-text="stats.active"></b></div>
+        <div class="card stat"><div class="label">Con fecha próxima</div><b x-text="stats.upcoming_count ?? 0"></b></div>
+        <div class="card stat"><div class="label">Por calificar</div><b x-text="stats.pending"></b></div>
+        <div class="card stat"><div class="label">En el plan</div><b x-text="stats.in_plan ?? 0"></b></div>
     </div>
+
     <div x-show="tab === 'dash'" class="card">
-        <h3>Próximas evaluaciones</h3>
-        <template x-if="stats.upcoming.length === 0"><p class="muted">No hay evaluaciones programadas.</p></template>
-        <template x-for="item in stats.upcoming" :key="item.id">
+        <div class="panel-head">
+            <div>
+                <h3 x-text="stats.spotlight_mode === 'upcoming' ? 'Próximas evaluaciones' : 'Evaluaciones activas'"></h3>
+                <p class="subtle" style="margin:4px 0 0;"
+                   x-text="stats.spotlight_mode === 'upcoming'
+                        ? 'Con fecha programada. También aparecen en el calendario del hub.'
+                        : 'Publicadas o programadas. Si aún no tienen fecha futura, las ves aquí igual.'"></p>
+            </div>
+            <button class="btn btn-soft" @click="tab = 'list'">Ver todas</button>
+        </div>
+
+        <template x-if="!(stats.upcoming || []).length">
+            <div class="empty-box">
+                <div><i class="fa-regular fa-calendar"></i></div>
+                <p style="margin:0 0 10px;">Todavía no tienes evaluaciones activas.</p>
+                <button class="btn btn-ai" @click="tab = 'create'">Crear la primera</button>
+            </div>
+        </template>
+
+        <template x-for="item in (stats.upcoming || [])" :key="item.id">
             <div class="list-item">
-                <div>
+                <div style="min-width:0;">
                     <strong x-text="item.title"></strong>
-                    <div class="muted" x-text="item.scheduled_at || 'Sin fecha'"></div>
+                    <div class="eval-meta">
+                        <span class="pill" :class="statusPillClass(item.status)" x-text="statusLabel(item.status)"></span>
+                        <span class="pill" x-text="item.mode === 'physical' ? 'Física' : 'Digital'"></span>
+                        <span class="subtle" x-text="item.course_name || 'Sin curso'"></span>
+                        <span class="subtle" x-show="item.scheduled_at" x-text="formatDate(item.scheduled_at)"></span>
+                        <span class="subtle" x-show="item.in_plan"><i class="fa-solid fa-link"></i> En plan</span>
+                        <span class="subtle" x-show="item.activity_id"><i class="fa-solid fa-calendar-check"></i> En calendario</span>
+                    </div>
                 </div>
-                <span class="pill" x-text="item.status"></span>
+                <div class="eval-actions">
+                    <button class="btn btn-ai" @click="openGradeFromId(item.id)"><i class="fa-solid fa-pen-to-square"></i> Calificar</button>
+                    <button class="btn btn-soft" @click="tab = 'list'; query = item.title">Abrir</button>
+                </div>
             </div>
         </template>
     </div>
@@ -264,32 +329,47 @@
     </div>
 
     <div x-show="tab === 'list'" class="card">
-        <h3 class="section-title"><i class="fa-solid fa-clipboard-check"></i> Mis evaluaciones</h3>
-        <input placeholder="Buscar…" x-model="query" style="margin-bottom:12px">
+        <div class="panel-head">
+            <div>
+                <h3 class="section-title" style="margin:0;"><i class="fa-solid fa-clipboard-check"></i> Mis evaluaciones</h3>
+                <p class="subtle" style="margin:4px 0 0;">Gestiona publicación, impresión, plan y calificación desde un solo lugar.</p>
+            </div>
+        </div>
+        <input placeholder="Buscar por título…" x-model="query" style="margin-bottom:12px">
+        <template x-if="filtered().length === 0">
+            <div class="empty-box">
+                <p style="margin:0;">No hay evaluaciones que coincidan.</p>
+            </div>
+        </template>
         <template x-for="ev in filtered()" :key="ev.id">
             <div class="list-item">
-                <div>
+                <div style="min-width:0;">
                     <strong x-text="ev.title"></strong>
-                    <div class="muted">
-                        <span x-text="ev.mode === 'physical' ? 'Física imprimible' : 'Digital online'"></span>
-                        · <span x-text="ev.course?.subject_name || 'Sin curso'"></span>
+                    <div class="eval-meta">
+                        <span class="pill" :class="statusPillClass(ev.status)" x-text="statusLabel(ev.status)"></span>
+                        <span class="pill" x-text="ev.mode === 'physical' ? 'Física' : 'Digital'"></span>
+                        <span class="subtle" x-text="ev.course?.subject_name || 'Sin curso'"></span>
+                        <span class="subtle" x-show="ev.scheduled_at" x-text="formatDate(ev.scheduled_at)"></span>
+                        <span class="subtle" x-show="ev.activity_id"><i class="fa-solid fa-calendar-check"></i> Calendario</span>
+                        <span class="subtle" x-show="ev.plan_item || ev.planItem"><i class="fa-solid fa-link"></i> Plan</span>
                     </div>
                 </div>
-                <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-                    <span class="pill" x-text="ev.status"></span>
+                <div class="eval-actions">
                     <a class="btn btn-ghost" :href="`/teacher/evaluations/${ev.id}/print`" target="_blank">Imprimir</a>
-                    <a class="btn btn-soft" x-show="ev.mode === 'digital' && ev.public_token" :href="`/e/${ev.public_token}`" target="_blank">Abrir examen</a>
-                    <button class="btn btn-soft" @click="addToPlan(ev.id)"><i class="fa-solid fa-diagram-project"></i> Agregar al plan</button>
+                    <a class="btn btn-soft" x-show="ev.mode === 'digital' && ev.public_token" :href="`/e/${ev.public_token}`" target="_blank">Examen</a>
+                    <button class="btn btn-soft" @click="addToPlan(ev.id)"><i class="fa-solid fa-diagram-project"></i> Plan</button>
                     <button class="btn btn-ai" @click="openGrade(ev)"><i class="fa-solid fa-pen-to-square"></i> Calificar</button>
                     <button class="btn btn-ghost" @click="duplicate(ev.id)">Duplicar</button>
                     <button class="btn btn-ghost" @click="remove(ev.id)">Eliminar</button>
                 </div>
             </div>
         </template>
+        <p class="ok" x-show="message && tab === 'list'" x-text="message"></p>
+        <p class="err" x-show="error && tab === 'list'" x-text="error"></p>
     </div>
 
     <div x-show="tab === 'pending'" class="card">
-        <h3 class="section-title"><i class="fa-solid fa-list-check"></i> Pendientes de calificar</h3>
+        <h3 class="section-title"><i class="fa-solid fa-list-check"></i> Por calificar</h3>
         <template x-if="pending.length === 0"><p class="muted">No hay respuestas pendientes.</p></template>
         <template x-for="p in pending" :key="p.id">
             <div class="list-item">
@@ -301,18 +381,6 @@
             </div>
         </template>
         <pre class="muted" x-show="aiGrade" x-text="JSON.stringify(aiGrade, null, 2)"></pre>
-    </div>
-
-    <div x-show="tab === 'bank'" class="card">
-        <h3 class="section-title"><i class="fa-solid fa-layer-group"></i> Banco de preguntas</h3>
-        <input placeholder="Buscar por tema, tipo o texto" x-model="bankQuery" style="margin-bottom:12px">
-        <template x-for="q in filteredBank()" :key="q.id">
-            <div class="q">
-                <span class="pill" x-text="q.type"></span>
-                <p x-text="q.text"></p>
-                <div class="muted" x-text="q.topic || q.evaluation?.title"></div>
-            </div>
-        </template>
     </div>
 
 <div x-show="gradeModal.open" x-cloak @click.self="gradeModal.open = false"
@@ -375,14 +443,12 @@ function evaluationsApp() {
         message: '',
         error: '',
         query: '',
-        bankQuery: '',
         aiGrade: null,
         schoolName: @json($teacher?->settings?->nombre_institucion ?? 'Institución educativa'),
         teacherName: @json($teacher?->name ?? 'Docente'),
         stats: @json($stats),
         evaluations: @json($evaluations),
         pending: @json($pendingAttempts),
-        bank: @json($bank),
         courses: @json($courses),
         preview: null,
         gradeModal: { open: false, loading: false, saving: false, id: null, title: '', course: '', max_score: 20, students: [], error: '', message: '' },
@@ -401,6 +467,21 @@ function evaluationsApp() {
             orientation: 'portrait',
         },
         csrf() { return document.querySelector('meta[name="csrf-token"]').content; },
+        statusLabel(status) {
+            return ({ draft: 'Borrador', scheduled: 'Programada', published: 'Publicada', graded: 'Calificada' }[status] || status || '—');
+        },
+        statusPillClass(status) {
+            if (status === 'published') return 'ok';
+            if (status === 'scheduled') return 'warn';
+            if (status === 'draft') return 'muted-pill';
+            return '';
+        },
+        formatDate(value) {
+            if (!value) return 'Sin fecha';
+            const d = new Date(value);
+            if (Number.isNaN(d.getTime())) return String(value).slice(0, 10);
+            return d.toLocaleDateString('es', { day: 'numeric', month: 'short', year: 'numeric' });
+        },
         selectedCourseLabel() {
             const id = Number(this.form.course_id || 0);
             const found = this.courses.find(c => Number(c.id) === id);
@@ -411,9 +492,9 @@ function evaluationsApp() {
             const q = this.query.toLowerCase();
             return this.evaluations.filter(e => !q || (e.title || '').toLowerCase().includes(q));
         },
-        filteredBank() {
-            const q = this.bankQuery.toLowerCase();
-            return this.bank.filter(item => !q || `${item.text} ${item.type} ${item.topic || ''}`.toLowerCase().includes(q));
+        openGradeFromId(id) {
+            const ev = this.evaluations.find(e => Number(e.id) === Number(id));
+            if (ev) this.openGrade(ev);
         },
         async generate() {
             this.loading = true; this.error = ''; this.message = '';
@@ -474,6 +555,10 @@ function evaluationsApp() {
             if (!confirm('¿Eliminar esta evaluación?')) return;
             await fetch(`/teacher/evaluations/${id}`, { method: 'DELETE', headers: { 'X-CSRF-TOKEN': this.csrf(), 'Accept': 'application/json' } });
             this.evaluations = this.evaluations.filter(e => e.id !== id);
+            if (this.stats?.upcoming) {
+                this.stats.upcoming = this.stats.upcoming.filter(e => e.id !== id);
+            }
+            if (typeof this.stats.active === 'number' && this.stats.active > 0) this.stats.active -= 1;
         },
         async addToPlan(id) {
             this.error = '';

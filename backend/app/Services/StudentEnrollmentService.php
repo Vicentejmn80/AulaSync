@@ -13,6 +13,12 @@ class StudentEnrollmentService
 {
     public function enroll(User $actor, array $data, ?Course $course = null): Student
     {
+        if ($actor->role !== 'director') {
+            throw ValidationException::withMessages([
+                'name' => 'Solo el director puede registrar alumnos nuevos en la nómina del colegio.',
+            ]);
+        }
+
         $colegioId = (int) $actor->colegio_id;
         if (! $colegioId) {
             throw ValidationException::withMessages([

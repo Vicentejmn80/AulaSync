@@ -1,0 +1,99 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+
+class TeacherInvite extends Model
+{
+    protected $fillable = [
+        'colegio_id',
+        'created_by',
+        'name',
+        'email',
+        'invite_code',
+        'course_ids',
+        'subject_name',
+        'grade',
+        'section',
+        'claimed_by',
+        'claimed_at',
+    ];
+
+    protected function casts(): array
+    {
+        return [
+            'course_ids' => 'array',
+            'claimed_at' => 'datetime',
+        ];
+    }
+
+    public function colegio(): BelongsTo
+    {
+        return $this->belongsTo(Colegio::class);
+    }
+
+    public function creator(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'created_by');
+    }
+
+    public function claimedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'claimed_by');
+    }
+
+    public function isClaimed(): bool
+    {
+        return $this->claimed_at !== null || $this->claimed_by !== null;
+    }
+
+    public function claimFor(User $user): void
+    {
+        if ($this->isClaimed() && (int) $this->claimed_by !== (int) $user->id) {
+            return;
+        }
+
+        $user->update([
+            'role' => 'profesor',
+            'colegio_id' => $this->colegio_id,
+        ]);
+
+        $courseIds = collect($this->course_ids ?? [])->filter()->map(fn ($id) => (int) $id)->unique();
+        if ($courseIds->isNotEmpty()) {
+            Course::where('colegio_id', $this->colegio_id)
+                ->whereIn('id', $courseIds)
+                ->update(['teacher_id' => $user->id]);
+        }
+
+        if ($this->subject_name && $this->grade) {
+            $exists = Course::where('teacher_id', $user->id)
+                ->where('colegio_id', $this->colegio_id)
+                ->whereRaw('LOWER(subject_name) = ?', [mb_strtolower($this->subject_name)])
+                ->whereRaw('LOWER(COALESCE(grade, ?)) = ?', ['', mb_strtolower($this->grade)])
+                ->exists();
+
+            if (! $exists) {
+                Course::create([
+                    'teacher_id' => $user->id,
+                    'colegio_id' => $this->colegio_id,
+                    'subject_name' => $this->subject_name,
+                    'grade' => $this->grade,
+                    'section' => $this->section,
+                    'school_year' => date('Y').'-'.(date('Y') + 1),
+                    'invite_code' => \App\Helpers\InviteCodeHelper::generateCourseCode(
+                        $this->subject_name,
+                        $this->grade,
+                        $this->section
+                    ),
+                ]);
+            }
+        }
+
+        $this->update([
+            'claimed_by' => $user->id,
+            'claimed_at' => now(),
+        ]);
+    }
+}

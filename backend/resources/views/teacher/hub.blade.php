@@ -3818,9 +3818,6 @@
 
         <div class="courses-header">
             <h4>Mis Cursos</h4>
-            <button @click="showNewCourseModal = true" class="add-course-btn" title="Nuevo curso">
-                <i class="fa-solid fa-plus"></i>
-            </button>
         </div>
 
         <div class="course-list">
@@ -3834,10 +3831,8 @@
             <template x-if="!coursesLoading && courses.length === 0">
                 <div style="text-align: center; padding: 30px 20px;">
                     <i class="fa-solid fa-book-open" style="font-size: 30px; color: var(--text-tertiary); margin-bottom: 15px;"></i>
-                    <p style="color: var(--text-tertiary); font-size: 13px; margin-bottom: 10px;">Sin cursos aún</p>
-                    <button @click="showNewCourseModal = true" style="color: var(--nova-cyan); font-size: 12px; font-weight: 600;">
-                        Crear primer curso <i class="fa-solid fa-arrow-right"></i>
-                    </button>
+                    <p style="color: var(--text-tertiary); font-size: 13px; margin-bottom: 10px;">El director aún no te asignó cursos</p>
+                    <p style="color: var(--text-tertiary); font-size: 12px;">Pídele un código DOC- o que te asigne la materia.</p>
                 </div>
             </template>
             <template x-for="c in courses" :key="c.id">
@@ -3970,7 +3965,6 @@
                             <div class="create-menu" x-show="createMenuOpen" x-cloak x-transition.opacity>
                                 <a href="{{ route('teacher.planner.manual') }}"><i class="fa-solid fa-wand-magic-sparkles" style="color:#7C3AED;"></i> Nueva planificación</a>
                                 <a href="{{ route('teacher.activities.index') }}"><i class="fa-solid fa-clipboard-list" style="color:#10B981;"></i> Crear actividad</a>
-                                <button type="button" @click="createMenuOpen = false; showNewCourseModal = true"><i class="fa-solid fa-book" style="color:#2563EB;"></i> Nuevo curso</button>
                                 <button type="button" @click="createMenuOpen = false; openBubbleWithFocus()"><i class="fa-solid fa-sparkles" style="color:#EC4899;"></i> Preguntar a AulaSync AI</button>
                             </div>
                         </div>
@@ -4134,17 +4128,17 @@
                         <div class="ai-orb">
                             <i class="fa-solid fa-robot"></i>
                         </div>
-                        <h2 class="empty-title">Tu planificador está vacío</h2>
-                        <p class="empty-subtitle">El asistente de IA está listo y esperando. Dile qué necesitas para empezar.</p>
+                        <h2 class="empty-title">Aún no tienes cursos asignados</h2>
+                        <p class="empty-subtitle">El director crea la estructura escolar y te invita con un código DOC-. Tú planificas, evalúas y tomas asistencia.</p>
                         
                         <div class="command-grid">
-                            <button @click="sendAICommand('Crea mi primer curso de Matemáticas 3ro A')" class="command-btn">
-                                <small>Sugerencia</small>
-                                <p>"Crea mi primer curso de Matemáticas 3ro A"</p>
+                            <button @click="sendAICommand('¿Qué alumnos de mi grado están en la nómina del colegio?')" class="command-btn">
+                                <small>Nómina</small>
+                                <p>"¿Qué alumnos de mi grado están en la nómina?"</p>
                             </button>
-                            <button @click="sendAICommand('Crea Inglés 2do grado y agrega a María, Pedro y Luis')" class="command-btn">
-                                <small>Encadenar</small>
-                                <p>"Crea Inglés 2do y agrega a María, Pedro y Luis"</p>
+                            <button @click="sendAICommand('Inscribe a María en este curso si ya está matriculada en el colegio')" class="command-btn">
+                                <small>Vincular</small>
+                                <p>"Inscribe a María si ya está en el colegio"</p>
                             </button>
                         </div>
 
@@ -4153,10 +4147,7 @@
                                 <i class="fa-solid fa-robot"></i>
                                 Hablar con el Asistente
                             </button>
-                            <button @click="showNewCourseModal = true" class="btn-secondary">
-                                <i class="fa-solid fa-plus"></i>
-                                Crear manualmente
-                            </button>
+                            <p class="empty-subtitle">El director debe asignarte un curso. Mientras tanto puedes planificar o hablar con el asistente sobre tus clases asignadas.</p>
                         </div>
                     </div>
                 </template>
@@ -4198,14 +4189,14 @@
                             <h3><i class="fa-solid fa-users"></i> Alumnos</h3>
                             <span class="panel-count" x-text="courseData.students.length"></span>
                             <button type="button" class="panel-link" @click="openEnrollModal()">
-                                Matricular <i class="fa-solid fa-plus"></i>
+                                Vincular <i class="fa-solid fa-plus"></i>
                             </button>
                         </div>
                         <template x-if="courseData.students.length === 0">
                             <div style="padding: 40px 20px; text-align: center;">
                                 <i class="fa-solid fa-user-graduate" style="font-size: 30px; color: var(--text-tertiary); margin-bottom: 10px;"></i>
                                 <p style="color: var(--text-tertiary);">Sin alumnos inscritos.</p>
-                                <p style="color: var(--text-tertiary); font-size: 12px; margin-top: 5px;">"Agrega a Juan en este curso"</p>
+                                <p style="color: var(--text-tertiary); font-size: 12px; margin-top: 5px;">Vincula alumnos ya matriculados por el director.</p>
                             </div>
                         </template>
                         <div style="max-height: 300px; overflow-y: auto;">
@@ -5186,48 +5177,23 @@
     <div x-show="showEnrollModal" x-cloak class="modal-overlay" @click.self="showEnrollModal = false">
         <div class="modal-nova" style="max-width: 520px;">
             <div class="modal-header">
-                <h3>Matricular alumno</h3>
+                <h3>Vincular alumno del colegio</h3>
                 <button @click="showEnrollModal = false" class="modal-close"><i class="fa-solid fa-times"></i></button>
             </div>
             <div class="modal-body" style="display:flex;flex-direction:column;gap:12px;">
-                <div class="stack" style="display:flex;gap:8px;">
-                    <button type="button" class="btn-secondary" :style="enrollTab === 'new' ? 'background:var(--nova-violet);color:#fff' : ''" @click="enrollTab = 'new'">Nuevo alumno</button>
-                    <button type="button" class="btn-secondary" :style="enrollTab === 'existing' ? 'background:var(--nova-violet);color:#fff' : ''" @click="enrollTab = 'existing'">Ya está en el colegio</button>
-                </div>
-                <template x-if="enrollTab === 'new'">
-                    <div style="display:flex;flex-direction:column;gap:10px;">
-                        <input x-model="enrollForm.name" placeholder="Nombre completo *" style="width:100%;background:var(--nova-glass);border:1px solid var(--nova-glass-border);border-radius:14px;padding:12px 15px;color:var(--text-primary);">
-                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-                            <input x-model="enrollForm.document_id" placeholder="Cédula escolar" style="width:100%;background:var(--nova-glass);border:1px solid var(--nova-glass-border);border-radius:14px;padding:12px 15px;color:var(--text-primary);">
-                            <input type="date" x-model="enrollForm.birthdate" style="width:100%;background:var(--nova-glass);border:1px solid var(--nova-glass-border);border-radius:14px;padding:12px 15px;color:var(--text-primary);">
-                        </div>
-                        <label style="font-size:12px;font-weight:700;color:var(--text-secondary);">Si es hermano de alguien ya matriculado</label>
-                        <input x-model="enrollSearch" @input="searchSchoolStudents()" placeholder="Buscar hermano para compartir código NV-" style="width:100%;background:var(--nova-glass);border:1px solid var(--nova-glass-border);border-radius:14px;padding:12px 15px;color:var(--text-primary);">
-                        <template x-for="hit in enrollHits" :key="hit.id">
-                            <button type="button" @click="enrollForm.sibling_student_id = hit.id; enrollSearch = hit.name + ' · ' + hit.family_code" style="text-align:left;background:var(--bg-secondary);border:0;border-radius:10px;padding:8px 10px;color:var(--text-primary);cursor:pointer;">
-                                <span x-text="hit.name"></span> · <span x-text="hit.family_code"></span>
-                            </button>
-                        </template>
-                    </div>
-                </template>
-                <template x-if="enrollTab === 'existing'">
-                    <div>
-                        <input x-model="enrollSearch" @input="searchSchoolStudents()" placeholder="Buscar por nombre o código NV-" style="width:100%;background:var(--nova-glass);border:1px solid var(--nova-glass-border);border-radius:14px;padding:12px 15px;color:var(--text-primary);">
-                        <template x-for="hit in enrollHits" :key="hit.id">
-                            <button type="button" @click="enrollExisting(hit.id)" style="display:block;width:100%;text-align:left;margin-top:8px;background:var(--bg-secondary);border:0;border-radius:10px;padding:8px 10px;color:var(--text-primary);cursor:pointer;">
-                                Inscribir a <span x-text="hit.name"></span>
-                            </button>
-                        </template>
-                    </div>
+                <p style="font-size:13px;color:var(--text-secondary);margin:0;">Solo puedes inscribir alumnos que el director ya matriculó. No se crean registros nuevos.</p>
+                <input x-model="enrollSearch" @input="searchSchoolStudents()" placeholder="Buscar por nombre, cédula o código NV-" style="width:100%;background:var(--nova-glass);border:1px solid var(--nova-glass-border);border-radius:14px;padding:12px 15px;color:var(--text-primary);">
+                <template x-for="hit in enrollHits" :key="hit.id">
+                    <button type="button" @click="enrollExisting(hit.id)" style="display:block;width:100%;text-align:left;margin-top:8px;background:var(--bg-secondary);border:0;border-radius:10px;padding:8px 10px;color:var(--text-primary);cursor:pointer;">
+                        Inscribir a <span x-text="hit.name"></span>
+                        <span style="opacity:.6;font-size:12px;" x-text="(hit.grade ? ' · ' + hit.grade : '') + (hit.family_code ? ' · ' + hit.family_code : '')"></span>
+                    </button>
                 </template>
                 <p x-show="enrollNotice" style="color:#0F766E;font-weight:700;font-size:13px;" x-text="enrollNotice"></p>
                 <p x-show="enrollError" style="color:#B45309;font-weight:700;font-size:13px;" x-text="enrollError"></p>
             </div>
             <div class="modal-footer">
                 <button type="button" @click="showEnrollModal = false" class="btn-secondary">Cerrar</button>
-                <button type="button" class="btn-primary" x-show="enrollTab === 'new'" @click="submitEnroll()" :disabled="enrollSaving">
-                    Matricular y generar código
-                </button>
             </div>
         </div>
     </div>
@@ -5502,13 +5468,14 @@ function teacherHub() {
             const shouldOpenGrades = params.get('open_grades') === '1';
             const targetActivityId = Number(params.get('activity') || 0);
             const openActivityId = Number(params.get('open_activity') || 0);
+            const requestedView = params.get('view');
 
             await this.refreshCourseSidebar();
 
             const urlCourse = {{ $initialCourseId ?? 'null' }};
             const deepLinkActivityId = openActivityId > 0 ? openActivityId : (shouldOpenGrades ? 0 : targetActivityId);
 
-            if (this.planBlockFilter) {
+            if (this.planBlockFilter || requestedView === 'calendar') {
                 await this.loadCalendar();
             } else if (urlCourse) {
                 await this.loadCourse(urlCourse);
@@ -5608,12 +5575,11 @@ function teacherHub() {
 
         openEnrollModal() {
             this.showEnrollModal = true;
-            this.enrollTab = 'new';
+            this.enrollTab = 'existing';
             this.enrollNotice = '';
             this.enrollError = '';
             this.enrollSearch = '';
             this.enrollHits = [];
-            this.enrollForm = { name: '', document_id: '', birthdate: '', sibling_student_id: '' };
         },
 
         async searchSchoolStudents() {

@@ -83,7 +83,7 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
                 'type' => 'function',
                 'function' => [
                     'name'        => 'createCourse',
-                    'description' => 'Crea un nuevo curso/sección para el profesor.',
+                    'description' => 'NO crea cursos. El director es quien crea materias. Si el docente pide crear un curso, responde que debe pedirlo a dirección o usar su código DOC-.',
                     'parameters'  => [
                         'type'       => 'object',
                         'properties' => [
@@ -144,7 +144,7 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
                 'type' => 'function',
                 'function' => [
                     'name'        => 'registerStudent',
-                    'description' => 'Inscribe alumnos en un curso.',
+                    'description' => 'Inscribe en el curso SOLO alumnos que ya existen en la nómina del colegio. Nunca crea estudiantes nuevos. Si no hay coincidencia, indica que el director debe matricularlos.',
                     'parameters'  => [
                         'type'       => 'object',
                         'properties' => [
@@ -778,11 +778,11 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             "- Compara subject_name y grade sin exigir coincidencia literal: normaliza mentalmente números ordinales, abreviaturas y mayúsculas.",
             "- Solo pregunta si hay dos o más cursos igualmente plausibles.",
             "",
-            "OPERACIONES MULTI-ENTIDAD (crear varios cursos y/o inscribir alumnos en un mismo mensaje):",
-            "- Si el usuario pide crear varios cursos (ej.: «crea de 1er a 6to grado»), emite UN createCourse por cada grado en el MISMO turno (6 llamadas, no más). Si no menciona materia, usa subject_name='General' y coloca el grado real en 'grade' (ej.: grade='1er grado', grade='2do grado'...). Cada curso DEBE tener un grade distinto.",
-            "- Para inscribir alumnos en esos cursos, emite registerStudent en el MISMO turno e indica el grado en 'course_name_hint' (ej.: course_name_hint='1er grado') y la lista en 'names'. El backend enlaza automáticamente con el curso correcto aunque todavía no exista el course_id numérico. Pon course_id=0 si no lo conoces.",
+            "OPERACIONES MULTI-ENTIDAD (inscribir alumnos existentes):",
+            "- PROHIBIDO crear cursos, grados o secciones. Eso lo hace solo el director. Si el usuario pide crear un curso, NO llames createCourse: explícale que debe pedir a dirección que le asigne la materia o usar su código DOC-.",
+            "- Para inscribir alumnos, emite registerStudent. El backend SOLO busca en la nómina del colegio (nunca crea alumnos). Si no existen, informa que el director debe matricularlos primero.",
             "- Reparte los alumnos exactamente como los asignó el usuario: cada registerStudent va a su grado. No mezcles alumnos de un grado en otro.",
-            "- PROHIBIDO duplicar: nunca llames createCourse dos veces para el mismo grado, ni crees un curso que ya aparece en «Cursos existentes del profesor». Si el curso ya existe, omite createCourse y usa registerStudent con su grado/ID.",
+            "- PROHIBIDO duplicar alumnos. Nunca inventes un registro nuevo.",
             "- PROHIBIDO el bucle de confirmación: no respondas «¿sigo con el siguiente paso?» por cada curso. Ejecuta TODAS las herramientas necesarias de una sola vez y luego da UN resumen final breve.",
             "",
             "CUANDO SÍ EJECUTAR CON HERRAMIENTA:",
@@ -804,14 +804,14 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             "- Riqueza: al menos tres párrafos sustantivos separados por línea en blanco; listas y **negritas**.",
             "",
             "MAPA DE INTENCIONES → HERRAMIENTA:",
-            "- crear curso / sección → createCourse",
+            "- crear curso / sección → NO crear. Indica que solo el director puede hacerlo.",
             "- crear clase / actividad / tarea (NO examen formal) → createActivity  (type: clase|actividad|tarea)",
             "- crear evaluación / examen / prueba / quiz formal → createEvaluation (NO uses createActivity). Eso la deja en Evaluaciones Y como actividad calificable.",
             "- crear evaluación y agregarla al plan → createEvaluation con add_to_plan=true (es el default)",
             "- agregar evaluación existente al plan de evaluación → attachEvaluationToPlan",
             "- adaptación NEE / TDAH / TEA / dislexia / discalculia → createActivity con nee_type relleno",
             "- modificar / cambiar / editar actividad existente → modifyActivity",
-            "- inscribir / agregar alumnos → registerStudent",
+            "- inscribir / agregar alumnos → registerStudent (solo nómina existente del colegio, sin duplicar)",
             "- planificar mes / cronograma / calendario → bulkPlan",
             "- borrar / eliminar / quitar actividades en un rango de fechas → deleteActivities",
             "- borrar / eliminar / quitar una actividad, curso o alumno específico → deleteResource",
@@ -1389,42 +1389,15 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
 
     private function doCreateCourse($args, $teacherId, &$createdCourseMap)
     {
-        $colegioId = User::where('id', $teacherId)->value('colegio_id') ?: 1;
-        $subject = trim((string) ($args['subject_name'] ?? '')) ?: 'General';
+        $subject = trim((string) ($args['subject_name'] ?? '')) ?: 'esa materia';
         $grade = trim((string) ($args['grade'] ?? ''));
-        $section = isset($args['section']) ? trim((string) $args['section']) : null;
-
-        // Anti-duplicado: reutiliza un curso existente con misma materia + grado.
-        // Esto evita que un reintento o un "sí" del usuario cree cursos repetidos.
-        $existingQuery = Course::where('teacher_id', $teacherId)
-            ->where('colegio_id', $colegioId)
-            ->whereRaw('LOWER(subject_name) = ?', [mb_strtolower($subject)]);
-        if ($grade !== '') {
-            $existingQuery->whereRaw('LOWER(COALESCE(grade, ?)) = ?', ['', mb_strtolower($grade)]);
-        }
-        $course = $existingQuery->first();
-        $reused = $course !== null;
-
-        if (! $course) {
-            $course = Course::create([
-                'teacher_id'   => $teacherId,
-                'colegio_id'   => $colegioId,
-                'subject_name' => $subject,
-                'grade'        => $grade !== '' ? $grade : null,
-                'section'      => $section ?: null,
-            ]);
-        }
-
-        $this->indexCourseInMap($createdCourseMap, $course);
-
-        $label = $course->grade ? "{$course->subject_name} · {$course->grade}" : $course->subject_name;
+        $label = $grade !== '' ? "{$subject} · {$grade}" : $subject;
 
         return [
-            'success'     => true,
-            'message'     => $reused ? "Curso ya existente: {$label}" : "Curso creado: {$label}",
+            'success'     => false,
+            'message'     => "No puedo crear {$label}. Solo el director crea cursos, grados y secciones. Pídele que te asigne la materia o usa tu código de invitación DOC-.",
             'action_type' => 'course',
-            'icon'        => '🏫',
-            'data'        => ['course_id' => $course->id, 'reused' => $reused],
+            'icon'        => '🔒',
         ];
     }
 
@@ -2074,23 +2047,69 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
         }
 
         $results = [];
+        $missing = [];
         foreach ($args['names'] as $name) {
-            $student = Student::firstOrCreate(
-                ['name' => $name, 'teacher_id' => $teacherId],
-                ['grade' => $grade, 'colegio_id' => $colegioId]
-            );
-            if ((int) $student->colegio_id !== (int) $colegioId) {
-                $student->update(['colegio_id' => $colegioId]);
+            $name = trim((string) $name);
+            if ($name === '') {
+                continue;
             }
+
+            $studentQuery = Student::where('colegio_id', $colegioId)
+                ->where(function ($q) use ($name, $grade) {
+                    $q->whereRaw('LOWER(name) = ?', [mb_strtolower($name)])
+                        ->orWhere('name', 'like', $name.'%');
+                });
+
+            if (! empty($grade)) {
+                $studentQuery->where(function ($q) use ($grade) {
+                    $q->whereRaw('LOWER(COALESCE(grade, ?)) = ?', ['', mb_strtolower((string) $grade)])
+                        ->orWhereNull('grade');
+                });
+            }
+
+            $student = $studentQuery->orderByRaw('LOWER(name) = ? DESC', [mb_strtolower($name)])->first();
+
+            if (! $student) {
+                $student = Student::where('colegio_id', $colegioId)
+                    ->whereRaw('LOWER(name) LIKE ?', ['%'.mb_strtolower($name).'%'])
+                    ->orderBy('name')
+                    ->first();
+            }
+
+            if (! $student) {
+                $missing[] = $name;
+                continue;
+            }
+
             $student->courses()->syncWithoutDetaching([$course->id]);
-            $results[] = $name;
+            $results[] = $student->name;
         }
+
+        if ($results && ! $missing) {
+            return [
+                'success'     => true,
+                'message'     => 'Alumnos vinculados desde la nómina: '.implode(', ', $results),
+                'action_type' => 'student',
+                'icon'        => '👩‍🎓',
+                'data'        => ['names' => $results, 'course_id' => $course->id, 'grade' => $grade],
+            ];
+        }
+
+        if ($results && $missing) {
+            return [
+                'success'     => true,
+                'message'     => 'Vinculados: '.implode(', ', $results).'. No están en la nómina del colegio (el director debe matricularlos): '.implode(', ', $missing).'.',
+                'action_type' => 'student',
+                'icon'        => '👩‍🎓',
+                'data'        => ['names' => $results, 'missing' => $missing, 'course_id' => $course->id],
+            ];
+        }
+
         return [
-            'success'     => true,
-            'message'     => "Alumnos inscritos: " . implode(', ', $results),
+            'success'     => false,
+            'message'     => 'No encontré a '.implode(', ', $missing).' en la nómina del colegio. El director debe matricularlos primero; no creo alumnos duplicados.',
             'action_type' => 'student',
-            'icon'        => '👩‍🎓',
-            'data'        => ['names' => $results, 'course_id' => $course->id, 'grade' => $grade],
+            'icon'        => '⚠️',
         ];
     }
 
