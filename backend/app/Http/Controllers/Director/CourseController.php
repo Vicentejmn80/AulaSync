@@ -82,8 +82,8 @@ class CourseController extends Controller
             'colegio_id' => $director->colegio_id,
             'subject_name' => $data['subject_name'],
             'grade' => $data['grade'],
-            'section' => $data['section'] ?: null,
-            'school_year' => $data['school_year'] ?: (date('Y').'-'.(date('Y') + 1)),
+            'section' => ($data['section'] ?? null) ?: null,
+            'school_year' => ($data['school_year'] ?? null) ?: (date('Y').'-'.(date('Y') + 1)),
             'invite_code' => InviteCodeHelper::generateCourseCode(
                 $data['subject_name'],
                 $data['grade'],
