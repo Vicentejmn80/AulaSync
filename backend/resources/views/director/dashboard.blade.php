@@ -172,11 +172,18 @@
                 </div>
                 <div class="flex flex-col items-start gap-3 sm:items-end">
                     @if($colegio)
-                        <x-code-reveal type="school" label="Código de colegio" />
+                        <x-code-reveal
+                            type="school"
+                            label="Código de colegio"
+                            :pin-hint="\App\Models\Colegio::defaultPinFromInvite($colegio->invite_code)"
+                        />
                     @else
                         <p class="text-sm text-slate-500">Sin colegio vinculado.</p>
                     @endif
                 </div>
+            </div>
+            <div class="mt-5">
+                <x-school-pin-manager :colegio="$colegio" />
             </div>
         </section>
 

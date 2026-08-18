@@ -69,9 +69,18 @@
             <br><span class="text-slate-500">Para invitar profesores con materia asignada, usa la sección Plantel docente en tu dashboard.</span>
         </p>
 
-        <div class="mx-auto mb-8 max-w-xs rounded-2xl border border-white/10 bg-white/[.045] px-4 py-5">
+        @php($defaultPin = \App\Models\Colegio::defaultPinFromInvite($inviteCode))
+
+        <div class="mx-auto mb-4 max-w-xs rounded-2xl border border-white/10 bg-white/[.045] px-4 py-5">
             <p class="text-xs uppercase tracking-[.2em] text-slate-500 mb-2">Código de invitación</p>
             <p class="invite-code text-5xl md:text-6xl font-black tracking-[.15em] select-all" x-ref="code">{{ $inviteCode }}</p>
+        </div>
+
+        <div class="mx-auto mb-8 max-w-xs rounded-2xl border border-amber-400/25 bg-amber-400/10 px-4 py-4 text-left">
+            <p class="text-[11px] font-bold uppercase tracking-[.2em] text-amber-200 mb-1">PIN del colegio</p>
+            <p class="text-sm text-amber-50/90">Para revelar códigos familiares o el código institucional:</p>
+            <p class="mt-2 font-mono text-2xl font-black tracking-[.35em] text-white">{{ $defaultPin }}</p>
+            <p class="mt-1 text-xs text-amber-100/70">Últimos 4 dígitos de tu código. Puedes cambiarlo en el dashboard.</p>
         </div>
 
         <div class="flex flex-col gap-3">

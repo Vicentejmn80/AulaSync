@@ -1,4 +1,5 @@
 <style>
+    [x-cloak] { display: none !important; }
     .ucp-btn {
         border:1px solid #e2e8f0;
         background:#f8fafc;
@@ -12,10 +13,13 @@
     }
     html.dark .ucp-btn:hover { background: rgba(255,255,255,.2); color:#fff; }
     .ucp-dropdown {
+        display:none;
         position:absolute; right:0; top:2.5rem; width:min(22rem, 88vw); max-height:24rem; overflow:auto;
         border:1px solid #e2e8f0; border-radius:1rem; background:#ffffff; color:#0f172a;
         box-shadow:0 22px 50px rgba(15,23,42,.12); z-index:9999;
     }
+    [x-cloak] .ucp-dropdown,
+    .ucp-dropdown[x-cloak] { display: none !important; }
     html.dark .ucp-dropdown {
         border-color: rgba(148,163,184,.25);
         background:#0f172a;
@@ -50,6 +54,7 @@
 
 <div x-data="userControlPanel()" x-init="init()" class="relative flex items-center gap-2">
     <button
+        type="button"
         @click="toggleNotifications()"
         title="Notificaciones"
         class="ucp-btn relative w-8 h-8 rounded-lg flex items-center justify-center transition"
@@ -62,10 +67,11 @@
     </button>
 
     <div x-show="showNotifications"
-         @click.outside="showNotifications = false"
          x-cloak
+         @click.outside="showNotifications = false"
          x-transition.opacity.scale.origin.top.right
-         class="ucp-dropdown">
+         class="ucp-dropdown"
+         :style="showNotifications ? 'display:block' : 'display:none'">
         <div class="ucp-dropdown-header flex items-center justify-between px-4 py-3">
             <span class="ucp-dropdown-title">Notificaciones</span>
             <button type="button" @click="markAllNotificationsRead()" class="ucp-dropdown-action hover:opacity-80">
@@ -91,14 +97,6 @@
             </a>
         </template>
     </div>
-
-    <button
-        @click="toggleTheme()"
-        :title="isDark ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'"
-        class="ucp-btn w-8 h-8 rounded-lg flex items-center justify-center transition"
-    >
-        <i :class="isDark ? 'fa-solid fa-sun' : 'fa-solid fa-moon'" class="text-xs"></i>
-    </button>
 
     <form method="POST" action="{{ route('logout') }}">
         @csrf

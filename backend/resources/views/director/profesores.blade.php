@@ -3,11 +3,22 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>Plantel Docente · Director</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>tailwind.config = { darkMode: 'class' };</script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     @include('partials.nova-theme')
+    <style>
+        [x-cloak] { display: none !important; }
+        select.director-select,
+        select.director-select option,
+        select.director-select optgroup {
+            background-color: #0f172a;
+            color: #f8fafc;
+        }
+    </style>
 </head>
 <body class="min-h-screen bg-[var(--bg-primary)] text-[var(--text-primary)]">
     <main class="mx-auto max-w-7xl px-5 py-6 lg:px-8">
@@ -49,7 +60,7 @@
                 </div>
                 <div class="md:col-span-2">
                     <label class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-400">Cursos existentes a asignar</label>
-                    <select name="course_ids[]" multiple class="min-h-[88px] w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white">
+                    <select name="course_ids[]" multiple class="director-select min-h-[88px] w-full rounded-xl border border-white/20 bg-slate-900 px-3 py-2 text-sm text-white">
                         @foreach($courses as $course)
                             <option value="{{ $course->id }}">{{ $course->subject_name }} · {{ $course->grade }}{{ $course->section ? ' / '.$course->section : '' }}</option>
                         @endforeach

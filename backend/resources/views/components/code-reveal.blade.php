@@ -3,10 +3,12 @@
     'studentId' => null,
     'label' => 'Código',
     'masked' => '••••••••',
+    'pinHint' => null, // solo director: pista del PIN por defecto
 ])
 
 @php
     $verifyUrl = route('codes.reveal');
+    $isDirector = auth()->user()?->role === 'director';
 @endphp
 
 <div
@@ -15,6 +17,7 @@
         studentId: @js($studentId),
         masked: @js($masked),
         verifyUrl: @js($verifyUrl),
+        pinHint: @js($pinHint),
         displayed: @js($masked),
         unlocked: false,
         showModal: false,
@@ -128,7 +131,16 @@
         <div class="relative w-full max-w-sm rounded-3xl border border-white/10 bg-slate-900 p-6 shadow-2xl" @click.stop>
             <p class="text-[11px] font-bold uppercase tracking-[.2em] text-cyan-300 mb-2">Autenticación</p>
             <h4 class="text-lg font-bold text-white mb-1">Ingresa el PIN del colegio</h4>
-            <p class="text-xs text-slate-400 mb-4">El código se mostrará solo 20 segundos y luego se bloqueará de nuevo.</p>
+            <p class="text-xs text-slate-400 mb-3">El código se mostrará solo 20 segundos y luego se bloqueará de nuevo.</p>
+            @if($isDirector && $pinHint)
+                <div class="mb-4 rounded-xl border border-amber-400/25 bg-amber-400/10 px-3 py-2 text-xs text-amber-100">
+                    <p class="font-semibold text-amber-200">Si nunca cambiaste el PIN, es:</p>
+                    <p class="mt-1 font-mono text-lg tracking-[.3em] text-white">{{ $pinHint }}</p>
+                    <p class="mt-1 text-amber-100/80">Últimos 4 dígitos del código institucional. Para crear uno nuevo: Dashboard → PIN del colegio.</p>
+                </div>
+            @elseif($isDirector)
+                <p class="mb-4 text-xs text-slate-400">Si no lo recuerdas, configúralo o restablécelo en el dashboard → <strong class="text-slate-200">PIN del colegio</strong>.</p>
+            @endif
             <input
                 type="password"
                 inputmode="numeric"

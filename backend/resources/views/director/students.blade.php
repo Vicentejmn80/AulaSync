@@ -206,6 +206,12 @@
                 </div>
             </header>
 
+            @if($colegio ?? null)
+                <div class="mb-5">
+                    <x-school-pin-manager :colegio="$colegio" />
+                </div>
+            @endif
+
             {{-- Flash de éxito --}}
             @if(session('success'))
                 <div x-data="{ show: true }"
@@ -283,7 +289,12 @@
                                     </td>
                                     <td class="py-3.5 pr-4">
                                         @if($student->family_code)
-                                            <x-code-reveal type="family" :student-id="$student->id" label="Código familiar" />
+                                            <x-code-reveal
+                                                type="family"
+                                                :student-id="$student->id"
+                                                label="Código familiar"
+                                                :pin-hint="isset($colegio) ? \App\Models\Colegio::defaultPinFromInvite($colegio->invite_code) : null"
+                                            />
                                         @else
                                             <span class="text-xs text-slate-600 italic">Sin código</span>
                                         @endif

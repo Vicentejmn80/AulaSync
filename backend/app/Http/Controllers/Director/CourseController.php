@@ -153,6 +153,10 @@ class CourseController extends Controller
 
         $attached = $this->attachRoster($course, $request->user()->colegio_id);
 
+        if ($attached === 0) {
+            return back()->with('warning', "No se inscribieron alumnos. Revisa que existan estudiantes con grado parecido a \"{$course->grade}\"" . ($course->section ? " / {$course->section}" : '') . ' en Alumnos.');
+        }
+
         return back()->with('success', "{$attached} alumno(s) de {$course->grade} inscritos en {$course->subject_name} ({$course->invite_code}).");
     }
 
@@ -184,24 +188,46 @@ class CourseController extends Controller
 
     private function attachRoster(Course $course, int $colegioId): int
     {
-        $query = Student::where('colegio_id', $colegioId)
-            ->where('grade', $course->grade);
+        $students = Student::where('colegio_id', $colegioId)->get(['id', 'grade', 'section']);
+        $courseGradeKey = $this->normalizeGradeKey($course->grade);
+        $courseSection = $course->section ? mb_strtolower(trim($course->section)) : null;
 
-        if ($course->section) {
-            $query->where(function ($q) use ($course) {
-                $q->where('section', $course->section)->orWhereNull('section');
-            });
-        }
-
-        $studentIds = $query->pluck('id');
         $attached = 0;
-        foreach ($studentIds as $studentId) {
-            if (! $course->students()->where('student_id', $studentId)->exists()) {
-                $course->students()->attach($studentId);
+        foreach ($students as $student) {
+            if ($this->normalizeGradeKey($student->grade) !== $courseGradeKey) {
+                continue;
+            }
+
+            if ($courseSection) {
+                $studentSection = $student->section ? mb_strtolower(trim($student->section)) : null;
+                if ($studentSection && $studentSection !== $courseSection) {
+                    continue;
+                }
+            }
+
+            if (! $course->students()->where('student_id', $student->id)->exists()) {
+                $course->students()->attach($student->id);
                 $attached++;
             }
         }
 
         return $attached;
+    }
+
+    private function normalizeGradeKey(?string $grade): string
+    {
+        $raw = mb_strtolower(trim((string) $grade));
+        $raw = strtr($raw, [
+            'á' => 'a', 'é' => 'e', 'í' => 'i', 'ó' => 'o', 'ú' => 'u', 'ñ' => 'n',
+        ]);
+        $raw = preg_replace('/\s+/', '', $raw) ?? '';
+        $raw = str_replace(['primero', '1ero', '1ro', '1°', '1º'], '1', $raw);
+        $raw = str_replace(['segundo', '2do', '2do.', '2°', '2º'], '2', $raw);
+        $raw = str_replace(['tercero', '3ro', '3ero', '3°', '3º'], '3', $raw);
+        $raw = str_replace(['cuarto', '4to', '4to.', '4°', '4º'], '4', $raw);
+        $raw = str_replace(['quinto', '5to', '5to.', '5°', '5º'], '5', $raw);
+        $raw = str_replace(['sexto', '6to', '6to.', '6°', '6º'], '6', $raw);
+
+        return preg_replace('/[^a-z0-9]/', '', $raw) ?? '';
     }
 }

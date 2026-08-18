@@ -79,8 +79,9 @@ class CodesRevealController extends Controller
     public function updatePin(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'current_pin' => ['required', 'string', 'max:12'],
+            'current_pin' => ['nullable', 'string', 'max:12'],
             'new_pin' => ['required', 'string', 'regex:/^\d{4,6}$/'],
+            'reset' => ['nullable', 'boolean'],
         ]);
 
         $user = $request->user();
@@ -93,8 +94,12 @@ class CodesRevealController extends Controller
             return response()->json(['ok' => false, 'error' => 'Colegio no encontrado.'], 404);
         }
 
-        if (! $colegio->codes_pin || ! Hash::check($validated['current_pin'], $colegio->codes_pin)) {
-            return response()->json(['ok' => false, 'error' => 'PIN actual incorrecto.'], 403);
+        // El director autenticado puede restablecer el PIN sin el actual.
+        // Si envía current_pin, se valida; si no, se permite el reset directo.
+        if (! empty($validated['current_pin'])) {
+            if (! $colegio->codes_pin || ! Hash::check($validated['current_pin'], $colegio->codes_pin)) {
+                return response()->json(['ok' => false, 'error' => 'PIN actual incorrecto.'], 403);
+            }
         }
 
         $colegio->update([
@@ -103,7 +108,7 @@ class CodesRevealController extends Controller
 
         return response()->json([
             'ok' => true,
-            'message' => 'PIN actualizado. Úsalo para revelar códigos por 20 segundos.',
+            'message' => 'PIN guardado. Úsalo para revelar códigos por 20 segundos.',
         ]);
     }
 }

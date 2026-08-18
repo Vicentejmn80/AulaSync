@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Director;
 
 use App\Http\Controllers\Controller;
+use App\Models\Colegio;
 use App\Models\Course;
 use App\Models\Student;
 use App\Services\StudentEnrollmentService;
@@ -54,7 +55,9 @@ class StudentController extends Controller
             ->orderBy('name')
             ->get(['id', 'name', 'grade', 'section', 'family_code']);
 
-        return view('director.students', compact('students', 'grades', 'courses', 'households'));
+        $colegio = Colegio::find($colegioId);
+
+        return view('director.students', compact('students', 'grades', 'courses', 'households', 'colegio'));
     }
 
     public function store(Request $request)
