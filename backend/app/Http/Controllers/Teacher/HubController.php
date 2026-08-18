@@ -12,6 +12,7 @@ use App\Models\Notification;
 use App\Models\Student;
 use App\Services\AttendanceSummaryService;
 use App\Services\StudentGradeAccumulationService;
+use App\Services\TeacherInviteClaimService;
 use App\Support\GradingScale;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -24,7 +25,8 @@ class HubController extends Controller
 {
     public function __construct(
         private StudentGradeAccumulationService $accumulation,
-        private AttendanceSummaryService $attendanceSummary
+        private AttendanceSummaryService $attendanceSummary,
+        private TeacherInviteClaimService $inviteClaim
     ) {
     }
 
@@ -34,6 +36,10 @@ class HubController extends Controller
     {
         $teacher = auth()->user();
         $teacher->loadMissing('settings');
+
+        // Reclama invitaciones DOC- pendientes (p.ej. si el onboarding no vinculó cursos)
+        $this->inviteClaim->claimForUser($teacher->fresh());
+        $teacher->refresh();
 
         $quotes = [
             'La educación es el arma más poderosa que puedes usar para cambiar el mundo. — Nelson Mandela',

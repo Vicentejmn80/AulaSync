@@ -129,6 +129,7 @@
                                     <div class="d-flex flex-column flex-md-row gap-2">
                                         <input id="teacherInviteCode"
                                                type="text"
+                                               name="school_code_visible"
                                                class="form-control rounded-3 flex-grow-1"
                                                style="pointer-events:auto;position:relative;z-index:21;"
                                                x-model="schoolCode"
@@ -905,7 +906,12 @@
                     }, 800);
                     setTimeout(() => {
                         if (this.syncTimer) clearInterval(this.syncTimer);
-                        this.$refs.wizardForm.submit();
+                        const form = this.$refs.wizardForm;
+                        const schoolInput = form?.querySelector('input[name="school_code"]');
+                        if (schoolInput) {
+                            schoolInput.value = this.schoolCode || '';
+                        }
+                        form.submit();
                     }, 2400);
                 },
 

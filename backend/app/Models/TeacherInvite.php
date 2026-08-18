@@ -72,7 +72,7 @@ class TeacherInvite extends Model
             ->unique()
             ->values();
 
-        Course::query()
+        $linked = Course::query()
             ->where('colegio_id', $this->colegio_id)
             ->where(function ($query) use ($assignedIds) {
                 $query->where('teacher_invite_id', $this->id);
@@ -80,10 +80,13 @@ class TeacherInvite extends Model
                     $query->orWhereIn('id', $assignedIds->all());
                 }
             })
-            ->update([
-                'teacher_id' => $user->id,
-                'teacher_invite_id' => $this->id,
-            ]);
+            ->get();
+
+        foreach ($linked as $course) {
+            $course->teacher_id = $user->id;
+            $course->teacher_invite_id = $this->id;
+            $course->save();
+        }
 
         if ($this->subject_name && $this->grade) {
             $exists = Course::query()
@@ -94,7 +97,10 @@ class TeacherInvite extends Model
                 })
                 ->whereRaw('LOWER(subject_name) = ?', [mb_strtolower($this->subject_name)])
                 ->whereRaw('LOWER(COALESCE(grade, ?)) = ?', ['', mb_strtolower($this->grade)])
-                ->when($this->section, fn ($q) => $q->whereRaw('LOWER(COALESCE(section, ?)) = ?', ['', mb_strtolower($this->section)]))
+                ->when(
+                    $this->section,
+                    fn ($q) => $q->whereRaw('LOWER(COALESCE(section, ?)) = ?', ['', mb_strtolower($this->section)])
+                )
                 ->exists();
 
             if (! $exists) {
@@ -115,9 +121,31 @@ class TeacherInvite extends Model
             }
         }
 
-        $this->update([
+        $finalIds = Course::query()
+            ->where('colegio_id', $this->colegio_id)
+            ->where(function ($query) use ($user, $assignedIds) {
+                $query->where('teacher_invite_id', $this->id)
+                    ->orWhere('teacher_id', $user->id);
+                if ($assignedIds->isNotEmpty()) {
+                    $query->orWhereIn('id', $assignedIds->all());
+                }
+            })
+            ->pluck('id')
+            ->unique()
+            ->values()
+            ->all();
+
+        if (! empty($finalIds)) {
+            Course::whereIn('id', $finalIds)->update([
+                'teacher_id' => $user->id,
+                'teacher_invite_id' => $this->id,
+            ]);
+        }
+
+        $this->forceFill([
             'claimed_by' => $user->id,
             'claimed_at' => now(),
-        ]);
+            'course_ids' => ! empty($finalIds) ? $finalIds : ($this->course_ids ?: null),
+        ])->save();
     }
 }

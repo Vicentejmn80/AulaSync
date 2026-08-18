@@ -9,6 +9,7 @@ use App\Models\Student;
 use App\Models\TeacherInvite;
 use App\Models\User;
 use App\Models\UserSettings;
+use App\Services\TeacherInviteClaimService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -234,8 +235,15 @@ class OnboardingController extends Controller
 
             $user->update($updateData);
 
-            if ($role === 'profesor' && $teacherInvite instanceof TeacherInvite) {
-                $teacherInvite->claimFor($user->fresh());
+            if ($role === 'profesor') {
+                $claimService = app(TeacherInviteClaimService::class);
+                if ($teacherInvite instanceof TeacherInvite) {
+                    $claimService->claimForUser($user->fresh(), $teacherInvite);
+                } else {
+                    // Por si el código institucional se usó pero hay invitación DOC- con el mismo email
+                    $claimService->claimForUser($user->fresh());
+                }
+
                 $preparedCourses = Course::where('teacher_id', $user->id)
                     ->where('colegio_id', $colegioId)
                     ->get(['subject_name', 'grade']);
