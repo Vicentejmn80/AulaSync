@@ -19,7 +19,7 @@
                 <div>
                     <p class="text-xs font-bold uppercase tracking-[.3em] text-cyan-200">Gestión institucional</p>
                     <h1 class="mt-1 text-2xl font-black tracking-tight text-white">Plantel docente</h1>
-                    <p class="mt-1 text-sm text-slate-400">Invita docentes con un código DOC- y asígnales materias. Ellos no crean cursos ni alumnos.</p>
+                    <p class="mt-1 text-sm text-slate-400">Invita docentes con un código DOC-, créales el curso y matricula alumnos antes de que ellos se registren. Al entrar con ese código, heredan todo.</p>
                 </div>
             </div>
             @include('components.user-control-panel')
@@ -81,6 +81,16 @@
                                 </p>
                             </div>
                         </div>
+                        @if($invite->courses->isNotEmpty())
+                            <div class="mt-3 flex flex-wrap gap-2">
+                                @foreach($invite->courses as $course)
+                                    <span class="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-300">
+                                        {{ $course->subject_name }} · {{ $course->grade }}{{ $course->section ? ' / '.$course->section : '' }}
+                                        · {{ $course->students_count }} alumno(s)
+                                    </span>
+                                @endforeach
+                            </div>
+                        @endif
                     </article>
                 @endforeach
             </section>

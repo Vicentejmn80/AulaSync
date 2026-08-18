@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Helpers\InviteCodeHelper;
 use App\Models\Colegio;
+use App\Models\Course;
 use App\Models\Student;
 use App\Models\TeacherInvite;
 use App\Models\User;
@@ -235,6 +236,21 @@ class OnboardingController extends Controller
 
             if ($role === 'profesor' && $teacherInvite instanceof TeacherInvite) {
                 $teacherInvite->claimFor($user->fresh());
+                $preparedCourses = Course::where('teacher_id', $user->id)
+                    ->where('colegio_id', $colegioId)
+                    ->get(['subject_name', 'grade']);
+                if ($preparedCourses->isNotEmpty()) {
+                    $subjects = $preparedCourses->pluck('subject_name')->filter()->unique()->values()->all();
+                    $grades = $preparedCourses->pluck('grade')->filter()->unique()->values()->all();
+                    $user->settings()->update([
+                        'materias' => $subjects ?: $user->settings?->materias,
+                        'materias_asignadas' => $subjects ?: $user->settings?->materias_asignadas,
+                        'cursos_grados' => $grades ?: $user->settings?->cursos_grados,
+                    ]);
+                    $user->update([
+                        'asignatura_principal' => implode(',', $subjects),
+                    ]);
+                }
             }
 
             if ($role === 'representante' && $linkedStudents->isNotEmpty()) {
@@ -304,6 +320,27 @@ class OnboardingController extends Controller
             $directorName = $colegio->director?->name
                 ?: User::where('colegio_id', $colegio->id)->where('role', 'director')->value('name');
 
+            $assignedCourses = Course::query()
+                ->where('colegio_id', $colegio->id)
+                ->where(function ($query) use ($teacherInvite) {
+                    $query->where('teacher_invite_id', $teacherInvite->id);
+                    $ids = collect($teacherInvite->course_ids ?? [])->filter()->map(fn ($id) => (int) $id);
+                    if ($ids->isNotEmpty()) {
+                        $query->orWhereIn('id', $ids->all());
+                    }
+                })
+                ->withCount('students')
+                ->orderBy('subject_name')
+                ->get(['id', 'subject_name', 'grade', 'section'])
+                ->map(fn (Course $course) => [
+                    'id' => $course->id,
+                    'subject_name' => $course->subject_name,
+                    'grade' => $course->grade,
+                    'section' => $course->section,
+                    'students_count' => $course->students_count,
+                ])
+                ->values();
+
             return response()->json([
                 'valid' => true,
                 'type' => 'teacher_invite',
@@ -314,7 +351,10 @@ class OnboardingController extends Controller
                 ],
                 'director' => $directorName,
                 'teacher_name' => $teacherInvite->name,
-                'message' => 'Código de docente válido. Te vincularemos al colegio y a tus materias asignadas.',
+                'assigned_courses' => $assignedCourses,
+                'message' => $assignedCourses->isNotEmpty()
+                    ? 'Código válido. Al finalizar, te vincularemos a tus cursos y alumnos preparados por el director.'
+                    : 'Código de docente válido. Te vincularemos al colegio y a las materias que el director te asigne.',
             ]);
         }
 

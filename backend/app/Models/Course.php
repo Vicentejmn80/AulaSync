@@ -13,6 +13,7 @@ class Course extends Model
 {
     protected $fillable = [
         'teacher_id',
+        'teacher_invite_id',
         'colegio_id',
         'subject_name',
         'grade',
@@ -29,6 +30,11 @@ class Course extends Model
     public function teacher(): BelongsTo
     {
         return $this->belongsTo(User::class, 'teacher_id');
+    }
+
+    public function pendingInvite(): BelongsTo
+    {
+        return $this->belongsTo(TeacherInvite::class, 'teacher_invite_id');
     }
 
     public function students(): BelongsToMany

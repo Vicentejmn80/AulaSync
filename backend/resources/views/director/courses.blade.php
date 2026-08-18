@@ -19,7 +19,7 @@
                 <div>
                     <p class="text-xs font-bold uppercase tracking-[.3em] text-cyan-200">Estructura escolar</p>
                     <h1 class="mt-1 text-2xl font-black tracking-tight text-white">Cursos y secciones</h1>
-                    <p class="mt-1 text-sm text-slate-400">Solo dirección crea materias. Cada curso tiene un código para matricular alumnos del grado.</p>
+                    <p class="mt-1 text-sm text-slate-400">Crea materias, matricula el grado y asígnalas a un docente aunque aún no se haya registrado. Al usar su código DOC-, todo queda vinculado.</p>
                 </div>
             </div>
             @include('components.user-control-panel')
@@ -34,20 +34,35 @@
 
         <section class="mb-6 rounded-3xl border border-white/10 bg-white/[.045] p-5">
             <h2 class="mb-3 text-lg font-bold text-white">Crear curso</h2>
-            @if($teachers->isEmpty())
-                <p class="text-sm text-slate-400">Primero invita a un docente en <a class="text-cyan-300" href="{{ route('director.profesores') }}">Plantel docente</a>.</p>
+            @if($teachers->isEmpty() && $pendingInvites->isEmpty())
+                <p class="text-sm text-slate-400">Primero invita a un docente en <a class="text-cyan-300" href="{{ route('director.profesores') }}">Plantel docente</a>. Puedes asignarle el curso aunque todavía no se haya registrado.</p>
             @else
-                <form method="POST" action="{{ route('director.courses.store') }}" class="grid gap-3 md:grid-cols-2 lg:grid-cols-5">
+                <form method="POST" action="{{ route('director.courses.store') }}" class="grid gap-3 md:grid-cols-2 lg:grid-cols-6">
                     @csrf
-                    <select name="teacher_id" required class="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white">
+                    <select name="assignee" required class="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white">
                         <option value="">Docente *</option>
-                        @foreach($teachers as $teacher)
-                            <option value="{{ $teacher->id }}">{{ $teacher->name }}</option>
-                        @endforeach
+                        @if($pendingInvites->isNotEmpty())
+                            <optgroup label="Pendientes de registro">
+                                @foreach($pendingInvites as $invite)
+                                    <option value="invite:{{ $invite->id }}">{{ $invite->name }} · {{ $invite->invite_code }}</option>
+                                @endforeach
+                            </optgroup>
+                        @endif
+                        @if($teachers->isNotEmpty())
+                            <optgroup label="Docentes activos">
+                                @foreach($teachers as $teacher)
+                                    <option value="teacher:{{ $teacher->id }}">{{ $teacher->name }}</option>
+                                @endforeach
+                            </optgroup>
+                        @endif
                     </select>
                     <input name="subject_name" required placeholder="Materia *" class="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white">
                     <input name="grade" required placeholder="Grado *" class="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white">
                     <input name="section" placeholder="Sección" class="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white">
+                    <label class="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-300">
+                        <input type="checkbox" name="enroll_roster" value="1" class="rounded border-white/20">
+                        Inscribir alumnos del grado
+                    </label>
                     <button class="rounded-xl bg-gradient-to-r from-violet-500 to-cyan-400 px-4 py-2 text-sm font-bold text-white">Crear</button>
                 </form>
             @endif
@@ -59,7 +74,16 @@
                     <div class="flex flex-wrap items-start justify-between gap-3">
                         <div>
                             <h2 class="text-lg font-bold text-white">{{ $course->subject_name }} · {{ $course->grade }}{{ $course->section ? ' / '.$course->section : '' }}</h2>
-                            <p class="text-xs text-slate-400">Docente: {{ $course->teacher?->name ?? 'Sin asignar' }} · {{ $course->students_count }} alumnos</p>
+                            <p class="text-xs text-slate-400">
+                                @if($course->teacher)
+                                    Docente: {{ $course->teacher->name }}
+                                @elseif($course->pendingInvite)
+                                    Pendiente: {{ $course->pendingInvite->name }} · {{ $course->pendingInvite->invite_code }}
+                                @else
+                                    Sin asignar
+                                @endif
+                                · {{ $course->students_count }} alumnos
+                            </p>
                             <p class="mt-1 font-mono text-sm font-bold tracking-wide text-cyan-200">{{ $course->invite_code }}</p>
                         </div>
                         <div class="flex flex-wrap gap-2">
@@ -69,9 +93,12 @@
                             </form>
                             <form method="POST" action="{{ route('director.courses.assign', $course) }}" class="flex gap-2">
                                 @csrf
-                                <select name="teacher_id" class="rounded-xl border border-white/10 bg-white/5 px-2 py-2 text-xs text-white">
+                                <select name="assignee" class="rounded-xl border border-white/10 bg-white/5 px-2 py-2 text-xs text-white">
+                                    @foreach($pendingInvites as $invite)
+                                        <option value="invite:{{ $invite->id }}" @selected((int) $course->teacher_invite_id === (int) $invite->id && ! $course->teacher_id)>{{ $invite->name }} · {{ $invite->invite_code }}</option>
+                                    @endforeach
                                     @foreach($teachers as $teacher)
-                                        <option value="{{ $teacher->id }}" @selected($course->teacher_id === $teacher->id)>{{ $teacher->name }}</option>
+                                        <option value="teacher:{{ $teacher->id }}" @selected($course->teacher_id === $teacher->id)>{{ $teacher->name }}</option>
                                     @endforeach
                                 </select>
                                 <button class="rounded-xl border border-white/10 px-3 py-2 text-xs font-semibold text-slate-200">Asignar</button>

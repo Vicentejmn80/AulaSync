@@ -123,13 +123,23 @@
                             </div>
 
                             {{-- Input de código escolar (se revela con animación) --}}
-                            <div x-show="showSchoolCode" x-cloak x-transition:enter="fade-in-custom" class="mb-6">
-                                <div class="rounded-2xl border border-violet-200/30 bg-white/[.045] p-4">
-                                    <label class="form-label fw-semibold mb-2">Código de invitación docente</label>
+                            <div x-show="showSchoolCode" x-cloak x-transition:enter="fade-in-custom" class="mb-6" style="position:relative;z-index:20;">
+                                <div class="rounded-2xl border border-violet-200/30 bg-white/[.045] p-4" @click.stop>
+                                    <label for="teacherInviteCode" class="form-label fw-semibold mb-2">Código de invitación docente</label>
                                     <div class="d-flex flex-column flex-md-row gap-2">
-                                        <input type="text"
+                                        <input id="teacherInviteCode"
+                                               type="text"
                                                class="form-control rounded-3 flex-grow-1"
+                                               style="pointer-events:auto;position:relative;z-index:21;"
+                                               x-model="schoolCode"
+                                               @input="onSchoolCodeInput"
+                                               @keydown.enter.prevent="validateSchoolCode"
                                                placeholder="Ej: DOC-8X92K"
+                                               autocomplete="off"
+                                               autocapitalize="characters"
+                                               spellcheck="false"
+                                               maxlength="20"
+                                               inputmode="text">
                                         <button type="button"
                                                 class="btn btn-outline-primary rounded-3 px-3"
                                                 :disabled="!schoolCode.trim() || validatingCode"
@@ -162,8 +172,26 @@
                             {{-- Perfil docente (se revela solo tras validación exitosa) --}}
                             <div x-show="schoolValidated" x-cloak x-transition:enter="fade-in-custom" class="mb-4">
                                 <hr class="border-white/10 my-6">
+                                <template x-if="schoolCodeType === 'teacher_invite'">
+                                    <div class="mb-4 rounded-2xl border border-emerald-400/20 bg-emerald-400/5 p-4">
+                                        <h3 class="h5 fw-bold mb-2 text-center">Tu aula ya está lista</h3>
+                                        <p class="text-muted text-center mb-3">El director te asignó estos cursos. Al finalizar, los alumnos y la configuración quedan vinculados a tu cuenta.</p>
+                                        <ul class="mb-0 ps-3">
+                                            <template x-for="course in assignedCourses" :key="course.id || (course.subject_name + course.grade)">
+                                                <li class="mb-1">
+                                                    <strong x-text="course.subject_name"></strong>
+                                                    · <span x-text="course.grade"></span>
+                                                    <span x-show="course.section" x-text="' / ' + course.section"></span>
+                                                    <span class="text-muted" x-show="course.students_count != null" x-text="' · ' + course.students_count + ' alumno(s)'"></span>
+                                                </li>
+                                            </template>
+                                        </ul>
+                                        <p class="small text-muted mt-3 mb-0" x-show="assignedCourses.length === 0">Aún no hay cursos asignados a este código. El director puede crearlos ahora; tú ya quedarás vinculado al colegio.</p>
+                                    </div>
+                                </template>
                                 <h3 class="h5 fw-bold mb-3 text-center">Completa tu perfil docente</h3>
-                                <p class="text-muted text-center mb-4">El director te asigna las materias. Completa solo tu perfil pedagógico.</p>
+                                <p class="text-muted text-center mb-4" x-show="schoolCodeType === 'teacher_invite'">Solo tu perfil pedagógico. Las materias y alumnos los preparó el director.</p>
+                                <p class="text-muted text-center mb-4" x-show="schoolCodeType !== 'teacher_invite'">El director te asigna las materias. Completa solo tu perfil pedagógico.</p>
                                 <div class="row g-3">
                                     <div class="col-12 col-md-6">
                                         <label class="form-label">Nivel educativo</label>
@@ -179,7 +207,7 @@
                                         <input type="number" min="1" max="20" class="form-control rounded-3" name="clases_semana" placeholder="5">
                                     </div>
 
-                                    <div class="col-12">
+                                    <div class="col-12" x-show="schoolCodeType !== 'teacher_invite'">
                                         <label class="form-label fw-semibold mb-3">Materias que enseñas *</label>
                                         <p class="text-muted small mb-3">Selecciona todas las que apliquen.</p>
                                         <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
@@ -208,7 +236,7 @@
                                         </template>
                                     </div>
 
-                                    <div class="col-12">
+                                    <div class="col-12" x-show="schoolCodeType !== 'teacher_invite'">
                                         <label class="form-label">Grados / cursos</label>
                                         <div class="d-flex flex-wrap gap-2">
                                             <label class="chip"><input type="checkbox" name="cursos[]" value="1ro"> 1ro</label>
@@ -634,6 +662,8 @@
                 showCustomInput: false,
                 customSubject: '',
                 schoolCode: '',
+                schoolCodeType: '',
+                assignedCourses: [],
                 schoolValidated: false,
                 validatingCode: false,
                 schoolValidationStatus: 'idle',
@@ -738,6 +768,8 @@
 
                 resetSchoolValidation() {
                     this.schoolCode = '';
+                    this.schoolCodeType = '';
+                    this.assignedCourses = [];
                     this.schoolValidated = false;
                     this.validatingCode = false;
                     this.schoolValidationStatus = 'idle';
@@ -748,6 +780,8 @@
 
                 onSchoolCodeInput() {
                     this.schoolValidated = false;
+                    this.schoolCodeType = '';
+                    this.assignedCourses = [];
                     this.schoolValidationStatus = 'idle';
                     this.schoolValidationMessage = '';
                     this.validatedSchoolName = '';
@@ -777,6 +811,8 @@
                         const payload = await response.json();
                         if (!response.ok || !payload.valid) {
                             this.schoolValidated = false;
+                            this.schoolCodeType = '';
+                            this.assignedCourses = [];
                             this.schoolValidationStatus = 'error';
                             this.schoolValidationMessage = payload.message || 'Código no válido.';
                             this.validatedSchoolName = '';
@@ -785,6 +821,8 @@
                         }
                         this.schoolValidated = true;
                         this.schoolValidationStatus = 'ok';
+                        this.schoolCodeType = payload.type || 'school';
+                        this.assignedCourses = payload.assigned_courses || [];
                         this.validatedSchoolName = payload.school?.name ?? '';
                         this.validatedSchoolDirector = payload.director ?? '';
                         this.schoolValidationMessage = payload.message || 'Código válido. Colegio verificado correctamente.';
@@ -807,13 +845,15 @@
                             alert('Debes validar un código de escuela válido antes de finalizar');
                             return false;
                         }
-                        if (this.selectedSubjects.length === 0) {
-                            alert('Por favor selecciona al menos una materia');
-                            return false;
-                        }
-                        if (this.isOtroSelected && !this.customSubject.trim()) {
-                            alert('Por favor escribe el nombre de la materia personalizada');
-                            return false;
+                        if (this.schoolCodeType !== 'teacher_invite') {
+                            if (this.selectedSubjects.length === 0) {
+                                alert('Por favor selecciona al menos una materia');
+                                return false;
+                            }
+                            if (this.isOtroSelected && !this.customSubject.trim()) {
+                                alert('Por favor escribe el nombre de la materia personalizada');
+                                return false;
+                            }
                         }
                     }
                     if (this.role === 'representante') {

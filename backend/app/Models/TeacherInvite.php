@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class TeacherInvite extends Model
 {
@@ -44,6 +45,11 @@ class TeacherInvite extends Model
         return $this->belongsTo(User::class, 'claimed_by');
     }
 
+    public function courses(): HasMany
+    {
+        return $this->hasMany(Course::class, 'teacher_invite_id');
+    }
+
     public function isClaimed(): bool
     {
         return $this->claimed_at !== null || $this->claimed_by !== null;
@@ -60,23 +66,41 @@ class TeacherInvite extends Model
             'colegio_id' => $this->colegio_id,
         ]);
 
-        $courseIds = collect($this->course_ids ?? [])->filter()->map(fn ($id) => (int) $id)->unique();
-        if ($courseIds->isNotEmpty()) {
-            Course::where('colegio_id', $this->colegio_id)
-                ->whereIn('id', $courseIds)
-                ->update(['teacher_id' => $user->id]);
-        }
+        $assignedIds = collect($this->course_ids ?? [])
+            ->filter()
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values();
+
+        Course::query()
+            ->where('colegio_id', $this->colegio_id)
+            ->where(function ($query) use ($assignedIds) {
+                $query->where('teacher_invite_id', $this->id);
+                if ($assignedIds->isNotEmpty()) {
+                    $query->orWhereIn('id', $assignedIds->all());
+                }
+            })
+            ->update([
+                'teacher_id' => $user->id,
+                'teacher_invite_id' => $this->id,
+            ]);
 
         if ($this->subject_name && $this->grade) {
-            $exists = Course::where('teacher_id', $user->id)
+            $exists = Course::query()
                 ->where('colegio_id', $this->colegio_id)
+                ->where(function ($query) use ($user) {
+                    $query->where('teacher_id', $user->id)
+                        ->orWhere('teacher_invite_id', $this->id);
+                })
                 ->whereRaw('LOWER(subject_name) = ?', [mb_strtolower($this->subject_name)])
                 ->whereRaw('LOWER(COALESCE(grade, ?)) = ?', ['', mb_strtolower($this->grade)])
+                ->when($this->section, fn ($q) => $q->whereRaw('LOWER(COALESCE(section, ?)) = ?', ['', mb_strtolower($this->section)]))
                 ->exists();
 
             if (! $exists) {
                 Course::create([
                     'teacher_id' => $user->id,
+                    'teacher_invite_id' => $this->id,
                     'colegio_id' => $this->colegio_id,
                     'subject_name' => $this->subject_name,
                     'grade' => $this->grade,

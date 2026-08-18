@@ -27,6 +27,9 @@ class StaffController extends Controller
             ->get(['id', 'name', 'email', 'role', 'colegio_id']);
 
         $invites = TeacherInvite::where('colegio_id', $colegioId)
+            ->with(['courses' => function ($query) {
+                $query->withCount('students')->orderBy('subject_name')->orderBy('grade');
+            }])
             ->latest()
             ->limit(40)
             ->get();
@@ -79,7 +82,33 @@ class StaffController extends Controller
             'section' => $data['section'] ?: null,
         ]);
 
+        if ($courseIds) {
+            Course::where('colegio_id', $director->colegio_id)
+                ->whereIn('id', $courseIds)
+                ->update(['teacher_invite_id' => $invite->id]);
+        }
+
+        if ($invite->subject_name && $invite->grade) {
+            $course = Course::create([
+                'teacher_id' => null,
+                'teacher_invite_id' => $invite->id,
+                'colegio_id' => $director->colegio_id,
+                'subject_name' => $invite->subject_name,
+                'grade' => $invite->grade,
+                'section' => $invite->section,
+                'school_year' => date('Y').'-'.(date('Y') + 1),
+                'invite_code' => InviteCodeHelper::generateCourseCode(
+                    $invite->subject_name,
+                    $invite->grade,
+                    $invite->section
+                ),
+            ]);
+            $invite->update([
+                'course_ids' => collect($invite->course_ids ?? [])->push($course->id)->unique()->values()->all(),
+            ]);
+        }
+
         return redirect()->route('director.profesores')
-            ->with('success', "Invitación lista. Comparte el código {$invite->invite_code} con {$invite->name}.");
+            ->with('success', "Invitación lista. Comparte el código {$invite->invite_code} con {$invite->name}. El curso y los alumnos que prepares quedan vinculados a ese código.");
     }
 }
