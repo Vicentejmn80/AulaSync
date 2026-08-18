@@ -10,6 +10,7 @@ use App\Models\TeacherInvite;
 use App\Models\User;
 use App\Models\UserSettings;
 use App\Services\TeacherInviteClaimService;
+use App\Support\LessonTemplate;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -57,6 +58,8 @@ class OnboardingController extends Controller
             'vision_pedagogica' => 'nullable|string|max:2000',
             'clases_semana' => 'nullable|integer|min:1|max:20',
             'duracion_clase' => 'nullable|integer|min:15|max:240',
+            'teacher_invite_code' => 'nullable|string|max:20',
+            'lesson_template' => 'nullable|string|max:50',
             'family_code' => 'nullable|string|max:20',
             'student_ids' => 'nullable|array',
             'student_ids.*' => 'integer',
@@ -65,17 +68,10 @@ class OnboardingController extends Controller
         if ($validated['role'] === 'profesor') {
             $request->validate([
                 'school_code' => 'required|string|max:20',
+                'teacher_invite_code' => 'required|string|max:20',
+                'dias' => 'required|array|min:1',
+                'lesson_template' => 'nullable|string|max:50',
             ]);
-
-            $normalizedCode = InviteCodeHelper::normalize((string) $request->input('school_code'));
-            $teacherInvite = TeacherInvite::where('invite_code', $normalizedCode)->first();
-
-            if (! $teacherInvite) {
-                $request->validate([
-                    'materias' => 'required|array|min:1',
-                    'cursos' => 'required|array|min:1',
-                ]);
-            }
             
             // Procesar materias: Si "otro" está presente, validar y reemplazar
             $materias = $validated['materias'] ?? [];
@@ -118,6 +114,9 @@ class OnboardingController extends Controller
             $diasClase = $validated['dias'] ?? ['lunes', 'martes', 'miercoles', 'jueves', 'viernes'];
             $nombreInstitucion = $validated['nombre_institucion'] ?? null;
             $modeloPedagogico = $validated['modelo_pedagogico'] ?? null;
+            $lessonTemplate = LessonTemplate::normalize(
+                (string) ($validated['lesson_template'] ?? $modeloPedagogico ?? LessonTemplate::CLASSIC)
+            );
             $colegioId = null;
             $inviteCode = null;
             $familyCode = null;
@@ -136,33 +135,23 @@ class OnboardingController extends Controller
             }
 
             if ($role === 'profesor') {
-                $code = InviteCodeHelper::normalize((string) $validated['school_code']);
-                $teacherInvite = TeacherInvite::where('invite_code', $code)->first();
+                $pair = $this->resolveTeacherCodes(
+                    (string) $validated['school_code'],
+                    (string) ($validated['teacher_invite_code'] ?? ''),
+                    $user
+                );
 
-                if ($teacherInvite) {
-                    if ($teacherInvite->isClaimed() && (int) $teacherInvite->claimed_by !== (int) $user->id) {
-                        return back()->withInput()->withErrors([
-                            'school_code' => 'Ese código de docente ya fue utilizado.',
-                        ]);
-                    }
-                    $colegio = Colegio::find($teacherInvite->colegio_id);
-                    if (! $colegio) {
-                        return back()->withInput()->withErrors([
-                            'school_code' => 'El colegio de esa invitación ya no existe.',
-                        ]);
-                    }
-                } else {
-                    $colegio = Colegio::where('invite_code', $code)->first();
-                }
-
-                if (! $colegio) {
+                if (isset($pair['error'])) {
                     return back()->withInput()->withErrors([
-                        'school_code' => 'El código de escuela no es válido. Usa el código DOC- que te dio el director o el código institucional.',
+                        $pair['field'] => $pair['error'],
                     ]);
                 }
 
+                $teacherInvite = $pair['invite'];
+                $colegio = $pair['colegio'];
                 $colegioId = $colegio->id;
                 $nombreInstitucion = $colegio->name;
+                $modeloPedagogico = LessonTemplate::label($lessonTemplate);
             }
 
             if ($role === 'representante') {
@@ -202,8 +191,9 @@ class OnboardingController extends Controller
                     'materias_asignadas' => $materiasAsignadas,
                     'cursos_grados' => $role === 'profesor' ? ($validated['cursos'] ?? []) : null,
                     'dias_clase' => $role === 'profesor' ? $diasClase : null,
-                    'estilo_pedagogico' => $validated['modelo_pedagogico'] ?? 'inicio_desarrollo_cierre',
+                    'estilo_pedagogico' => $role === 'profesor' ? $lessonTemplate : ($validated['modelo_pedagogico'] ?? 'inicio_desarrollo_cierre'),
                     'modelo_pedagogico' => $modeloPedagogico,
+                    'lesson_template' => $role === 'profesor' ? $lessonTemplate : null,
                     'nombre_institucion' => $nombreInstitucion,
                     'tono' => $request->input('tono', 'amigable'),
                     'clases_semana' => (int) ($validated['clases_semana'] ?? 5),
@@ -286,6 +276,11 @@ class OnboardingController extends Controller
                 ])->with('director_setup', true);
             }
 
+            if ($role === 'profesor') {
+                return redirect()->route('teacher.hub')
+                    ->with('success', '¡Bienvenido! Tu aula ya está vinculada.');
+            }
+
             return redirect()->to('/dashboard')
                 ->with('success', '¡Bienvenido!');
         } catch (\Throwable $e) {
@@ -304,13 +299,32 @@ class OnboardingController extends Controller
     {
         $validated = $request->validate([
             'school_code' => 'required|string|max:20',
+            'teacher_invite_code' => 'nullable|string|max:20',
         ]);
+
+        $inviteCode = InviteCodeHelper::normalize((string) ($validated['teacher_invite_code'] ?? ''));
+        if ($inviteCode !== '') {
+            $pair = $this->resolveTeacherCodes(
+                $validated['school_code'],
+                $inviteCode,
+                auth()->user()
+            );
+
+            if (isset($pair['error'])) {
+                return response()->json([
+                    'valid' => false,
+                    'message' => $pair['error'],
+                ], 422);
+            }
+
+            return response()->json($this->teacherInvitePayload($pair['colegio'], $pair['invite']));
+        }
 
         $code = InviteCodeHelper::normalize($validated['school_code']);
 
         $teacherInvite = TeacherInvite::where('invite_code', $code)->first();
         if ($teacherInvite) {
-            if ($teacherInvite->isClaimed()) {
+            if ($teacherInvite->isClaimed() && (int) $teacherInvite->claimed_by !== (int) auth()->id()) {
                 return response()->json([
                     'valid' => false,
                     'message' => 'Ese código de docente ya fue utilizado.',
@@ -325,45 +339,7 @@ class OnboardingController extends Controller
                 ], 404);
             }
 
-            $directorName = $colegio->director?->name
-                ?: User::where('colegio_id', $colegio->id)->where('role', 'director')->value('name');
-
-            $assignedCourses = Course::query()
-                ->where('colegio_id', $colegio->id)
-                ->where(function ($query) use ($teacherInvite) {
-                    $query->where('teacher_invite_id', $teacherInvite->id);
-                    $ids = collect($teacherInvite->course_ids ?? [])->filter()->map(fn ($id) => (int) $id);
-                    if ($ids->isNotEmpty()) {
-                        $query->orWhereIn('id', $ids->all());
-                    }
-                })
-                ->withCount('students')
-                ->orderBy('subject_name')
-                ->get(['id', 'subject_name', 'grade', 'section'])
-                ->map(fn (Course $course) => [
-                    'id' => $course->id,
-                    'subject_name' => $course->subject_name,
-                    'grade' => $course->grade,
-                    'section' => $course->section,
-                    'students_count' => $course->students_count,
-                ])
-                ->values();
-
-            return response()->json([
-                'valid' => true,
-                'type' => 'teacher_invite',
-                'school' => [
-                    'id' => $colegio->id,
-                    'name' => $colegio->name,
-                    'invite_code' => $colegio->invite_code,
-                ],
-                'director' => $directorName,
-                'teacher_name' => $teacherInvite->name,
-                'assigned_courses' => $assignedCourses,
-                'message' => $assignedCourses->isNotEmpty()
-                    ? 'Código válido. Al finalizar, te vincularemos a tus cursos y alumnos preparados por el director.'
-                    : 'Código de docente válido. Te vincularemos al colegio y a las materias que el director te asigne.',
-            ]);
+            return response()->json($this->teacherInvitePayload($colegio, $teacherInvite));
         }
 
         $colegio = Colegio::with('director:id,name')
@@ -443,6 +419,9 @@ class OnboardingController extends Controller
                 'materias' => [],
                 'cursos_grados' => [],
                 'dias_clase' => ['lunes', 'martes', 'miercoles', 'jueves', 'viernes'],
+                'estilo_pedagogico' => 'clasica',
+                'modelo_pedagogico' => 'Clásica',
+                'lesson_template' => 'clasica',
                 'tono' => 'amigable',
                 'clases_semana' => 5,
                 'duracion_clase_min' => 60,
@@ -457,6 +436,107 @@ class OnboardingController extends Controller
         return response()->json([
             'redirect' => route('teacher.hub'),
         ]);
+    }
+
+    /**
+     * @return array{colegio: Colegio, invite: TeacherInvite}|array{error: string, field: string}
+     */
+    private function resolveTeacherCodes(string $schoolCode, string $inviteCode, ?User $user): array
+    {
+        $schoolCode = InviteCodeHelper::normalize($schoolCode);
+        $inviteCode = InviteCodeHelper::normalize($inviteCode);
+
+        if ($schoolCode === '' || $inviteCode === '') {
+            return [
+                'error' => 'Ingresa el código de la institución y tu código DOC-.',
+                'field' => 'school_code',
+            ];
+        }
+
+        $colegio = Colegio::with('director:id,name')->where('invite_code', $schoolCode)->first();
+        if (! $colegio) {
+            return [
+                'error' => 'El código de la institución no es válido.',
+                'field' => 'school_code',
+            ];
+        }
+
+        $invite = TeacherInvite::where('invite_code', $inviteCode)->first();
+        if (! $invite) {
+            return [
+                'error' => 'El código de invitación docente no es válido. Debe verse como DOC-8X92K.',
+                'field' => 'teacher_invite_code',
+            ];
+        }
+
+        if ((int) $invite->colegio_id !== (int) $colegio->id) {
+            return [
+                'error' => 'Ese código DOC- no pertenece a esta institución.',
+                'field' => 'teacher_invite_code',
+            ];
+        }
+
+        $claimedByOther = $invite->isClaimed()
+            && (! $user || (int) $invite->claimed_by !== (int) $user->id);
+
+        if ($claimedByOther) {
+            return [
+                'error' => 'Ese código de docente ya fue utilizado.',
+                'field' => 'teacher_invite_code',
+            ];
+        }
+
+        return [
+            'colegio' => $colegio,
+            'invite' => $invite,
+        ];
+    }
+
+    private function teacherInvitePayload(Colegio $colegio, TeacherInvite $teacherInvite): array
+    {
+        $directorName = $colegio->director?->name
+            ?: User::where('colegio_id', $colegio->id)->where('role', 'director')->value('name');
+
+        $assignedCourses = Course::query()
+            ->where('colegio_id', $colegio->id)
+            ->where(function ($query) use ($teacherInvite) {
+                $query->where('teacher_invite_id', $teacherInvite->id);
+                $ids = collect($teacherInvite->course_ids ?? [])->filter()->map(fn ($id) => (int) $id);
+                if ($ids->isNotEmpty()) {
+                    $query->orWhereIn('id', $ids->all());
+                }
+            })
+            ->withCount('students')
+            ->orderBy('subject_name')
+            ->get(['id', 'subject_name', 'grade', 'section'])
+            ->map(fn (Course $course) => [
+                'id' => $course->id,
+                'subject_name' => $course->subject_name,
+                'grade' => $course->grade,
+                'section' => $course->section,
+                'students_count' => (int) $course->students_count,
+            ])
+            ->values();
+
+        $studentsTotal = (int) $assignedCourses->sum('students_count');
+
+        return [
+            'valid' => true,
+            'type' => 'teacher_invite',
+            'school' => [
+                'id' => $colegio->id,
+                'name' => $colegio->name,
+                'invite_code' => $colegio->invite_code,
+            ],
+            'director' => $directorName,
+            'teacher_name' => $teacherInvite->name,
+            'assigned_courses' => $assignedCourses,
+            'students_total' => $studentsTotal,
+            'courses_total' => $assignedCourses->count(),
+            'message' => $assignedCourses->isNotEmpty()
+                ? 'Código válido. El director ya te preparó cursos y alumnos.'
+                : 'Código válido. Quedarás vinculado al colegio; el director aún puede asignarte cursos.',
+        ];
     }
 
     private function createOrUpdateDirectorSchool(User $user, string $nombreInstitucion): Colegio

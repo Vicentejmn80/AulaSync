@@ -66,7 +66,7 @@ class User extends Authenticatable
     }
 
     /**
-     * Plantilla pedagógica activa (Clásica, Instrucción Directa o Modelo 5E).
+     * Plantilla pedagógica activa (Clásica, 5E, proyectos, etc.).
      */
     public function getPreferredLessonStructureAttribute(): string
     {

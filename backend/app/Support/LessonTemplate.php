@@ -7,6 +7,7 @@ class LessonTemplate
     public const CLASSIC = 'clasica';
     public const DIRECT = 'directa';
     public const CONSTRUCTIVIST = 'constructivista';
+    public const PROJECT = 'proyecto';
 
     public static function normalize(string $id): string
     {
@@ -34,7 +35,12 @@ class LessonTemplate
             return self::CONSTRUCTIVIST;
         }
 
-        if (in_array($value, [self::CLASSIC, 'clasica', 'clásica', 'classic', 'tradicional'], true)
+        if (in_array($value, [self::PROJECT, 'pbl', 'proyecto_based', 'proyecto-based', 'basado en proyectos', 'aprendizaje basado en proyectos'], true)
+            || str_contains($value, 'proyecto')) {
+            return self::PROJECT;
+        }
+
+        if (in_array($value, [self::CLASSIC, 'clasica', 'clásica', 'classic', 'tradicional', 'clasico', 'clásico'], true)
             || str_contains($value, 'clasic')) {
             return self::CLASSIC;
         }
@@ -74,6 +80,7 @@ class LessonTemplate
         return match (self::normalize($id)) {
             self::DIRECT => 'Instrucción Directa',
             self::CONSTRUCTIVIST => 'Modelo 5E',
+            self::PROJECT => 'Basado en Proyectos',
             default => 'Clásica',
         };
     }
@@ -102,6 +109,13 @@ class LessonTemplate
                 ['key' => 'aplicacion', 'header' => 'APLICACIÓN', 'label' => 'Aplicación', 'color' => '#06B6D4', 'icon' => 'fa-solid fa-puzzle-piece', 'placeholder' => 'Transferencia a situaciones nuevas…'],
                 ['key' => 'evaluacion', 'header' => 'EVALUACIÓN', 'label' => 'Evaluación', 'color' => '#22C55E', 'icon' => 'fa-solid fa-clipboard-check', 'placeholder' => 'Verificación del aprendizaje logrado…'],
             ],
+            self::PROJECT => [
+                ['key' => 'desafio', 'header' => 'DESAFÍO', 'label' => 'Desafío', 'color' => '#F59E0B', 'icon' => 'fa-solid fa-bullseye', 'placeholder' => 'Pregunta esencial o reto auténtico que guía el proyecto…'],
+                ['key' => 'investigacion', 'header' => 'INVESTIGACIÓN', 'label' => 'Investigación', 'color' => '#7C3AED', 'icon' => 'fa-solid fa-magnifying-glass', 'placeholder' => 'Búsqueda de información, evidencias y trabajo colaborativo…'],
+                ['key' => 'creacion', 'header' => 'CREACIÓN', 'label' => 'Creación', 'color' => '#06B6D4', 'icon' => 'fa-solid fa-hammer', 'placeholder' => 'Diseño y elaboración del producto, prototipo o solución…'],
+                ['key' => 'presentacion', 'header' => 'PRESENTACIÓN', 'label' => 'Presentación', 'color' => '#EC4899', 'icon' => 'fa-solid fa-users', 'placeholder' => 'Comunicación de resultados ante la clase o la comunidad…'],
+                ['key' => 'reflexion', 'header' => 'REFLEXIÓN', 'label' => 'Reflexión', 'color' => '#22C55E', 'icon' => 'fa-solid fa-seedling', 'placeholder' => 'Metacognición, autoevaluación y aprendizajes transferibles…'],
+            ],
             default => [
                 ['key' => 'inicio', 'header' => 'INICIO', 'label' => 'Inicio', 'color' => '#7C3AED', 'icon' => 'fa-solid fa-play', 'placeholder' => 'Motivación y activación de saberes previos…'],
                 ['key' => 'desarrollo', 'header' => 'DESARROLLO', 'label' => 'Desarrollo', 'color' => '#06B6D4', 'icon' => 'fa-solid fa-layer-group', 'placeholder' => 'Actividades principales y práctica guiada…'],
@@ -123,6 +137,7 @@ class LessonTemplate
             self::sections(self::CLASSIC),
             self::sections(self::DIRECT),
             self::sections(self::CONSTRUCTIVIST),
+            self::sections(self::PROJECT),
         )));
     }
 
@@ -130,7 +145,7 @@ class LessonTemplate
     {
         $best = self::CLASSIC;
         $bestCount = 0;
-        foreach ([self::CLASSIC, self::DIRECT, self::CONSTRUCTIVIST] as $id) {
+        foreach ([self::CLASSIC, self::DIRECT, self::CONSTRUCTIVIST, self::PROJECT] as $id) {
             $count = 0;
             foreach (self::sections($id) as $section) {
                 if (preg_match('/\*\*\s*'.preg_quote($section, '/').'\s*\*\*/u', $text)) {

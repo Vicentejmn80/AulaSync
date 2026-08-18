@@ -20,6 +20,14 @@
                     @csrf
                     <input type="hidden" name="role" x-model="role">
                     <input type="hidden" name="school_code" x-model="schoolCode">
+                    <input type="hidden" name="teacher_invite_code" x-model="teacherInviteCode">
+                    <input type="hidden" name="lesson_template" x-model="lessonTemplate">
+                    <input type="hidden" name="modelo_pedagogico" x-model="lessonTemplate">
+                    <input type="hidden" name="clases_semana" x-model="clasesSemana">
+                    <input type="hidden" name="duracion_clase" x-model="duracionClase">
+                    <template x-for="day in classDays" :key="'day-'+day">
+                        <input type="hidden" name="dias[]" :value="day">
+                    </template>
                     <input type="hidden" name="family_code" x-model="familyValidated ? familyCode : ''">
                     <template x-for="id in selectedStudentIds" :key="id">
                         <input type="hidden" name="student_ids[]" :value="id">
@@ -83,190 +91,178 @@
                         </div>
                     </div>
 
-                    {{-- PASO 2: Bifurcación Profesor (Tarjetas + Código + Perfil en un solo paso) --}}
+                    {{-- DOCENTE: 3 pantallas (códigos → resumen → pedagogía) --}}
                     <div x-show="step === 2 && role === 'profesor'" x-cloak>
                         <div class="animate__animated animate__fadeIn">
-                            <h2 class="h5 fw-bold mb-3 text-center">¿Cómo te vinculas?</h2>
-                            <p class="text-muted text-center mb-4">Elige cómo conectarte a tu institución educativa.</p>
 
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                                {{-- Tarjeta 1: Tengo Código de Escuela --}}
-                                <button type="button" class="bifurcated-card text-start w-100"
-                                        :class="{ 'active': teacherPath === 'code' }"
-                                        @click="teacherPath = 'code'; showSchoolCode = true;">
-                                    <div class="flex flex-col items-center text-center gap-3 p-4">
-                                        <div class="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-500 to-cyan-400 shadow-lg">
-                                            <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/>
-                                            </svg>
-                                        </div>
-                                        <span class="role-title">Tengo Código de Escuela</span>
-                                        <span class="role-subtitle">Ingresa el código que te dio tu director para vincularte al colegio.</span>
-                                    </div>
-                                </button>
+                            {{-- PANTALLA 1: Validación de códigos --}}
+                            <div x-show="teacherStep === 1">
+                                <h2 class="h5 fw-bold mb-2 text-center text-slate-900">Valida tu vínculo escolar</h2>
+                                <p class="text-slate-600 text-center mb-5">Usa el código de la institución y el código DOC- que te dio el director.</p>
 
-                                {{-- Tarjeta 2: Soy Profesor Independiente --}}
-                                <button type="button" class="bifurcated-card text-start w-100"
-                                        :class="{ 'active': teacherPath === 'independent' }"
-                                        @click="openDemoModal">
-                                    <div class="flex flex-col items-center text-center gap-3 p-4">
-                                        <div class="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-fuchsia-500 to-violet-500 shadow-lg">
-                                            <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/>
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                                            </svg>
-                                        </div>
-                                        <span class="role-title">Soy Profesor Independiente</span>
-                                        <span class="role-subtitle">Activa tu suite personal de IA sin vínculo escolar.</span>
-                                    </div>
-                                </button>
-                            </div>
-
-                            {{-- Input de código escolar (se revela con animación) --}}
-                            <div x-show="showSchoolCode" x-cloak x-transition:enter="fade-in-custom" class="mb-6" style="position:relative;z-index:20;">
-                                <div class="rounded-2xl border border-violet-200/30 bg-white/[.045] p-4" @click.stop>
-                                    <label for="teacherInviteCode" class="form-label fw-semibold mb-2">Código de invitación docente</label>
-                                    <div class="d-flex flex-column flex-md-row gap-2">
-                                        <input id="teacherInviteCode"
-                                               type="text"
-                                               name="school_code_visible"
-                                               class="form-control rounded-3 flex-grow-1"
-                                               style="pointer-events:auto;position:relative;z-index:21;"
+                                <div class="mx-auto space-y-4" style="max-width:520px;">
+                                    <div>
+                                        <label class="ob-label" for="institutionCode">Código de la institución</label>
+                                        <input id="institutionCode" type="text" class="ob-input"
                                                x-model="schoolCode"
                                                @input="onSchoolCodeInput"
-                                               @keydown.enter.prevent="validateSchoolCode"
-                                               placeholder="Ej: DOC-8X92K"
-                                               autocomplete="off"
-                                               autocapitalize="characters"
-                                               spellcheck="false"
-                                               maxlength="20"
-                                               inputmode="text">
-                                        <button type="button"
-                                                class="btn btn-outline-primary rounded-3 px-3"
-                                                :disabled="!schoolCode.trim() || validatingCode"
-                                                @click="validateSchoolCode">
-                                            <span x-show="!validatingCode">Validar</span>
-                                            <span x-show="validatingCode">
-                                                <i class="fa-solid fa-spinner fa-spin"></i> Validando...
-                                            </span>
-                                        </button>
+                                               placeholder="Ej: DXX-6701"
+                                               autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="20">
                                     </div>
-                                    <p class="small mt-2 mb-0"
+                                    <div>
+                                        <label class="ob-label" for="teacherInviteCode">Código de invitación docente</label>
+                                        <input id="teacherInviteCode" type="text" class="ob-input"
+                                               x-model="teacherInviteCode"
+                                               @input="onSchoolCodeInput"
+                                               @keydown.enter.prevent="validateTeacherCodes"
+                                               placeholder="Ej: DOC-8X92K"
+                                               autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="20">
+                                    </div>
+                                    <button type="button" class="ob-btn-primary w-100"
+                                            :disabled="!schoolCode.trim() || !teacherInviteCode.trim() || validatingCode"
+                                            @click="validateTeacherCodes">
+                                        <span x-show="!validatingCode">Validar</span>
+                                        <span x-show="validatingCode" x-cloak>
+                                            <i class="fa-solid fa-spinner fa-spin me-1"></i> Validando…
+                                        </span>
+                                    </button>
+                                    <p class="small mb-0 text-center"
                                        :class="{
                                            'text-success': schoolValidationStatus === 'ok',
                                            'text-danger': schoolValidationStatus === 'error',
-                                           'text-muted': schoolValidationStatus === 'idle'
+                                           'text-slate-500': schoolValidationStatus === 'idle'
                                        }"
-                                       x-text="schoolValidationMessage || 'Usa el código DOC- que te dio el director. También sirve el código institucional del colegio.'"></p>
-                                    <template x-if="schoolValidated">
-                                        <div class="small text-success mt-2">
-                                            <i class="fa-solid fa-check-circle me-1"></i>
-                                            Vinculado a <strong x-text="validatedSchoolName"></strong>
-                                            <template x-if="validatedSchoolDirector">
-                                                <span> · Director: <strong x-text="validatedSchoolDirector"></strong></span>
-                                            </template>
-                                        </div>
-                                    </template>
+                                       x-text="schoolValidationMessage || 'Ambos códigos deben coincidir con el mismo colegio.'"></p>
+                                </div>
+
+                                <p class="text-center mt-4 mb-0">
+                                    <button type="button" class="btn btn-link text-indigo-600 text-sm" @click="openDemoModal">
+                                        ¿No tienes código? Entrar en modo independiente
+                                    </button>
+                                </p>
+
+                                <div class="d-flex justify-content-between mt-4">
+                                    <button type="button" class="btn btn-light rounded-3 px-4" @click="step = 1">Atrás</button>
+                                    <button type="button" class="ob-btn-primary" :disabled="!schoolValidated" @click="teacherStep = 2">
+                                        Continuar <i class="fa-solid fa-arrow-right ms-1"></i>
+                                    </button>
                                 </div>
                             </div>
 
-                            {{-- Perfil docente (se revela solo tras validación exitosa) --}}
-                            <div x-show="schoolValidated" x-cloak x-transition:enter="fade-in-custom" class="mb-4">
-                                <hr class="border-white/10 my-6">
-                                <template x-if="schoolCodeType === 'teacher_invite'">
-                                    <div class="mb-4 rounded-2xl border border-emerald-400/20 bg-emerald-400/5 p-4">
-                                        <h3 class="h5 fw-bold mb-2 text-center">Tu aula ya está lista</h3>
-                                        <p class="text-muted text-center mb-3">El director te asignó estos cursos. Al finalizar, los alumnos y la configuración quedan vinculados a tu cuenta.</p>
-                                        <ul class="mb-0 ps-3">
+                            {{-- PANTALLA 2: Resumen académico --}}
+                            <div x-show="teacherStep === 2" x-cloak>
+                                <h2 class="h5 fw-bold mb-2 text-center text-slate-900">Tu aula ya está lista</h2>
+                                <p class="text-slate-600 text-center mb-4">El director preconfiguró estos cursos. Al terminar, quedan vinculados a tu cuenta.</p>
+
+                                <div class="wow-card mx-auto">
+                                    <div class="flex items-start justify-between gap-3 mb-4">
+                                        <div>
+                                            <p class="text-[11px] font-bold uppercase tracking-[.2em] text-indigo-600 mb-1">Colegio</p>
+                                            <h3 class="text-xl font-black text-slate-900 mb-0" x-text="validatedSchoolName || 'Tu institución'"></h3>
+                                            <p class="text-sm text-slate-600 mb-0" x-show="validatedSchoolDirector">
+                                                Director: <strong class="text-slate-800" x-text="validatedSchoolDirector"></strong>
+                                            </p>
+                                            <p class="text-sm text-slate-600 mb-0" x-show="validatedTeacherName">
+                                                Perfil: <strong class="text-slate-800" x-text="validatedTeacherName"></strong>
+                                            </p>
+                                        </div>
+                                        <div class="wow-stat">
+                                            <span class="wow-stat-value" x-text="studentsTotal"></span>
+                                            <span class="wow-stat-label">alumnos</span>
+                                        </div>
+                                    </div>
+
+                                    <div class="grid grid-cols-2 gap-3 mb-4">
+                                        <div class="wow-mini">
+                                            <span class="wow-stat-value text-indigo-700" x-text="assignedCourses.length"></span>
+                                            <span class="wow-stat-label">materias</span>
+                                        </div>
+                                        <div class="wow-mini">
+                                            <span class="wow-stat-value text-violet-700" x-text="teacherInviteCode"></span>
+                                            <span class="wow-stat-label">tu código</span>
+                                        </div>
+                                    </div>
+
+                                    <p class="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Materias y grados asignados</p>
+                                    <template x-if="assignedCourses.length">
+                                        <ul class="space-y-2 mb-0">
                                             <template x-for="course in assignedCourses" :key="course.id || (course.subject_name + course.grade)">
-                                                <li class="mb-1">
-                                                    <strong x-text="course.subject_name"></strong>
-                                                    · <span x-text="course.grade"></span>
-                                                    <span x-show="course.section" x-text="' / ' + course.section"></span>
-                                                    <span class="text-muted" x-show="course.students_count != null" x-text="' · ' + course.students_count + ' alumno(s)'"></span>
+                                                <li class="wow-course">
+                                                    <div>
+                                                        <strong class="text-slate-900" x-text="course.subject_name"></strong>
+                                                        <span class="text-slate-600" x-text="' · ' + (course.grade || '') + (course.section ? ' / ' + course.section : '')"></span>
+                                                    </div>
+                                                    <span class="wow-badge" x-text="(course.students_count || 0) + ' alumno(s)'"></span>
                                                 </li>
                                             </template>
                                         </ul>
-                                        <p class="small text-muted mt-3 mb-0" x-show="assignedCourses.length === 0">Aún no hay cursos asignados a este código. El director puede crearlos ahora; tú ya quedarás vinculado al colegio.</p>
-                                    </div>
-                                </template>
-                                <h3 class="h5 fw-bold mb-3 text-center">Completa tu perfil docente</h3>
-                                <p class="text-muted text-center mb-4" x-show="schoolCodeType === 'teacher_invite'">Solo tu perfil pedagógico. Las materias y alumnos los preparó el director.</p>
-                                <p class="text-muted text-center mb-4" x-show="schoolCodeType !== 'teacher_invite'">El director te asigna las materias. Completa solo tu perfil pedagógico.</p>
-                                <div class="row g-3">
-                                    <div class="col-12 col-md-6">
-                                        <label class="form-label">Nivel educativo</label>
-                                        <select class="form-select rounded-3" name="nivel_educativo">
-                                            <option value="">Selecciona...</option>
-                                            <option value="primaria">Primaria</option>
-                                            <option value="secundaria">Secundaria</option>
-                                            <option value="bachillerato">Bachillerato</option>
-                                        </select>
-                                    </div>
-                                    <div class="col-12 col-md-6">
-                                        <label class="form-label">Clases por semana</label>
-                                        <input type="number" min="1" max="20" class="form-control rounded-3" name="clases_semana" placeholder="5">
-                                    </div>
+                                    </template>
+                                    <p class="text-sm text-slate-500 mb-0" x-show="assignedCourses.length === 0">
+                                        Aún no hay cursos en esta invitación. El director puede asignártelos; tú ya quedarás en el colegio.
+                                    </p>
+                                </div>
 
-                                    <div class="col-12" x-show="schoolCodeType !== 'teacher_invite'">
-                                        <label class="form-label fw-semibold mb-3">Materias que enseñas *</label>
-                                        <p class="text-muted small mb-3">Selecciona todas las que apliquen.</p>
-                                        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-                                            <x-onboarding.subject-card value="matematicas" label="Matemáticas" icon='<svg class="w-10 h-10 text-violet-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>' />
-                                            <x-onboarding.subject-card value="ciencias" label="Ciencias" icon='<svg class="w-10 h-10 text-violet-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"/></svg>' />
-                                            <x-onboarding.subject-card value="lenguaje" label="Lenguaje" icon='<svg class="w-10 h-10 text-violet-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg>' />
-                                            <x-onboarding.subject-card value="historia" label="Historia" icon='<svg class="w-10 h-10 text-violet-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>' />
-                                            <x-onboarding.subject-card value="ingles" label="Inglés" icon='<svg class="w-10 h-10 text-violet-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129"/></svg>' />
-                                            <x-onboarding.subject-card value="arte" label="Arte" icon='<svg class="w-10 h-10 text-violet-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01"/></svg>' />
-                                            <x-onboarding.subject-card value="musica" label="Música" icon='<svg class="w-10 h-10 text-violet-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"/></svg>' />
-                                            <x-onboarding.subject-card value="educacion_fisica" label="Ed. Física" icon='<svg class="w-10 h-10 text-violet-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M14 10l-2 1m0 0l-2-1m2 1v2.5M20 7l-2 1m2-1l-2-1m2 1v2.5M14 4l-2-1-2 1M4 7l2-1M4 7l2 1M4 7v2.5M12 21l-2-1m2 1l2-1m-2 1v-2.5M6 18l-2-1v-2.5M18 18l2-1v-2.5"/></svg>' />
-                                            <x-onboarding.subject-card value="tecnologia" label="Tecnología" icon='<svg class="w-10 h-10 text-violet-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>' />
-                                            <x-onboarding.subject-card value="filosofia" label="Filosofía" icon='<svg class="w-10 h-10 text-violet-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>' />
-                                            <x-onboarding.subject-card value="otro" label="Otra materia" icon='<svg class="w-10 h-10 text-fuchsia-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>' />
-                                        </div>
-                                        <div x-show="showCustomInput" x-cloak class="fade-in-custom">
-                                            <label class="form-label text-muted small">Nombre de la materia personalizada *</label>
-                                            <input type="text" x-model="customSubject" class="form-control rounded-3" placeholder="Ej: Robótica, Ajedrez, Emprendimiento..." maxlength="120">
-                                        </div>
-                                        <input type="hidden" name="otra_materia" :value="customSubject">
-                                        <template x-for="subj in selectedSubjects.filter(s => s !== 'otro')" :key="subj">
-                                            <input type="hidden" name="materias[]" :value="subj">
-                                        </template>
-                                        <template x-if="isOtroSelected">
-                                            <input type="hidden" name="materias[]" value="otro">
-                                        </template>
-                                    </div>
-
-                                    <div class="col-12" x-show="schoolCodeType !== 'teacher_invite'">
-                                        <label class="form-label">Grados / cursos</label>
-                                        <div class="d-flex flex-wrap gap-2">
-                                            <label class="chip"><input type="checkbox" name="cursos[]" value="1ro"> 1ro</label>
-                                            <label class="chip"><input type="checkbox" name="cursos[]" value="2do"> 2do</label>
-                                            <label class="chip"><input type="checkbox" name="cursos[]" value="3ro"> 3ro</label>
-                                            <label class="chip"><input type="checkbox" name="cursos[]" value="4to"> 4to</label>
-                                            <label class="chip"><input type="checkbox" name="cursos[]" value="5to"> 5to</label>
-                                            <label class="chip"><input type="checkbox" name="cursos[]" value="6to"> 6to</label>
-                                        </div>
-                                    </div>
-                                    <div class="col-12">
-                                        <label class="form-label">Días de clase</label>
-                                        <div class="d-flex flex-wrap gap-2">
-                                            <label class="chip"><input type="checkbox" name="dias[]" value="lunes"> Lunes</label>
-                                            <label class="chip"><input type="checkbox" name="dias[]" value="martes"> Martes</label>
-                                            <label class="chip"><input type="checkbox" name="dias[]" value="miercoles"> Miércoles</label>
-                                            <label class="chip"><input type="checkbox" name="dias[]" value="jueves"> Jueves</label>
-                                            <label class="chip"><input type="checkbox" name="dias[]" value="viernes"> Viernes</label>
-                                        </div>
-                                    </div>
+                                <div class="d-flex justify-content-between mt-4">
+                                    <button type="button" class="btn btn-light rounded-3 px-4" @click="teacherStep = 1">Atrás</button>
+                                    <button type="button" class="ob-btn-primary" @click="teacherStep = 3">
+                                        Continuar <i class="fa-solid fa-arrow-right ms-1"></i>
+                                    </button>
                                 </div>
                             </div>
 
-                            {{-- Botones de navegación --}}
-                            <div class="d-flex justify-content-between mt-4">
-                                <button type="button" class="btn btn-light rounded-3 px-4" @click="teacherPath = ''; showSchoolCode = false; step = 1">Atrás</button>
-                                <button type="button" class="btn btn-primary rounded-3 px-4" :disabled="!schoolValidated" @click="handleSubmit">
-                                    Finalizar configuración <i class="fa-solid fa-arrow-right ms-1"></i>
-                                </button>
+                            {{-- PANTALLA 3: Configuración pedagógica --}}
+                            <div x-show="teacherStep === 3" x-cloak>
+                                <h2 class="h5 fw-bold mb-2 text-center text-slate-900">Personaliza tu IA</h2>
+                                <p class="text-slate-600 text-center mb-5">Solo dos datos. Las planificaciones nuevas usarán este modelo automáticamente.</p>
+
+                                <div class="mb-5">
+                                    <label class="ob-label">Días y horas de clase</label>
+                                    <div class="d-flex flex-wrap gap-2 mb-3">
+                                        <template x-for="opt in dayOptions" :key="opt.value">
+                                            <button type="button" class="day-chip"
+                                                    :class="{ 'on': classDays.includes(opt.value) }"
+                                                    @click="toggleDay(opt.value)"
+                                                    x-text="opt.label"></button>
+                                        </template>
+                                    </div>
+                                    <div class="grid grid-cols-2 gap-3">
+                                        <div>
+                                            <label class="ob-label" for="clasesSemana">Clases por semana</label>
+                                            <input id="clasesSemana" type="number" min="1" max="20" class="ob-input" x-model.number="clasesSemana">
+                                        </div>
+                                        <div>
+                                            <label class="ob-label" for="duracionClase">Minutos por clase</label>
+                                            <input id="duracionClase" type="number" min="15" max="240" class="ob-input" x-model.number="duracionClase">
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <label class="ob-label">Modelo de enseñanza</label>
+                                <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-2">
+                                    <button type="button" class="model-card" :class="{ 'on': lessonTemplate === 'clasica' }" @click="lessonTemplate = 'clasica'">
+                                        <span class="model-emoji">📘</span>
+                                        <strong>Clásico</strong>
+                                        <small>Inicio · Desarrollo · Cierre</small>
+                                    </button>
+                                    <button type="button" class="model-card" :class="{ 'on': lessonTemplate === 'constructivista' }" @click="lessonTemplate = 'constructivista'">
+                                        <span class="model-emoji">🔬</span>
+                                        <strong>Modelo 5E</strong>
+                                        <small>Explorar, explicar y aplicar</small>
+                                    </button>
+                                    <button type="button" class="model-card" :class="{ 'on': lessonTemplate === 'proyecto' }" @click="lessonTemplate = 'proyecto'">
+                                        <span class="model-emoji">🛠️</span>
+                                        <strong>Basado en Proyectos</strong>
+                                        <small>Desafío, creación y reflexión</small>
+                                    </button>
+                                </div>
+                                <p class="text-xs text-slate-500 mb-0">Puedes cambiarlo después desde el calendario. La IA no te lo volverá a preguntar.</p>
+
+                                <div class="d-flex justify-content-between mt-4">
+                                    <button type="button" class="btn btn-light rounded-3 px-4" @click="teacherStep = 2">Atrás</button>
+                                    <button type="button" class="ob-btn-primary" :disabled="classDays.length === 0 || !lessonTemplate" @click="handleSubmit">
+                                        Ir a mi hub <i class="fa-solid fa-arrow-right ms-1"></i>
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -550,6 +546,108 @@
             gap: 0.45rem;
         }
         .chip input { accent-color: #6366f1; }
+        .ob-label {
+            display: block;
+            margin-bottom: 0.35rem;
+            font-size: 0.75rem;
+            font-weight: 700;
+            letter-spacing: .06em;
+            text-transform: uppercase;
+            color: #334155;
+        }
+        .ob-input {
+            width: 100%;
+            border-radius: 0.75rem;
+            border: 1px solid #cbd5e1;
+            background: #ffffff !important;
+            color: #0f172a !important;
+            font-weight: 600;
+            padding: 0.75rem 1rem;
+            box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+        }
+        .ob-input::placeholder { color: #94a3b8 !important; font-weight: 500; }
+        .ob-input:focus {
+            outline: none;
+            border-color: #6366f1;
+            background: #ffffff !important;
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+        }
+        .ob-btn-primary {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: .4rem;
+            border: 0;
+            border-radius: 0.75rem;
+            background: #4f46e5;
+            color: #fff;
+            font-weight: 700;
+            padding: 0.7rem 1.25rem;
+            box-shadow: 0 8px 20px rgba(79, 70, 229, 0.25);
+        }
+        .ob-btn-primary:hover:not(:disabled) { background: #4338ca; color: #fff; }
+        .ob-btn-primary:disabled { opacity: .55; cursor: not-allowed; }
+        .wow-card {
+            max-width: 560px;
+            border-radius: 1.25rem;
+            border: 1px solid #e0e7ff;
+            background: linear-gradient(180deg, #ffffff 0%, #eef2ff 100%);
+            padding: 1.5rem;
+            box-shadow: 0 18px 40px rgba(79, 70, 229, 0.12);
+            text-align: left;
+        }
+        .wow-stat, .wow-mini {
+            border-radius: 1rem;
+            background: #fff;
+            border: 1px solid #e2e8f0;
+            padding: .65rem .85rem;
+            text-align: center;
+        }
+        .wow-stat-value { display: block; font-weight: 900; color: #312e81; font-size: 1.15rem; }
+        .wow-stat-label { display: block; font-size: .7rem; text-transform: uppercase; letter-spacing: .08em; color: #64748b; font-weight: 700; }
+        .wow-course {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: .75rem;
+            background: #fff;
+            border: 1px solid #e2e8f0;
+            border-radius: .85rem;
+            padding: .7rem .9rem;
+        }
+        .wow-badge {
+            flex-shrink: 0;
+            font-size: .7rem;
+            font-weight: 700;
+            color: #4338ca;
+            background: #eef2ff;
+            border-radius: 999px;
+            padding: .2rem .6rem;
+        }
+        .day-chip {
+            border: 1px solid #cbd5e1;
+            background: #fff;
+            color: #334155;
+            border-radius: 999px;
+            padding: .4rem .85rem;
+            font-size: .85rem;
+            font-weight: 600;
+        }
+        .day-chip.on { background: #4f46e5; border-color: #4f46e5; color: #fff; }
+        .model-card {
+            display: flex;
+            flex-direction: column;
+            gap: .25rem;
+            text-align: left;
+            border: 1px solid #e2e8f0;
+            background: #fff;
+            border-radius: 1rem;
+            padding: 1rem;
+        }
+        .model-card strong { color: #0f172a; }
+        .model-card small { color: #64748b; }
+        .model-card.on { border-color: #4f46e5; box-shadow: 0 0 0 3px rgba(79,70,229,.18); background: #eef2ff; }
+        .model-emoji { font-size: 1.3rem; }
         .onboarding-spinner {
             width: 64px;
             height: 64px;
@@ -630,6 +728,19 @@
             box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.2);
             color: #ffffff;
         }
+        html.dark .ob-label { color: #e2e8f0; }
+        html.dark .ob-input,
+        html.dark .ob-input:focus {
+            background: #ffffff !important;
+            color: #0f172a !important;
+            border-color: #cbd5e1;
+        }
+        html.dark .wow-card { background: linear-gradient(180deg, #ffffff 0%, #eef2ff 100%); }
+        html.dark .wow-course, html.dark .wow-stat, html.dark .wow-mini, html.dark .model-card {
+            background: #fff;
+            color: #0f172a;
+        }
+        html.dark .model-card strong, html.dark .wow-course strong { color: #0f172a; }
         html.dark .theme-toggle-btn { background: rgba(15, 23, 42, 0.75); border-color: rgba(148, 163, 184, 0.28); color: #e2e8f0; }
     </style>
     @endpush
@@ -655,6 +766,22 @@
             Alpine.data('onboardingWizard', () => ({
                 step: @json($preselectedRole ? 2 : 1),
                 role: @json($preselectedRole ?? ''),
+                teacherStep: 1,
+                teacherInviteCode: '',
+                lessonTemplate: 'clasica',
+                classDays: ['lunes', 'martes', 'miercoles', 'jueves', 'viernes'],
+                clasesSemana: 5,
+                duracionClase: 45,
+                studentsTotal: 0,
+                validatedTeacherName: '',
+                dayOptions: [
+                    { value: 'lunes', label: 'Lunes' },
+                    { value: 'martes', label: 'Martes' },
+                    { value: 'miercoles', label: 'Miércoles' },
+                    { value: 'jueves', label: 'Jueves' },
+                    { value: 'viernes', label: 'Viernes' },
+                    { value: 'sabado', label: 'Sábado' },
+                ],
                 teacherPath: @json(($preselectedRole ?? '') === 'profesor' ? 'code' : ''),
                 showSchoolCode: @json(($preselectedRole ?? '') === 'profesor' || ($preselectedRole ?? '') === 'representante'),
                 showDemoModal: false,
@@ -694,7 +821,10 @@
                     if (this.role === 'director' || this.role === 'representante') {
                         return this.step === 1 ? 33 : 100;
                     }
-                    return this.step === 1 ? 20 : (this.schoolValidated ? 80 : 45);
+                    if (this.step === 1) return 15;
+                    if (this.teacherStep === 1) return 40;
+                    if (this.teacherStep === 2) return 70;
+                    return 92;
                 },
 
                 get isOtroSelected() {
@@ -703,6 +833,7 @@
 
                 selectRole(value) {
                     this.role = value;
+                    this.teacherStep = 1;
                     if (value !== 'profesor') {
                         this.resetSchoolValidation();
                         this.teacherPath = '';
@@ -713,6 +844,15 @@
                     }
                     if (value === 'representante' || value === 'profesor') {
                         this.showSchoolCode = true;
+                    }
+                },
+
+                toggleDay(value) {
+                    const index = this.classDays.indexOf(value);
+                    if (index > -1) {
+                        this.classDays.splice(index, 1);
+                    } else {
+                        this.classDays.push(value);
                     }
                 },
 
@@ -769,24 +909,86 @@
 
                 resetSchoolValidation() {
                     this.schoolCode = '';
+                    this.teacherInviteCode = '';
                     this.schoolCodeType = '';
                     this.assignedCourses = [];
+                    this.studentsTotal = 0;
+                    this.validatedTeacherName = '';
                     this.schoolValidated = false;
                     this.validatingCode = false;
                     this.schoolValidationStatus = 'idle';
                     this.schoolValidationMessage = '';
                     this.validatedSchoolName = '';
                     this.validatedSchoolDirector = '';
+                    this.teacherStep = 1;
                 },
 
                 onSchoolCodeInput() {
                     this.schoolValidated = false;
                     this.schoolCodeType = '';
                     this.assignedCourses = [];
+                    this.studentsTotal = 0;
+                    this.validatedTeacherName = '';
                     this.schoolValidationStatus = 'idle';
                     this.schoolValidationMessage = '';
                     this.validatedSchoolName = '';
                     this.validatedSchoolDirector = '';
+                },
+
+                async validateTeacherCodes() {
+                    const school = this.schoolCode.trim();
+                    const invite = this.teacherInviteCode.trim();
+                    if (!school || !invite) {
+                        this.schoolValidationStatus = 'error';
+                        this.schoolValidationMessage = 'Ingresa el código de la institución y tu código DOC-.';
+                        return;
+                    }
+                    this.validatingCode = true;
+                    this.schoolValidationStatus = 'idle';
+                    this.schoolValidationMessage = '';
+                    try {
+                        const response = await fetch('{{ route('api.validate-school-code') }}', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-CSRF-TOKEN': document.querySelector('input[name="_token"]')?.value ?? '',
+                                'Accept': 'application/json',
+                            },
+                            body: JSON.stringify({
+                                school_code: school,
+                                teacher_invite_code: invite,
+                            }),
+                        });
+                        const payload = await response.json();
+                        if (!response.ok || !payload.valid) {
+                            this.schoolValidated = false;
+                            this.schoolCodeType = '';
+                            this.assignedCourses = [];
+                            this.studentsTotal = 0;
+                            this.schoolValidationStatus = 'error';
+                            this.schoolValidationMessage = payload.message || 'Códigos no válidos.';
+                            this.validatedSchoolName = '';
+                            this.validatedSchoolDirector = '';
+                            this.validatedTeacherName = '';
+                            return;
+                        }
+                        this.schoolValidated = true;
+                        this.schoolValidationStatus = 'ok';
+                        this.schoolCodeType = payload.type || 'teacher_invite';
+                        this.assignedCourses = payload.assigned_courses || [];
+                        this.studentsTotal = payload.students_total ?? this.assignedCourses.reduce((sum, c) => sum + (c.students_count || 0), 0);
+                        this.validatedSchoolName = payload.school?.name ?? '';
+                        this.validatedSchoolDirector = payload.director ?? '';
+                        this.validatedTeacherName = payload.teacher_name ?? '';
+                        this.schoolValidationMessage = payload.message || 'Códigos válidos.';
+                        this.teacherStep = 2;
+                    } catch {
+                        this.schoolValidated = false;
+                        this.schoolValidationStatus = 'error';
+                        this.schoolValidationMessage = 'No se pudo validar. Intenta nuevamente.';
+                    } finally {
+                        this.validatingCode = false;
+                    }
                 },
 
                 async validateSchoolCode() {
@@ -838,23 +1040,25 @@
 
                 validateStep2() {
                     if (this.role === 'profesor') {
-                        if (!this.schoolCode.trim()) {
-                            alert('Ingresa el código de escuela para continuar');
+                        if (!this.schoolCode.trim() || !this.teacherInviteCode.trim()) {
+                            alert('Ingresa el código de la institución y tu código DOC-');
+                            this.teacherStep = 1;
                             return false;
                         }
                         if (!this.schoolValidated) {
-                            alert('Debes validar un código de escuela válido antes de finalizar');
+                            alert('Debes validar ambos códigos antes de finalizar');
+                            this.teacherStep = 1;
                             return false;
                         }
-                        if (this.schoolCodeType !== 'teacher_invite') {
-                            if (this.selectedSubjects.length === 0) {
-                                alert('Por favor selecciona al menos una materia');
-                                return false;
-                            }
-                            if (this.isOtroSelected && !this.customSubject.trim()) {
-                                alert('Por favor escribe el nombre de la materia personalizada');
-                                return false;
-                            }
+                        if (!this.classDays.length) {
+                            alert('Elige al menos un día de clase');
+                            this.teacherStep = 3;
+                            return false;
+                        }
+                        if (!this.lessonTemplate) {
+                            alert('Elige un modelo de enseñanza');
+                            this.teacherStep = 3;
+                            return false;
                         }
                     }
                     if (this.role === 'representante') {
@@ -910,6 +1114,10 @@
                         const schoolInput = form?.querySelector('input[name="school_code"]');
                         if (schoolInput) {
                             schoolInput.value = this.schoolCode || '';
+                        }
+                        const inviteInput = form?.querySelector('input[name="teacher_invite_code"]');
+                        if (inviteInput) {
+                            inviteInput.value = this.teacherInviteCode || '';
                         }
                         form.submit();
                     }, 2400);

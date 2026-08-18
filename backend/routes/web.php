@@ -321,7 +321,7 @@ Route::middleware(['auth'])->group(function () {
             // API: Guardar preferencia de plantilla de clase
             Route::post('/teacher/api/lesson-template', function (Illuminate\Http\Request $request) {
                 $data = $request->validate([
-                    'lesson_template' => 'required|in:clasica,directa,constructivista',
+                    'lesson_template' => 'required|in:clasica,directa,constructivista,proyecto',
                     'activity_id' => 'nullable|integer',
                     'activity_ids' => 'nullable|array',
                     'activity_ids.*' => 'integer',

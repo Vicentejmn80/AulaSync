@@ -6866,6 +6866,7 @@ function teacherHub() {
                 clasica: ['INICIO', 'DESARROLLO', 'CIERRE'],
                 directa: ['MOTIVACIÓN', 'PRESENTACIÓN', 'PRÁCTICA GUIADA', 'CIERRE REFLEXIVO'],
                 constructivista: ['ACTIVACIÓN', 'EXPLORACIÓN', 'EXPLICACIÓN', 'APLICACIÓN', 'EVALUACIÓN'],
+                proyecto: ['DESAFÍO', 'INVESTIGACIÓN', 'CREACIÓN', 'PRESENTACIÓN', 'REFLEXIÓN'],
             };
             let best = window.novaLessonTemplate || 'clasica';
             let bestCount = 0;
@@ -6903,12 +6904,19 @@ function teacherHub() {
                     { key: 'aplicacion', header: 'APLICACIÓN', label: 'Aplicación', color: '#06B6D4', icon: 'fa-solid fa-puzzle-piece', placeholder: 'Transferencia a situaciones nuevas…' },
                     { key: 'evaluacion', header: 'EVALUACIÓN', label: 'Evaluación', color: '#22C55E', icon: 'fa-solid fa-clipboard-check', placeholder: 'Verificación del aprendizaje logrado…' },
                 ],
+                proyecto: [
+                    { key: 'desafio', header: 'DESAFÍO', label: 'Desafío', color: '#F59E0B', icon: 'fa-solid fa-bullseye', placeholder: 'Pregunta esencial o reto auténtico…' },
+                    { key: 'investigacion', header: 'INVESTIGACIÓN', label: 'Investigación', color: '#7C3AED', icon: 'fa-solid fa-magnifying-glass', placeholder: 'Búsqueda de información y trabajo colaborativo…' },
+                    { key: 'creacion', header: 'CREACIÓN', label: 'Creación', color: '#06B6D4', icon: 'fa-solid fa-hammer', placeholder: 'Diseño y elaboración del producto…' },
+                    { key: 'presentacion', header: 'PRESENTACIÓN', label: 'Presentación', color: '#EC4899', icon: 'fa-solid fa-users', placeholder: 'Comunicación de resultados…' },
+                    { key: 'reflexion', header: 'REFLEXIÓN', label: 'Reflexión', color: '#22C55E', icon: 'fa-solid fa-seedling', placeholder: 'Metacognición y aprendizajes transferibles…' },
+                ],
             };
             return defs[id] || defs.clasica;
         },
 
         lessonTemplateLabel() {
-            const labels = { clasica: 'Clásica', directa: 'Instrucción Directa', constructivista: 'Modelo 5E' };
+            const labels = { clasica: 'Clásica', directa: 'Instrucción Directa', constructivista: 'Modelo 5E', proyecto: 'Basado en Proyectos' };
             return labels[this.phaseEdit?.template] || labels.clasica;
         },
 

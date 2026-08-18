@@ -800,7 +800,7 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             "REGLAS DE ORO — DESCRIPCIONES PEDAGÓGICAS (createActivity Y bulkPlan):",
             "- OBLIGATORIO: la plantilla activa del profesor es «{$templateLabel}» (id interno: {$lessonTemplate}).",
             "- Estructura EXACTA en Markdown, encabezados en MAYÚSCULAS y negrita, en este orden: {$templateSections}.",
-            "- PROHIBIDO usar encabezados de otra plantilla (INICIO/DESARROLLO/CIERRE, MOTIVACIÓN/PRESENTACIÓN, o 5E) si no coinciden con la plantilla activa.",
+            "- PROHIBIDO usar encabezados de otra plantilla (INICIO/DESARROLLO/CIERRE, MOTIVACIÓN/PRESENTACIÓN, 5E o DESAFÍO/INVESTIGACIÓN) si no coinciden con la plantilla activa.",
             "- Riqueza: al menos tres párrafos sustantivos separados por línea en blanco; listas y **negritas**.",
             "",
             "MAPA DE INTENCIONES → HERRAMIENTA:",

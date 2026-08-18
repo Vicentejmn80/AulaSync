@@ -438,7 +438,7 @@ class ActivitiesController extends Controller
             'description' => ['nullable', 'string', 'max:30000'],
             'phases' => ['nullable', 'array'],
             'phases.*' => ['nullable', 'string', 'max:10000'],
-            'template' => ['nullable', 'string', 'in:clasica,directa,constructivista'],
+            'template' => ['nullable', 'string', 'in:clasica,directa,constructivista,proyecto'],
         ]);
 
         $description = trim((string) ($data['description'] ?? ''));

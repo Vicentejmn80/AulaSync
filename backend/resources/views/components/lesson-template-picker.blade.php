@@ -58,7 +58,7 @@ window.novaLessonTemplate = window.novaLessonTemplate || @json(auth()->user()?->
             <div class="h-px bg-white/5 my-4"></div>
 
             {{-- 3 Template Cards --}}
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                 <template x-for="tpl in templates" :key="tpl.id">
                     <button
                         type="button"
@@ -126,7 +126,7 @@ window.novaLessonTemplate = window.novaLessonTemplate || @json(auth()->user()?->
                     <strong class="text-gray-300">¿Cuál es la mejor?</strong>
                     La estructura <em>Clásica</em> es la más usada en Latinoamérica y funciona para cualquier asignatura.
                     <em>Instrucción Directa</em> es ideal cuando introduces contenido nuevo de forma explícita.
-                    <em>Modelo 5E</em> (constructivismo) es excelente para ciencias y proyectos donde el alumno descubre el conocimiento.
+                    <em>Modelo 5E</em> es excelente para ciencias. <em>Basado en Proyectos</em> encaja cuando el curso gira alrededor de un reto auténtico.
                     <strong class="text-gray-300">No hay una respuesta única</strong>: elige la que va con tu estilo.
                 </p>
             </div>
@@ -186,6 +186,18 @@ function lessonTemplatePicker() {
                 { label: 'EXPLICACIÓN', color: '#7C3AED', preview: 'El docente formaliza el concepto. Se utiliza el lenguaje disciplinar y se sistematiza el aprendizaje.' },
                 { label: 'APLICACIÓN',  color: '#06B6D4', preview: 'Transferencia del conocimiento a situaciones nuevas. Resolución de problemas, proyectos o debates.' },
                 { label: 'EVALUACIÓN',  color: '#22C55E', preview: 'Verificación del aprendizaje logrado. Autoevaluación, co-evaluación o prueba de cierre del tema.' },
+            ],
+        },
+        {
+            id: 'proyecto',
+            name: 'Basado en Proyectos',
+            description: 'Aprendizaje alrededor de un reto auténtico. Ideal para trabajo colaborativo y productos reales.',
+            sections: [
+                { label: 'DESAFÍO',        color: '#F59E0B', preview: 'Pregunta esencial o reto auténtico que da sentido al proyecto.' },
+                { label: 'INVESTIGACIÓN',  color: '#7C3AED', preview: 'Los alumnos buscan información, evidencias y diseñan su plan de trabajo.' },
+                { label: 'CREACIÓN',       color: '#06B6D4', preview: 'Elaboran un producto, prototipo o solución con iteraciones y feedback.' },
+                { label: 'PRESENTACIÓN',   color: '#EC4899', preview: 'Comunican resultados ante la clase, familias o la comunidad.' },
+                { label: 'REFLEXIÓN',      color: '#22C55E', preview: 'Metacognición, autoevaluación y aprendizajes que se pueden transferir.' },
             ],
         },
     ];

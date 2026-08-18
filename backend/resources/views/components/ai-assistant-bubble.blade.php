@@ -1222,7 +1222,6 @@ function novaAIAssistant() {
             }
 
             let hasDeleteSuccess = false;
-            let firstNewClass = null;
 
             if (Array.isArray(json.actions)) {
                 if (json.any_success || (json.status === 'success' && json.bulk_plan)) {
@@ -1242,10 +1241,6 @@ function novaAIAssistant() {
                                     course_id: a.data.course_id || null,
                                 }
                             });
-                            // Trigger template picker on first class created this turn
-                            if (!firstNewClass && a.data.type === 'clase') {
-                                firstNewClass = a.data;
-                            }
                         }
                         if (a.action_type === 'delete') {
                             hasDeleteSuccess = true;
@@ -1271,20 +1266,6 @@ function novaAIAssistant() {
                 if (json.message && !json.bulk_plan && successfulActions > 1) {
                     this.addMessage('assistant', json.message);
                 }
-
-                // Show template picker after creating a class (slight delay so canvas refreshes first)
-                if (firstNewClass) {
-                    setTimeout(() => {
-                        window.dispatchEvent(new CustomEvent('nova-lesson-template-picker', { detail: firstNewClass }));
-                    }, 700);
-                }
-            }
-
-            // Trigger template picker when bulkPlan creates classes (bulk_plan lives outside actions[])
-            if (json.bulk_plan?.activities_created > 0 && !firstNewClass) {
-                setTimeout(() => {
-                    window.dispatchEvent(new CustomEvent('nova-lesson-template-picker', { detail: json.bulk_plan }));
-                }, 800);
             }
 
             if (json.error && !json.any_success && !Array.isArray(json.actions)) {
