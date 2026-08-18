@@ -9,6 +9,7 @@ use App\Models\Course;
 use App\Models\Grade;
 use App\Models\Planificacion;
 use App\Models\Student;
+use App\Models\TeacherInvite;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -36,6 +37,10 @@ class DashboardController extends Controller
         $profesores = collect();
 
         $totalStudents = Student::where('colegio_id', $colegioId)->count();
+        $totalCourses = Course::where('colegio_id', $colegioId)->count();
+        $pendingInvites = TeacherInvite::where('colegio_id', $colegioId)
+            ->whereNull('claimed_by')
+            ->count();
 
         $globalAverageQuery = Grade::query()
             ->join('activities', 'grades.activity_id', '=', 'activities.id')
@@ -75,6 +80,8 @@ class DashboardController extends Controller
         $teacherCount = User::where('role', 'profesor')
             ->where('colegio_id', $colegioId)
             ->count();
+
+        $needsSetup = $teacherCount === 0 || $totalCourses === 0 || $totalStudents === 0;
 
         $teachersWithPendingGrades = $this->teachersWithPendingGrades($colegioId);
         $teacherCompliance = $teacherCount > 0
@@ -281,7 +288,11 @@ class DashboardController extends Controller
             'profesores',
             'alertsWithContent',
             'stuckCount',
-            'inactiveTeachersCount'
+            'inactiveTeachersCount',
+            'totalStudents',
+            'totalCourses',
+            'pendingInvites',
+            'needsSetup'
         ));
     }
 

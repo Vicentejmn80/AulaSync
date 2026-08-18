@@ -259,7 +259,7 @@ class OnboardingController extends Controller
                 return redirect()->route('onboarding.director_success', [
                     'invite_code' => $inviteCode,
                     'school' => $nombreInstitucion,
-                ]);
+                ])->with('director_setup', true);
             }
 
             return redirect()->to('/dashboard')

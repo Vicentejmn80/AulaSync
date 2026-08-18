@@ -75,6 +75,15 @@
             </div>
 
             <div class="flex flex-wrap items-center gap-3">
+                <a href="{{ route('director.profesores') }}" class="rounded-2xl border border-cyan-400/30 bg-cyan-400/10 px-4 py-2 text-sm font-bold text-cyan-200 transition hover:bg-cyan-400/20">
+                    <i class="fa-solid fa-chalkboard-user mr-2"></i>Profesores
+                </a>
+                <a href="{{ route('director.courses') }}" class="rounded-2xl border border-violet-400/30 bg-violet-400/10 px-4 py-2 text-sm font-bold text-violet-200 transition hover:bg-violet-400/20">
+                    <i class="fa-solid fa-chalkboard mr-2"></i>Cursos
+                </a>
+                <a href="{{ route('director.students') }}" class="rounded-2xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-2 text-sm font-bold text-emerald-200 transition hover:bg-emerald-400/20">
+                    <i class="fa-solid fa-user-graduate mr-2"></i>Alumnos
+                </a>
                 <a href="{{ route('director.periodos') }}" class="rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-white/10">
                     <i class="fa-solid fa-file-invoice mr-2 text-cyan-300"></i>Boletas
                 </a>
@@ -93,6 +102,63 @@
                 @include('components.user-control-panel')
             </div>
         </header>
+
+        @if($needsSetup || session('director_setup') || request()->boolean('setup'))
+            <section class="mb-8 rounded-[2rem] border border-cyan-400/25 bg-gradient-to-br from-cyan-500/10 via-violet-500/10 to-fuchsia-500/5 p-6 shadow-2xl shadow-cyan-500/10">
+                <div class="mb-5 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                    <div>
+                        <p class="text-[11px] font-bold uppercase tracking-[.25em] text-cyan-300">Configura tu colegio</p>
+                        <h2 class="mt-1 text-2xl font-black text-white">Primeros pasos</h2>
+                        <p class="mt-1 max-w-2xl text-sm text-slate-400">
+                            El código que copiaste es para que los docentes se registren. Desde aquí tú creas la estructura: invita profesores, abre cursos y matricula alumnos.
+                        </p>
+                    </div>
+                    @if($pendingInvites > 0)
+                        <span class="rounded-full border border-amber-300/30 bg-amber-400/10 px-4 py-2 text-xs font-bold text-amber-200">
+                            {{ $pendingInvites }} invitación(es) DOC- pendiente(s)
+                        </span>
+                    @endif
+                </div>
+
+                <div class="grid gap-4 md:grid-cols-3">
+                    <a href="{{ route('director.profesores') }}"
+                       class="group rounded-2xl border p-5 transition hover:-translate-y-0.5 {{ $totalTeachers > 0 || $pendingInvites > 0 ? 'border-emerald-400/30 bg-emerald-400/5' : 'border-cyan-400/40 bg-white/[.06] ring-1 ring-cyan-400/20' }}">
+                        <div class="mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-400 to-blue-500">
+                            <span class="text-sm font-black text-white">1</span>
+                        </div>
+                        <p class="font-bold text-white group-hover:text-cyan-200">Invitar docentes</p>
+                        <p class="mt-2 text-sm text-slate-400">Genera códigos <strong class="text-slate-200">DOC-</strong> para cada profesor. Ellos los usan al registrarse.</p>
+                        <p class="mt-3 text-xs font-semibold uppercase tracking-wide {{ $totalTeachers > 0 || $pendingInvites > 0 ? 'text-emerald-300' : 'text-cyan-300' }}">
+                            {{ $totalTeachers > 0 ? $totalTeachers.' docente(s) activo(s)' : ($pendingInvites > 0 ? $pendingInvites.' invitación(es) enviada(s)' : 'Pendiente') }}
+                        </p>
+                    </a>
+
+                    <a href="{{ route('director.courses') }}"
+                       class="group rounded-2xl border p-5 transition hover:-translate-y-0.5 {{ $totalCourses > 0 ? 'border-emerald-400/30 bg-emerald-400/5' : 'border-violet-400/40 bg-white/[.06] ring-1 ring-violet-400/20' }}">
+                        <div class="mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-violet-400 to-fuchsia-500">
+                            <span class="text-sm font-black text-white">2</span>
+                        </div>
+                        <p class="font-bold text-white group-hover:text-violet-200">Crear cursos</p>
+                        <p class="mt-2 text-sm text-slate-400">Define materias, grados y secciones. Asigna cada curso a un docente.</p>
+                        <p class="mt-3 text-xs font-semibold uppercase tracking-wide {{ $totalCourses > 0 ? 'text-emerald-300' : 'text-violet-300' }}">
+                            {{ $totalCourses > 0 ? $totalCourses.' curso(s) creado(s)' : 'Pendiente' }}
+                        </p>
+                    </a>
+
+                    <a href="{{ route('director.students') }}"
+                       class="group rounded-2xl border p-5 transition hover:-translate-y-0.5 {{ $totalStudents > 0 ? 'border-emerald-400/30 bg-emerald-400/5' : 'border-emerald-400/40 bg-white/[.06] ring-1 ring-emerald-400/20' }}">
+                        <div class="mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-400 to-cyan-500">
+                            <span class="text-sm font-black text-white">3</span>
+                        </div>
+                        <p class="font-bold text-white group-hover:text-emerald-200">Matricular alumnos</p>
+                        <p class="mt-2 text-sm text-slate-400">Registra la nómina escolar. Luego los docentes los vinculan a sus cursos.</p>
+                        <p class="mt-3 text-xs font-semibold uppercase tracking-wide {{ $totalStudents > 0 ? 'text-emerald-300' : 'text-emerald-300' }}">
+                            {{ $totalStudents > 0 ? number_format($totalStudents).' alumno(s)' : 'Pendiente' }}
+                        </p>
+                    </a>
+                </div>
+            </section>
+        @endif
 
         <section class="mb-8 rounded-[2rem] border border-white/10 bg-white/[.045] p-5 shadow-2xl shadow-black/20 backdrop-blur-2xl">
             <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">

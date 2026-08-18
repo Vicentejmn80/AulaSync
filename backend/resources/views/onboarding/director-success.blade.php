@@ -61,9 +61,12 @@
 
         <p class="text-xs font-bold uppercase tracking-[.3em] text-cyan-200 mb-2">Éxito</p>
         <h1 class="text-2xl md:text-3xl font-black text-white mb-2">¡Colegio creado!</h1>
-        <p class="text-slate-400 text-sm mb-8">
+        <p class="text-slate-400 text-sm mb-4">
             Tu institución <strong class="text-white">{{ $schoolName }}</strong> ya está lista.
-            <br>Comparte este código con tus docentes para que se vinculen:
+        </p>
+        <p class="text-slate-400 text-sm mb-8">
+            Este es el <strong class="text-white">código institucional</strong> del colegio. Compártelo con representantes o docentes que no tengan un código <strong class="text-cyan-200">DOC-</strong> personal.
+            <br><span class="text-slate-500">Para invitar profesores con materia asignada, usa la sección Plantel docente en tu dashboard.</span>
         </p>
 
         <div class="mx-auto mb-8 max-w-xs rounded-2xl border border-white/10 bg-white/[.045] px-4 py-5">
@@ -89,11 +92,17 @@
             </a>
         </div>
 
-        <div class="mt-8 pt-6 border-t border-white/10">
-            <a href="{{ route('director.dashboard') }}"
+        <div class="mt-8 pt-6 border-t border-white/10 space-y-3">
+            <p class="text-xs font-bold uppercase tracking-[.2em] text-slate-500">Siguiente</p>
+            <div class="grid gap-2 text-left text-sm text-slate-400">
+                <p><span class="font-bold text-cyan-200">1.</span> Invita docentes con códigos DOC-</p>
+                <p><span class="font-bold text-violet-200">2.</span> Crea cursos y asigna materias</p>
+                <p><span class="font-bold text-emerald-200">3.</span> Matricula alumnos en la nómina</p>
+            </div>
+            <a href="{{ route('director.dashboard', ['setup' => 1]) }}"
                class="inline-flex items-center gap-3 rounded-2xl bg-gradient-to-r from-violet-600 to-cyan-500 px-8 py-4 text-base font-bold text-white shadow-lg shadow-violet-500/20 transition hover:shadow-xl hover:shadow-violet-500/30 hover:-translate-y-0.5">
                 <i class="fa-solid fa-arrow-right"></i>
-                Ir a mi Dashboard
+                Ir a configurar mi colegio
             </a>
         </div>
     </div>

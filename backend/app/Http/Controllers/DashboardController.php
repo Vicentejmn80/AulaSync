@@ -94,6 +94,4 @@ class DashboardController extends Controller
 
         return view('ia-dashboard', compact('user', 'role', 'onboardingData', 'initialPlan', 'recentPlans'));
     }
-} 
-
-return redirect()->route('dashboard');
+}
