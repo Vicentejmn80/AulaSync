@@ -1517,11 +1517,19 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
         }
 
         $title = trim((string) ($generated['title'] ?? $title)) ?: $title;
-        $instructions = trim((string) ($generated['instructions'] ?? 'Lee cuidadosamente cada pregunta y responde con claridad.'));
+        $purpose = trim((string) ($generated['purpose'] ?? $generated['overview'] ?? ''));
+        $instructions = trim((string) ($generated['instructions'] ?? ''));
+        if ($purpose === '') {
+            $purpose = $prompt !== '' ? $prompt : ('Evaluar el dominio de '.$title.' con evidencia clara y criterios de logro.');
+        }
+        if ($instructions === '' || mb_strlen($instructions) < 80) {
+            $instructions = 'Responde cada ítem demostrando comprensión de '.$title
+                .'. Justifica cuando se pida explicación, usa el vocabulario de la unidad y revisa tu trabajo antes de entregar.';
+        }
 
         $evaluation = app(\App\Services\EvaluationSyncService::class)->persist($teacher, [
             'title' => $title,
-            'description' => $prompt,
+            'description' => $purpose,
             'topic' => $topic !== '' ? $topic : null,
             'course_id' => $course->id,
             'mode' => $mode,
@@ -1700,12 +1708,16 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             return $this->fallbackEvaluationPayload($topic, $count, $mix);
         }
 
-        $system = 'Eres experto en evaluación educativa. Responde SOLO JSON válido. '
-            .'Estructura: {"title":"","instructions":"","questions":[{"type":"multiple_choice|true_false|open|completion","text":"","options":[],"correct_answer":"","points":1,"topic":""}],"rubric":{"total_points":0,"passing_score":0}}. '
+        $system = 'Eres experto en evaluación educativa escolar. Responde SOLO JSON válido. '
+            .'Estructura: {"title":"","purpose":"","instructions":"","questions":[{"type":"multiple_choice|true_false|open|completion","text":"","options":[],"correct_answer":"","points":1,"topic":""}],"rubric":{"total_points":0,"passing_score":0}}. '
+            .'purpose: 2 o 3 oraciones pedagógicas para el docente (competencia, evidencia, nivel). '
+            .'instructions: 4 a 6 oraciones profesionales para el estudiante (qué se evalúa, cómo responder, qué se espera, revisión final). '
+            .'PROHIBIDO usar frases genéricas como "lee cuidadosamente", "responde las siguientes preguntas" o "selecciona la respuesta correcta" como único contenido. '
             .'Si type no es multiple_choice o true_false, options debe ser [].';
 
         $user = "Curso: {$courseLabel}. Modo: {$mode}. Tema: {$topic}. Dificultad: {$difficulty}. "
-            ."Tipo de preguntas: {$mix}. Número: {$count}. Descripción del docente: {$prompt}";
+            ."Tipo de preguntas: {$mix}. Número: {$count}. Pedido del docente: {$prompt}. "
+            .'El título debe ser profesional y específico (no "Evaluación de X" plano).';
 
         try {
             $response = Http::withToken($apiKey)
@@ -1774,7 +1786,8 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
 
         return [
             'title' => 'Evaluación · '.$topic,
-            'instructions' => 'Lee cada pregunta con atención y responde de forma clara.',
+            'purpose' => 'Comprobar si el estudiante comprende y aplica los conceptos centrales de '.$topic.' con evidencia observable.',
+            'instructions' => 'Demuestra lo que sabes sobre '.$topic.'. En ítems de selección elige la mejor opción y en las abiertas explica con claridad, usando ejemplos de clase. Revisa tus respuestas antes de entregar.',
             'questions' => $questions,
             'rubric' => [
                 'total_points' => $total,

@@ -93,6 +93,72 @@
         }
 
 /* ── Theme Toggle Button (CORREGIDO) ───────────────────── */
+.theme-toggle-wrap {
+    position: relative;
+    z-index: 30;
+}
+.theme-picker-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1900;
+    background: transparent;
+}
+.theme-picker {
+    position: fixed;
+    top: 72px;
+    left: 16px;
+    width: min(300px, calc(100vw - 24px));
+    max-height: min(70vh, 520px);
+    overflow-y: auto;
+    overflow-x: hidden;
+    background: var(--bg-card);
+    border: 1px solid var(--nova-glass-border);
+    border-radius: 16px;
+    box-shadow: var(--nova-shadow);
+    padding: 12px;
+    z-index: 2000;
+}
+@media (min-width: 768px) {
+    .theme-picker { left: 312px; }
+}
+.theme-picker h4 {
+    margin: 0 0 8px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: var(--text-tertiary);
+}
+.theme-picker-option {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border: 0;
+    background: transparent;
+    color: var(--text-primary);
+    padding: 8px;
+    border-radius: 12px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 700;
+    text-align: left;
+}
+.theme-picker-option span:last-child {
+    white-space: normal;
+    overflow: visible;
+    line-height: 1.3;
+}
+.theme-picker-option:hover,
+.theme-picker-option.active {
+    background: color-mix(in srgb, var(--nova-violet) 12%, transparent);
+}
+.theme-picker-dot {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    box-shadow: inset 0 0 0 1px rgba(0,0,0,0.08);
+}
 .theme-toggle {
     width: 44px;
     height: 44px;
@@ -235,13 +301,14 @@
         /* ── Hub Root ───────────────────────────────────────── */
         #hub-root {
             display: flex;
-            min-height: 100vh;
-            min-height: 100dvh;
+            height: 100vh;
+            height: 100dvh;
+            max-height: 100dvh;
             width: 100%;
             position: relative;
             backdrop-filter: blur(20px);
             background: rgba(0, 0, 0, 0.2);
-            overflow-x: hidden;
+            overflow: hidden;
         }
 
         :root:not(.dark) #hub-root {
@@ -255,6 +322,9 @@
         #hub-sidebar {
             width: 300px;
             min-width: 300px;
+            height: 100dvh;
+            max-height: 100dvh;
+            min-height: 0;
             background: var(--bg-sidebar);
             backdrop-filter: blur(20px);
             border-right: 1px solid var(--nova-glass-border);
@@ -365,6 +435,7 @@
 
             .calendar-day {
                 min-height: 60px;
+                max-height: 118px;
                 padding: 6px;
                 border-radius: 10px;
             }
@@ -405,7 +476,8 @@
                 position: relative;
                 left: auto;
                 top: auto;
-                height: auto;
+                height: 100dvh;
+                max-height: 100dvh;
                 z-index: auto;
                 width: 300px;
                 min-width: 300px;
@@ -538,25 +610,27 @@
         }
 
         .nav-section {
-            padding: 20px 16px;
+            padding: 10px 12px;
             border-bottom: 1px solid var(--nova-glass-border);
+            flex-shrink: 0;
         }
 
         .nav-section-account {
-            padding: 16px 16px 20px;
+            padding: 8px 12px 10px;
+            flex-shrink: 0;
         }
 
         .nav-item {
             display: flex;
             align-items: center;
-            gap: 12px;
-            padding: 12px 16px;
+            gap: 10px;
+            padding: 8px 12px;
             width: 100%;
             border: none;
             background: transparent;
-            border-radius: 14px;
+            border-radius: 12px;
             color: var(--text-secondary);
-            font-size: 14px;
+            font-size: 13px;
             font-weight: 500;
             cursor: pointer;
             transition: all 0.2s ease;
@@ -714,7 +788,8 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
-            padding: 16px 20px 8px;
+            padding: 10px 16px 4px;
+            flex-shrink: 0;
         }
 
         .courses-header h4 {
@@ -748,8 +823,9 @@
 
         .course-list {
             flex: 1;
+            min-height: 0;
             overflow-y: auto;
-            padding: 8px 12px 20px;
+            padding: 4px 10px 8px;
         }
 
         .course-list::-webkit-scrollbar {
@@ -768,13 +844,13 @@
         .course-btn {
             display: flex;
             align-items: center;
-            gap: 12px;
-            padding: 12px 12px;
+            gap: 10px;
+            padding: 8px 10px;
             width: 100%;
             border: none;
             background: transparent;
-            border-radius: 14px;
-            margin-bottom: 4px;
+            border-radius: 12px;
+            margin-bottom: 2px;
             cursor: pointer;
             transition: all 0.2s ease;
             position: relative;
@@ -803,19 +879,20 @@
         }
 
         .course-avatar {
-            width: 40px;
-            height: 40px;
+            width: 32px;
+            height: 32px;
             background: var(--nova-gradient);
-            border-radius: 12px;
+            border-radius: 10px;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 16px;
+            font-size: 13px;
             font-weight: 700;
             color: white;
             position: relative;
             overflow: hidden;
-            box-shadow: 0 5px 15px -5px var(--nova-violet);
+            box-shadow: 0 4px 12px -4px var(--nova-violet);
+            flex-shrink: 0;
         }
 
         .course-avatar::after {
@@ -839,9 +916,9 @@
 
         .course-name {
             color: var(--text-primary);
-            font-size: 14px;
+            font-size: 13px;
             font-weight: 600;
-            margin-bottom: 4px;
+            margin-bottom: 2px;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
@@ -872,11 +949,12 @@
         #hub-canvas {
             flex: 1;
             min-width: 0;
-            min-height: 100vh;
-            min-height: 100dvh;
+            min-height: 0;
+            height: 100dvh;
+            max-height: 100dvh;
             overflow-y: auto;
             overflow-x: hidden;
-            padding: 30px 35px;
+            padding: 20px 28px;
             position: relative;
             -webkit-overflow-scrolling: touch;
         }
@@ -998,9 +1076,9 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
-            gap: 20px;
-            margin-top: 4px;
-            margin-bottom: 22px;
+            gap: 16px;
+            margin-top: 0;
+            margin-bottom: 14px;
             flex-wrap: wrap;
         }
 
@@ -1017,19 +1095,19 @@
 
         .dash-greeting {
             font-family: var(--font-display);
-            font-size: 34px;
+            font-size: 28px;
             font-weight: 800;
             color: var(--text-primary);
-            margin-bottom: 6px;
+            margin-bottom: 4px;
             line-height: 1.1;
             letter-spacing: -0.03em;
         }
 
         .dash-subtitle {
             color: var(--text-secondary);
-            font-size: 15px;
+            font-size: 14px;
             max-width: 520px;
-            line-height: 1.5;
+            line-height: 1.45;
         }
 
         .dash-toolbar {
@@ -1153,14 +1231,14 @@
         .ios-stat-grid {
             display: grid;
             grid-template-columns: repeat(4, 1fr);
-            gap: 14px;
-            margin-bottom: 20px;
+            gap: 10px;
+            margin-bottom: 14px;
         }
 
         .ios-stat {
             background: #fff;
-            border-radius: 22px;
-            padding: 18px 18px 16px;
+            border-radius: 18px;
+            padding: 14px 14px 12px;
             box-shadow: var(--nova-shadow);
             border: 1px solid rgba(255,255,255,0.8);
             transition: transform 0.22s cubic-bezier(.2,.8,.2,1);
@@ -1171,15 +1249,15 @@
         .ios-stat:hover { transform: translateY(-3px); }
 
         .ios-stat-icon {
-            width: 42px;
-            height: 42px;
-            border-radius: 14px;
+            width: 34px;
+            height: 34px;
+            border-radius: 12px;
             display: flex;
             align-items: center;
             justify-content: center;
             color: #fff;
-            margin-bottom: 14px;
-            font-size: 16px;
+            margin-bottom: 10px;
+            font-size: 14px;
         }
 
         .ios-stat-icon.purple { background: linear-gradient(135deg, #7C3AED, #A855F7); }
@@ -1189,15 +1267,15 @@
 
         .ios-stat-value {
             font-family: var(--font-display);
-            font-size: 26px;
+            font-size: 22px;
             font-weight: 800;
             letter-spacing: -0.03em;
             line-height: 1;
-            margin-bottom: 4px;
+            margin-bottom: 2px;
         }
 
         .ios-stat-label {
-            font-size: 12.5px;
+            font-size: 11.5px;
             font-weight: 600;
             color: var(--text-tertiary);
         }
@@ -1205,14 +1283,15 @@
         .ios-board {
             display: grid;
             grid-template-columns: 1.15fr 0.85fr;
-            gap: 16px;
-            margin-bottom: 22px;
+            gap: 12px;
+            margin-bottom: 0;
+            align-items: start;
         }
 
         .ios-panel {
             background: #fff;
-            border-radius: 24px;
-            padding: 20px;
+            border-radius: 18px;
+            padding: 14px 16px;
             box-shadow: var(--nova-shadow);
         }
 
@@ -1220,25 +1299,88 @@
 
         .ios-panel h3 {
             font-family: var(--font-display);
-            font-size: 16px;
+            font-size: 14px;
             font-weight: 800;
-            margin-bottom: 14px;
+            margin-bottom: 10px;
+        }
+
+        .ios-panel-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            margin-bottom: 6px;
+        }
+
+        .ios-panel-head h3 { margin-bottom: 0; }
+
+        .panel-week-chip {
+            font-size: 11px;
+            font-weight: 700;
+            padding: 4px 10px;
+            border-radius: 999px;
+            background: rgba(124, 58, 237, 0.1);
+            color: #7C3AED;
+            white-space: nowrap;
+        }
+
+        html.dark .panel-week-chip {
+            background: rgba(124, 58, 237, 0.18);
+            color: #C4B5FD;
+        }
+
+        .upcoming-list {
+            display: flex;
+            flex-direction: column;
+            max-height: 168px;
+            overflow-y: auto;
+        }
+
+        .upcoming-list::-webkit-scrollbar { width: 4px; }
+        .upcoming-list::-webkit-scrollbar-thumb {
+            background: var(--nova-glass-border);
+            border-radius: 4px;
+        }
+
+        .upcoming-row--clickable {
+            width: 100%;
+            border: 0;
+            background: transparent;
+            cursor: pointer;
+            text-align: left;
+            color: inherit;
+            border-radius: 12px;
+            transition: background 0.15s ease;
+        }
+
+        .upcoming-row--clickable:hover {
+            background: rgba(124, 58, 237, 0.05);
+        }
+
+        html.dark .upcoming-row--clickable:hover {
+            background: rgba(124, 58, 237, 0.12);
+        }
+
+        .upcoming-empty {
+            color: var(--text-tertiary);
+            font-size: 13px;
+            margin: 0 0 10px;
         }
 
         .upcoming-row {
             display: flex;
             align-items: center;
-            gap: 12px;
-            padding: 12px 0;
+            gap: 10px;
+            padding: 7px 0;
             border-bottom: 1px solid rgba(124, 58, 237, 0.06);
         }
 
         .upcoming-row:last-child { border-bottom: 0; }
 
         .upcoming-date {
-            width: 52px;
-            height: 52px;
-            border-radius: 16px;
+            width: 40px;
+            height: 40px;
+            border-radius: 12px;
             background: #F3EEFF;
             color: #7C3AED;
             display: flex;
@@ -1250,17 +1392,17 @@
 
         html.dark .upcoming-date { background: rgba(124, 58, 237, 0.18); color: #C4B5FD; }
 
-        .upcoming-date strong { font-size: 16px; line-height: 1; }
-        .upcoming-date span { font-size: 9px; font-weight: 800; letter-spacing: 0.06em; }
+        .upcoming-date strong { font-size: 14px; line-height: 1; }
+        .upcoming-date span { font-size: 8px; font-weight: 800; letter-spacing: 0.06em; }
 
         .upcoming-copy { min-width: 0; flex: 1; }
-        .upcoming-copy p { font-size: 14px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .upcoming-copy small { color: var(--text-tertiary); font-size: 12px; }
+        .upcoming-copy p { font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .upcoming-copy small { color: var(--text-tertiary); font-size: 11px; }
 
         .status-pill {
-            font-size: 11px;
+            font-size: 10px;
             font-weight: 700;
-            padding: 5px 10px;
+            padding: 4px 8px;
             border-radius: 999px;
             background: #ECFDF5;
             color: #059669;
@@ -1272,9 +1414,9 @@
         .reminder-row {
             display: flex;
             align-items: center;
-            gap: 12px;
+            gap: 10px;
             width: 100%;
-            padding: 11px 0;
+            padding: 7px 0;
             border: 0;
             background: transparent;
             cursor: pointer;
@@ -1283,59 +1425,64 @@
         }
 
         .reminder-ico {
-            width: 38px;
-            height: 38px;
-            border-radius: 12px;
+            width: 32px;
+            height: 32px;
+            border-radius: 10px;
             display: flex;
             align-items: center;
             justify-content: center;
             color: #fff;
             flex-shrink: 0;
+            font-size: 12px;
         }
 
         .quick-actions {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 10px;
-            margin-top: 8px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-top: 6px;
         }
 
         .quick-action {
             border: 0;
             background: #F7F4FF;
-            border-radius: 16px;
-            padding: 14px 12px;
+            border-radius: 999px;
+            padding: 6px 10px;
             text-align: left;
             cursor: pointer;
             color: var(--text-primary);
-            font-weight: 700;
-            font-size: 12.5px;
+            font-weight: 600;
+            font-size: 11px;
             transition: transform 0.2s ease, background 0.2s ease;
             text-decoration: none;
-            display: block;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            white-space: nowrap;
         }
 
         html.dark .quick-action { background: rgba(124, 58, 237, 0.12); }
 
-        .quick-action:hover { transform: translateY(-2px); background: #EFE7FF; }
-        .quick-action i { display: block; color: #7C3AED; margin-bottom: 8px; }
+        .quick-action:hover { transform: translateY(-1px); background: #EFE7FF; }
+        .quick-action i { color: #7C3AED; font-size: 11px; }
 
         .sidebar-profile {
-            margin: auto 16px 16px;
-            padding: 12px;
-            border-radius: 18px;
+            margin: 0 12px 12px;
+            padding: 10px;
+            border-radius: 14px;
             background: #F7F4FF;
             display: flex;
             align-items: center;
-            gap: 10px;
+            gap: 8px;
+            flex-shrink: 0;
         }
 
         html.dark .sidebar-profile { background: rgba(124, 58, 237, 0.12); }
 
         .sidebar-profile-avatar {
-            width: 40px;
-            height: 40px;
-            border-radius: 14px;
+            width: 34px;
+            height: 34px;
+            border-radius: 12px;
             background: var(--nova-gradient);
             color: #fff;
             display: flex;
@@ -1343,6 +1490,7 @@
             justify-content: center;
             font-weight: 800;
             flex-shrink: 0;
+            font-size: 13px;
         }
 
         .sidebar-profile strong { display: block; font-size: 13px; }
@@ -1363,10 +1511,28 @@
             position: relative;
             background: var(--bg-card);
             border: 1px solid var(--nova-glass-border);
-            border-radius: var(--az-radius-lg);
-            padding: 28px 30px;
-            margin-bottom: 26px;
+            border-radius: 18px;
+            padding: 14px 18px;
+            margin-bottom: 14px;
             overflow: hidden;
+        }
+
+        @media (min-width: 900px) {
+            .ai-command-card {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 16px;
+            }
+
+            .ai-command-head {
+                margin-bottom: 0 !important;
+            }
+
+            .ai-command-footer {
+                margin-top: 0 !important;
+                flex-shrink: 0;
+            }
         }
 
         .ai-command-glow {
@@ -1381,40 +1547,46 @@
 
         .ai-command-head {
             display: flex;
-            align-items: flex-start;
-            gap: 18px;
+            align-items: center;
+            gap: 12px;
             position: relative;
             z-index: 1;
-            margin-bottom: 22px;
+            margin-bottom: 12px;
+            min-width: 0;
+            flex: 1;
         }
 
         .ai-command-icon {
-            width: 52px;
-            height: 52px;
+            width: 40px;
+            height: 40px;
             flex-shrink: 0;
-            border-radius: var(--az-radius-md);
+            border-radius: 12px;
             background: var(--nova-gradient);
             display: flex;
             align-items: center;
             justify-content: center;
             color: white;
-            font-size: 22px;
+            font-size: 18px;
             box-shadow: var(--az-shadow-glow);
         }
 
         .ai-command-copy h2 {
             font-family: var(--font-display);
-            font-size: 18px;
+            font-size: 15px;
             font-weight: 800;
             color: var(--text-primary);
-            margin-bottom: 6px;
+            margin-bottom: 2px;
         }
 
         .ai-command-copy p {
-            font-size: 14px;
+            font-size: 13px;
             color: var(--text-secondary);
-            line-height: 1.55;
-            max-width: 620px;
+            line-height: 1.4;
+            max-width: none;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
         }
 
         .ai-command-footer {
@@ -1422,9 +1594,10 @@
             z-index: 1;
             display: flex;
             align-items: center;
-            justify-content: space-between;
+            justify-content: flex-end;
             flex-wrap: wrap;
-            gap: 14px;
+            gap: 8px;
+            margin-top: 12px;
         }
 
         .ai-insight-counter {
@@ -1434,9 +1607,9 @@
             background: var(--nova-glass);
             border: 1px solid var(--nova-glass-border);
             color: var(--text-secondary);
-            font-size: 12.5px;
+            font-size: 11.5px;
             font-weight: 600;
-            padding: 8px 16px;
+            padding: 6px 12px;
             border-radius: 30px;
             cursor: pointer;
             transition: all 0.2s ease;
@@ -1447,8 +1620,11 @@
             color: var(--text-primary);
         }
 
-        .ai-insight-counter i {
-            color: var(--nova-fuchsia);
+        .ai-command-footer .btn-create {
+            height: 36px;
+            padding: 0 14px;
+            font-size: 12.5px;
+            box-shadow: 0 6px 16px rgba(124, 58, 237, 0.22);
         }
 
         .ai-command-actions {
@@ -1733,33 +1909,34 @@
             display: flex;
             align-items: center;
             gap: 10px;
-            margin-bottom: 20px;
+            margin-bottom: 12px;
         }
 
         .section-title i {
             color: var(--nova-violet);
-            font-size: 18px;
+            font-size: 16px;
         }
 
         .section-title h2 {
             font-family: var(--font-display);
-            font-size: 18px;
+            font-size: 16px;
             font-weight: 700;
             color: var(--text-primary);
         }
 
         .courses-grid {
             display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 20px;
+            grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+            gap: 12px;
+            margin-bottom: 14px;
         }
 
         .course-card {
             background: var(--bg-card);
             backdrop-filter: blur(10px);
             border: 1px solid var(--nova-glass-border);
-            border-radius: 24px;
-            padding: 22px;
+            border-radius: 18px;
+            padding: 14px 16px;
             box-shadow: var(--nova-shadow);
             cursor: pointer;
             transition: all 0.3s ease;
@@ -1792,19 +1969,19 @@
         .course-card-header {
             display: flex;
             align-items: center;
-            gap: 15px;
-            margin-bottom: 15px;
+            gap: 10px;
+            margin-bottom: 10px;
         }
 
         .course-card-avatar {
-            width: 50px;
-            height: 50px;
+            width: 40px;
+            height: 40px;
             background: var(--nova-gradient);
-            border-radius: 16px;
+            border-radius: 12px;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 20px;
+            font-size: 16px;
             font-weight: 700;
             color: white;
             flex-shrink: 0;
@@ -1816,26 +1993,26 @@
         }
 
         .course-card-info h3 {
-            font-size: 16px;
+            font-size: 14px;
             font-weight: 700;
             font-family: var(--font-display);
             color: var(--text-primary);
-            margin-bottom: 4px;
+            margin-bottom: 2px;
         }
 
         .course-card-info p {
-            font-size: 12px;
+            font-size: 11px;
             color: var(--text-tertiary);
         }
 
         .course-pending-badge {
             flex-shrink: 0;
-            font-size: 10.5px;
+            font-size: 10px;
             font-weight: 700;
             color: #B4761F;
             background: #FDF0DD;
             border: 1px solid rgba(180, 118, 31, 0.2);
-            padding: 5px 10px;
+            padding: 3px 8px;
             border-radius: 30px;
             white-space: nowrap;
         }
@@ -1847,20 +2024,20 @@
         }
 
         .course-progress {
-            margin-bottom: 14px;
+            margin-bottom: 8px;
         }
 
         .course-progress-head {
             display: flex;
             justify-content: space-between;
-            font-size: 11px;
+            font-size: 10px;
             font-weight: 600;
             color: var(--text-tertiary);
-            margin-bottom: 6px;
+            margin-bottom: 4px;
         }
 
         .course-progress-track {
-            height: 6px;
+            height: 5px;
             border-radius: 30px;
             background: var(--nova-glass);
             border: 1px solid var(--nova-glass-border);
@@ -1876,18 +2053,17 @@
 
         .course-stats {
             display: flex;
-            gap: 15px;
-            margin: 15px 0;
-            padding: 10px 0;
+            gap: 12px;
+            margin: 0;
+            padding: 8px 0 0;
             border-top: 1px solid var(--nova-glass-border);
-            border-bottom: 1px solid var(--nova-glass-border);
         }
 
         .course-stat {
             display: flex;
             align-items: center;
-            gap: 6px;
-            font-size: 12px;
+            gap: 5px;
+            font-size: 11px;
             color: var(--text-secondary);
         }
 
@@ -1896,24 +2072,7 @@
         }
 
         .card-footer {
-            display: flex;
-            justify-content: flex-end;
-            margin-top: 15px;
-        }
-
-        .card-footer span {
-            font-size: 12px;
-            color: var(--nova-violet);
-            font-weight: 600;
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            transition: gap 0.2s ease;
-        }
-
-        .course-card:hover .card-footer span {
-            gap: 10px;
-            color: var(--nova-fuchsia);
+            display: none;
         }
 
         /* ── Empty State AI ─────────────────────────────────── */
@@ -2747,6 +2906,49 @@
             color: var(--text-primary);
         }
 
+        .pedagogy-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            height: 44px;
+            padding: 0 14px 0 8px;
+            border-radius: 16px;
+            border: 1px solid color-mix(in srgb, var(--nova-violet) 35%, var(--nova-glass-border));
+            background: linear-gradient(135deg, color-mix(in srgb, var(--nova-violet) 16%, var(--bg-card)), var(--bg-card));
+            color: var(--text-primary);
+            cursor: pointer;
+            box-shadow: 0 8px 20px -12px color-mix(in srgb, var(--nova-violet) 70%, transparent);
+            transition: transform 0.2s ease, border-color 0.2s ease;
+        }
+        .pedagogy-btn:hover {
+            transform: translateY(-1px);
+            border-color: var(--nova-violet);
+        }
+        .pedagogy-btn .pedagogy-emoji {
+            width: 30px;
+            height: 30px;
+            border-radius: 10px;
+            display: grid;
+            place-items: center;
+            background: var(--nova-gradient);
+            font-size: 16px;
+        }
+        .pedagogy-btn small {
+            display: block;
+            font-size: 10px;
+            font-weight: 800;
+            letter-spacing: .04em;
+            text-transform: uppercase;
+            color: var(--nova-violet);
+            line-height: 1;
+        }
+        .pedagogy-btn strong {
+            display: block;
+            font-size: 13px;
+            font-weight: 800;
+            line-height: 1.15;
+        }
+
         .calendar-nav-btn {
             width: 40px;
             height: 40px;
@@ -2821,9 +3023,13 @@
             border: 1px solid var(--nova-glass-border);
             border-radius: 16px;
             min-height: 100px;
+            max-height: 168px;
             padding: 8px;
             position: relative;
             transition: all 0.2s ease;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
         }
 
         .calendar-day:hover {
@@ -2860,6 +3066,16 @@
             display: flex;
             flex-direction: column;
             gap: 4px;
+            min-height: 0;
+            overflow-y: auto;
+            overflow-x: hidden;
+            padding-right: 2px;
+            -webkit-overflow-scrolling: touch;
+        }
+        .day-content::-webkit-scrollbar { width: 4px; }
+        .day-content::-webkit-scrollbar-thumb {
+            background: color-mix(in srgb, var(--nova-violet) 45%, transparent);
+            border-radius: 999px;
         }
 
         .cal-event {
@@ -2923,8 +3139,11 @@
             border-radius: 32px;
             width: 100%;
             max-width: 500px;
+            max-height: min(90vh, 860px);
             overflow: hidden;
             box-shadow: var(--nova-shadow);
+            display: flex;
+            flex-direction: column;
         }
 
         .modal-header {
@@ -2933,6 +3152,7 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
+            flex-shrink: 0;
         }
 
         .modal-header h3 {
@@ -2960,6 +3180,11 @@
 
         .modal-body {
             padding: 24px;
+            overflow-y: auto;
+            overflow-x: hidden;
+            min-height: 0;
+            flex: 1;
+            -webkit-overflow-scrolling: touch;
         }
 
         .modal-footer {
@@ -2968,6 +3193,7 @@
             display: flex;
             gap: 12px;
             justify-content: flex-end;
+            flex-shrink: 0;
         }
 
         .tareas-box {
@@ -3523,7 +3749,7 @@
         :class="{ 'hub-sidebar-open': sidebarOpen }"
     >
     <div class="sidebar-brand" style="position: relative;">
-    <div style="display: flex; align-items: center; justify-content: space-between; padding: 20px 20px 0 20px; position: relative; z-index: 10;">
+    <div style="display: flex; align-items: center; justify-content: space-between; padding: 14px 16px 0 16px; position: relative; z-index: 10;">
         <button @click="loadWelcome()" class="brand-button" style="width: auto; flex: 1; padding: 0;">
             <div class="brand-icon">
                 <i class="fa-solid fa-robot"></i>
@@ -3536,15 +3762,16 @@
                 </div>
             </div>
         </button>
-        {{-- Theme Toggle Button --}}
-        <button @click="toggleTheme" class="theme-toggle" title="Cambiar tema" style="position: relative; z-index: 20;">
-            <i :class="isDarkMode ? 'fa-solid fa-sun' : 'fa-solid fa-moon'"></i>
-        </button>
+        {{-- Theme palette picker --}}
+        <div class="theme-toggle-wrap">
+            <button @click.stop="showThemePicker = !showThemePicker" class="theme-toggle" title="Cambiar colores del tema" style="position: relative; z-index: 20;">
+                <i class="fa-solid fa-palette"></i>
+            </button>
+        </div>
     </div>
     <div class="user-panel" style="position: relative; z-index: 5; padding-bottom: 8px;"></div>
 </div>
 
-        <div class="nav-group-label">Academia</div>
         <nav class="nav-section">
             <button @click="loadWelcome()" :class="{ active: view === 'welcome' }" class="nav-item">
                 <i class="fa-solid fa-house-chimney"></i>
@@ -3627,7 +3854,6 @@
             </template>
         </div>
 
-        <div class="nav-group-label" style="margin-top: 4px;">Cuenta</div>
         <nav class="nav-section-account">
             <a href="{{ route('profile') }}" class="nav-item">
                 <i class="fa-solid fa-gear"></i>
@@ -3648,6 +3874,17 @@
             </form>
         </div>
     </aside>
+
+    <div class="theme-picker-backdrop" x-show="showThemePicker" x-cloak @click="showThemePicker = false"></div>
+    <div class="theme-picker" x-show="showThemePicker" x-cloak x-transition.opacity @click.stop>
+        <h4>Colores del tema</h4>
+        <template x-for="theme in themeOptions" :key="theme.id">
+            <button type="button" class="theme-picker-option" :class="{ active: currentThemeId === theme.id }" @click="applyTheme(theme.id)">
+                <span class="theme-picker-dot" :style="`background:${theme.dot}`"></span>
+                <span x-text="theme.label"></span>
+            </button>
+        </template>
+    </div>
 
     {{-- CANVAS PRINCIPAL --}}
     <main id="hub-canvas">
@@ -3683,10 +3920,6 @@
                             <i class="fa-solid fa-magnifying-glass"></i>
                             <input type="search" x-model="dashQuery" placeholder="Buscar curso…">
                         </label>
-                        <button type="button" class="ios-icon-btn" title="Estilo de clase"
-                                @click="window.dispatchEvent(new CustomEvent('nova-lesson-template-picker'))">
-                            <i class="fa-solid fa-palette"></i>
-                        </button>
                         <div class="relative z-50" @click.outside="showNotifications = false">
                             <button type="button" @click.stop="toggleNotifications()" title="Notificaciones" class="ios-icon-btn">
                                 <i class="fa-regular fa-bell"></i>
@@ -3769,64 +4002,6 @@
                     </div>
                 </template>
 
-                <div class="ios-board">
-                    <div class="ios-panel">
-                        <h3>Próximas actividades</h3>
-                        <template x-if="stats?.next_activity">
-                            <div class="upcoming-row">
-                                <div class="upcoming-date">
-                                    <strong x-text="formatDueParts(stats.next_activity.due_date).day"></strong>
-                                    <span x-text="formatDueParts(stats.next_activity.due_date).mon"></span>
-                                </div>
-                                <div class="upcoming-copy">
-                                    <p x-text="stats.next_activity.title"></p>
-                                    <small x-text="stats.next_activity.course_name"></small>
-                                </div>
-                                <span class="status-pill">Programada</span>
-                            </div>
-                        </template>
-                        <template x-if="!stats?.next_activity">
-                            <p style="color:var(--text-tertiary);font-size:13px;">No hay entregas próximas. Cuando crees una actividad, aparecerá aquí.</p>
-                        </template>
-                        <template x-if="(stats?.activities_this_week || 0) > 1">
-                            <div class="upcoming-row">
-                                <div class="upcoming-date">
-                                    <strong x-text="stats.activities_this_week"></strong>
-                                    <span>SEM</span>
-                                </div>
-                                <div class="upcoming-copy">
-                                    <p>Actividades esta semana</p>
-                                    <small>Revisa el calendario para ver el detalle</small>
-                                </div>
-                                <button type="button" class="insight-action" @click="loadCalendar()">Ver</button>
-                            </div>
-                        </template>
-                    </div>
-
-                    <div class="ios-panel" x-ref="insightsSection">
-                        <h3>Recordatorios</h3>
-                        <template x-for="insight in insightsList().filter(i => i.type !== 'proximamente')" :key="insight.id">
-                            <button type="button" class="reminder-row" @click="runInsightAction(insight)">
-                                <div class="reminder-ico" :style="insight.type === 'atencion' ? 'background:#F59E0B' : (insight.type === 'logro' ? 'background:#10B981' : 'background:#7C3AED')">
-                                    <i class="fa-solid" :class="insight.type === 'atencion' ? 'fa-bolt' : 'fa-sparkles'"></i>
-                                </div>
-                                <div class="upcoming-copy">
-                                    <p x-text="insight.chipLabel"></p>
-                                    <small x-text="insight.text"></small>
-                                </div>
-                                <i class="fa-solid fa-chevron-right" style="color:var(--text-tertiary);font-size:11px;"></i>
-                            </button>
-                        </template>
-                        <div class="quick-actions">
-                            <a href="{{ route('teacher.planner.manual') }}" class="quick-action"><i class="fa-solid fa-wand-magic-sparkles"></i>Nueva planificación</a>
-                            <a href="{{ route('teacher.attendance.index') }}" class="quick-action"><i class="fa-solid fa-clipboard-user"></i>Tomar asistencia</a>
-                            <a href="{{ route('teacher.activities.index') }}" class="quick-action"><i class="fa-solid fa-plus"></i>Crear actividad</a>
-                            <button type="button" class="quick-action" @click="showNewCourseModal = true"><i class="fa-solid fa-book-open"></i>Nuevo curso</button>
-                            <button type="button" class="quick-action" @click="openBubbleWithFocus()"><i class="fa-solid fa-robot"></i>Hablar con IA</button>
-                        </div>
-                    </div>
-                </div>
-
                 <div class="ai-command-card">
                     <div class="ai-command-glow" aria-hidden="true"></div>
                     <div class="ai-command-head">
@@ -3891,14 +4066,67 @@
                                             <span x-text="c.activities_count + ' actividades'"></span>
                                         </span>
                                     </div>
-                                    <div class="card-footer">
-                                        <span>Entrar al curso <i class="fa-solid fa-arrow-right"></i></span>
-                                    </div>
                                 </div>
                             </template>
                         </div>
                     </div>
                 </template>
+
+                <div class="ios-board">
+                    <div class="ios-panel ios-panel--upcoming">
+                        <div class="ios-panel-head">
+                            <h3>Próximas actividades</h3>
+                            <template x-if="(stats?.activities_this_week || 0) > 0">
+                                <span class="panel-week-chip" x-text="`${stats.activities_this_week} esta semana`"></span>
+                            </template>
+                        </div>
+                        <template x-if="(stats?.upcoming_activities || []).length">
+                            <div class="upcoming-list">
+                                <template x-for="act in stats.upcoming_activities" :key="act.id">
+                                    <button type="button"
+                                            class="upcoming-row upcoming-row--clickable"
+                                            @click="openActivityModalFromExternal({ id: act.id })">
+                                        <div class="upcoming-date">
+                                            <strong x-text="formatDueParts(act.due_date).day"></strong>
+                                            <span x-text="formatDueParts(act.due_date).mon"></span>
+                                        </div>
+                                        <div class="upcoming-copy">
+                                            <p x-text="act.title"></p>
+                                            <small x-text="act.course_name"></small>
+                                        </div>
+                                        <span class="status-pill">Programada</span>
+                                    </button>
+                                </template>
+                            </div>
+                        </template>
+                        <template x-if="!(stats?.upcoming_activities || []).length">
+                            <p class="upcoming-empty">No hay entregas próximas. Cuando crees una actividad, aparecerá aquí.</p>
+                            <button type="button" class="insight-action" @click="loadCalendar()">Ver calendario</button>
+                        </template>
+                    </div>
+
+                    <div class="ios-panel" x-ref="insightsSection">
+                        <h3>Recordatorios</h3>
+                        <template x-for="insight in visibleInsights()" :key="insight.id">
+                            <button type="button" class="reminder-row" @click="runInsightAction(insight)">
+                                <div class="reminder-ico" :style="insight.type === 'atencion' ? 'background:#F59E0B' : (insight.type === 'logro' ? 'background:#10B981' : 'background:#7C3AED')">
+                                    <i class="fa-solid" :class="insight.type === 'atencion' ? 'fa-bolt' : 'fa-sparkles'"></i>
+                                </div>
+                                <div class="upcoming-copy">
+                                    <p x-text="insight.chipLabel"></p>
+                                    <small x-text="insight.text"></small>
+                                </div>
+                                <i class="fa-solid fa-chevron-right" style="color:var(--text-tertiary);font-size:11px;"></i>
+                            </button>
+                        </template>
+                        <div class="quick-actions">
+                            <a href="{{ route('teacher.planner.manual') }}" class="quick-action"><i class="fa-solid fa-wand-magic-sparkles"></i>Planificar</a>
+                            <a href="{{ route('teacher.attendance.index') }}" class="quick-action"><i class="fa-solid fa-clipboard-user"></i>Asistencia</a>
+                            <a href="{{ route('teacher.activities.index') }}" class="quick-action"><i class="fa-solid fa-plus"></i>Actividad</a>
+                            <button type="button" class="quick-action" @click="openBubbleWithFocus()"><i class="fa-solid fa-robot"></i>IA</button>
+                        </div>
+                    </div>
+                </div>
 
                 {{-- Empty State AI --}}
                 <template x-if="courses.length === 0 && !coursesLoading">
@@ -4072,7 +4300,7 @@
                         Modificar con IA
                     </button>
                         
-                        <button @click="deleteActivity(a.id, a.title)" class="action-btn warning">
+                        <button @click.stop="requestDeleteActivity(a.id, a.title)" class="action-btn warning">
                             <i class="fa-solid fa-trash-alt"></i>
                             Eliminar
                         </button>
@@ -4139,10 +4367,13 @@
                         <span class="calendar-stats">
                             <span x-text="calendarData?.total_activities ?? 0"></span> entregas
                         </span>
-                        <button type="button" class="calendar-nav-btn calendar-nav-btn--wide" title="Cambiar modelo pedagógico de planificación"
+                        <button type="button" class="pedagogy-btn" title="Cambiar modelo pedagógico de planificación"
                                 @click="window.dispatchEvent(new CustomEvent('nova-lesson-template-picker'))">
-                            <i class="fa-solid fa-book-open"></i>
-                            <span>Modelo pedagógico</span>
+                            <span class="pedagogy-emoji" aria-hidden="true">📘</span>
+                            <span>
+                                <small>Plantilla de clase</small>
+                                <strong>Modelo pedagógico</strong>
+                            </span>
                         </button>
                     </div>
                 </div>
@@ -4171,10 +4402,10 @@
                                         'today': cell !== null && isToday(cell)
                                      }">
                                     <template x-if="cell !== null">
-                                        <div>
+                                        <div style="display:flex;flex-direction:column;min-height:0;height:100%;">
                                             <span class="day-number" x-text="cell"></span>
                                             <div class="day-content">
-                                                <template x-for="act in activitiesForDay(cell).slice(0,2)" :key="act.id">
+                                                <template x-for="act in activitiesForDay(cell)" :key="act.id">
                                                     <button @click.stop="setActivityContext(act); openActivityModal(act)" 
                                                              class="cal-event"
                                                              :class="[
@@ -4183,11 +4414,6 @@
                                                              ]"
                                                              :title="act.title">
                                                         <span x-text="act.title.length > 15 ? act.title.substring(0,12)+'...' : act.title"></span>
-                                                    </button>
-                                                </template>
-                                                <template x-if="activitiesForDay(cell).length > 2">
-                                                    <button @click.stop="openDayModal(cell)" class="more-events">
-                                                        +<span x-text="activitiesForDay(cell).length - 2"></span> más
                                                     </button>
                                                 </template>
                                             </div>
@@ -4212,7 +4438,7 @@
                         ? 'background: rgba(59,201,219,0.12); color: var(--nova-cyan); border: 1px solid rgba(59,201,219,0.25);'
                         : 'background: rgba(245,158,11,0.12); color: #F59E0B; border: 1px solid rgba(245,158,11,0.25);'"
                       x-text="activityModal?.type === 'clase' ? 'CLASE' : 'EVALUACIÓN'"></span>
-                <h3 style="font-size: 16px; font-weight: 600; color: var(--text-primary); margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" x-text="activityModal?.title"></h3>
+                <h3 style="font-size: 16px; font-weight: 600; color: var(--text-primary); margin: 0; line-height: 1.3; white-space: normal;" x-text="activityModal?.title"></h3>
             </div>
             <button @click="activityModal = null" class="modal-close" style="flex-shrink: 0;">
                 <i class="fa-solid fa-xmark"></i>
@@ -4287,18 +4513,22 @@
                           placeholder="Anota observaciones generales de esta clase: comportamiento, ritmo, ajustes para la próxima sesión…"></textarea>
             </div>
 
-            <div x-show="activityModal?.type !== 'clase'">
-                <div style="margin-bottom: 8px;">
-                    <span class="modal-section-label">DESCRIPCIÓN</span>
+            <div x-show="activityModal?.type !== 'clase'" class="phase-cards-stack">
+                <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 2px;">
+                    <span class="modal-section-label">Diseño de la evaluación</span>
+                    <span style="font-size:11px;color:var(--text-tertiary)" x-text="activityModal?.evaluation_mode === 'physical' ? 'Formato impreso' : 'Formato digital'"></span>
                 </div>
-                <div class="markdown-body modal-prose">
-                    <template x-if="activityModal?.description">
-                        <div x-html="renderMarkdown(activityModal.description)"></div>
-                    </template>
-                    <template x-if="!activityModal?.description">
-                        <p class="modal-prose-empty">Sin descripción.</p>
-                    </template>
-                </div>
+                <template x-for="card in evaluationBriefCards()" :key="card.key">
+                    <div class="phase-card" :style="`border-left:3px solid ${card.color}`">
+                        <div class="phase-card-header">
+                            <div class="phase-card-badge" :style="`color:${card.color}`">
+                                <i :class="card.icon"></i>
+                                <span x-text="card.label"></span>
+                            </div>
+                        </div>
+                        <div class="phase-card-body markdown-body" x-html="card.html"></div>
+                    </div>
+                </template>
             </div>
 
             <div x-show="(activityModal?.tareas ?? []).length > 0" style="margin-top: 22px;">
@@ -4391,7 +4621,7 @@
                     Cargar Notas
                 </button>
             </template>
-            <button @click="deleteActivity(activityModal?.id, activityModal?.title)" class="modal-footer-btn danger">
+            <button @click.stop="requestDeleteActivity(activityModal?.id, activityModal?.title)" class="modal-footer-btn danger">
                 <i class="fa-solid fa-trash-alt"></i>
                 Eliminar
             </button>
@@ -4401,6 +4631,28 @@
         </div>
     </div>
 </div>
+
+    {{-- Delete activity confirm --}}
+    <div x-show="deleteConfirm.open" x-cloak class="modal-overlay" style="z-index: 12000;" @click.self="cancelDeleteActivity()" @keydown.escape.window="cancelDeleteActivity()">
+        <div class="modal-nova" style="max-width: 420px;" @click.stop>
+            <div class="modal-header" style="padding: 20px 24px;">
+                <h3 style="font-family: var(--font-display); font-size: 18px; font-weight: 800; margin: 0;">Eliminar actividad</h3>
+            </div>
+            <div style="padding: 0 24px 20px;">
+                <p style="font-size: 14px; line-height: 1.5; margin: 0 0 8px;">
+                    ¿Eliminar <strong x-text="deleteConfirm.title"></strong>?
+                </p>
+                <p style="font-size: 13px; color: var(--text-tertiary); margin: 0;">Esta acción no se puede deshacer.</p>
+            </div>
+            <div class="modal-footer" style="padding: 16px 24px; display: flex; gap: 8px; justify-content: flex-end; border-top: 1px solid var(--nova-glass-border);">
+                <button type="button" class="modal-footer-btn" :disabled="deleteConfirm.deleting" @click="cancelDeleteActivity()">Cancelar</button>
+                <button type="button" class="modal-footer-btn danger" :disabled="deleteConfirm.deleting" @click="confirmDeleteActivity()">
+                    <span x-show="!deleteConfirm.deleting"><i class="fa-solid fa-trash-alt"></i> Sí, eliminar</span>
+                    <span x-show="deleteConfirm.deleting">Eliminando...</span>
+                </button>
+            </div>
+        </div>
+    </div>
 
     {{-- Grade Slide-over --}}
     <div x-show="gradesSlideover.open" x-cloak class="grades-slideover-wrap" @keydown.escape.window="closeGradesSlideover()">
@@ -4559,6 +4811,10 @@
                     <i class="fa-solid fa-circle-check"></i>
                     Ya registrada — puedes editarla
                 </span>
+                <a class="meta-chip" :href="`{{ route('teacher.attendance.index') }}?course_id=${classAttendance.course_id || ''}&date=${classAttendance.date || ''}`" style="text-decoration:none;">
+                    <i class="fa-solid fa-up-right-from-square"></i>
+                    Abrir módulo completo
+                </a>
             </div>
 
             <div class="grades-slideover-body">
@@ -5037,6 +5293,7 @@ function teacherHub() {
         calendarMonth:   null,
         hiddenWidgets:   [],
         activityModal:   null,
+        deleteConfirm:   { open: false, id: null, title: '', deleting: false },
         phaseEdit: {
             template: 'clasica',
             values: {},
@@ -5121,12 +5378,21 @@ function teacherHub() {
         notifications:   [],
         unreadCount:     0,
         showNotifications: false,
+        showThemePicker: false,
+        currentThemeId: document.documentElement.getAttribute('data-theme') || 'light',
+        get themeOptions() {
+            return window.AULA_THEMES || [];
+        },
 
-        // Theme toggle method
-        toggleTheme() {
-            const next = this.isDarkMode ? 'light' : 'dark';
-            if (window.applyAulaTheme) window.applyAulaTheme(next);
+        applyTheme(themeId) {
+            if (window.applyAulaTheme) window.applyAulaTheme(themeId);
+            this.currentThemeId = document.documentElement.getAttribute('data-theme') || themeId;
             this.isDarkMode = document.documentElement.classList.contains('dark');
+            this.showThemePicker = false;
+        },
+
+        toggleTheme() {
+            this.showThemePicker = !this.showThemePicker;
         },
 
         async loadNotifications() {
@@ -5227,6 +5493,11 @@ function teacherHub() {
         async init() {
             // Initialize theme state
             this.isDarkMode = document.documentElement.classList.contains('dark');
+            this.currentThemeId = document.documentElement.getAttribute('data-theme') || 'light';
+            window.addEventListener('aula-theme-changed', (event) => {
+                this.currentThemeId = event.detail?.id || document.documentElement.getAttribute('data-theme') || 'light';
+                this.isDarkMode = document.documentElement.classList.contains('dark');
+            });
             const params = new URLSearchParams(window.location.search);
             const shouldOpenGrades = params.get('open_grades') === '1';
             const targetActivityId = Number(params.get('activity') || 0);
@@ -5719,6 +5990,10 @@ function teacherHub() {
             return this.insightsList().filter(i => i.type !== 'proximamente').length;
         },
 
+        visibleInsights() {
+            return this.insightsList().filter(i => i.type !== 'proximamente').slice(0, 2);
+        },
+
         runInsightAction(insight) {
             if (!insight?.actionType) return;
             if (insight.actionType === 'course') this.loadCourse(insight.actionPayload);
@@ -5763,25 +6038,62 @@ function teacherHub() {
             }
         },
 
-        async deleteActivity(id, title) {
-            if (!confirm(`¿Eliminar "${title}"?\nEsta acción no se puede deshacer.`)) return;
+        requestDeleteActivity(id, title) {
+            if (!id) return;
+            this.deleteConfirm = {
+                open: true,
+                id,
+                title: title || 'esta actividad',
+                deleting: false,
+            };
+        },
+
+        cancelDeleteActivity() {
+            if (this.deleteConfirm.deleting) return;
+            this.deleteConfirm = { open: false, id: null, title: '', deleting: false };
+        },
+
+        async confirmDeleteActivity() {
+            const { id, deleting } = this.deleteConfirm;
+            if (!id || deleting) return;
+
+            this.deleteConfirm.deleting = true;
+
             try {
                 const res = await fetch(`/teacher/activities/${id}`, {
-                    method:  'DELETE',
+                    method: 'DELETE',
                     headers: {
-                        'Accept':       'application/json',
-                        'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').content,
+                        'Accept': 'application/json',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]')?.content || '',
                     },
                 });
-                if (res.ok || res.status === 302) {
-                    await this.loadCourse(this.currentCourseId);
-            await this.refreshCourseSidebar();
-            this.loadNotifications();
-                } else {
-                    alert('Error al eliminar la actividad. Inténtalo de nuevo.');
+                const data = await res.json().catch(() => ({}));
+
+                if (!res.ok || data.success === false) {
+                    throw new Error(data.message || 'Error al eliminar la actividad.');
                 }
+
+                if (this.activityModal?.id === id) {
+                    this.activityModal = null;
+                }
+
+                this.deleteConfirm = { open: false, id: null, title: '', deleting: false };
+                this.showToast(data.message || 'Actividad eliminada correctamente.', 'success', 'fa-trash-check');
+
+                if (this.view === 'calendar' && this.calendarMonth) {
+                    await this.loadCalendar(this.calendarMonth);
+                } else if (this.view === 'course' && this.currentCourseId) {
+                    await this.loadCourse(this.currentCourseId);
+                } else if (this.view === 'welcome') {
+                    await this.loadWelcome();
+                }
+
+                await this.refreshCourseSidebar();
+                this.loadNotifications();
             } catch (e) {
-                console.error('deleteActivity', e);
+                console.error('confirmDeleteActivity', e);
+                this.deleteConfirm.deleting = false;
+                this.showToast(e.message || 'Error al eliminar la actividad.', 'error', 'fa-exclamation-triangle');
             }
         },
 
@@ -6643,6 +6955,75 @@ function teacherHub() {
                 }
             }
             return parts.join('\n\n');
+        },
+
+        evaluationBriefCards() {
+            const act = this.activityModal;
+            if (!act) return [];
+            const topic = String(act.evaluation_topic || act.title || 'esta evaluación').replace(/^Examen:\s*/i, '');
+            const parsed = this.parseEvalMarkdown(act.description || '');
+            const raw = String(act.description || '').trim();
+            const amateur = this.isAmateurEvalText(raw);
+
+            let purpose = parsed.purpose;
+            let instructions = parsed.instructions;
+            if (!purpose) {
+                purpose = amateur || !raw
+                    ? `Comprobar el dominio de **${topic}** en ${act.course_name || 'el curso'}, con evidencia clara y criterios de logro.`
+                    : raw;
+            }
+            if (!instructions) {
+                instructions = amateur || parsed.purpose
+                    ? (raw && amateur ? raw : `Responde cada ítem demostrando comprensión de **${topic}**. Justifica cuando se pida explicación y revisa antes de entregar.`)
+                    : '';
+            }
+            if (!instructions) {
+                instructions = 'Demuestra lo aprendido con respuestas precisas. En las preguntas abiertas explica el procedimiento y usa el vocabulario de la unidad.';
+            }
+
+            const instrument = parsed.instrument || [
+                act.evaluation_question_count ? `- **${act.evaluation_question_count} preguntas** alineadas al tema.` : null,
+                act.max_score ? `- Puntaje máximo: **${act.max_score}**.` : null,
+                act.weight_percentage ? `- Peso en el plan: **${act.weight_percentage}%**.` : null,
+                act.due_date ? `- Fecha: **${act.due_date}**.` : null,
+                `- Formato: **${act.evaluation_mode === 'physical' ? 'impresa / física' : 'digital en AulaSync'}**.`,
+            ].filter(Boolean).join('\n');
+
+            const md = (text) => typeof window.renderMarkdown === 'function'
+                ? window.renderMarkdown(text)
+                : String(text || '').replace(/</g, '&lt;');
+
+            return [
+                { key: 'purpose', label: 'Propósito', icon: 'fa-solid fa-bullseye', color: '#F59E0B', html: md(purpose) },
+                { key: 'guide', label: 'Indicaciones', icon: 'fa-solid fa-list-check', color: '#8B5CF6', html: md(instructions) },
+                { key: 'instrument', label: 'Instrumento', icon: 'fa-solid fa-clipboard-list', color: '#06B6D4', html: md(instrument) },
+            ];
+        },
+
+        parseEvalMarkdown(text) {
+            const src = String(text || '').trim();
+            const out = { purpose: '', instructions: '', instrument: '' };
+            if (!src) return out;
+            const parts = src.split(/\n(?=\*\*(Propósito|Indicaciones|Instrumento)\*\*)/i);
+            if (parts.length < 2 && !/\*\*(Propósito|Indicaciones|Instrumento)\*\*/i.test(src)) {
+                return out;
+            }
+            for (const part of parts) {
+                const match = part.match(/^\*\*(Propósito|Indicaciones|Instrumento)\*\*\s*([\s\S]*)$/i);
+                if (!match) continue;
+                const key = match[1].toLowerCase();
+                const body = match[2].trim();
+                if (key === 'propósito' || key === 'proposito') out.purpose = body;
+                if (key === 'indicaciones') out.instructions = body;
+                if (key === 'instrumento') out.instrument = body;
+            }
+            return out;
+        },
+
+        isAmateurEvalText(text) {
+            const plain = String(text || '').replace(/\s+/g, ' ').trim().toLowerCase();
+            if (!plain) return true;
+            return plain.length < 220 && /responde las siguientes|lee cada pregunta|cuidadosamente|selecciona la respuesta correcta|según corresponda/.test(plain);
         },
 
         openActivityModal(activity) {

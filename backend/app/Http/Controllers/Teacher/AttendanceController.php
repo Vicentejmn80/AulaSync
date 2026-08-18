@@ -12,6 +12,7 @@ use App\Models\Student;
 use App\Services\AttendanceAlertService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\View\View;
 
@@ -101,6 +102,24 @@ class AttendanceController extends Controller
         })->values();
 
         $taken = $existing->isNotEmpty();
+        $counts = [
+            'present' => $existing->where('status', 'present')->count(),
+            'absent' => $existing->where('status', 'absent')->count(),
+            'tardy' => $existing->where('status', 'tardy')->count(),
+            'total' => $students->count(),
+            'marked' => $existing->count(),
+        ];
+
+        $monthStart = Carbon::parse($date)->startOfMonth()->toDateString();
+        $monthEnd = Carbon::parse($date)->endOfMonth()->toDateString();
+        $listedDates = Attendance::where('course_id', $course->id)
+            ->whereBetween('attended_on', [$monthStart, $monthEnd])
+            ->distinct()
+            ->orderBy('attended_on')
+            ->pluck('attended_on')
+            ->map(fn ($d) => Carbon::parse($d)->toDateString())
+            ->unique()
+            ->values();
 
         return response()->json([
             'success' => true,
@@ -110,6 +129,8 @@ class AttendanceController extends Controller
             ],
             'date' => $date,
             'taken' => $taken,
+            'counts' => $counts,
+            'listed_dates' => $listedDates,
             'roster' => $roster,
         ]);
     }

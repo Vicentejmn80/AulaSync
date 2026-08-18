@@ -330,7 +330,7 @@ class EvaluationSyncService
             'colegio_id' => $teacher->colegio_id,
             'type' => Activity::TYPE_ACTIVIDAD,
             'title' => $title,
-            'description' => $evaluation->instructions ?: ($evaluation->description ?: 'Evaluación formal sincronizada.'),
+            'description' => $this->buildCalendarDescription($evaluation, $weight, $maxScore),
             'max_score' => $maxScore,
             'weight_percentage' => $weight,
             'due_date' => $dueDate,
@@ -369,6 +369,54 @@ class EvaluationSyncService
         }
 
         return $activity;
+    }
+
+    private function buildCalendarDescription(Evaluation $evaluation, float $weight, int $maxScore): string
+    {
+        $evaluation->loadMissing(['questions', 'course']);
+        $topic = trim((string) ($evaluation->topic ?: $evaluation->title));
+        $course = trim((string) ($evaluation->course?->subject_name.' '.$evaluation->course?->grade));
+        $questionCount = $evaluation->questions->count() ?: (int) ($evaluation->question_count ?: 0);
+        $modeLabel = ($evaluation->mode ?? 'digital') === 'physical' ? 'impresa / física' : 'digital en AulaSync';
+        $purpose = trim((string) ($evaluation->description ?: ''));
+        $instructions = trim((string) ($evaluation->instructions ?: ''));
+
+        if ($purpose === '' || $this->isAmateurEvaluationCopy($purpose)) {
+            $purpose = "Evaluar el dominio de **{$topic}**".($course !== '' ? " en {$course}" : '')
+                .', con evidencia observable y criterios claros de logro.';
+        }
+        if ($instructions === '' || $this->isAmateurEvaluationCopy($instructions)) {
+            $instructions = "Lee cada ítem con atención y responde con tus propias palabras cuando se pida explicación. "
+                ."Justifica las decisiones, revisa antes de entregar y usa el vocabulario de la unidad **{$topic}**.";
+        }
+
+        $instrument = [];
+        if ($questionCount > 0) {
+            $instrument[] = "- **{$questionCount} preguntas** alineadas al tema.";
+        }
+        $instrument[] = '- Puntaje máximo: **'.$maxScore.'**.';
+        $instrument[] = '- Peso en el plan de evaluación: **'.rtrim(rtrim(number_format($weight, 1, '.', ''), '0'), '.').'%**.';
+        $instrument[] = '- Formato: **'.$modeLabel.'**.';
+        if ($evaluation->scheduled_at) {
+            $instrument[] = '- Fecha: **'.$evaluation->scheduled_at->toDateString().'**.';
+        }
+
+        return "**Propósito**\n{$purpose}\n\n"
+            ."**Indicaciones**\n{$instructions}\n\n"
+            ."**Instrumento**\n".implode("\n", $instrument);
+    }
+
+    private function isAmateurEvaluationCopy(string $text): bool
+    {
+        $plain = mb_strtolower(trim(preg_replace('/\s+/', ' ', $text) ?? ''));
+        if ($plain === '') {
+            return true;
+        }
+        if (mb_strlen($plain) < 220 && preg_match('/responde las siguientes|lee cada pregunta|cuidadosamente|selecciona la respuesta correcta|según corresponda/', $plain)) {
+            return true;
+        }
+
+        return false;
     }
 
     private function syncQuestions(Evaluation $evaluation, array $questions): void

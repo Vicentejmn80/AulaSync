@@ -99,12 +99,27 @@ class HubController extends Controller
             ->whereBetween('due_date', [now()->startOfWeek(), now()->endOfWeek()])
             ->count();
 
-        // Next upcoming activity
-        $nextActivity = Activity::whereIn('course_id', $courseIds)
+        // Upcoming activities (next 4)
+        $upcomingActivities = Activity::whereIn('course_id', $courseIds)
             ->where('due_date', '>=', now()->toDateString())
             ->orderBy('due_date')
+            ->limit(3)
             ->with('course:id,subject_name,grade,section')
-            ->first(['id', 'title', 'due_date', 'course_id']);
+            ->get(['id', 'title', 'due_date', 'course_id', 'type'])
+            ->map(fn ($activity) => [
+                'id'          => $activity->id,
+                'title'       => $activity->title,
+                'due_date'    => $activity->due_date,
+                'type'        => $activity->type,
+                'course_name' => trim(collect([
+                    optional($activity->course)->subject_name,
+                    optional($activity->course)->grade,
+                    optional($activity->course)->section,
+                ])->filter()->implode(' ')),
+            ])
+            ->values();
+
+        $nextActivity = $upcomingActivities->first();
 
         // Climate: computed from recent grade average
         $climate = $this->computeClimate($avgGrade);
@@ -136,11 +151,8 @@ class HubController extends Controller
             'avg_grade'            => $avgGrade ? round($avgGrade, 1) : null,
             'climate'              => $climate,
             'grade_trend'          => $gradeTrend,
-            'next_activity'        => $nextActivity ? [
-                'title'       => $nextActivity->title,
-                'due_date'    => $nextActivity->due_date,
-                'course_name' => optional($nextActivity->course)->subject_name . ' ' . optional($nextActivity->course)->grade,
-            ] : null,
+            'next_activity'        => $nextActivity,
+            'upcoming_activities'  => $upcomingActivities,
             'attendance'           => $this->attendanceSnapshot($teacher->id, $courseIds),
         ]);
     }
@@ -245,7 +257,7 @@ class HubController extends Controller
                 ->select('students.id', 'students.name', 'students.grade', 'students.section', 'students.document_id', 'students.family_code')
                 ->orderBy('students.name'),
             'activities' => fn ($q) => $q
-                ->with('tareas')
+                ->with(['tareas', 'evaluation:id,title,mode,question_count,topic,instructions'])
                 ->withCount('grades')
                 ->withAvg('grades', 'score')
                 ->orderBy('due_date'),
@@ -283,35 +295,7 @@ class HubController extends Controller
                     'promedio_acumulado' => $accumulated,
                 ];
             }),
-            'activities'   => $course->activities->map(fn ($a) => [
-                'id'                => $a->id,
-                'course_id'         => $a->course_id,
-                'type'              => $a->type ?? 'actividad',
-                'is_homework'       => (bool) $a->is_homework,
-                'title'             => $a->title,
-                'description'       => $a->description ?? '',
-                'notes'             => $a->notes,
-                'max_score'         => $a->max_score,
-                'weight_percentage' => $a->weight_percentage,
-                'due_date'          => $a->due_date instanceof \Carbon\Carbon
-                                       ? $a->due_date->format('Y-m-d')
-                                       : (string) $a->due_date,
-                'nee_type'          => $a->nee_type,
-                'nee_adaptation'    => $a->nee_adaptation,
-                'avg_score'         => $a->grades_avg_score !== null ? round((float) $a->grades_avg_score, 1) : null,
-                'graded_count'      => (int) ($a->grades_count ?? 0),
-                'total_students'    => $totalStudents,
-                'grades_url'        => route('teacher.grades.create', $a->id),
-                'tareas'            => $a->tareas->map(fn ($t) => [
-                    'id' => $t->id,
-                    'titulo' => $t->titulo,
-                    'descripcion' => $t->descripcion,
-                    'fecha_entrega' => $t->fecha_entrega?->format('Y-m-d'),
-                    'puntos' => $t->puntos,
-                    'calificacion' => $t->calificacion,
-                    'feedback' => $t->feedback,
-                ])->values(),
-            ]),
+            'activities'   => $course->activities->map(fn ($a) => $this->serializeHubActivity($a, $totalStudents)),
         ]);
     }
 
@@ -464,41 +448,11 @@ class HubController extends Controller
         // Load all activities for this teacher's courses in the month range
         $query = Activity::whereIn('course_id', $courseIds)
             ->whereBetween('due_date', [$start->toDateString(), $end->toDateString()])
-            ->with(['course:id,subject_name,grade,section', 'tareas']);
+            ->with(['course:id,subject_name,grade,section', 'tareas', 'evaluation:id,title,mode,question_count,topic,instructions']);
 
         $activitiesByDay = $query->get()
             ->groupBy(fn ($a) => Carbon::parse($a->due_date)->format('Y-m-d'))
-            ->map(fn ($group) => $group->map(fn ($a) => [
-                'id'            => $a->id,
-                'type'          => $a->type ?? 'actividad',
-                'title'         => $a->title,
-                'description'   => $a->description ?? '',
-                'course_name'   => optional($a->course)->subject_name . ' ' . optional($a->course)->grade,
-                'course_id'     => $a->course_id,
-                'grade'         => optional($a->course)->grade,
-                'section'       => optional($a->course)->section,
-                'color'         => $a->is_homework ? '#0ea5e9' : ($courseColors[$a->course_id] ?? '#7c3aed'),
-                'due_date'      => $a->due_date instanceof \Carbon\Carbon
-                                   ? $a->due_date->format('Y-m-d')
-                                   : (string) $a->due_date,
-                'max_score'     => $a->max_score,
-                'plan_block_id' => $a->plan_block_id,
-                'grades_url'    => route('teacher.grades.create', $a->id),
-                'is_homework'   => (bool) $a->is_homework,
-                'director_notes'=> $a->director_notes,
-                'notes'         => $a->notes,
-                'nee_type'      => $a->nee_type,
-                'nee_adaptation'=> $a->nee_adaptation,
-                'tareas'        => $a->tareas->map(fn ($t) => [
-                    'id' => $t->id,
-                    'titulo' => $t->titulo,
-                    'descripcion' => $t->descripcion,
-                    'fecha_entrega' => $t->fecha_entrega?->format('Y-m-d'),
-                    'puntos' => $t->puntos,
-                    'calificacion' => $t->calificacion,
-                    'feedback' => $t->feedback,
-                ])->values(),
-            ]));
+            ->map(fn ($group) => $group->map(fn ($a) => $this->serializeHubActivity($a, null, $courseColors)));
 
         return response()->json([
             'month'             => $start->format('Y-m'),
@@ -520,46 +474,68 @@ class HubController extends Controller
         $activity->load([
             'course:id,subject_name,grade,section',
             'tareas:id,actividad_id,titulo,descripcion,fecha_entrega,puntos,calificacion,feedback',
+            'evaluation:id,title,mode,question_count,topic,instructions',
         ]);
-
-        $course = $activity->course;
 
         return response()->json([
             'success' => true,
-            'activity' => [
-                'id' => $activity->id,
-                'type' => $activity->type ?? 'actividad',
-                'title' => $activity->title,
-                'description' => $activity->description ?? '',
-                'course_name' => trim(($course?->subject_name ?? '') . ' ' . ($course?->grade ?? '')),
-                'course_id' => $activity->course_id,
-                'grade' => $course?->grade,
-                'section' => $course?->section,
-                'due_date' => $activity->due_date instanceof \Carbon\Carbon
-                    ? $activity->due_date->format('Y-m-d')
-                    : (string) $activity->due_date,
-                'max_score' => $activity->max_score,
-                'weight_percentage' => $activity->weight_percentage,
-                'plan_block_id' => $activity->plan_block_id,
-                'is_homework' => (bool) $activity->is_homework,
-                'director_notes' => $activity->director_notes,
-                'notes' => $activity->notes,
-                'nee_type' => $activity->nee_type,
-                'nee_adaptation' => $activity->nee_adaptation,
-                'tareas' => $activity->tareas->map(fn ($t) => [
-                    'id' => $t->id,
-                    'titulo' => $t->titulo,
-                    'descripcion' => $t->descripcion,
-                    'fecha_entrega' => $t->fecha_entrega?->format('Y-m-d'),
-                    'puntos' => $t->puntos,
-                    'calificacion' => $t->calificacion,
-                    'feedback' => $t->feedback,
-                ])->values(),
-            ],
+            'activity' => $this->serializeHubActivity($activity),
         ]);
     }
 
     // ─── Helpers ─────────────────────────────────────────────────────────────
+
+    private function serializeHubActivity(Activity $activity, ?int $totalStudents = null, array $courseColors = []): array
+    {
+        $course = $activity->relationLoaded('course') ? $activity->course : $activity->course()->first();
+        $evaluation = $activity->relationLoaded('evaluation') ? $activity->evaluation : null;
+        $dueDate = $activity->due_date instanceof Carbon
+            ? $activity->due_date->format('Y-m-d')
+            : (string) $activity->due_date;
+
+        $payload = [
+            'id' => $activity->id,
+            'course_id' => $activity->course_id,
+            'type' => $activity->type ?? 'actividad',
+            'is_homework' => (bool) $activity->is_homework,
+            'title' => $activity->title,
+            'description' => $activity->description ?? '',
+            'notes' => $activity->notes,
+            'max_score' => $activity->max_score,
+            'weight_percentage' => $activity->weight_percentage,
+            'due_date' => $dueDate,
+            'course_name' => trim(($course?->subject_name ?? '').' '.($course?->grade ?? '')),
+            'grade' => $course?->grade,
+            'section' => $course?->section,
+            'color' => $activity->is_homework ? '#0ea5e9' : ($courseColors[$activity->course_id] ?? '#7c3aed'),
+            'plan_block_id' => $activity->plan_block_id,
+            'grades_url' => route('teacher.grades.create', $activity->id),
+            'director_notes' => $activity->director_notes,
+            'nee_type' => $activity->nee_type,
+            'nee_adaptation' => $activity->nee_adaptation,
+            'evaluation_id' => $activity->evaluation_id ?: $evaluation?->id,
+            'evaluation_mode' => $evaluation?->mode,
+            'evaluation_topic' => $evaluation?->topic,
+            'evaluation_question_count' => $evaluation?->question_count,
+            'tareas' => ($activity->tareas ?? collect())->map(fn ($t) => [
+                'id' => $t->id,
+                'titulo' => $t->titulo,
+                'descripcion' => $t->descripcion,
+                'fecha_entrega' => $t->fecha_entrega?->format('Y-m-d'),
+                'puntos' => $t->puntos,
+                'calificacion' => $t->calificacion,
+                'feedback' => $t->feedback,
+            ])->values(),
+        ];
+
+        if ($totalStudents !== null) {
+            $payload['avg_score'] = $activity->grades_avg_score !== null ? round((float) $activity->grades_avg_score, 1) : null;
+            $payload['graded_count'] = (int) ($activity->grades_count ?? 0);
+            $payload['total_students'] = $totalStudents;
+        }
+
+        return $payload;
+    }
 
     private function monthNameEs(int $month): string
     {
