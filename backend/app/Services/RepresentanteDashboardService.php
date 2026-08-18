@@ -169,8 +169,14 @@ class RepresentanteDashboardService
                     $events->push([
                         'id' => 'act-'.$activity->id,
                         'type' => $type,
+                        'type_label' => $type === 'class' ? 'Clase' : ($type === 'task' ? 'Tarea' : 'Actividad'),
                         'title' => $activity->title,
                         'course' => $activity->course?->subject_name,
+                        'description' => $this->eventDescription(
+                            $activity->description,
+                            $activity->notes,
+                            $activity->director_notes
+                        ),
                         'date' => $activity->due_date?->format('Y-m-d'),
                     ]);
                 });
@@ -187,8 +193,10 @@ class RepresentanteDashboardService
                     $events->push([
                         'id' => 'eval-'.$evaluation->id,
                         'type' => 'evaluation',
+                        'type_label' => 'Evaluación',
                         'title' => $evaluation->title,
                         'course' => $evaluation->course?->subject_name,
+                        'description' => 'Evaluación planificada para este día. Revisa contenidos y criterios de calificación.',
                         'date' => optional($evaluation->scheduled_at)?->format('Y-m-d'),
                     ]);
                 });
@@ -205,8 +213,12 @@ class RepresentanteDashboardService
                     $events->push([
                         'id' => 'att-'.$row->id,
                         'type' => $row->status === Attendance::STATUS_TARDY ? 'tardy' : 'absence',
+                        'type_label' => $row->status === Attendance::STATUS_TARDY ? 'Retraso' : 'Ausencia',
                         'title' => $row->status === Attendance::STATUS_TARDY ? 'Retraso' : 'Ausencia',
                         'course' => $row->course?->subject_name,
+                        'description' => $row->status === Attendance::STATUS_TARDY
+                            ? 'Se registró llegada tarde este día.'
+                            : 'Se registró ausencia este día.',
                         'date' => $row->attended_on?->format('Y-m-d'),
                     ]);
                 });
@@ -223,6 +235,18 @@ class RepresentanteDashboardService
             'label' => $start->locale('es')->translatedFormat('F Y'),
             'events' => $byDay,
         ];
+    }
+
+    private function eventDescription(?string ...$candidates): string
+    {
+        foreach ($candidates as $candidate) {
+            $text = trim((string) $candidate);
+            if ($text !== '') {
+                return mb_substr($text, 0, 220);
+            }
+        }
+
+        return 'Sin descripción detallada aún. El docente puede ampliarla en el plan de clase.';
     }
 
     public function subjects(Student $student): array

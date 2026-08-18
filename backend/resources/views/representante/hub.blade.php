@@ -103,14 +103,69 @@
         .tabs { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
         .tab { border: 1px solid var(--nova-glass-border); background: transparent; color: var(--text-secondary); border-radius: 999px; padding: 8px 14px; font-weight: 700; cursor: pointer; }
         .tab.active { background: var(--nova-gradient); color: #fff; border-color: transparent; }
-        .feed-item { padding: 12px 0; border-bottom: 1px solid var(--nova-glass-border); cursor: pointer; }
+        .feed-item {
+            padding: 12px 0;
+            border-bottom: 1px solid var(--nova-glass-border);
+            cursor: pointer;
+        }
+        .event-card {
+            padding: 12px 14px;
+            border: 1px solid var(--nova-glass-border);
+            border-radius: 14px;
+            background: color-mix(in oklab, var(--bg-card) 86%, white 14%);
+            margin-top: 10px;
+        }
+        .event-card:hover { border-color: color-mix(in oklab, var(--nova-violet) 45%, var(--nova-glass-border)); }
+        .event-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+        .event-meta { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+        .event-desc { margin-top: 8px; font-size: 13px; line-height: 1.45; color: var(--text-secondary); }
+        .event-pill {
+            display: inline-flex;
+            align-items: center;
+            border-radius: 999px;
+            padding: 3px 10px;
+            font-size: 11px;
+            font-weight: 800;
+            letter-spacing: .02em;
+            border: 1px solid var(--nova-glass-border);
+            background: var(--nova-glass);
+            color: var(--text-primary);
+        }
         .unread { color: var(--nova-violet); }
         .fab {
-            position: fixed; right: 24px; bottom: 24px; z-index: 40; display: flex; flex-direction: column; gap: 8px; align-items: flex-end;
+            position: fixed;
+            right: 24px;
+            bottom: 24px;
+            z-index: 40;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            align-items: flex-end;
+            width: min(300px, 90vw);
         }
         .fab-btn {
-            border: 0; border-radius: 16px; padding: 12px 16px; font-weight: 800; color: #fff;
-            background: var(--nova-gradient); box-shadow: var(--az-shadow-glow); cursor: pointer;
+            width: 100%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: flex-start;
+            gap: 10px;
+            border: 1px solid color-mix(in oklab, var(--nova-violet) 45%, transparent);
+            border-radius: 16px;
+            padding: 12px 14px;
+            font-weight: 800;
+            color: #fff;
+            background: linear-gradient(135deg, #7c3aed, #ec4899 52%, #22d3ee);
+            box-shadow: 0 16px 36px rgba(124, 58, 237, .35);
+            cursor: pointer;
+            transition: transform .2s ease, box-shadow .2s ease;
+        }
+        .fab-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 20px 44px rgba(124, 58, 237, .4);
+        }
+        .fab-btn i {
+            width: 20px;
+            text-align: center;
         }
         .overlay { position: fixed; inset: 0; background: rgba(8,6,20,.55); z-index: 50; display: grid; place-items: center; padding: 16px; }
         .modal { width: min(640px, 100%); background: var(--bg-secondary); border: 1px solid var(--nova-glass-border); border-radius: 28px; padding: 22px; max-height: 86vh; overflow: auto; }
@@ -260,7 +315,7 @@
                         <div class="cal-grid">
                             <template x-for="d in ['L','M','X','J','V','S','D']"><div class="cal-dow" x-text="d"></div></template>
                             <template x-for="day in monthDays" :key="day.key">
-                                <button class="cal-day" :class="{ active: selectedDay === day.date }" :style="day.blank ? 'visibility:hidden' : ''" @click="selectedDay = day.date">
+                                <button class="cal-day" :class="{ active: selectedDay === day.date }" :style="day.blank ? 'visibility:hidden' : ''" @click="pickDay(day.date)">
                                     <div style="font-weight:800;font-size:12px" x-text="day.n"></div>
                                     <div class="dots">
                                         <template x-for="ev in (calendar.events?.[day.date] || []).slice(0,4)" :key="ev.id">
@@ -274,12 +329,25 @@
                             <strong x-text="selectedDay ? 'Eventos del ' + fmt(selectedDay) : 'Selecciona un día'"></strong>
                             <template x-if="!(calendar.events?.[selectedDay] || []).length"><p class="empty">Sin eventos este día.</p></template>
                             <template x-for="ev in (calendar.events?.[selectedDay] || [])" :key="ev.id">
-                                <div class="feed-item" style="cursor:default">
-                                    <span class="dot" :class="ev.type" style="display:inline-block;margin-right:6px"></span>
-                                    <strong x-text="ev.title"></strong>
-                                    <span style="color:var(--text-secondary)" x-text="ev.course ? ' · ' + ev.course : ''"></span>
+                                <div class="event-card" @click="openEvent(ev)">
+                                    <div class="event-head">
+                                        <div>
+                                            <div style="display:flex;align-items:center;gap:8px;">
+                                                <span class="dot" :class="ev.type" style="display:inline-block"></span>
+                                                <strong x-text="ev.title"></strong>
+                                            </div>
+                                            <div class="event-meta" x-text="[ev.type_label, ev.course].filter(Boolean).join(' · ')"></div>
+                                        </div>
+                                        <span class="event-pill">Ver detalle</span>
+                                    </div>
                                 </div>
                             </template>
+                            <div class="event-card" x-show="selectedEvent" x-cloak style="margin-top:14px;border-color:color-mix(in oklab, var(--nova-violet) 35%, var(--nova-glass-border));">
+                                <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--nova-cyan);margin-bottom:6px;">Detalle de la clase/evento</div>
+                                <h3 style="margin:0;font-size:17px;font-weight:900;" x-text="selectedEvent?.title"></h3>
+                                <div class="event-meta" x-text="[selectedEvent?.type_label, selectedEvent?.course].filter(Boolean).join(' · ')"></div>
+                                <p class="event-desc" x-text="selectedEvent?.description || 'Sin descripción por ahora.'"></p>
+                            </div>
                         </div>
                         <button class="btn btn-ghost" style="margin-top:10px" @click="view = 'calendar'">Ver horario completo</button>
                     </section>
@@ -324,7 +392,7 @@
                     </div>
                     <p class="empty" x-text="calendar.label"></p>
                     <template x-for="sub in subjects" :key="'h'+sub.id">
-                        <div class="feed-item" style="cursor:default">
+                        <div class="event-card" style="cursor:default">
                             <strong x-text="sub.name"></strong>
                             <div style="font-size:13px;color:var(--text-secondary)" x-text="sub.teacher + ' · ' + (sub.grade || '')"></div>
                         </div>
@@ -333,7 +401,14 @@
                         <div>
                             <div style="font-weight:800;margin-top:12px" x-text="fmt(date)"></div>
                             <template x-for="ev in group" :key="ev.id">
-                                <div class="feed-item" style="cursor:default"><span class="dot" :class="ev.type" style="display:inline-block"></span> <span x-text="ev.title + (ev.course ? ' · ' + ev.course : '')"></span></div>
+                                <div class="event-card" @click="openEvent(ev)">
+                                    <div style="display:flex;align-items:center;gap:8px;">
+                                        <span class="dot" :class="ev.type" style="display:inline-block"></span>
+                                        <strong x-text="ev.title"></strong>
+                                    </div>
+                                    <div class="event-meta" x-text="[ev.type_label, ev.course].filter(Boolean).join(' · ')"></div>
+                                    <div class="event-desc" x-text="preview(ev.description, 140)"></div>
+                                </div>
                             </template>
                         </div>
                     </template>
@@ -502,10 +577,22 @@
     </div>
 
     <div class="fab" x-show="students.length > 0">
-        <button class="fab-btn" @click="openAbsence = true"><i class="fa-solid fa-calendar-xmark"></i> Reportar ausencia</button>
-        <button class="fab-btn" @click="openBoletin()"><i class="fa-solid fa-file-arrow-down"></i> Ver boletín</button>
-        <a class="fab-btn" :href="constanciaUrl" style="text-decoration:none"><i class="fa-solid fa-stamp"></i> Ver constancias</a>
-        <button class="fab-btn" @click="openProfile = true"><i class="fa-solid fa-pen"></i> Editar perfil</button>
+        <button class="fab-btn" @click="openAbsence = true" title="Notificar una ausencia o retraso al colegio">
+            <i class="fa-solid fa-calendar-xmark"></i>
+            <span>Reportar ausencia</span>
+        </button>
+        <button class="fab-btn" @click="openBoletin()" title="Ver notas y rendimiento actual">
+            <i class="fa-solid fa-file-arrow-down"></i>
+            <span>Ver boletín</span>
+        </button>
+        <a class="fab-btn" :href="constanciaUrl" style="text-decoration:none" title="Descargar constancia de estudio">
+            <i class="fa-solid fa-stamp"></i>
+            <span>Ver constancias</span>
+        </a>
+        <button class="fab-btn" @click="openProfile = true" title="Actualizar datos del representante">
+            <i class="fa-solid fa-pen"></i>
+            <span>Editar perfil</span>
+        </button>
     </div>
 
     <div class="overlay" x-show="openAbsence" x-cloak @click.self="openAbsence = false">
@@ -639,6 +726,7 @@
                 notifications: [],
                 unreadNotif: 0,
                 selectedDay: '{{ now()->toDateString() }}',
+                selectedEvent: null,
                 commTab: 'announcements',
                 openAbsence: false,
                 openProfile: false,
@@ -719,6 +807,7 @@
                     this.notifications = notif.items || [];
                     this.unreadNotif = notif.unread || 0;
                     this.absence.student_id = id;
+                    this.ensureSelectedDay();
                 },
                 async shiftMonth(delta) {
                     const [y, m] = this.calendar.month.split('-').map(Number);
@@ -726,6 +815,29 @@
                     this.calendar.month = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
                     const cal = await fetch(`/representante/api/${this.studentId}/calendario?month=${this.calendar.month}`, { headers: { Accept: 'application/json' } }).then(r => r.json());
                     this.calendar = cal.calendar || this.calendar;
+                    this.ensureSelectedDay();
+                },
+                ensureSelectedDay() {
+                    const days = Object.keys(this.calendar.events || {}).sort();
+                    if (!this.selectedDay || !this.calendar.events?.[this.selectedDay]) {
+                        this.selectedDay = days[0] || this.selectedDay;
+                    }
+                    const list = this.calendar.events?.[this.selectedDay] || [];
+                    this.selectedEvent = list.length ? list[0] : null;
+                },
+                pickDay(date) {
+                    if (!date) return;
+                    this.selectedDay = date;
+                    const list = this.calendar.events?.[date] || [];
+                    this.selectedEvent = list.length ? list[0] : null;
+                },
+                openEvent(ev) {
+                    this.selectedEvent = ev || null;
+                },
+                preview(text, max = 140) {
+                    const raw = String(text || '').trim();
+                    if (!raw) return 'Sin descripción por ahora.';
+                    return raw.length > max ? raw.slice(0, max - 1) + '…' : raw;
                 },
                 async openSubject(id) {
                     const json = await fetch(`/representante/api/${this.studentId}/materia/${id}`, { headers: { Accept: 'application/json' } }).then(r => r.json());
