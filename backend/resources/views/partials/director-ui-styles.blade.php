@@ -324,6 +324,12 @@
         }
         .director-header .relative.flex.items-center.gap-2 {
             align-self: flex-end;
+            overflow: visible;
+            z-index: 120;
+        }
+        .director-dash-header .shrink-0 {
+            overflow: visible;
+            z-index: 120;
         }
         .tracking-\[\.3em\],
         .tracking-\[\.25em\] {

@@ -7,12 +7,16 @@ use App\Http\Controllers\Controller;
 use App\Models\Course;
 use App\Models\TeacherInvite;
 use App\Models\User;
+use App\Services\DirectorActionService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 
 class StaffController extends Controller
 {
+    public function __construct(
+        private DirectorActionService $actionService,
+    ) {}
     public function index(Request $request): View
     {
         $colegioId = $request->user()->colegio_id;
@@ -27,6 +31,8 @@ class StaffController extends Controller
             ->get(['id', 'name', 'email', 'role', 'colegio_id']);
 
         $invites = TeacherInvite::where('colegio_id', $colegioId)
+            ->whereNull('claimed_by')
+            ->whereNull('claimed_at')
             ->whereNull('revoked_at')
             ->where(function ($query) {
                 $query->whereNull('expires_at')
@@ -115,5 +121,39 @@ class StaffController extends Controller
 
         return redirect()->route('director.profesores')
             ->with('success', "Invitación lista. Comparte el código {$invite->invite_code} con {$invite->name}. El curso y los alumnos que prepares quedan vinculados a ese código.");
+    }
+
+    public function destroyTeacher(Request $request, User $teacher): RedirectResponse
+    {
+        abort_unless(
+            $teacher->role === 'profesor'
+            && (int) $teacher->colegio_id === (int) $request->user()->colegio_id,
+            404
+        );
+
+        $name = $teacher->name;
+        $this->actionService->deleteTeacher($request->user(), [
+            'teacher_name' => $name,
+        ]);
+
+        return redirect()->route('director.profesores')
+            ->with('success', "Se eliminó a {$name} del plantel docente.");
+    }
+
+    public function destroyInvite(Request $request, TeacherInvite $invite): RedirectResponse
+    {
+        abort_unless((int) $invite->colegio_id === (int) $request->user()->colegio_id, 404);
+
+        $name = $invite->name;
+
+        Course::query()
+            ->where('colegio_id', $invite->colegio_id)
+            ->where('teacher_invite_id', $invite->id)
+            ->update(['teacher_invite_id' => null]);
+
+        $invite->delete();
+
+        return redirect()->route('director.profesores')
+            ->with('success', "Se eliminó la invitación pendiente de {$name}.");
     }
 }

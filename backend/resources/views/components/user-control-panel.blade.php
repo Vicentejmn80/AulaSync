@@ -4,6 +4,8 @@
         border:1px solid #e2e8f0;
         background:#f8fafc;
         color:#475569;
+        min-width: 44px;
+        min-height: 44px;
     }
     .ucp-btn:hover { background:#eef2ff; color:#1f2937; }
     html.dark .ucp-btn {
@@ -14,11 +16,20 @@
     html.dark .ucp-btn:hover { background: rgba(255,255,255,.2); color:#fff; }
     .ucp-dropdown {
         display:none;
-        position:absolute; right:0; top:2.5rem; width:min(22rem, calc(100vw - 1.5rem)); max-height:min(24rem, 70dvh); overflow:auto;
+        position:absolute; right:0; top:2.75rem; width:min(22rem, calc(100vw - 1.5rem)); max-height:min(24rem, 70dvh); overflow:auto;
         border:1px solid #e2e8f0; border-radius:1rem; background:#ffffff; color:#0f172a;
-        box-shadow:0 22px 50px rgba(15,23,42,.12); z-index:9999;
+        box-shadow:0 22px 50px rgba(15,23,42,.12); z-index:10050;
         -webkit-overflow-scrolling: touch;
         overscroll-behavior: contain;
+    }
+    @media (max-width: 767px) {
+        .ucp-dropdown {
+            position: fixed;
+            right: 1rem;
+            top: 4.75rem;
+            left: auto;
+            width: min(22rem, calc(100vw - 2rem));
+        }
     }
     [x-cloak] .ucp-dropdown,
     .ucp-dropdown[x-cloak] { display: none !important; }
@@ -54,12 +65,12 @@
     html.dark .ucp-unread-dot { color:#67e8f9; }
 </style>
 
-<div x-data="userControlPanel()" x-init="init()" class="relative flex items-center gap-2">
+<div x-data="userControlPanel()" x-init="init()" class="relative z-[120] flex items-center gap-2" style="overflow:visible">
     <button
         type="button"
-        @click="toggleNotifications()"
+        @click.stop="toggleNotifications()"
         title="Notificaciones"
-        class="ucp-btn relative w-8 h-8 rounded-lg flex items-center justify-center transition"
+        class="ucp-btn relative flex items-center justify-center rounded-lg transition"
     >
         <i class="fa-solid fa-bell text-xs"></i>
         <span x-show="unreadCount > 0"

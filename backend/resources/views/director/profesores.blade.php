@@ -101,13 +101,19 @@
                                 <p class="font-bold text-slate-900">{{ $invite->name }}</p>
                                 <p class="text-xs text-slate-600">{{ $invite->email ?: 'Sin correo' }} · {{ $invite->subject_name ? $invite->subject_name.' '.$invite->grade : 'Sin materia nueva' }}</p>
                             </div>
-                            <div class="flex flex-col items-end gap-1 text-right">
+                            <div class="flex flex-col items-end gap-2 text-right">
                                 <p class="director-code">{{ $invite->invite_code }}</p>
-                                @if($invite->isClaimed())
-                                    <span class="director-badge-active">Vinculado</span>
-                                @else
-                                    <span class="director-badge-pending">Pendiente de registro</span>
-                                @endif
+                                <span class="director-badge-pending">Pendiente de registro</span>
+                                <form method="POST"
+                                      action="{{ route('director.profesores.invite.destroy', $invite) }}"
+                                      onsubmit="return confirm('¿Eliminar la invitación de {{ addslashes($invite->name) }}? Los cursos no se borrarán, solo se desvincularán.')">
+                                    @csrf
+                                    @method('DELETE')
+                                    <button type="submit" class="director-btn-danger inline-flex items-center gap-1.5 px-3 py-1.5 text-xs" title="Eliminar invitación">
+                                        <i class="fa-solid fa-trash-can"></i>
+                                        Eliminar
+                                    </button>
+                                </form>
                             </div>
                         </div>
                         @if($invite->courses->isNotEmpty())
@@ -134,9 +140,21 @@
                             <h3 class="text-lg font-bold text-slate-900">{{ $teacher->name }}</h3>
                             <p class="text-xs text-slate-600">{{ $teacher->email }}</p>
                         </div>
-                        <span class="director-badge-active">
-                            {{ $teacher->courses->count() }} curso(s)
-                        </span>
+                        <div class="flex flex-col items-end gap-2">
+                            <span class="director-badge-active">
+                                {{ $teacher->courses->count() }} curso(s)
+                            </span>
+                            <form method="POST"
+                                  action="{{ route('director.profesores.destroy', $teacher) }}"
+                                  onsubmit="return confirm('¿Eliminar a {{ addslashes($teacher->name) }}? Sus cursos quedarán sin docente asignado.')">
+                                @csrf
+                                @method('DELETE')
+                                <button type="submit" class="director-btn-danger inline-flex items-center gap-1.5 px-3 py-1.5 text-xs" title="Eliminar docente">
+                                    <i class="fa-solid fa-trash-can"></i>
+                                    Eliminar
+                                </button>
+                            </form>
+                        </div>
                     </div>
                     <div class="mt-3 flex flex-wrap gap-2">
                         @forelse($teacher->courses as $course)

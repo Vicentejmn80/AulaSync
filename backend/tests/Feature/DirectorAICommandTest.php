@@ -186,6 +186,77 @@ class DirectorAICommandTest extends TestCase
         $this->assertContains('Carlos José', $execute->json('actions.0.data.duplicates'));
     }
 
+    public function test_director_can_create_student_and_enroll_in_course_in_one_command(): void
+    {
+        [$director, $colegio] = $this->directorContext();
+
+        Course::create([
+            'teacher_id' => $director->id,
+            'colegio_id' => $colegio->id,
+            'subject_name' => 'Inglés',
+            'grade' => '1ro',
+            'section' => null,
+            'school_year' => '2025-2026',
+            'invite_code' => 'ING-1RO',
+        ]);
+
+        $draft = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'crea al alumno andres perez y asignalo al curso de primer grado de ingles',
+        ]);
+
+        $draft->assertOk()
+            ->assertJsonPath('requires_confirmation', true);
+
+        $pending = $draft->json('pending_actions');
+        $this->assertCount(2, $pending);
+        $this->assertSame('create_students_batch', $pending[0]['intent']);
+        $this->assertSame('enroll_students_course', $pending[1]['intent']);
+        $this->assertSame('andres perez', mb_strtolower((string) ($pending[0]['data']['names'][0] ?? '')));
+        $this->assertSame('1ro', $pending[0]['data']['grade'] ?? null);
+        $this->assertSame('Inglés', $pending[1]['data']['subject_name'] ?? null);
+
+        $execute = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'confirmed' => true,
+            'pending_actions' => $pending,
+        ]);
+
+        $execute->assertOk();
+        $this->assertDatabaseHas('students', [
+            'colegio_id' => $colegio->id,
+            'grade' => '1ro',
+        ]);
+        $this->assertTrue(
+            Student::query()
+                ->where('colegio_id', $colegio->id)
+                ->whereRaw('LOWER(name) = ?', ['andres perez'])
+                ->exists()
+        );
+    }
+
+    public function test_create_student_prompt_does_not_trigger_create_course(): void
+    {
+        [$director, $colegio] = $this->directorContext();
+
+        Course::create([
+            'teacher_id' => $director->id,
+            'colegio_id' => $colegio->id,
+            'subject_name' => 'Inglés',
+            'grade' => '1ro',
+            'section' => null,
+            'school_year' => '2025-2026',
+            'invite_code' => 'ING-1RO',
+        ]);
+
+        $draft = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'no, ya el curso esta, necesito que crees es al alumno andres perez para primer grado de ingles',
+        ]);
+
+        $draft->assertOk();
+        $intents = collect($draft->json('pending_actions'))->pluck('intent')->all();
+        $this->assertNotContains('create_course', $intents);
+        $this->assertContains('create_students_batch', $intents);
+    }
+
     public function test_director_can_create_course_and_enroll_students_to_course(): void
     {
         [$director, $colegio] = $this->directorContext();

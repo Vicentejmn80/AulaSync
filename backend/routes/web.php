@@ -100,6 +100,10 @@ Route::middleware(['auth'])->group(function () {
                     ->name('profesores');
                 Route::post('/profesores/invite', [DirectorStaffController::class, 'invite'])
                     ->name('profesores.invite');
+                Route::delete('/profesores/{teacher}', [DirectorStaffController::class, 'destroyTeacher'])
+                    ->name('profesores.destroy');
+                Route::delete('/profesores/invite/{invite}', [DirectorStaffController::class, 'destroyInvite'])
+                    ->name('profesores.invite.destroy');
                 Route::get('/courses', [DirectorCourseController::class, 'index'])
                     ->name('courses');
                 Route::post('/courses', [DirectorCourseController::class, 'store'])

@@ -103,6 +103,13 @@ class AICommandController extends Controller
             }
 
             if ($actions === []) {
+                $composite = $this->detectCompositeStudentActions($director, $text);
+                if ($composite !== []) {
+                    $actions = $this->enrichActionsFromText($composite, $text);
+                }
+            }
+
+            if ($actions === []) {
                 $intent = $this->detectIntent($text);
                 if ($intent) {
                     [$operationData, $missingDataMessage] = $this->buildOperationData($director, $intent, $text);
@@ -122,7 +129,7 @@ class AICommandController extends Controller
                     'success' => false,
                     'needs_clarification' => true,
                     'message' => (is_array($interpreted) ? ($interpreted['clarification'] ?? null) : null)
-                        ?: 'Puedo crear y eliminar profesores, cursos y alumnos, asignar materias, matricular y consultar notas o faltas. Dime qué necesitas, por ejemplo: "Crea al profesor Yovanny Andrade y asígnale Inglés de 1ro a 6to".',
+                        ?: 'Puedo crear y eliminar profesores, cursos y alumnos, matricular alumnos en cursos y consultar notas o faltas. Ejemplos: "Crea al alumno Andrés Pérez y asígnalo al curso de Inglés de 1ro" o "Crea al profesor Yovanny Andrade y asígnale Inglés de 1ro a 6to".',
                 ]);
             }
 
@@ -898,9 +905,22 @@ class AICommandController extends Controller
             return 'create_teacher';
         }
 
+        // Student creation/enrollment must win over create_course when the user mentions alumnos.
+        if (preg_match('/\b(?:alumno|estudiante)s?\b/', $value)
+            && (preg_match('/\b(?:cre(?:a|ar|es|e|o)|creame|agrega|matricula|inscribe)\b/', $value)
+                || preg_match('/\b(?:asigna|inscribe|matricula|agregalo|añade)\b/', $value))) {
+            if (str_contains($value, 'curso')
+                && preg_match('/\b(?:asigna(?:lo|le|r|les)?|inscribe(?:lo|le|r|les)?|matricula(?:lo|le|r|les)?|agregalo|añade|anade)\b/', $value)) {
+                return 'enroll_students_course';
+            }
+
+            return 'create_students_batch';
+        }
+
         // Crear uno o varios cursos: "crea el curso de X", "crees los cursos de: 1ero..6to de ingles",
         // "Crea Matemática para 4.º, 5.º y 6.º."
-        if ((preg_match('/\bcre(?:a|ar|es|e|o)\b/', $value) || str_contains($value, 'crea') || str_contains($value, 'crear') || str_contains($value, 'crees'))
+        if (! preg_match('/\b(?:alumno|estudiante)s?\b/', $value)
+            && (preg_match('/\bcre(?:a|ar|es|e|o)\b/', $value) || str_contains($value, 'crea') || str_contains($value, 'crear') || str_contains($value, 'crees'))
             && (str_contains($value, 'curso') || str_contains($value, 'cursso') || str_contains($value, 'asignatura') || str_contains($value, 'materia')
                 || preg_match('/\b(?:para|en|de|del)\s+(?:el\s+)?[1-6](?:ro|er|do|to|°|º|ero)?\s*(?:grado\b|[,.]|(?:y|e)\b|$)/', $value))) {
             return 'create_course';
@@ -914,7 +934,7 @@ class AICommandController extends Controller
             && (str_contains($value, 'alumno') || str_contains($value, 'estudiante') || preg_match('/\sa\s+[a-z]/', $value))) {
             return 'unenroll_students_course';
         }
-        if ((str_contains($value, 'inscribe') || str_contains($value, 'asigna'))
+        if ((str_contains($value, 'inscribe') || preg_match('/\basigna(?:lo|le|r|les)?\b/', $value))
             && str_contains($value, 'curso')
             && (str_contains($value, 'alumno') || str_contains($value, 'estudiante') || preg_match('/\sa\s+[a-z]/', $value))) {
             return 'enroll_students_course';
@@ -956,6 +976,43 @@ class AICommandController extends Controller
         }
 
         return null;
+    }
+
+    /**
+     * Detecta pedidos compuestos: crear alumno(s) y matricularlos en un curso existente.
+     *
+     * @return array<int,array{intent:string,data:array}>
+     */
+    private function detectCompositeStudentActions(User $director, string $text): array
+    {
+        $value = $this->normalizedText($text);
+
+        if (! preg_match('/\b(?:alumno|estudiante)s?\b/', $value)) {
+            return [];
+        }
+
+        $wantsCreate = (bool) preg_match(
+            '/\b(?:cre(?:a|ar|es|e|o)|creame|agrega|matricula)\s+(?:(?:a|al)\s+)?(?:alumno|estudiante)\b/',
+            $value
+        );
+        $wantsEnroll = str_contains($value, 'curso')
+            && (bool) preg_match('/\b(?:asigna(?:lo|le|r|les)?|inscribe(?:lo|le|r|les)?|matricula(?:lo|le|r|les)?|agregalo|añade|anade)\b/', $value);
+
+        if (! $wantsCreate || ! $wantsEnroll) {
+            return [];
+        }
+
+        [$createData, $createMsg] = $this->parseCreateStudentsBatch($director, $text);
+        [$enrollData, $enrollMsg] = $this->parseEnrollStudentsCourse($director, $text);
+
+        if ($createMsg || $enrollMsg) {
+            return [];
+        }
+
+        return [
+            ['intent' => 'create_students_batch', 'data' => $createData],
+            ['intent' => 'enroll_students_course', 'data' => $enrollData],
+        ];
     }
 
     /**
@@ -1855,6 +1912,20 @@ class AICommandController extends Controller
                     $data['teacher_name'] = $teacher;
                 }
             }
+            if (in_array($intent, ['create_students_batch', 'enroll_students_course', 'unenroll_students_course'], true)) {
+                if (empty($data['grade']) && ($grades[0] ?? null)) {
+                    $data['grade'] = $grades[0];
+                }
+                if (empty($data['subject_name']) && $subject) {
+                    $data['subject_name'] = $subject;
+                }
+                if (empty($data['names'])) {
+                    $names = $this->extractStudentNames($text);
+                    if ($names !== []) {
+                        $data['names'] = $names;
+                    }
+                }
+            }
             $action['data'] = $data;
         }
         unset($action);
@@ -1955,6 +2026,14 @@ class AICommandController extends Controller
 
     private function extractSubjectFromCoursePrompt(string $text): ?string
     {
+        if (preg_match('/\b(?:primer|primero|segundo|tercer|tercero|cuarto|quinto|sexto|[1-6](?:ro|ero|do|to|er)?)\s*grado\s+de\s+([A-Za-zÁÉÍÓÚáéíóúÑñ][A-Za-zÁÉÍÓÚáéíóúÑñ\s]{1,40}?)(?:\s+(?:con|para|y|\.|$)|$)/iu', $text, $m)) {
+            $subject = trim((string) $m[1]);
+            $known = $this->extractKnownSubject($subject) ?? $this->titleCaseSubject($subject);
+            if ($this->isValidCourseSubject($known)) {
+                return $known;
+            }
+        }
+
         // "cursos de inglés" / "materia de ingles" en cualquier parte del pedido.
         if (preg_match('/(?:cursos?|materias?|asignaturas?)\s+de\s+([A-Za-zÁÉÍÓÚáéíóúÑñ][A-Za-zÁÉÍÓÚáéíóúÑñ]{2,40})/iu', $text, $m)) {
             $subject = trim((string) $m[1]);
@@ -1989,7 +2068,7 @@ class AICommandController extends Controller
 
         // Si el grado aparece antes de la materia ("1er grado de matematicas"),
         // lo descartamos: "1er grado de" -> "".
-        $rest = preg_replace('/^(?:al\s+)?[1-6](?:ro|ero|do|to|er|º|°)?\s*grado\s+(?:de\s+)?/iu', '', $rest) ?? $rest;
+        $rest = preg_replace('/^(?:al\s+)?(?:primer|primero|segundo|tercer|tercero|cuarto|quinto|sexto|[1-6](?:ro|ero|do|to|er|º|°)?)\s*grado\s+(?:de\s+)?/iu', '', $rest) ?? $rest;
 
         // Cortamos en conectores/palabras reservadas (conserva acentos del original).
         $rest = preg_split('/\s+(?:para|en|del|de|al|a\s+la|con|seccion|sección|y|nivel)\s+/iu', $rest)[0] ?? $rest;
@@ -2087,6 +2166,23 @@ class AICommandController extends Controller
     private function extractTargetGrade(string $text): ?string
     {
         $value = mb_strtolower($text);
+        $value = strtr($value, [
+            'primer grado' => '1ro grado',
+            'primero' => '1ro',
+            'segundo grado' => '2do grado',
+            'segundo' => '2do',
+            'tercer grado' => '3ro grado',
+            'tercero' => '3ro',
+            'cuarto grado' => '4to grado',
+            'cuarto' => '4to',
+            'quinto grado' => '5to grado',
+            'quinto' => '5to',
+            'sexto grado' => '6to grado',
+            'sexto' => '6to',
+            '1ero' => '1ro',
+            '3ero' => '3ro',
+        ]);
+
         if (preg_match('/al?\s+([1-6])(?:ro|ero|er|do|to|°|º)?\s*(?:er|do|to)?\s*grado/u', $value, $m)) {
             return $this->formatGrade((int) $m[1]);
         }
@@ -2102,15 +2198,29 @@ class AICommandController extends Controller
      */
     private function extractStudentNames(string $text): array
     {
+        $single = $this->sanitizePersonName($this->extractNamedPersonAfterRole($text, 'alumno'))
+            ?? $this->sanitizePersonName($this->extractNamedPersonAfterRole($text, 'estudiante'));
+        if ($single) {
+            return [$single];
+        }
+
+        if (preg_match('/(?:agrega|agregar|matricula|matricular|inscribe|inscribir|crea|crear)\s+(?:a|al)\s+(?:alumno|estudiante)\s+(.+?)\s+(?:y\s+)?(?:al|a la|en|asigna|inscribe|matricula)\s+/iu', $text, $m)) {
+            $single = $this->sanitizePersonName(trim($m[1]));
+            if ($single) {
+                return [$single];
+            }
+        }
+
         if (! preg_match('/(?:agrega|agregar|matricula|matricular|inscribe|inscribir|crea|crear)\s+a?\s+(.+?)\s+(?:al|a la|en)\s+/iu', $text, $m)) {
             return [];
         }
         $raw = trim($m[1]);
+        $raw = preg_replace('/^(?:alumno|estudiante)\s+/iu', '', $raw) ?? $raw;
         $raw = preg_replace('/\s+y\s+/iu', ',', $raw) ?? $raw;
 
         return collect(explode(',', $raw))
-            ->map(fn ($name) => trim($name))
-            ->filter(fn ($name) => mb_strlen($name) >= 2)
+            ->map(fn ($name) => $this->sanitizePersonName(trim($name)))
+            ->filter(fn ($name) => $name !== null && mb_strlen($name) >= 2)
             ->unique()
             ->values()
             ->all();

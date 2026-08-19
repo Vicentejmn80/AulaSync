@@ -170,6 +170,9 @@ Reglas:
 7. Usa la memoria para "créalo", "agrégale", "esos cursos", "ese profesor".
 8. Si falta un dato indispensable, pregunta breve y no llames tools. Si el pedido ya trae materia y grados, no preguntes.
 9. Consultas → query_academic. Eliminar → la herramienta delete_*. Habla con el director si solo saluda o pide ayuda.
+10. "Crea al alumno X" o "crea al estudiante X" → create_students_batch. NUNCA create_course.
+11. "Crea al alumno X y asígnalo/inscríbelo/matrículalo al curso de Y grado Z" → create_students_batch + enroll_students_course (dos tools). El curso ya existe; no crees uno nuevo.
+12. "Agrega al curso de Inglés de 1ro al alumno X" → enroll_students_course si el alumno existe, o create_students_batch + enroll_students_course si hay que crearlo.
 
 Memoria conversacional: {$memoryJson}
 Datos visibles del colegio: {$school}
