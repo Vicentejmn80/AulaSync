@@ -135,6 +135,82 @@ class DirectorAIInterpreterServiceTest extends TestCase
         $this->assertSame(['1ro', '2do', '3ro', '4to', '5to', '6to'], $result['actions'][0]['data']['grades']);
     }
 
+    public function test_interpreter_keeps_teacher_and_student_tools_together(): void
+    {
+        config([
+            'services.openai.key' => 'test-key',
+            'services.openai.director_enabled' => true,
+            'services.openai.director_test_enabled' => true,
+        ]);
+        Http::fake([
+            'api.openai.com/*' => Http::response([
+                'choices' => [[
+                    'message' => [
+                        'role' => 'assistant',
+                        'tool_calls' => [
+                            [
+                                'type' => 'function',
+                                'function' => [
+                                    'name' => 'create_teacher',
+                                    'arguments' => json_encode([
+                                        'teacher_name' => 'mariano tambien que te dije',
+                                        'subject_name' => 'Lenguaje',
+                                        'grades' => ['1ro', '6to'],
+                                    ]),
+                                ],
+                            ],
+                            [
+                                'type' => 'function',
+                                'function' => [
+                                    'name' => 'create_students_batch',
+                                    'arguments' => json_encode([
+                                        'names' => ['laureano marquez en 2do'],
+                                        'grade' => '2do',
+                                    ]),
+                                ],
+                            ],
+                        ],
+                    ],
+                ]],
+            ]),
+        ]);
+
+        $director = User::factory()->create(['role' => 'director', 'onboarding_completed' => true]);
+        $colegio = Colegio::create([
+            'name' => 'Colegio Central',
+            'invite_code' => 'CEN-1004',
+            'codes_pin' => Colegio::hashPinFromInvite('CEN-1004'),
+            'director_user_id' => $director->id,
+        ]);
+        $director->update(['colegio_id' => $colegio->id]);
+
+        $result = app(DirectorAIInterpreterService::class)->interpret(
+            $director->fresh(),
+            'crea al profesor mariano tambien que te dije y tambien crea al alumno laureano marquez en 2do de lenguaje',
+            [],
+            [],
+        );
+
+        $this->assertCount(2, $result['actions']);
+        $this->assertSame('create_teacher', $result['actions'][0]['intent']);
+        $this->assertSame('Mariano', $result['actions'][0]['data']['teacher_name']);
+        $this->assertSame('create_students_batch', $result['actions'][1]['intent']);
+        $this->assertSame(['Laureano Marquez'], $result['actions'][1]['data']['names']);
+    }
+
+    public function test_confirmation_reply_lists_multiple_actions(): void
+    {
+        $reply = app(DirectorAIInterpreterService::class)->composeReply([
+            ['message' => 'Crear al Profesor Mariano García (Lenguaje - 1ro a 6to).'],
+            ['message' => 'Crear al Alumno Laureano Márquez en 2do Grado (Lenguaje).'],
+        ], true);
+
+        $this->assertStringContainsString('Voy a realizar las siguientes acciones', $reply);
+        $this->assertStringContainsString('1. Crear al Profesor Mariano García', $reply);
+        $this->assertStringContainsString('2. Crear al Alumno Laureano Márquez', $reply);
+        $this->assertStringContainsString("Responde 'sí' para confirmar", $reply);
+    }
+
     public function test_system_prompt_includes_school_roster_and_nova_lookup_rules(): void
     {
         config([

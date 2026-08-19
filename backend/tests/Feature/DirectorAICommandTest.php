@@ -76,6 +76,68 @@ class DirectorAICommandTest extends TestCase
         ]);
     }
 
+    public function test_filler_phrases_are_stripped_from_teacher_name(): void
+    {
+        [$director, $colegio] = $this->directorContext();
+
+        $draft = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'crea al profesor mariano tambien que te dije',
+        ]);
+
+        $draft->assertOk(json_encode($draft->json(), JSON_UNESCAPED_UNICODE))
+            ->assertJsonPath('requires_confirmation', true)
+            ->assertJsonPath('pending_actions.0.intent', 'create_teacher')
+            ->assertJsonPath('pending_actions.0.data.teacher_name', 'Mariano');
+        $this->assertStringNotContainsStringIgnoringCase('tambien', (string) $draft->json('pending_actions.0.data.teacher_name'));
+        $this->assertStringNotContainsStringIgnoringCase('que te dije', (string) $draft->json('message'));
+    }
+
+    public function test_multi_intent_teacher_and_student_in_one_prompt(): void
+    {
+        [$director, $colegio] = $this->directorContext();
+
+        $draft = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'crea al profesor mariano garcia de lenguaje de 1ro a 6to y tambien crea al alumno laureano marquez en 2do grado de lenguaje',
+        ]);
+
+        $draft->assertOk(json_encode($draft->json(), JSON_UNESCAPED_UNICODE))
+            ->assertJsonPath('requires_confirmation', true);
+
+        $pending = $draft->json('pending_actions');
+        $intents = collect($pending)->pluck('intent')->all();
+        $this->assertContains('create_teacher', $intents);
+        $this->assertContains('create_students_batch', $intents);
+
+        $teacher = collect($pending)->firstWhere('intent', 'create_teacher');
+        $student = collect($pending)->firstWhere('intent', 'create_students_batch');
+        $this->assertSame('Mariano Garcia', $teacher['data']['teacher_name'] ?? null);
+        $this->assertSame('Lenguaje', $teacher['data']['subject_name'] ?? null);
+        $this->assertSame(['1ro', '2do', '3ro', '4to', '5to', '6to'], $teacher['data']['grades'] ?? null);
+        $this->assertSame('Laureano Marquez', $student['data']['names'][0] ?? null);
+        $this->assertSame('2do', $student['data']['grade'] ?? null);
+
+        $message = (string) $draft->json('message');
+        $this->assertStringContainsString('Voy a realizar las siguientes acciones', $message);
+        $this->assertStringContainsString('Mariano Garcia', $message);
+        $this->assertStringContainsString('Laureano Marquez', $message);
+        $this->assertStringContainsString("Responde 'sí' para confirmar", $message);
+
+        $execute = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'sí',
+        ]);
+        $execute->assertOk();
+        $this->assertDatabaseHas('teacher_invites', [
+            'colegio_id' => $colegio->id,
+            'name' => 'Mariano Garcia',
+        ]);
+        $this->assertTrue(
+            \App\Models\Student::query()
+                ->where('colegio_id', $colegio->id)
+                ->whereRaw('LOWER(name) = ?', ['laureano marquez'])
+                ->exists()
+        );
+    }
+
     public function test_missing_grades_do_not_block_and_are_created_after_confirmation(): void
     {
         [$director, $colegio] = $this->directorContext();

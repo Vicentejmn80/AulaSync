@@ -144,12 +144,18 @@ Consultas (códigos, conteos, quién es, qué cursos tiene, estado): responde SO
 Mutaciones (crear, asignar, matricular, actualizar, eliminar): OBLIGATORIO llamar herramientas. Laravel ejecuta.
 
 Reglas operativas:
-1. Crear profesor + cursos/materia/grados = UNA create_teacher con teacher_name, subject_name y grades.
-2. primer/1ero→1ro, segundo→2do, tercero/3ero→3ro, cuarto→4to, quinto→5to, sexto→6to.
-3. teacher_name y names son SOLO la persona, nunca "en el curso" ni "y agrégalo".
-4. "Crea al alumno X" → create_students_batch. Nunca create_course por mencionar "curso".
-5. "Crea al alumno X y asígnalo al curso de Y grado Z" → create_students_batch + enroll_students_course.
-6. Usa la memoria y el historial para "créalo", "agrégale", "esos cursos".
+1. MULTI-INTENT: si el mensaje trae VARIAS órdenes, llama TODAS las tools en paralelo. Nunca te quedes solo con la primera.
+   Ejemplo: crear profesor + asignarle materia/grados + crear alumno en un curso = create_teacher + create_students_batch + enroll_students_course.
+2. Crear profesor + sus cursos/materia/grados (sin otro actor) = UNA create_teacher con teacher_name, subject_name y grades.
+3. primer/1ero→1ro, segundo→2do, tercero/3ero→3ro, cuarto→4to, quinto→5to, sexto→6to.
+4. NOMBRES PROPIOS ESTRICTOS: teacher_name, student_name y names son SOLO el nombre de la persona
+   (ej. "Mariano", "Mariano García", "Laureano Márquez"). PROHIBIDO incluir muletillas o conectores:
+   "que te dije", "el que te mencioné", "también", "además", "llamado", "de la materia", "profesor",
+   "alumno", "crea a", "también crea a", "en el curso", "y agrégalo".
+   "crea al profesor mariano tambien que te dije" → teacher_name = "Mariano".
+5. "Crea al alumno X" → create_students_batch. Nunca create_course por mencionar "curso".
+6. "Crea al alumno X y asígnalo al curso de Y grado Z" → create_students_batch + enroll_students_course.
+7. Usa la memoria y el historial para "créalo", "agrégale", "esos cursos". Laravel arma el resumen de confirmación.
 
 Memoria conversacional: {$memoryJson}
 
@@ -165,7 +171,7 @@ PROMPT;
     {
         $defs = [
             'create_teacher' => [
-                'description' => 'Crear/invitar profesor y opcionalmente asignarle una materia en varios grados.',
+                'description' => 'Crear/invitar profesor y opcionalmente asignarle una materia en varios grados. teacher_name SOLO el nombre propio (sin "también", "que te dije", "llamado" ni la materia).',
                 'properties' => [
                     'teacher_name' => ['type' => 'string'],
                     'subject_name' => ['type' => ['string', 'null']],
@@ -195,7 +201,7 @@ PROMPT;
                 'required' => ['teacher_name', 'subject_name', 'grades'],
             ],
             'create_students_batch' => [
-                'description' => 'Crear uno o varios alumnos en un grado. names debe ser SOLO el nombre de la persona (ej. "Andrés Pérez"), nunca "en el curso", "de 1ro" ni la materia.',
+                'description' => 'Crear uno o varios alumnos en un grado. names debe ser SOLO el nombre propio (ej. "Laureano Márquez"), nunca "en el curso", "de 1ro", "también", "que te dije" ni la materia.',
                 'properties' => [
                     'names' => ['type' => 'array', 'items' => ['type' => 'string']],
                     'grade' => ['type' => 'string'],
@@ -355,6 +361,25 @@ PROMPT;
             $arguments['expires_in_days'] = 30;
         }
 
+        $sanitizer = app(PersonNameSanitizer::class);
+        foreach (['teacher_name', 'student_name'] as $key) {
+            if (! empty($arguments[$key]) && is_string($arguments[$key])) {
+                $arguments[$key] = $sanitizer->displayName($arguments[$key]) ?: $arguments[$key];
+            }
+        }
+        if (isset($arguments['names']) && is_array($arguments['names'])) {
+            $arguments['names'] = collect($arguments['names'])
+                ->map(function ($name) use ($sanitizer) {
+                    $raw = trim((string) $name);
+                    $clean = $sanitizer->displayName($raw);
+
+                    return $clean !== '' ? $clean : $raw;
+                })
+                ->filter()
+                ->values()
+                ->all();
+        }
+
         return $arguments;
     }
 
@@ -477,11 +502,23 @@ PROMPT;
     {
         $messages = collect($results)->pluck('message')->filter()->map(fn ($msg) => trim((string) $msg))->values();
         if ($pendingConfirmation) {
-            $body = $messages->count() === 1
-                ? (string) $messages->first()
-                : "Preparé {$messages->count()} acciones:\n- ".$messages->implode("\n- ");
+            $clean = $messages
+                ->map(fn ($msg) => trim((string) preg_replace('/\s*Responde ["\']sí["\'] para confirmar\.?$/iu', '', $msg)))
+                ->filter()
+                ->values();
+            if ($clean->count() <= 1) {
+                $body = (string) $clean->first();
 
-            return "✨ {$body} Si quieres, también puedo matricular alumnos o consultar códigos DOC-.";
+                return "✨ {$body}\nResponde 'sí' para confirmar.";
+            }
+
+            $lines = $clean->map(function ($msg, $index) {
+                $msg = trim((string) preg_replace('/^Voy a\s+/iu', '', $msg));
+
+                return ($index + 1).'. '.$msg;
+            });
+
+            return "✨ Voy a realizar las siguientes acciones:\n".$lines->implode("\n")."\nResponde 'sí' para confirmar.";
         }
 
         $ok = collect($results)->filter(fn ($row) => ($row['success'] ?? true) !== false)->pluck('message')->filter();

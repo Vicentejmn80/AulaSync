@@ -28,4 +28,14 @@ class PersonNameSanitizerTest extends TestCase
         $this->assertSame('Juan Carlos', $sanitizer->displayName('profesor de matematica llamado juan carlos'));
         $this->assertSame('Juan Carlos', $sanitizer->displayName('de matemática llamado juan carlos'));
     }
+
+    public function test_strips_filler_phrases_from_teacher_names(): void
+    {
+        $sanitizer = new PersonNameSanitizer();
+
+        $this->assertSame('mariano', $sanitizer->cleanTeacher('mariano tambien que te dije'));
+        $this->assertSame('Mariano', $sanitizer->displayName('profesor mariano tambien que te dije'));
+        $this->assertSame('Mariano García', $sanitizer->displayName('mariano garcía el que te mencioné antes'));
+        $this->assertSame('Laureano Márquez', $sanitizer->displayName('alumno laureano márquez en 2do'));
+    }
 }

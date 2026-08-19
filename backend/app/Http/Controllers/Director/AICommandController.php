@@ -95,6 +95,9 @@ class AICommandController extends Controller
             );
 
             $actions = $this->enrichActionsFromText((array) ($interpreted['actions'] ?? []), $text);
+            if ($actions !== []) {
+                $actions = $this->mergeMissingIntentsFromText($director, $actions, $text);
+            }
 
             if ($actions === []) {
                 $llmReply = is_array($interpreted)
@@ -117,7 +120,7 @@ class AICommandController extends Controller
             }
 
             if ($actions === []) {
-                $composite = $this->detectCompositeStudentActions($director, $text);
+                $composite = $this->detectMultiIntentActions($director, $text);
                 if ($composite !== []) {
                     $actions = $this->enrichActionsFromText($composite, $text);
                 }
@@ -176,11 +179,16 @@ class AICommandController extends Controller
     private function prepareActions(User $director, array $actions, string $rawText): JsonResponse
     {
         $actions = $this->enrichActionsFromText($actions, $rawText);
+        $hasStudentAction = collect($actions)->contains(
+            fn ($action) => in_array($action['intent'] ?? '', ['create_students_batch', 'enroll_students_course'], true)
+        );
         $prepared = [];
         foreach ($actions as $action) {
             $intent = (string) ($action['intent'] ?? '');
             $data = $this->hydrateActionData($director, $intent, (array) ($action['data'] ?? []));
-            if ($intent === 'create_teacher' && $this->utteranceMentionsCourses($rawText)
+            if ($intent === 'create_teacher'
+                && $this->teacherClauseMentionsCourses($rawText)
+                && ! $hasStudentAction
                 && (empty($data['subject_name']) || empty($data['grades']))) {
                 throw ValidationException::withMessages([
                     'prompt' => 'Entendí que también quieres crear o asignar cursos. Dime la materia y los grados, por ejemplo: "asígnale Inglés de 1ro a 6to".',
@@ -799,31 +807,82 @@ class AICommandController extends Controller
         $createdGrades = $createdGrades !== '' ? ' '.$createdGrades : '';
 
         $message = match ($intent) {
-            'create_teacher' => "Voy a crear la invitación para {$data['teacher_name']} y asignar ".
-                ($data['subject_name'] ? "{$data['subject_name']} en ".implode(', ', $data['grades']) : 'sin materias iniciales').
-                '. Responde "sí" para confirmar.',
+            'create_teacher' => $this->summarizeCreateTeacher($data),
             'create_course' => count($data['grades'] ?? []) > 1
-                ? 'Voy a crear los cursos de '.$data['subject_name'].' para '.implode(', ', $data['grades']).(($data['section'] ?? null) ? " sección {$data['section']}" : '').'. Responde "sí" para confirmar.'
-                : "Voy a crear el curso {$data['subject_name']} para {$data['grade']}".(($data['section'] ?? null) ? " sección {$data['section']}" : '').'. Responde "sí" para confirmar.',
-            'assign_teacher' => "Voy a asignar a {$data['teacher_name']} la materia {$data['subject_name']} en ".implode(', ', $data['grades']).'. Responde "sí" para confirmar.',
-            'create_students_batch' => 'Voy a crear '.count($data['names'])." estudiante(s) en {$data['grade']}".($data['section'] ? " / {$data['section']}" : '').'. Responde "sí" para confirmar.',
-            'enroll_students_course' => 'Voy a inscribir '.count($data['names'])." alumno(s) en {$data['subject_name']} {$data['grade']}".(($data['section'] ?? null) ? " sección {$data['section']}" : '').'. Responde "sí" para confirmar.',
-            'unenroll_students_course' => 'Voy a desmatricular '.count($data['names'])." alumno(s) de {$data['subject_name']} {$data['grade']}".(($data['section'] ?? null) ? " sección {$data['section']}" : '').'. Responde "sí" para confirmar.',
-            'unassign_teacher' => 'Voy a desasignar los cursos indicados de '.($data['teacher_name'] ?? 'ese profesor').'. Responde "sí" para confirmar.',
-            'update_course' => 'Voy a modificar el curso '.($data['subject_name'] ?? '').' '.($data['grade'] ?? '').'. Responde "sí" para confirmar.',
-            'update_student' => 'Voy a actualizar los datos de '.($data['student_name'] ?? 'ese alumno').'. Responde "sí" para confirmar.',
-            'manage_invite_code' => 'Voy a consultar el estado del código DOC-. Responde "sí" para confirmar.',
-            'delete_teacher' => 'Voy a eliminar al profesor '.($data['teacher_name'] ?? '').'. Los cursos se desasignarán, no se borrarán. Responde "sí" para confirmar.',
-            'delete_all_teachers' => 'Voy a eliminar a '.((int) ($data['count'] ?? 0)).' profesor(es) de tu colegio. Los cursos se desasignarán, no se borrarán. Responde "sí" para confirmar.',
-            'delete_course' => 'Voy a eliminar '.((int) ($data['match_count'] ?? 0)).' curso(s) de '.($data['subject_name'] ?? 'la asignatura indicada').
-                (($data['grade'] ?? null) ? ' '.$data['grade'] : '').
-                '. Responde "sí" para confirmar.',
-            'delete_all_courses' => 'Voy a eliminar todos los cursos del colegio ('.((int) ($data['count'] ?? 0)).'). Responde "sí" para confirmar.',
-            'delete_student' => 'Voy a eliminar al alumno '.($data['student_name'] ?? '').'. Responde "sí" para confirmar.',
-            default => 'Confirma la operación.',
+                ? 'Crear los cursos de '.$data['subject_name'].' para '.implode(', ', $data['grades']).(($data['section'] ?? null) ? " sección {$data['section']}" : '').'.'
+                : "Crear el curso {$data['subject_name']} para {$data['grade']}".(($data['section'] ?? null) ? " sección {$data['section']}" : '').'.',
+            'assign_teacher' => "Asignar a {$data['teacher_name']} la materia {$data['subject_name']} en ".$this->formatGradeSpan((array) ($data['grades'] ?? [])).'.',
+            'create_students_batch' => $this->summarizeCreateStudents($data),
+            'enroll_students_course' => 'Inscribir '.implode(', ', (array) ($data['names'] ?? []))." en {$data['subject_name']} {$data['grade']}".(($data['section'] ?? null) ? " sección {$data['section']}" : '').'.',
+            'unenroll_students_course' => 'Desmatricular '.count($data['names'] ?? [])." alumno(s) de {$data['subject_name']} {$data['grade']}".(($data['section'] ?? null) ? " sección {$data['section']}" : '').'.',
+            'unassign_teacher' => 'Desasignar los cursos indicados de '.($data['teacher_name'] ?? 'ese profesor').'.',
+            'update_course' => 'Modificar el curso '.($data['subject_name'] ?? '').' '.($data['grade'] ?? '').'.',
+            'update_student' => 'Actualizar los datos de '.($data['student_name'] ?? 'ese alumno').'.',
+            'manage_invite_code' => 'Consultar el estado del código DOC-.',
+            'delete_teacher' => 'Eliminar al profesor '.($data['teacher_name'] ?? '').'. Los cursos se desasignarán, no se borrarán.',
+            'delete_all_teachers' => 'Eliminar a '.((int) ($data['count'] ?? 0)).' profesor(es) de tu colegio. Los cursos se desasignarán, no se borrarán.',
+            'delete_course' => 'Eliminar '.((int) ($data['match_count'] ?? 0)).' curso(s) de '.($data['subject_name'] ?? 'la asignatura indicada').
+                (($data['grade'] ?? null) ? ' '.$data['grade'] : '').'.',
+            'delete_all_courses' => 'Eliminar todos los cursos del colegio ('.((int) ($data['count'] ?? 0)).').',
+            'delete_student' => 'Eliminar al alumno '.($data['student_name'] ?? '').'.',
+            default => 'Confirmar la operación.',
         };
 
         return $message.$createdGrades;
+    }
+
+    /**
+     * @param  array{teacher_name?:string,subject_name?:string|null,grades?:array}  $data
+     */
+    private function summarizeCreateTeacher(array $data): string
+    {
+        $name = trim((string) ($data['teacher_name'] ?? 'el profesor'));
+        $subject = trim((string) ($data['subject_name'] ?? ''));
+        $span = $this->formatGradeSpan((array) ($data['grades'] ?? []));
+        if ($subject !== '' && $span !== '') {
+            return "Crear al Profesor {$name} ({$subject} - {$span}).";
+        }
+        if ($subject !== '') {
+            return "Crear al Profesor {$name} ({$subject}).";
+        }
+
+        return "Crear la invitación para {$name} sin materias iniciales.";
+    }
+
+    /**
+     * @param  array{names?:array,grade?:string,section?:string|null,subject_name?:string|null}  $data
+     */
+    private function summarizeCreateStudents(array $data): string
+    {
+        $names = implode(', ', array_filter((array) ($data['names'] ?? []))) ?: 'alumno(s)';
+        $grade = trim((string) ($data['grade'] ?? ''));
+        $section = trim((string) ($data['section'] ?? ''));
+        $subject = trim((string) ($data['subject_name'] ?? ''));
+        $place = $grade !== '' ? "{$grade} Grado" : 'el grado indicado';
+        if ($section !== '') {
+            $place .= " / {$section}";
+        }
+        if ($subject !== '') {
+            return "Crear al Alumno {$names} en {$place} ({$subject}).";
+        }
+
+        return "Crear al Alumno {$names} en {$place}.";
+    }
+
+    /**
+     * @param  array<int,string>  $grades
+     */
+    private function formatGradeSpan(array $grades): string
+    {
+        $grades = array_values(array_filter($grades, fn ($grade) => trim((string) $grade) !== ''));
+        if ($grades === []) {
+            return '';
+        }
+        if (count($grades) === 1) {
+            return $grades[0];
+        }
+
+        return $grades[0].' a '.$grades[array_key_last($grades)];
     }
 
     /**
@@ -993,40 +1052,152 @@ class AICommandController extends Controller
     }
 
     /**
-     * Detecta pedidos compuestos: crear alumno(s) y matricularlos en un curso existente.
+     * Detecta varias intenciones en un mismo mensaje (profesor + cursos + alumno + matrícula).
      *
      * @return array<int,array{intent:string,data:array}>
      */
-    private function detectCompositeStudentActions(User $director, string $text): array
+    private function detectMultiIntentActions(User $director, string $text): array
     {
-        $value = $this->normalizedText($text);
-
-        if (! preg_match('/\b(?:alumno|estudiante)s?\b/', $value)) {
-            return [];
+        $actions = [];
+        $clauses = $this->splitIntentClauses($text);
+        if ($clauses === []) {
+            $clauses = [$text];
         }
 
-        $wantsCreate = (bool) preg_match(
-            '/\b(?:cre(?:a|ar|es|e|o)|creame|agrega|matricula)\s+(?:(?:a|al)\s+)?(?:alumno|estudiante)\b/',
-            $value
+        foreach ($clauses as $clause) {
+            $value = $this->normalizedText($clause);
+            $wantsTeacher = (bool) preg_match(
+                '/\b(?:cre(?:a|ar|es|e|o)|creame|invita)\s+(?:(?:a|al)\s+|el\s+|la\s+)?(?:profesor(?:a)?|docente)\b/',
+                $value
+            );
+            $wantsStudent = (bool) preg_match('/\b(?:alumno|estudiante)s?\b/', $value)
+                && (bool) preg_match('/\b(?:cre(?:a|ar|es|e|o)|creame|agrega|matricula)\b/', $value);
+            $wantsEnroll = $wantsStudent && (
+                (str_contains($value, 'curso') && (bool) preg_match('/\b(?:asigna(?:lo|le|r|les)?|inscribe(?:lo|le|r|les)?|matricula(?:lo|le|r|les)?|agregalo|añade|anade)\b/', $value))
+                || ($this->extractKnownSubject($clause) && $this->extractTargetGrade($clause))
+            );
+
+            if ($wantsTeacher) {
+                [$data, $msg] = $this->parseCreateTeacher($director, $clause);
+                if (! $msg && ! empty($data['teacher_name'])) {
+                    $actions[] = ['intent' => 'create_teacher', 'data' => $data];
+                }
+            }
+
+            if ($wantsStudent) {
+                [$data, $msg] = $this->parseCreateStudentsBatch($director, $clause);
+                if (! $msg && ! empty($data['names'])) {
+                    $actions[] = ['intent' => 'create_students_batch', 'data' => $data];
+                }
+                if ($wantsEnroll) {
+                    [$enroll, $enrollMsg] = $this->parseEnrollStudentsCourse($director, $clause);
+                    if (! $enrollMsg && ! empty($enroll['names'])) {
+                        $actions[] = ['intent' => 'enroll_students_course', 'data' => $enroll];
+                    }
+                }
+            }
+        }
+
+        return $this->dedupeDetectedActions($actions);
+    }
+
+    /**
+     * @return array<int,string>
+     */
+    private function splitIntentClauses(string $text): array
+    {
+        $parts = preg_split(
+            '/\s+(?:y\s+)?(?:tambien|también|ademas|además)\s+|\s+y\s+(?=crea(?:r|me)?\s+(?:al?\s+)?(?:alumno|estudiante|profesor|docente))/iu',
+            $text,
+            -1,
+            PREG_SPLIT_NO_EMPTY
         );
-        $wantsEnroll = str_contains($value, 'curso')
-            && (bool) preg_match('/\b(?:asigna(?:lo|le|r|les)?|inscribe(?:lo|le|r|les)?|matricula(?:lo|le|r|les)?|agregalo|añade|anade)\b/', $value);
 
-        if (! $wantsCreate || ! $wantsEnroll) {
-            return [];
+        return collect($parts ?: [$text])
+            ->map(fn ($part) => trim((string) $part))
+            ->filter()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  array<int,array{intent:string,data:array}>  $actions
+     * @return array<int,array{intent:string,data:array}>
+     */
+    private function mergeMissingIntentsFromText(User $director, array $actions, string $text): array
+    {
+        foreach ($this->detectMultiIntentActions($director, $text) as $candidate) {
+            if (! $this->planHasSimilarAction($actions, $candidate)) {
+                $actions[] = $candidate;
+            }
         }
 
-        [$createData, $createMsg] = $this->parseCreateStudentsBatch($director, $text);
-        [$enrollData, $enrollMsg] = $this->parseEnrollStudentsCourse($director, $text);
+        return array_values($actions);
+    }
 
-        if ($createMsg || $enrollMsg) {
-            return [];
+    /**
+     * @param  array<int,array{intent:string,data:array}>  $actions
+     * @param  array{intent:string,data:array}  $candidate
+     */
+    private function planHasSimilarAction(array $actions, array $candidate): bool
+    {
+        $intent = (string) ($candidate['intent'] ?? '');
+        foreach ($actions as $action) {
+            if (($action['intent'] ?? '') !== $intent) {
+                continue;
+            }
+            if ($intent === 'create_teacher') {
+                return $this->samePerson(
+                    (string) ($action['data']['teacher_name'] ?? ''),
+                    (string) ($candidate['data']['teacher_name'] ?? '')
+                ) || trim((string) ($action['data']['teacher_name'] ?? '')) !== '';
+            }
+            if (in_array($intent, ['create_students_batch', 'enroll_students_course'], true)) {
+                $existing = collect($action['data']['names'] ?? [])->map(fn ($name) => mb_strtolower(trim((string) $name)));
+                $incoming = collect($candidate['data']['names'] ?? [])->map(fn ($name) => mb_strtolower(trim((string) $name)));
+
+                return $existing->intersect($incoming)->isNotEmpty() || $existing->isNotEmpty();
+            }
+
+            return true;
         }
 
-        return [
-            ['intent' => 'create_students_batch', 'data' => $createData],
-            ['intent' => 'enroll_students_course', 'data' => $enrollData],
-        ];
+        return false;
+    }
+
+    private function samePerson(string $left, string $right): bool
+    {
+        return mb_strtolower(trim($left)) === mb_strtolower(trim($right));
+    }
+
+    /**
+     * @param  array<int,array{intent:string,data:array}>  $actions
+     * @return array<int,array{intent:string,data:array}>
+     */
+    private function dedupeDetectedActions(array $actions): array
+    {
+        $seen = [];
+        $unique = [];
+        foreach ($actions as $action) {
+            $key = ($action['intent'] ?? '').'|'.md5(json_encode($action['data'] ?? []));
+            if (isset($seen[$key])) {
+                continue;
+            }
+            $seen[$key] = true;
+            $unique[] = $action;
+        }
+
+        return $unique;
+    }
+
+    private function teacherClauseMentionsCourses(string $text): bool
+    {
+        $span = $text;
+        if (preg_match('/^(.*?)(?:\b(?:tambien|también|ademas|además|y)\s+)?(?:crea(?:r|me)?\s+)?(?:al?\s+)?(?:alumno|estudiante)/iu', $text, $m)) {
+            $span = trim((string) $m[1]);
+        }
+
+        return $span !== '' && $this->utteranceMentionsCourses($span);
     }
 
     /**
@@ -1129,10 +1300,10 @@ class AICommandController extends Controller
             return [[], '¿Cuál es el nombre completo del profesor que deseas crear?'];
         }
 
-        $subject = $this->extractSubject($text)
+        $subject = $this->extractKnownSubject($text)
+            ?? $this->extractSubject($text)
             ?? $this->extractSubjectFromCoursePrompt($text)
-            ?? $this->extractSubjectFromDeletePrompt($text)
-            ?? $this->extractKnownSubject($text);
+            ?? $this->extractSubjectFromDeletePrompt($text);
         $grades = $this->extractGrades($text);
         $missingGrades = $this->missingGradesFor($director, $grades);
 
@@ -1253,7 +1424,9 @@ class AICommandController extends Controller
             return [[], 'No pude detectar los alumnos para inscribir. Ejemplo: "Inscribe a Luis y Marta en Matemática de 4to grado".'];
         }
 
-        $subject = $this->extractSubjectFromCoursePrompt($text);
+        $subject = $this->extractSubjectFromCoursePrompt($text)
+            ?? $this->extractSubject($text)
+            ?? $this->extractKnownSubject($text);
         if (! $subject) {
             return [[], '¿En qué asignatura debo inscribirlos?'];
         }
@@ -1855,11 +2028,12 @@ class AICommandController extends Controller
     private function extractTeacherName(string $text): ?string
     {
         $patterns = [
-            '/profesor(?:a)?\s+de\s+[A-Za-zÁÉÍÓÚáéíóúÑñ]+\s+llamad[oa]\s+([A-Za-zÁÉÍÓÚáéíóúÑñ][A-Za-zÁÉÍÓÚáéíóúÑñ\s]{1,80}?)(?:\s+(?:y|para|con)|,|\.|$)/iu',
-            '/llamad[oa]\s+([A-Za-zÁÉÍÓÚáéíóúÑñ][A-Za-zÁÉÍÓÚáéíóúÑñ\s]{1,80}?)(?:\s+(?:y|para|con|de\s+[1-6])|,|\.|$)/iu',
-            '/nombre(?:\s+es)?\s+([A-Za-zÁÉÍÓÚáéíóúÑñ][A-Za-zÁÉÍÓÚáéíóúÑñ\s]{1,80}?)(?:\s+(?:y|para)|,|\.|$)/iu',
-            '/profesor(?:a)?\s+de\s+[A-Za-zÁÉÍÓÚáéíóúÑñ]+\s+(?:llamad[oa]\s+)?(.+?)(?:\s+(?:y\s+|para\s+|con\s+)|,|\.|$)/iu',
-            '/profesor(?:a)?\s+(.+?)(?:\s+(?:donde|al\s+que|con\s+la|con\s+el|y\s+quiero|y\s+as[ií]gna|y\s+agrega|y\s+crea|que\s+crea|para\s+as[ií]gna|dara|dará)|,|\.|$)/iu',
+            '/profesor(?:a)?\s+de\s+[A-Za-zÁÉÍÓÚáéíóúÑñ]+\s+llamad[oa]\s+([A-Za-zÁÉÍÓÚáéíóúÑñ][A-Za-zÁÉÍÓÚáéíóúÑñ\s]{1,80}?)(?:\s+(?:y|para|con|tambien|también)|,|\.|$)/iu',
+            '/profesor(?:a)?\s+(?:llamad[oa]\s+)?([A-Za-zÁÉÍÓÚáéíóúÑñ]+(?:\s+[A-Za-zÁÉÍÓÚáéíóúÑñ]+){0,3}?)\s+(?:tambien|también|que\s+te|ademas|además|y\s+crea)/iu',
+            '/llamad[oa]\s+([A-Za-zÁÉÍÓÚáéíóúÑñ][A-Za-zÁÉÍÓÚáéíóúÑñ\s]{1,80}?)(?:\s+(?:y|para|con|de\s+[1-6]|tambien|también)|,|\.|$)/iu',
+            '/nombre(?:\s+es)?\s+([A-Za-zÁÉÍÓÚáéíóúÑñ][A-Za-zÁÉÍÓÚáéíóúÑñ\s]{1,80}?)(?:\s+(?:y|para|tambien|también)|,|\.|$)/iu',
+            '/profesor(?:a)?\s+de\s+[A-Za-zÁÉÍÓÚáéíóúÑñ]+\s+(?:llamad[oa]\s+)?(.+?)(?:\s+(?:y\s+|para\s+|con\s+|tambien|también)|,|\.|$)/iu',
+            '/profesor(?:a)?\s+(.+?)(?:\s+(?:donde|al\s+que|con\s+la|con\s+el|y\s+quiero|y\s+as[ií]gna|y\s+agrega|y\s+crea|que\s+crea|para\s+as[ií]gna|tambien|también|dara|dará)|,|\.|$)/iu',
             '/(?:as[ií]gna(?:le)?|agrega(?:le)?|asignar)\s+(?:los\s+cursos\s+|las\s+materias\s+)?(?:a\s+)?([A-Za-zÁÉÍÓÚáéíóúÑñ][A-Za-zÁÉÍÓÚáéíóúÑñ\s]{1,80})$/iu',
             '/^(.+?)\s+(?:dara|dará|asigna)/iu',
         ];
@@ -1889,7 +2063,7 @@ class AICommandController extends Controller
         $name = trim(preg_replace('/[.!?]+$/', '', $name) ?? $name);
         $name = trim(preg_replace('/^(?:al|a la|el|la|los|las)\s+/iu', '', $name) ?? $name);
         $name = preg_replace(
-            '/\s+(?:en el|en la|al curso|de primer|de 1|en 1|y asigna|y inscribe|y matricula).*$/iu',
+            '/\s+(?:en el|en la|al curso|de primer|de 1|en 1|y asigna|y inscribe|y matricula|y crea|tambien|también|que te).*$/iu',
             '',
             $name
         ) ?? $name;
@@ -1911,10 +2085,14 @@ class AICommandController extends Controller
      */
     private function enrichActionsFromText(array $actions, string $text): array
     {
-        $subject = $this->extractSubject($text)
+        $knownSubject = $this->extractKnownSubject($text);
+        $subject = $knownSubject
+            ?? $this->extractSubject($text)
             ?? $this->extractSubjectFromCoursePrompt($text)
-            ?? $this->extractSubjectFromDeletePrompt($text)
-            ?? $this->extractKnownSubject($text);
+            ?? $this->extractSubjectFromDeletePrompt($text);
+        if ($subject && ! $this->isValidCourseSubject((string) $subject)) {
+            $subject = $knownSubject;
+        }
         $grades = $this->extractGrades($text);
         $teacher = $this->sanitizePersonName($this->extractTeacherName($text));
 
@@ -1998,6 +2176,7 @@ class AICommandController extends Controller
             'ingles' => 'Inglés',
             'matematica' => 'Matemática',
             'matematicas' => 'Matemática',
+            'lenguaje' => 'Lenguaje',
             'lengua' => 'Lengua',
             'ciencias' => 'Ciencias',
             'historia' => 'Historia',
@@ -2128,7 +2307,8 @@ class AICommandController extends Controller
             return false;
         }
 
-        return ! preg_match('/(grado|curso|asignatura|profesor|profesora|alumno|estudiante|docente|materia|cursso|ingles de|\bde\s+[1-6])$/iu', $subject);
+        return ! preg_match('/\b(?:grado|curso|asignatura|profesor|profesora|alumno|estudiante|docente|materia|cursso)\b/iu', $subject)
+            && ! preg_match('/(ingles de|\bde\s+[1-6])$/iu', $subject);
     }
 
     private function titleCaseSubject(string $subject): string
