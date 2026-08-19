@@ -16,6 +16,22 @@ class SchoolRosterContextService
             return "Este director aún no está vinculado a un colegio.\n";
         }
 
+        $teachersCount = User::query()
+            ->where('colegio_id', $colegioId)
+            ->where('role', 'profesor')
+            ->count();
+        $pendingInvitesCount = TeacherInvite::query()
+            ->where('colegio_id', $colegioId)
+            ->whereNull('claimed_by')
+            ->whereNull('claimed_at')
+            ->whereNull('revoked_at')
+            ->count();
+        $coursesCount = Course::query()->where('colegio_id', $colegioId)->count();
+        $studentsCount = Student::query()->where('colegio_id', $colegioId)->count();
+
+        $colegio = $director->colegio;
+        $schoolName = $colegio?->name ?: 'Colegio (sin nombre)';
+
         $teachers = User::query()
             ->where('colegio_id', $colegioId)
             ->where('role', 'profesor')
@@ -48,6 +64,13 @@ class SchoolRosterContextService
             ->get(['name', 'grade', 'section', 'family_code']);
 
         $lines = [];
+        $lines[] = '## Resumen del colegio (conteos exactos, tiempo real)';
+        $lines[] = '- Nombre oficial: '.$schoolName;
+        $lines[] = '- Total de alumnos: '.$studentsCount;
+        $lines[] = '- Total de profesores activos: '.$teachersCount;
+        $lines[] = '- Total de invitaciones DOC- pendientes: '.$pendingInvitesCount;
+        $lines[] = '- Total de cursos: '.$coursesCount;
+        $lines[] = '';
         $lines[] = '## Profesores activos';
         if ($teachers->isEmpty()) {
             $lines[] = '- Ninguno registrado todavía.';

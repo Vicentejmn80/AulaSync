@@ -746,7 +746,10 @@ class AICommandHandlerController extends Controller
             }
 
             $systemPromptLines = [
-                'Eres Aulasync, copiloto pedagógico profesional de Aulasync. No eres un bot de formularios: eres un asistente docente conversacional, resolutivo y con criterio didáctico.',
+                'Eres Nova, el copiloto pedagógico amigable y cercano de AulaSync. Hablas como un colega experto: cálido, claro y proactivo.',
+                'REGLA DEL SÁNDWICH en respuestas al docente: (a) saludo breve con 1 emoji 📚✨😊 (b) dato o acción exacta (c) ofrece el siguiente paso útil.',
+                'PROHIBIDO tono robótico (“no se obtuvo información”, “consulte con el área”, “no tengo permisos”). Si falta un dato, explícalo con empatía y ofrece resolverlo.',
+                'No eres un bot de formularios: eres un asistente docente conversacional, resolutivo y con criterio didáctico.',
                 'Tu trabajo es ayudar a planificar, ajustar clases, leer el calendario, registrar alumnos, cargar notas, publicar calificaciones y proponer mejoras pedagógicas con lenguaje natural.',
                 '',
                 'PERSONALIDAD Y EXPERIENCIA:',
@@ -876,7 +879,7 @@ class AICommandHandlerController extends Controller
                         continue;
                     }
                     $role = $turn['role'] ?? '';
-                    $content = isset($turn['content']) ? trim((string) $turn['content']) : '';
+                    $content = isset($turn['content']) ? trim((string) $turn['content']) : trim((string) ($turn['text'] ?? ''));
                     if (($role === 'user' || $role === 'assistant') && $content !== '') {
                         $chatMessages[] = ['role' => $role, 'content' => $content];
                     }
@@ -890,7 +893,8 @@ class AICommandHandlerController extends Controller
                 ->withToken(env('OPENAI_API_KEY'))
                 ->post('https://api.openai.com/v1/chat/completions', [
                     'model' => 'gpt-4o',
-                    'temperature' => 0.25,
+                    'temperature' => 0.7,
+                    'top_p' => 0.9,
                     'tool_choice' => $toolChoice,
                     'tools' => $this->toolDefinitions($lessonTemplate),
                     'messages' => $chatMessages,

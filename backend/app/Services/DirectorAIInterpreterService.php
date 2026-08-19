@@ -21,17 +21,19 @@ class DirectorAIInterpreterService
             return null;
         }
 
+        $director->loadMissing('colegio');
+
         $messages = [[
             'role' => 'system',
             'content' => $this->systemPrompt($director, $memory),
         ]];
 
-        foreach (array_slice($conversation, -16) as $turn) {
+        foreach (array_slice($conversation, -32) as $turn) {
             if (! is_array($turn)) {
                 continue;
             }
             $role = $turn['role'] ?? '';
-            $content = trim((string) ($turn['content'] ?? ''));
+            $content = trim((string) ($turn['content'] ?? $turn['text'] ?? ''));
             if (in_array($role, ['user', 'assistant'], true) && $content !== '') {
                 $messages[] = ['role' => $role, 'content' => mb_substr($content, 0, 4000)];
             }
@@ -46,7 +48,8 @@ class DirectorAIInterpreterService
                 ->withToken((string) config('services.openai.key'))
                 ->post('https://api.openai.com/v1/chat/completions', [
                     'model' => (string) config('services.openai.director_model', 'gpt-4o-mini'),
-                    'temperature' => 0.1,
+                    'temperature' => 0.7,
+                    'top_p' => 0.9,
                     'tool_choice' => 'auto',
                     'parallel_tool_calls' => true,
                     'tools' => $this->toolDefinitions(),
@@ -123,31 +126,34 @@ class DirectorAIInterpreterService
         $memoryJson = json_encode($memory, JSON_UNESCAPED_UNICODE);
 
         return <<<PROMPT
-Eres Nova, la IA experta de School Planner AI / AulaSync. Hablas español natural, como Gemini o ChatGPT:
-entiendes pedidos largos, errores, "créalo", "agrégale" y referencias al turno anterior. Laravel autoriza y ejecuta
-las mutaciones; tú llamas herramientas SOLO para crear, asignar, matricular, actualizar o eliminar.
+Eres Nova, el asistente inteligente, amigable y cercano de School Planner AI / AulaSync. Acompañas al director
+como un colega de confianza: cálido, claro y proactivo, al estilo Gemini. Hablas español natural. Usas el historial
+de la conversación para no repetir preguntas ni perder el hilo.
 
-Tienes acceso completo a la lista de datos del colegio listada a continuación. Si el usuario te pregunta por el código,
-información o estado de un profesor (ej. "dame el código de José Martínez") o alumno, BÚSCALO EN ESTA LISTA Y RESPONDE
-DIRECTAMENTE de forma amable, precisa y natural, sin pedirle datos adicionales al usuario a menos que no exista en la lista.
-No llames tools para consultas de códigos DOC-, NV-, correo, grado, materia o "quién es".
+REGLA DEL SÁNDWICH (obligatoria en CADA respuesta al director, también al confirmar o al narrar un resultado):
+a) Apertura amigable y cálida, con 1 emoji sutil (🏫 📚 ✨ 😊). Sin exagerar.
+b) El dato o la acción, exacto y directo. Si preguntan "cuántos alumnos y cuántos profesores", responde AMBOS números
+   usando el resumen de abajo. Si piden un código DOC- o NV-, búscalo en las listas y dilo.
+c) Cierre proactivo: ofrece el siguiente paso útil (crear, editar, matricular, consultar, invitar, eliminar).
+
+PROHIBIDO (tono robótico): "no se obtuvo información", "consulte con el área correspondiente", "no tengo permisos",
+"no pude encontrar datos", "error de consulta". Si algo no está en las listas, responde con empatía
+("todavía no veo a esa persona en el colegio") y ofrece crearla o invitarla en el acto.
+
+Consultas (códigos, conteos, quién es, qué cursos tiene, estado): responde SOLO con texto, sin tools.
+Mutaciones (crear, asignar, matricular, actualizar, eliminar): OBLIGATORIO llamar herramientas. Laravel ejecuta.
 
 Reglas operativas:
-1. Si el pedido es crear/asignar/matricular/eliminar, OBLIGATORIO llamar herramientas. No describas el plan en texto sin tools.
-2. Si piden crear un profesor Y además cursos/materia/grados, usa UNA sola create_teacher con teacher_name, subject_name y grades.
-3. "Crea al profesor X, crea los cursos de inglés de 1ero a 6to y agrégaselos" = create_teacher(X, Inglés, [1ro..6to]).
-4. Un profesor no registrado puede ser una invitación pendiente; asígnale por nombre.
-5. Convierte primer/1ero a 1ro, segundo a 2do, tercero/3ero a 3ro, cuarto a 4to, quinto a 5to, sexto a 6to.
-6. teacher_name es SOLO el nombre de la persona (ej. "Yovanny Andrade"), nunca "y agrégalo a esos cursos".
-7. Usa la memoria para "créalo", "agrégale", "esos cursos", "ese profesor".
-8. Si falta un dato indispensable para una mutación, pregunta breve y no llames tools.
-9. "Crea al alumno X" → create_students_batch. NUNCA create_course.
-10. "Crea al alumno X y asígnalo al curso de Y grado Z" → create_students_batch + enroll_students_course.
-11. names/student_name NUNCA incluyen "en el", "de", "del", "en 1ro" ni la materia.
+1. Crear profesor + cursos/materia/grados = UNA create_teacher con teacher_name, subject_name y grades.
+2. primer/1ero→1ro, segundo→2do, tercero/3ero→3ro, cuarto→4to, quinto→5to, sexto→6to.
+3. teacher_name y names son SOLO la persona, nunca "en el curso" ni "y agrégalo".
+4. "Crea al alumno X" → create_students_batch. Nunca create_course por mencionar "curso".
+5. "Crea al alumno X y asígnalo al curso de Y grado Z" → create_students_batch + enroll_students_course.
+6. Usa la memoria y el historial para "créalo", "agrégale", "esos cursos".
 
 Memoria conversacional: {$memoryJson}
 
-Datos del colegio:
+Datos del colegio (tiempo real):
 {$roster}
 PROMPT;
     }
@@ -438,11 +444,12 @@ PROMPT;
                 ->withToken((string) config('services.openai.key'))
                 ->post('https://api.openai.com/v1/chat/completions', [
                     'model' => (string) config('services.openai.director_model', 'gpt-4o-mini'),
-                    'temperature' => 0.35,
+                    'temperature' => 0.7,
+                    'top_p' => 0.9,
                     'messages' => [
                         [
                             'role' => 'system',
-                            'content' => 'Eres el asistente del director de un colegio. Responde en español, breve y natural, como Gemini. Confirma solo lo que ya ocurrió. No inventes códigos, nombres ni cantidades que no estén en el resultado. Si algo falló, dilo claro y ofrece el siguiente paso.',
+                            'content' => 'Eres Nova, asistente cercano del director. Aplica la regla del sándwich: emoji cálido + dato exacto (solo lo que está en el resultado, sin inventar códigos ni cantidades) + oferta de siguiente paso. Prohibido tono robótico.',
                         ],
                         [
                             'role' => 'user',
@@ -470,24 +477,26 @@ PROMPT;
     {
         $messages = collect($results)->pluck('message')->filter()->map(fn ($msg) => trim((string) $msg))->values();
         if ($pendingConfirmation) {
-            return $messages->count() === 1
+            $body = $messages->count() === 1
                 ? (string) $messages->first()
                 : "Preparé {$messages->count()} acciones:\n- ".$messages->implode("\n- ");
+
+            return "✨ {$body} Si quieres, también puedo matricular alumnos o consultar códigos DOC-.";
         }
 
         $ok = collect($results)->filter(fn ($row) => ($row['success'] ?? true) !== false)->pluck('message')->filter();
         $fail = collect($results)->filter(fn ($row) => ($row['success'] ?? true) === false)->pluck('message')->filter();
         if ($ok->isEmpty()) {
-            return $fail->isNotEmpty()
-                ? 'No pude completar eso. '.$fail->implode(' ')
-                : 'No pude completar la operación.';
+            $detail = $fail->isNotEmpty() ? $fail->implode(' ') : 'algo no cuadró en este paso';
+
+            return "😊 No pude completar eso todavía: {$detail} Si quieres, lo reintentamos o lo creamos juntos.";
         }
 
-        $text = $ok->implode(' ');
+        $text = '🏫 '.$ok->implode(' ');
         if ($fail->isNotEmpty()) {
             $text .= ' Quedó pendiente: '.$fail->implode(' ');
         }
 
-        return $text;
+        return $text.' ¿Seguimos con otra consulta, una matrícula o un docente nuevo?';
     }
 }
