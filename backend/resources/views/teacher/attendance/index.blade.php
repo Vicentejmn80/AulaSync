@@ -2,12 +2,13 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>Asistencia · AulaSync</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
     @include('partials.nova-theme')
+    @include('partials.teacher-mobile')
     <style>
         [x-cloak] { display: none !important; }
         html, body { height: 100%; }
@@ -220,6 +221,37 @@
         @media (max-width: 980px) {
             .picker-grid, .workspace, .stats { grid-template-columns: 1fr; }
             .roster-card, .side-card { min-height: auto; }
+        }
+        @media (max-width: 767px) {
+            .page {
+                padding: 14px 16px calc(24px + env(safe-area-inset-bottom));
+            }
+            .title { font-size: 24px; }
+            .hero { margin-bottom: 12px; }
+            .toggle { width: 100%; justify-content: space-between; }
+            .picker { padding: 14px; }
+            .date-row { width: 100%; }
+            .month-strip {
+                margin: 0 -4px;
+                padding: 10px 4px 4px;
+                scrollbar-width: none;
+            }
+            .month-strip::-webkit-scrollbar { display: none; }
+            .day-chip { min-width: 48px; }
+            .stat b { font-size: 22px; }
+            .roster-list { min-height: 0; max-height: none; overflow: visible; }
+            .status-btns { width: 100%; }
+            .status-btn { flex: 1; text-align: center; min-height: 40px; }
+            .drawer {
+                inset: auto 0 0 0;
+                width: 100%;
+                max-height: min(86dvh, 640px);
+                border-left: 0;
+                border-top: 1px solid var(--nova-glass-border);
+                border-radius: 22px 22px 0 0;
+                padding-bottom: calc(18px + env(safe-area-inset-bottom));
+            }
+            .stack .btn { flex: 1; justify-content: center; }
         }
     </style>
 </head>

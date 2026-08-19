@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>Actividades · AulaSync</title>
     <script src="https://cdn.tailwindcss.com"></script>
@@ -12,6 +12,7 @@
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     @include('partials.nova-theme')
+    @include('partials.teacher-mobile')
     <style>
         :root {
             --grad-primary: linear-gradient(135deg, #7c3aed 0%, #c026d3 100%);
@@ -75,6 +76,39 @@
     :root:not(.dark) .text-slate-600.label { color: var(--text-secondary); }
     :root:not(.dark) .text-slate-400.label { color: var(--text-tertiary); }
     :root:not(.dark) .border-slate-100 { border-color: var(--nova-glass-border); }
+    @media (max-width: 767px) {
+        nav .max-w-6xl {
+            overflow-x: auto;
+            scrollbar-width: none;
+            -webkit-overflow-scrolling: touch;
+        }
+        nav .max-w-6xl::-webkit-scrollbar { display: none; }
+        nav a { white-space: nowrap; }
+        .act-table-head { display: none; }
+        .act-row {
+            display: flex !important;
+            flex-direction: column;
+            align-items: stretch !important;
+            gap: 10px !important;
+            padding: 14px 16px !important;
+        }
+        .act-row > div {
+            width: 100%;
+            max-width: 100%;
+        }
+        .act-row .col-span-4,
+        .act-row .col-span-2,
+        .act-row .col-span-1 {
+            grid-column: auto;
+        }
+        .type-tab { white-space: nowrap; }
+        .flex.gap-2.mb-5 {
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+            scrollbar-width: none;
+            padding-bottom: 4px;
+        }
+    }
     </style>
 </head>
 <body class="min-h-screen">
@@ -213,7 +247,7 @@
     <div class="bg-slate-800/50 rounded-3xl border border-slate-700/60 overflow-hidden shadow-2xl shadow-black/20">
 
         {{-- Table header --}}
-        <div class="grid grid-cols-12 gap-3 px-6 py-3 border-b border-slate-700/60
+        <div class="act-table-head grid grid-cols-12 gap-3 px-6 py-3 border-b border-slate-700/60
                     text-xs font-bold uppercase tracking-wider text-slate-300"
              style="background:linear-gradient(135deg,rgba(124,58,237,.15),rgba(56,189,248,.08))">
             <div class="col-span-4">Clase / Actividad</div>
@@ -227,7 +261,7 @@
         {{-- Rows --}}
         <template x-for="activity in filteredActivities()" :key="activity.id">
             <div x-data="{ expanded: false }"
-                class="grid grid-cols-12 gap-3 items-center px-6 py-4 border-b border-slate-700/50 last:border-0 hover:bg-slate-700/30 transition"
+                class="act-row grid grid-cols-12 gap-3 items-center px-6 py-4 border-b border-slate-700/50 last:border-0 hover:bg-slate-700/30 transition"
             >
                     <div class="col-span-4 flex items-start gap-3">
                         <button @click="expanded = !expanded"
@@ -369,7 +403,7 @@
          style="background:rgba(2,6,23,.72);backdrop-filter:blur(8px);"
          @keydown.escape.window="openCreate = false">
         <div @click.outside="openCreate = false"
-             class="w-full max-w-2xl rounded-3xl border border-slate-700/60 bg-slate-900/95 shadow-2xl shadow-black/40 overflow-hidden">
+             class="w-full max-w-2xl max-h-[min(90dvh,860px)] overflow-y-auto rounded-3xl border border-slate-700/60 bg-slate-900/95 shadow-2xl shadow-black/40">
 
             <div class="px-6 py-5 border-b border-slate-700/60 bg-slate-900">
                 <h3 class="font-semibold text-lg text-slate-100">Crear actividad</h3>

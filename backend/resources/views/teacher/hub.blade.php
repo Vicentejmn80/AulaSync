@@ -359,9 +359,11 @@
             }
 
             #hub-canvas {
-                padding: 4rem 0.75rem 1.5rem;
+                padding: calc(3.6rem + env(safe-area-inset-top)) 0.75rem calc(108px + env(safe-area-inset-bottom));
                 min-height: calc(100dvh - 56px);
+                height: 100dvh;
                 overflow-y: auto;
+                overflow-x: hidden;
             }
 
             .stats-grid {
@@ -372,103 +374,134 @@
                 grid-template-columns: 1fr !important;
             }
 
-            /* ── Calendario Mobile ───────────────────────────────── */
+            /* ── Calendario Mobile: celdas compactas + puntos ── */
             .calendar-header {
                 flex-direction: column;
-                gap: 12px;
-                margin-bottom: 15px;
+                gap: 10px;
+                margin-bottom: 12px;
+                align-items: stretch;
             }
 
             .calendar-title h2 {
                 font-size: 18px;
-                text-align: center;
+                text-align: left;
             }
 
             .calendar-title p {
                 font-size: 12px;
-                text-align: center;
+                text-align: left;
             }
 
             .calendar-nav {
                 width: 100%;
-                justify-content: center;
+                justify-content: flex-start;
                 flex-wrap: wrap;
                 gap: 6px;
             }
 
             .calendar-nav-btn {
-                width: 36px;
-                height: 36px;
+                width: 40px;
+                height: 40px;
                 font-size: 14px;
             }
 
             .today-btn {
-                padding: 0 12px;
-                font-size: 12px;
+                padding: 0 14px;
+                font-size: 13px;
             }
 
             .calendar-stats {
-                width: 100%;
+                width: auto;
                 text-align: center;
                 margin-left: 0;
-                margin-top: 8px;
+            }
+
+            .pedagogy-btn {
+                width: 100%;
+                justify-content: flex-start;
             }
 
             .calendar-grid {
-                padding: 12px;
-                border-radius: 16px;
-                min-height: 320px;
+                padding: 10px 8px 12px;
+                border-radius: 18px;
+                min-height: 0;
             }
 
             .weekdays {
-                gap: 4px;
-                margin-bottom: 8px;
+                gap: 3px;
+                margin-bottom: 6px;
             }
 
             .weekday {
                 font-size: 10px;
+                letter-spacing: 0;
             }
 
             .calendar-days {
-                gap: 4px;
+                gap: 3px;
             }
 
             .calendar-day {
-                min-height: 60px;
-                max-height: 118px;
-                padding: 6px;
-                border-radius: 10px;
+                min-height: 46px;
+                max-height: 46px;
+                height: 46px;
+                padding: 4px 2px 6px;
+                border-radius: 12px;
+                cursor: pointer;
+            }
+
+            .calendar-day.has-events {
+                border-color: color-mix(in srgb, var(--nova-violet) 40%, var(--nova-glass-border));
             }
 
             .day-number {
-                top: 4px;
-                right: 5px;
-                font-size: 10px;
+                position: static;
+                display: block;
+                text-align: center;
+                font-size: 12px;
+                line-height: 1.2;
+                font-weight: 800;
             }
 
             .day-content {
-                margin-top: 14px;
-                gap: 2px;
+                display: none;
             }
 
-            .cal-event {
-                font-size: 8px;
-                padding: 2px 4px;
-                border-radius: 4px;
+            .day-dots {
+                display: flex;
+                justify-content: center;
+                gap: 3px;
+                margin-top: 3px;
+                min-height: 6px;
             }
+
+            .day-more-count { display: none; }
+            .more-events { display: none; }
 
             /* AI hint oculto en mobile */
             .ai-hint-cal {
                 display: none;
             }
 
-            /* Ajuste del modal de día */
             .day-modal-content {
                 max-height: 70vh;
                 overflow-y: auto;
             }
 
-            /* Scroll mobile: mantener flujo natural sin duplicar reglas */
+            .dash-greeting { font-size: 22px; }
+            .dash-toolbar { width: 100%; }
+            .dash-search { min-width: 0; flex: 1; }
+            .ios-stat { padding: 12px 10px; }
+            .ios-stat-value { font-size: 18px; }
+            .ai-command-card { padding: 12px; }
+            .content-card { padding: 16px; border-radius: 18px; }
+            .modal-overlay { padding: 12px; align-items: flex-end; }
+            .modal-nova {
+                max-width: 100%;
+                width: 100%;
+                max-height: min(88dvh, 860px);
+                border-radius: 24px 24px 16px 16px;
+            }
         }
 
         @media (min-width: 768px) {
@@ -1773,10 +1806,21 @@
         @media (max-width: 767px) {
             .dash-header {
                 flex-direction: column;
+                align-items: stretch;
             }
 
             .dash-stat-strip {
                 justify-content: flex-start;
+            }
+
+            .ios-stat-grid {
+                gap: 8px;
+            }
+
+            .create-menu {
+                right: 0;
+                left: 0;
+                width: min(100%, 320px);
             }
         }
 
@@ -3030,6 +3074,11 @@
             overflow: hidden;
             display: flex;
             flex-direction: column;
+            cursor: pointer;
+        }
+
+        .calendar-day.has-events {
+            border-color: color-mix(in srgb, var(--nova-violet) 28%, var(--nova-glass-border));
         }
 
         .calendar-day:hover {
@@ -3120,6 +3169,28 @@
             margin-top: 2px;
         }
 
+        .day-dots {
+            display: none;
+        }
+
+        .day-dot {
+            width: 5px;
+            height: 5px;
+            border-radius: 99px;
+            flex-shrink: 0;
+        }
+
+        .day-dot.clase { background: #8B5CF6; }
+        .day-dot.actividad { background: #C455ED; }
+        .day-dot.homework { background: #22D3EE; }
+
+        .day-more-count {
+            font-size: 9px;
+            font-weight: 800;
+            color: var(--text-tertiary);
+            line-height: 1;
+        }
+
         /* ── Modales ────────────────────────────────────────── */
         .modal-overlay {
             position: fixed;
@@ -3130,6 +3201,9 @@
             align-items: center;
             justify-content: center;
             z-index: 1000;
+            padding: 16px;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
         }
 
         .modal-nova {
@@ -4390,13 +4464,22 @@
                                 <div :class="{
                                         'calendar-day': cell !== null,
                                         'calendar-day empty': cell === null,
-                                        'today': cell !== null && isToday(cell)
-                                     }">
+                                        'today': cell !== null && isToday(cell),
+                                        'has-events': cell !== null && activitiesForDay(cell).length > 0
+                                     }"
+                                     @click="cell && openDayModal(cell)">
                                     <template x-if="cell !== null">
                                         <div style="display:flex;flex-direction:column;min-height:0;height:100%;">
                                             <span class="day-number" x-text="cell"></span>
+                                            <div class="day-dots" x-show="activitiesForDay(cell).length">
+                                                <template x-for="(act, di) in activitiesForDay(cell).slice(0, 3)" :key="'d'+act.id+di">
+                                                    <span class="day-dot"
+                                                          :class="act.type === 'clase' ? 'clase' : (act.is_homework ? 'homework' : 'actividad')"></span>
+                                                </template>
+                                                <span class="day-more-count" x-show="activitiesForDay(cell).length > 3" x-text="'+' + (activitiesForDay(cell).length - 3)"></span>
+                                            </div>
                                             <div class="day-content">
-                                                <template x-for="act in activitiesForDay(cell)" :key="act.id">
+                                                <template x-for="act in activitiesForDay(cell).slice(0, 3)" :key="act.id">
                                                     <button @click.stop="setActivityContext(act); openActivityModal(act)" 
                                                              class="cal-event"
                                                              :class="[
@@ -4407,6 +4490,11 @@
                                                         <span x-text="act.title.length > 15 ? act.title.substring(0,12)+'...' : act.title"></span>
                                                     </button>
                                                 </template>
+                                                <button type="button"
+                                                        class="more-events"
+                                                        x-show="activitiesForDay(cell).length > 3"
+                                                        @click.stop="openDayModal(cell)"
+                                                        x-text="'+' + (activitiesForDay(cell).length - 3) + ' más'"></button>
                                             </div>
                                         </div>
                                     </template>
@@ -5098,28 +5186,34 @@
 
     {{-- Day Modal --}}
     <div x-show="dayModal" x-cloak class="modal-overlay" @click.self="dayModal = null" @keydown.escape.window="dayModal = null">
-        <div class="modal-nova" style="max-width: 400px;">
+        <div class="modal-nova" style="max-width: 440px;">
             <div class="modal-header" style="background: var(--nova-gradient);">
-                <h3 style="color: white;">Eventos del día <span x-text="dayModal?.day"></span></h3>
+                <div>
+                    <p style="margin:0 0 4px;font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:rgba(255,255,255,.75)">Pendientes del día</p>
+                    <h3 style="color: white; margin: 0; text-transform: capitalize;" x-text="dayModal?.dateLabel || ('Día ' + dayModal?.day)"></h3>
+                </div>
                 <button @click="dayModal = null" class="modal-close" style="background: rgba(255,255,255,0.2); color: white;">
                     <i class="fa-solid fa-times"></i>
                 </button>
             </div>
-            <div class="modal-body">
+            <div class="modal-body day-modal-content">
+                <p x-show="!(dayModal?.activities || []).length" style="color: var(--text-secondary); font-size: 14px; padding: 12px 0;">
+                    No hay clases, tareas ni evaluaciones este día.
+                </p>
                 <div style="display: flex; flex-direction: column; gap: 10px;">
                     <template x-for="act in (dayModal?.activities ?? [])" :key="act.id">
-                        <div style="display: flex; align-items: center; gap: 12px; padding: 10px; background: var(--nova-glass); border-radius: 16px;">
-                            <div style="width: 35px; height: 35px; border-radius: 12px; background: var(--nova-gradient); display: flex; align-items: center; justify-content: center;">
-                                <i class="fa-regular fa-calendar" style="color: white; font-size: 14px;"></i>
+                        <button type="button"
+                                @click="setActivityContext(act); openActivityModal(act); dayModal = null"
+                                style="display: flex; align-items: center; gap: 12px; padding: 12px; background: var(--nova-glass); border-radius: 16px; border: 1px solid var(--nova-glass-border); text-align: left; cursor: pointer; width: 100%; color: inherit;">
+                            <div style="width: 38px; height: 38px; border-radius: 12px; background: var(--nova-gradient); display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                                <i class="fa-solid" :class="act.type === 'clase' ? 'fa-chalkboard-user' : (act.is_homework ? 'fa-book' : 'fa-pen-to-square')" style="color: white; font-size: 14px;"></i>
                             </div>
-                            <div style="flex: 1;">
-                                <p style="font-weight: 600; color: var(--text-primary); margin-bottom: 4px;" x-text="act.title"></p>
-                                <p style="font-size: 11px; color: var(--text-tertiary);" x-text="act.course_name"></p>
+                            <div style="flex: 1; min-width: 0;">
+                                <p style="font-weight: 700; color: var(--text-primary); margin-bottom: 3px;" x-text="act.title"></p>
+                                <p style="font-size: 12px; color: var(--text-tertiary);" x-text="(act.course_name || '') + (act.type ? ' · ' + act.type : '')"></p>
                             </div>
-                            <button @click="setActivityContext(act); openActivityModal(act); dayModal = null" style="color: var(--nova-cyan); font-size: 12px;">
-                                Ver
-                            </button>
-                        </div>
+                            <i class="fa-solid fa-chevron-right" style="color: var(--nova-violet); font-size: 12px;"></i>
+                        </button>
                     </template>
                 </div>
             </div>
@@ -6755,9 +6849,25 @@ function teacherHub() {
         },
 
         openDayModal(day) {
+            if (!day) return;
             const acts = this.activitiesForDay(day);
-            if (acts.length === 0) return;
-            this.dayModal = { day, activities: acts };
+            this.dayModal = {
+                day,
+                dateLabel: this.calendarDayLabel(day),
+                activities: acts,
+            };
+        },
+
+        calendarDayLabel(day) {
+            if (!day || !this.calendarData?.month) return `Día ${day}`;
+            const iso = `${this.calendarData.month}-${String(day).padStart(2, '0')}`;
+            try {
+                return new Date(`${iso}T12:00:00`).toLocaleDateString('es-VE', {
+                    weekday: 'long', day: 'numeric', month: 'long'
+                });
+            } catch (e) {
+                return iso;
+            }
         },
 
         calNavigate(direction) {

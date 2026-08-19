@@ -2,12 +2,13 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>Estrategia de Evaluación · AulaSync</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
     @include('partials.nova-theme')
+    @include('partials.teacher-mobile')
     <style>
         [x-cloak] { display: none !important; }
 
@@ -451,6 +452,13 @@
             .layout { grid-template-columns: 1fr; }
             .row2, .row3 { grid-template-columns: 1fr; }
             .tabs { width: 100%; border-radius: 18px; }
+        }
+        @media (max-width: 767px) {
+            .wrap { padding: 16px 16px calc(80px + env(safe-area-inset-bottom)); }
+            h1 { font-size: 24px; }
+            .table-wrap { margin: 0 -6px; }
+            .table { min-width: 640px; }
+            .matrix { min-width: 520px; }
         }
     </style>
 </head>

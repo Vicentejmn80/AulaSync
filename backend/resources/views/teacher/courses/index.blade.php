@@ -2,17 +2,22 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>Mis Cursos · AulaSync</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    @include('partials.teacher-mobile')
     <style>
         [x-cloak] { display: none !important; }
-        body { font-family: 'Inter', system-ui, sans-serif; }
+        body { font-family: 'Inter', system-ui, sans-serif; overflow-x: hidden; }
         .card-hover { transition: transform .18s, box-shadow .18s; }
         .card-hover:hover { transform: translateY(-3px); box-shadow: 0 12px 32px rgba(139,92,246,.12); }
+        @media (max-width: 767px) {
+            nav .max-w-6xl { overflow-x: auto; scrollbar-width: none; }
+            nav a { white-space: nowrap; }
+        }
     </style>
 </head>
 <body class="bg-slate-50 min-h-screen">

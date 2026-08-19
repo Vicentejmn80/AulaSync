@@ -2,12 +2,13 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>Comunicación · AulaSync</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
     @include('partials.nova-theme')
+    @include('partials.teacher-mobile')
     <style>
         [x-cloak] { display: none !important; }
         body { margin: 0; font-family: Inter, system-ui, sans-serif; background: var(--bg-primary); color: var(--text-primary); }
@@ -44,7 +45,15 @@
         .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
         .table { width: 100%; border-collapse: collapse; font-size: 13px; }
         .table th, .table td { text-align: left; border-bottom: 1px solid var(--nova-glass-border); padding: 8px 6px; }
-        @media (max-width: 1080px) { .layout { grid-template-columns: 1fr; } .threads { grid-template-columns: 1fr; } .row2, .grid3 { grid-template-columns: 1fr; } }
+        @media (max-width: 1080px) { .layout { grid-template-columns: 1fr; } .threads { grid-template-columns: 1fr; min-height: 0; } .row2, .grid3 { grid-template-columns: 1fr; } }
+        @media (max-width: 767px) {
+            .wrap { padding: 16px 16px calc(28px + env(safe-area-inset-bottom)); }
+            .title { font-size: 24px; }
+            .thread-list, .thread-main, .thread-side { min-height: 0; }
+            .thread-main { min-height: 52vh; }
+            .msg { max-width: 92%; }
+            .table { display: block; overflow-x: auto; }
+        }
     </style>
 </head>
 <body>

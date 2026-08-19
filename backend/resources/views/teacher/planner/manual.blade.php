@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>Planificador Visual · AulaSync</title>
     <meta name="csrf-token" content="{{ csrf_token() }}">
     
@@ -12,6 +12,7 @@
     
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     @include('partials.nova-theme')
+    @include('partials.teacher-mobile')
     <style>
         input[type="date"]::-webkit-calendar-picker-indicator {
             background: transparent;
@@ -107,6 +108,9 @@
         :root:not(.dark) textarea:focus { background: var(--bg-secondary); border-color: var(--nova-violet); box-shadow: 0 0 0 3px rgba(124,58,237,0.1); }
         :root:not(.dark) input::placeholder,
         :root:not(.dark) textarea::placeholder { color: var(--text-tertiary); }
+        @media (max-width: 767px) {
+            .mt-5.pt-4.border-t.border-slate-700\/40.grid.grid-cols-2 { grid-template-columns: 1fr; }
+        }
     </style>
 </head>
 <body class="min-h-screen font-sans relative overflow-x-hidden" style="background:var(--bg-primary);color:var(--text-primary);">

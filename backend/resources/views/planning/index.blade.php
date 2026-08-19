@@ -1,6 +1,7 @@
 <x-app-layout>
     @push('styles')
         @include('partials.nova-theme')
+        @include('partials.teacher-mobile')
         <style>
             .plan-bg { background: var(--bg-primary); color: var(--text-primary); }
             .plan-card { background: var(--bg-card); border-color: var(--nova-glass-border); }

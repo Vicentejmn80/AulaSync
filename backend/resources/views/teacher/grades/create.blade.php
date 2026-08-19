@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>Registrar Notas · {{ $activity->title }}</title>
     <script src="https://cdn.tailwindcss.com"></script>
@@ -12,6 +12,7 @@
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     @include('partials.nova-theme')
+    @include('partials.teacher-mobile')
     <style>
         [x-cloak] { display: none !important; }
         body { font-family: 'Inter', system-ui, sans-serif; background:var(--bg-primary); color:var(--text-primary); }
@@ -56,6 +57,26 @@
         :root:not(.dark) .bg-slate-800 { background: var(--bg-tertiary); }
         :root:not(.dark) .bg-slate-950\/80 { background: rgba(240,244,255,.8); }
         :root:not(.dark) .border-white\/10 { border-color: var(--nova-glass-border); }
+        @media (max-width: 767px) {
+            body { padding-bottom: env(safe-area-inset-bottom); }
+            .grade-desktop-head { display: none; }
+            .grade-row {
+                display: grid;
+                grid-template-columns: 1fr;
+                gap: 8px;
+                padding: 14px 16px;
+            }
+            .grade-row td {
+                display: block;
+                padding: 0 !important;
+                border: 0;
+            }
+            .grade-row td:nth-child(3) { width: 100%; }
+            .grade-row td:nth-child(3) > div { width: 100%; }
+            .grade-row .grade-input { width: 100%; }
+            .grade-actions { width: 100%; }
+            .grade-actions button { width: 100%; justify-content: center; }
+        }
     </style>
 </head>
 <body class="min-h-screen" style="background:var(--bg-primary);">
@@ -71,7 +92,7 @@
             <span class="text-xs font-semibold uppercase tracking-widest text-violet-500">{{ $activity->course->subject_name }}</span>
             <h1 class="text-2xl font-bold text-white mt-1">{{ $activity->title }}</h1>
         </div>
-        <div class="flex items-center gap-3">
+        <div class="grade-actions flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
             <button @click="openAIModal()" class="bg-slate-700 hover:bg-slate-600 text-white font-semibold px-5 py-3 rounded-2xl transition-all flex items-center gap-2">
                 <i class="fa-solid fa-microphone-lines"></i> Asistente de Voz
             </button>
@@ -140,7 +161,7 @@
     {{-- Tabla de Notas --}}
     <div class="rounded-3xl border overflow-hidden backdrop-blur-xl bg-white/5 border-white/10">
         <table class="w-full text-left border-collapse">
-            <thead>
+            <thead class="grade-desktop-head">
                 <tr class="bg-white/5 text-violet-100 text-xs font-bold uppercase tracking-wider">
                     <th class="px-6 py-4 w-16">#</th>
                     <th class="px-6 py-4">Alumno</th>
@@ -151,7 +172,7 @@
             </thead>
             <tbody>
                 @foreach($students as $index => $student)
-                <tr class="border-b border-white/5 hover:bg-white/5 transition">
+                <tr class="grade-row border-b border-white/5 hover:bg-white/5 transition">
                     <td class="px-6 py-4 text-violet-400 font-mono text-sm">{{ $index + 1 }}</td>
                     <td class="px-6 py-4">
                         <div class="flex items-center gap-3">
@@ -215,7 +236,7 @@
 
 {{-- Modal IA --}}
 <div x-data="aiConsole()" x-show="$store.aiModal.open" x-cloak class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
-    <div @click.outside="$store.aiModal.close()" class="bg-slate-900 border border-white/10 rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden">
+    <div @click.outside="$store.aiModal.close()" class="bg-slate-900 border border-white/10 rounded-3xl w-full max-w-lg max-h-[min(90dvh,720px)] overflow-y-auto shadow-2xl">
         <div class="px-6 py-4 bg-gradient-to-r from-violet-600 to-indigo-600 text-white flex justify-between items-center">
             <h3 class="font-bold">Dictado por Voz / IA</h3>
             <button @click="$store.aiModal.close()"><i class="fa-solid fa-xmark"></i></button>

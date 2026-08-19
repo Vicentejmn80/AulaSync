@@ -1,6 +1,7 @@
 ﻿<x-app-layout>
     @push('styles')
     @include('partials.nova-theme')
+    @include('partials.teacher-mobile')
     <style>
         :root {
             --hist-grad-dark:    linear-gradient(160deg, #1e0f3c 0%, #2d1569 60%, #4a1072 100%);
