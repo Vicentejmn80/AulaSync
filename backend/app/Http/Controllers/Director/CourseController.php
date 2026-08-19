@@ -181,7 +181,7 @@ class CourseController extends Controller
                 })
                 ->firstOrFail();
 
-            return [null, $invite->id, "{$invite->name} ({$invite->invite_code}, pendiente)"];
+            return [null, $invite->id, "{$invite->display_name} ({$invite->invite_code}, pendiente)"];
         }
 
         $teacherId = str_starts_with($assignee, 'teacher:')

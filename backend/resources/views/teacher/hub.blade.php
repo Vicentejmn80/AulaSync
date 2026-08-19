@@ -3836,8 +3836,9 @@
                 </div>
             </div>
         </button>
-        {{-- Theme palette picker --}}
-        <div class="theme-toggle-wrap">
+        {{-- Theme palette picker + switch claro/oscuro --}}
+        <div class="theme-toggle-wrap" style="display:flex;align-items:center;gap:8px;">
+            @include('components.theme-toggle')
             <button @click.stop="showThemePicker = !showThemePicker" class="theme-toggle" title="Cambiar colores del tema" style="position: relative; z-index: 20;">
                 <i class="fa-solid fa-palette"></i>
             </button>

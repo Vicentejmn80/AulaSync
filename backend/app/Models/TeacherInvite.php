@@ -75,6 +75,18 @@ class TeacherInvite extends Model
         return ! $this->isRevoked() && ! $this->isExpired();
     }
 
+    public function getDisplayNameAttribute(): string
+    {
+        return app(\App\Services\PersonNameSanitizer::class)->displayName((string) ($this->attributes['name'] ?? ''));
+    }
+
+    public function setNameAttribute(?string $value): void
+    {
+        $raw = trim((string) $value);
+        $clean = app(\App\Services\PersonNameSanitizer::class)->displayName($raw);
+        $this->attributes['name'] = $clean !== '' ? $clean : $raw;
+    }
+
     public function claimFor(User $user): void
     {
         if ($this->isClaimed() && (int) $this->claimed_by !== (int) $user->id) {

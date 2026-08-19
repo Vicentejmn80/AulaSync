@@ -47,6 +47,35 @@ class DirectorAICommandTest extends TestCase
         $this->assertSame(3, Course::where('colegio_id', $colegio->id)->count());
     }
 
+    public function test_colloquial_teacher_prompt_saves_clean_name_and_subject(): void
+    {
+        [$director, $colegio] = $this->directorContext();
+
+        $draft = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'crea al profesor de matematica llamado juan carlos',
+        ]);
+
+        $draft->assertOk(json_encode($draft->json(), JSON_UNESCAPED_UNICODE))
+            ->assertJsonPath('requires_confirmation', true)
+            ->assertJsonPath('pending_actions.0.intent', 'create_teacher')
+            ->assertJsonPath('pending_actions.0.data.teacher_name', 'Juan Carlos')
+            ->assertJsonPath('pending_actions.0.data.subject_name', 'Matemática');
+
+        $execute = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'sí',
+        ]);
+        $execute->assertOk();
+        $this->assertTrue(
+            (bool) $execute->json('actions.0.success'),
+            json_encode($execute->json(), JSON_UNESCAPED_UNICODE)
+        );
+
+        $this->assertDatabaseHas('teacher_invites', [
+            'colegio_id' => $colegio->id,
+            'name' => 'Juan Carlos',
+        ]);
+    }
+
     public function test_missing_grades_do_not_block_and_are_created_after_confirmation(): void
     {
         [$director, $colegio] = $this->directorContext();
@@ -129,7 +158,7 @@ class DirectorAICommandTest extends TestCase
             ->assertJsonPath('requires_confirmation', true)
             ->assertJsonPath('pending_actions.0.intent', 'create_course')
             ->assertJsonPath('pending_actions.0.data.grade', '1ro')
-            ->assertJsonPath('pending_actions.0.data.subject_name', 'Matematicas');
+            ->assertJsonPath('pending_actions.0.data.subject_name', 'Matemática');
 
         $execute = $this->actingAs($director)->postJson(route('director.ai.command'), [
             'confirmed' => true,
@@ -139,7 +168,7 @@ class DirectorAICommandTest extends TestCase
         $execute->assertOk()->assertJsonPath('actions.0.success', true);
         $this->assertDatabaseHas('courses', [
             'colegio_id' => $colegio->id,
-            'subject_name' => 'Matematicas',
+            'subject_name' => 'Matemática',
             'grade' => '1ro',
         ]);
     }
@@ -393,7 +422,7 @@ class DirectorAICommandTest extends TestCase
         $draft->assertOk()
             ->assertJsonPath('requires_confirmation', true)
             ->assertJsonPath('pending_actions.0.intent', 'create_course')
-            ->assertJsonPath('pending_actions.0.data.subject_name', 'Ingles');
+            ->assertJsonPath('pending_actions.0.data.subject_name', 'Inglés');
 
         $grades = $draft->json('pending_actions.0.data.grades');
         $this->assertSame(['1ro', '2do', '3ro', '4to', '5to', '6to'], $grades);
@@ -405,11 +434,11 @@ class DirectorAICommandTest extends TestCase
 
         $execute->assertOk()->assertJsonPath('actions.0.success', true);
         $this->assertSame(6, Course::where('colegio_id', $colegio->id)
-            ->where('subject_name', 'Ingles')
+            ->where('subject_name', 'Inglés')
             ->count());
         $this->assertDatabaseHas('courses', [
             'colegio_id' => $colegio->id,
-            'subject_name' => 'Ingles',
+            'subject_name' => 'Inglés',
             'grade' => '6to',
         ]);
     }
@@ -914,7 +943,7 @@ class DirectorAICommandTest extends TestCase
         $draft->assertOk(json_encode($draft->json(), JSON_UNESCAPED_UNICODE))
             ->assertJsonPath('requires_confirmation', true)
             ->assertJsonPath('pending_actions.0.intent', 'create_teacher')
-            ->assertJsonPath('pending_actions.0.data.teacher_name', 'yovanny andrade')
+            ->assertJsonPath('pending_actions.0.data.teacher_name', 'Yovanny Andrade')
             ->assertJsonPath('pending_actions.0.data.subject_name', 'Inglés')
             ->assertJsonPath('pending_actions.0.data.grades', ['1ro', '2do', '3ro', '4to', '5to', '6to']);
         $this->assertStringContainsString('Inglés', (string) $draft->json('message'));
@@ -930,7 +959,7 @@ class DirectorAICommandTest extends TestCase
         );
         $this->assertDatabaseHas('teacher_invites', [
             'colegio_id' => $colegio->id,
-            'name' => 'yovanny andrade',
+            'name' => 'Yovanny Andrade',
         ]);
         $this->assertSame(6, Course::query()
             ->where('colegio_id', $colegio->id)

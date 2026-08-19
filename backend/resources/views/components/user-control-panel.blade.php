@@ -65,6 +65,7 @@
 </style>
 
 <div x-data="userControlPanel()" x-init="init()" class="relative z-[200] flex items-center gap-2 overflow-visible">
+    @include('components.theme-toggle')
     <button
         type="button"
         @click.stop="open = !open; if (open) loadNotifications()"
@@ -133,9 +134,7 @@ if (!window.userControlPanel) {
             _pollTimer: null,
             _knownUnreadCount: 0,
             init() {
-                const saved = localStorage.getItem('nova-theme');
-                this.isDark = saved ? saved === 'dark' : true;
-                this.applyTheme();
+                this.isDark = document.documentElement.classList.contains('dark');
                 this.loadNotifications();
                 this.startNotificationPolling();
             },
@@ -156,9 +155,14 @@ if (!window.userControlPanel) {
                 });
             },
             toggleTheme() {
-                this.isDark = !this.isDark;
-                localStorage.setItem('nova-theme', this.isDark ? 'dark' : 'light');
-                this.applyTheme();
+                if (typeof window.applyAulaTheme === 'function') {
+                    window.applyAulaTheme(this.isDark ? 'light' : 'dark');
+                } else {
+                    document.documentElement.classList.toggle('dark');
+                    localStorage.setItem('nova-theme', document.documentElement.classList.contains('dark') ? 'dark' : 'light');
+                    localStorage.setItem('aula-theme', localStorage.getItem('nova-theme'));
+                }
+                this.isDark = document.documentElement.classList.contains('dark');
             },
             applyTheme() {
                 document.documentElement.classList.toggle('dark', this.isDark);
@@ -256,12 +260,5 @@ if (!window.userControlPanel) {
             },
         };
     };
-
-    const saved = localStorage.getItem('nova-theme');
-    if (!saved || saved === 'dark') {
-        document.documentElement.classList.add('dark');
-    } else {
-        document.documentElement.classList.remove('dark');
-    }
 }
 </script>

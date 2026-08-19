@@ -277,7 +277,7 @@
     <div class="mobile-bar">
         <button class="icon-btn" @click="sidebarOpen = !sidebarOpen" aria-label="Menú"><i class="fa-solid fa-bars"></i></button>
         <strong>AulaSync Familia</strong>
-        <button class="icon-btn" @click="toggleTheme()"><i class="fa-solid" :class="isDark ? 'fa-sun' : 'fa-moon'"></i></button>
+        @include('components.theme-toggle')
     </div>
 
     <div class="fam-overlay" x-show="sidebarOpen" x-cloak @click="sidebarOpen = false"></div>
@@ -1087,9 +1087,14 @@
                     await this.refreshAll();
                 },
                 toggleTheme() {
-                    document.documentElement.classList.toggle('dark');
+                    if (typeof window.applyAulaTheme === 'function') {
+                        window.applyAulaTheme(this.isDark ? 'light' : 'dark');
+                    } else {
+                        document.documentElement.classList.toggle('dark');
+                        localStorage.setItem('nova-theme', document.documentElement.classList.contains('dark') ? 'dark' : 'light');
+                        localStorage.setItem('aula-theme', localStorage.getItem('nova-theme'));
+                    }
                     this.isDark = document.documentElement.classList.contains('dark');
-                    localStorage.setItem('nova-theme', this.isDark ? 'dark' : 'light');
                 },
             }));
         });

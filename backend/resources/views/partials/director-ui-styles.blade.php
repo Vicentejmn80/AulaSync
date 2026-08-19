@@ -336,4 +336,74 @@
             letter-spacing: 0.12em;
         }
     }
+
+    html.dark .director-btn-primary {
+        background-color: #6366f1;
+        color: #ffffff;
+        box-shadow: 0 8px 20px rgba(79, 70, 229, 0.28);
+    }
+    html.dark .director-btn-primary:hover:not(:disabled) {
+        background-color: #818cf8;
+    }
+    html.dark .director-badge-pending {
+        background-color: rgba(251, 191, 36, 0.16);
+        color: #fde68a;
+    }
+    html.dark .director-badge-active {
+        background-color: rgba(16, 185, 129, 0.16);
+        color: #6ee7b7;
+    }
+    html.dark .director-alert-success {
+        border-color: rgba(16, 185, 129, 0.35);
+        background-color: rgba(6, 78, 59, 0.35);
+        color: #a7f3d0;
+    }
+    html.dark .director-alert-error {
+        border-color: rgba(248, 113, 113, 0.35);
+        background-color: rgba(127, 29, 29, 0.35);
+        color: #fecaca;
+    }
+    html.dark .director-input,
+    html.dark .director-select,
+    html.dark .director-textarea {
+        border-color: #334155;
+        background-color: #0f172a;
+        color: #e2e8f0;
+    }
+    html.dark .director-input:focus,
+    html.dark .director-select:focus,
+    html.dark .director-textarea:focus {
+        border-color: #818cf8;
+        background-color: #0f172a;
+        box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.35);
+    }
+    html.dark .director-select option {
+        background-color: #0f172a;
+        color: #e2e8f0;
+    }
+    html.dark .director-label { color: #cbd5e1; }
+    html.dark .director-card {
+        border-color: #1e293b;
+        background-color: #0f172a;
+    }
+    html.dark .director-header {
+        border-color: #1e293b;
+        background-color: #0f172a;
+    }
+    html.dark .director-page-title,
+    html.dark .director-section-title { color: #f8fafc; }
+    html.dark .director-page-subtitle { color: #94a3b8; }
+    html.dark .director-chip {
+        border-color: #334155;
+        background: #1e293b;
+        color: #c7d2fe;
+    }
+    html.dark .director-code { color: #a5b4fc; }
+    html.dark .director-link { color: #a5b4fc; }
+    html.dark .director-link:hover { color: #c7d2fe; }
+    html.dark .director-btn-secondary {
+        border-color: #334155;
+        background-color: #1e293b;
+        color: #e2e8f0;
+    }
 </style>

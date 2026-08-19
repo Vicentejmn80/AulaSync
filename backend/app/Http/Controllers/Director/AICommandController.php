@@ -1855,6 +1855,10 @@ class AICommandController extends Controller
     private function extractTeacherName(string $text): ?string
     {
         $patterns = [
+            '/profesor(?:a)?\s+de\s+[A-Za-zÁÉÍÓÚáéíóúÑñ]+\s+llamad[oa]\s+([A-Za-zÁÉÍÓÚáéíóúÑñ][A-Za-zÁÉÍÓÚáéíóúÑñ\s]{1,80}?)(?:\s+(?:y|para|con)|,|\.|$)/iu',
+            '/llamad[oa]\s+([A-Za-zÁÉÍÓÚáéíóúÑñ][A-Za-zÁÉÍÓÚáéíóúÑñ\s]{1,80}?)(?:\s+(?:y|para|con|de\s+[1-6])|,|\.|$)/iu',
+            '/nombre(?:\s+es)?\s+([A-Za-zÁÉÍÓÚáéíóúÑñ][A-Za-zÁÉÍÓÚáéíóúÑñ\s]{1,80}?)(?:\s+(?:y|para)|,|\.|$)/iu',
+            '/profesor(?:a)?\s+de\s+[A-Za-zÁÉÍÓÚáéíóúÑñ]+\s+(?:llamad[oa]\s+)?(.+?)(?:\s+(?:y\s+|para\s+|con\s+)|,|\.|$)/iu',
             '/profesor(?:a)?\s+(.+?)(?:\s+(?:donde|al\s+que|con\s+la|con\s+el|y\s+quiero|y\s+as[ií]gna|y\s+agrega|y\s+crea|que\s+crea|para\s+as[ií]gna|dara|dará)|,|\.|$)/iu',
             '/(?:as[ií]gna(?:le)?|agrega(?:le)?|asignar)\s+(?:los\s+cursos\s+|las\s+materias\s+)?(?:a\s+)?([A-Za-zÁÉÍÓÚáéíóúÑñ][A-Za-zÁÉÍÓÚáéíóúÑñ\s]{1,80})$/iu',
             '/^(.+?)\s+(?:dara|dará|asigna)/iu',
@@ -1965,7 +1969,7 @@ class AICommandController extends Controller
 
     private function sanitizePersonName(?string $name): ?string
     {
-        $name = app(PersonNameSanitizer::class)->clean($name);
+        $name = app(PersonNameSanitizer::class)->cleanTeacher($name);
         if ($name === null) {
             return null;
         }
@@ -1980,7 +1984,7 @@ class AICommandController extends Controller
             return null;
         }
 
-        return $name;
+        return app(PersonNameSanitizer::class)->titleCase($name);
     }
 
     private function extractKnownSubject(?string $text): ?string
@@ -2135,6 +2139,7 @@ class AICommandController extends Controller
     private function extractSubject(string $text): ?string
     {
         $patterns = [
+            '/(?:profesor(?:a)?|docente)\s+de\s+([A-Za-zÁÉÍÓÚáéíóúÑñ][A-Za-zÁÉÍÓÚáéíóúÑñ]{2,40})(?:\s+llamad|\s+y\s+|,|\.|$)/iu',
             '/(?:as[ií]gna(?:le)?|dara|dará)\s+([A-Za-zÁÉÍÓÚáéíóúÑñ\s]{3,50})\s+(?:de|del|para|en)\s+/u',
             '/(?:as[ií]gna(?:le)?|dara|dará)\s+([A-Za-zÁÉÍÓÚáéíóúÑñ\s]{3,50})(?:,|\.|$)/u',
             '/(?:materia|asignatura)\s+de\s+([A-Za-zÁÉÍÓÚáéíóúÑñ][A-Za-zÁÉÍÓÚáéíóúÑñ\s]{1,50}?)(?:\s+(?:con|para|de|en|a)\s+|,|\.|$)/iu',

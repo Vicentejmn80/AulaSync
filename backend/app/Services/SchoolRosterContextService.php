@@ -106,7 +106,7 @@ class SchoolRosterContextService
             $status = $invite->isClaimed() ? 'vinculado / ya se registró' : 'pendiente de registro';
             $lines[] = sprintf(
                 '- %s | email: %s | materias: %s | código DOC-: %s | estado: %s',
-                $invite->name,
+                $invite->display_name,
                 $invite->email ?: 'sin correo',
                 $subjects !== '' ? $subjects : 'sin materia',
                 $invite->invite_code,

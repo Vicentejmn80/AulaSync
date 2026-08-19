@@ -12,7 +12,7 @@
     @include('partials.nova-theme')
     @include('partials.director-ui-styles')
 </head>
-<body class="min-h-screen overflow-x-hidden bg-slate-100 text-slate-900">
+<body class="min-h-screen overflow-x-hidden bg-slate-100 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
     <main class="mx-auto max-w-7xl px-5 py-6 lg:px-8">
         <header class="director-header">
             <div class="flex items-center gap-4">
@@ -65,7 +65,7 @@
                             @if($pendingInvites->isNotEmpty())
                                 <optgroup label="Pendientes de registro">
                                     @foreach($pendingInvites as $invite)
-                                        <option value="invite:{{ $invite->id }}">{{ $invite->name }} · {{ $invite->invite_code }}</option>
+                                        <option value="invite:{{ $invite->id }}">{{ $invite->display_name }} · {{ $invite->invite_code }}</option>
                                     @endforeach
                                 </optgroup>
                             @endif
@@ -117,7 +117,7 @@
                                 @if($course->teacher)
                                     Docente: {{ $course->teacher->name }}
                                 @elseif($course->pendingInvite)
-                                    Pendiente: {{ $course->pendingInvite->name }} · {{ $course->pendingInvite->invite_code }}
+                                    Pendiente: {{ $course->pendingInvite->display_name }} · {{ $course->pendingInvite->invite_code }}
                                 @else
                                     Sin asignar
                                 @endif
@@ -139,7 +139,7 @@
                                 <select name="assignee" required class="director-select min-w-[12rem] text-xs">
                                     <option value="">Elegir docente…</option>
                                     @foreach($pendingInvites as $invite)
-                                        <option value="invite:{{ $invite->id }}" @selected((int) $course->teacher_invite_id === (int) $invite->id && ! $course->teacher_id)>{{ $invite->name }} · {{ $invite->invite_code }}</option>
+                                        <option value="invite:{{ $invite->id }}" @selected((int) $course->teacher_invite_id === (int) $invite->id && ! $course->teacher_id)>{{ $invite->display_name }} · {{ $invite->invite_code }}</option>
                                     @endforeach
                                     @foreach($teachers as $teacher)
                                         <option value="teacher:{{ $teacher->id }}" @selected($course->teacher_id === $teacher->id)>{{ $teacher->name }}</option>

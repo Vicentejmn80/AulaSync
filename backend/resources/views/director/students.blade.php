@@ -12,7 +12,7 @@
     @include('partials.nova-theme')
     @include('partials.director-ui-styles')
 </head>
-<body class="min-h-screen overflow-x-hidden bg-slate-100 text-slate-900">
+<body class="min-h-screen overflow-x-hidden bg-slate-100 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
     <div x-data="{ open: false, familyMode: 'new', submitting: false, deleting: null }"
          x-cloak
          @keydown.escape.window="open = false; deleting = null">

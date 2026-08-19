@@ -4,6 +4,8 @@ namespace App\Services;
 
 class PersonNameSanitizer
 {
+    private const SUBJECT_ALIASES = 'matem[aá]ticas?|ingl[eé]s|lengua|ciencias?|historia|geograf[ií]a|f[ií]sica|qu[ií]mica|biolog[ií]a|educaci[oó]n f[ií]sica';
+
     /**
      * Extrae un nombre de persona limpio, sin preposiciones, grado, curso ni conectores.
      */
@@ -16,8 +18,15 @@ class PersonNameSanitizer
         $name = trim(preg_replace('/\s+/u', ' ', $name) ?? $name);
         $name = trim($name, " \t\n\r\0\x0B,.;:");
 
+        if (preg_match('/llamad[oa]\s+(.+)$/iu', $name, $called)) {
+            $name = trim((string) $called[1]);
+        }
+
         $name = preg_replace('/^(?:al|a la|el|la|los|las)\s+/iu', '', $name) ?? $name;
         $name = preg_replace('/^(?:alumno|alumna|estudiante)s?\s+/iu', '', $name) ?? $name;
+        $name = preg_replace('/^(?:profesor(?:a)?|docente)\s+/iu', '', $name) ?? $name;
+        $name = preg_replace('/^(?:de\s+(?:la\s+|el\s+)?)(?:'.self::SUBJECT_ALIASES.')\s+/iu', '', $name) ?? $name;
+        $name = preg_replace('/\s+de\s+(?:la\s+|el\s+)?(?:'.self::SUBJECT_ALIASES.')\b.*$/iu', '', $name) ?? $name;
 
         $cutPattern = '/\s+(?:'
             .'(?:y\s+)?(?:asigna(?:lo|le|r|les)?|inscribe(?:lo|le|r)?|matricula(?:lo|le|r)?|agrega(?:lo|le)?|añade|anade)'
@@ -42,11 +51,30 @@ class PersonNameSanitizer
             return null;
         }
 
-        if (preg_match('/^(?:en el|en la|en los|en las|en|de|del|el|la|los|las|al|a la|para|curso|grado|alumno|estudiante)$/iu', $name)) {
+        if (preg_match('/^(?:en el|en la|en los|en las|en|de|del|el|la|los|las|al|a la|para|curso|grado|alumno|estudiante|profesor|profesora|docente|llamado|llamada)$/iu', $name)) {
+            return null;
+        }
+
+        if (preg_match('/^(?:'.self::SUBJECT_ALIASES.')$/iu', $name)) {
             return null;
         }
 
         return $name;
+    }
+
+    public function cleanTeacher(?string $name): ?string
+    {
+        return $this->clean($name);
+    }
+
+    public function displayName(?string $name): string
+    {
+        $clean = $this->clean($name);
+        if ($clean === null) {
+            return trim((string) $name);
+        }
+
+        return $this->titleCase($clean);
     }
 
     public function titleCase(string $name): string

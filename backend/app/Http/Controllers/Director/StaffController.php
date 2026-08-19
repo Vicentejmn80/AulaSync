@@ -84,7 +84,7 @@ class StaffController extends Controller
         $invite = TeacherInvite::create([
             'colegio_id' => $director->colegio_id,
             'created_by' => $director->id,
-            'name' => $data['name'],
+            'name' => app(\App\Services\PersonNameSanitizer::class)->displayName($data['name']) ?: $data['name'],
             'email' => $data['email'] ?? null,
             'invite_code' => InviteCodeHelper::generateTeacherInvite(),
             'course_ids' => $courseIds ?: null,
@@ -120,7 +120,7 @@ class StaffController extends Controller
         }
 
         return redirect()->route('director.profesores')
-            ->with('success', "Invitación lista. Comparte el código {$invite->invite_code} con {$invite->name}. El curso y los alumnos que prepares quedan vinculados a ese código.");
+            ->with('success', "Invitación lista. Comparte el código {$invite->invite_code} con {$invite->display_name}. El curso y los alumnos que prepares quedan vinculados a ese código.");
     }
 
     public function destroyTeacher(Request $request, User $teacher): RedirectResponse
@@ -144,7 +144,7 @@ class StaffController extends Controller
     {
         abort_unless((int) $invite->colegio_id === (int) $request->user()->colegio_id, 404);
 
-        $name = $invite->name;
+        $name = $invite->display_name;
 
         Course::query()
             ->where('colegio_id', $invite->colegio_id)

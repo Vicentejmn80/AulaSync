@@ -17,4 +17,15 @@ class PersonNameSanitizerTest extends TestCase
         $this->assertSame('María López', $sanitizer->clean('alumna María López en 1ro'));
         $this->assertNull($sanitizer->clean('en el'));
     }
+
+    public function test_cleans_colloquial_teacher_prompts(): void
+    {
+        $sanitizer = new PersonNameSanitizer();
+
+        $this->assertSame('juan carlos', $sanitizer->cleanTeacher('de matematica llamado juan carlos'));
+        $this->assertSame('juan carlos', $sanitizer->cleanTeacher('profesor de matematica llamado juan carlos'));
+        $this->assertSame('juan carlos', $sanitizer->cleanTeacher('docente de matemática llamado juan carlos'));
+        $this->assertSame('Juan Carlos', $sanitizer->displayName('profesor de matematica llamado juan carlos'));
+        $this->assertSame('Juan Carlos', $sanitizer->displayName('de matemática llamado juan carlos'));
+    }
 }

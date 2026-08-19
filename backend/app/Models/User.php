@@ -110,4 +110,9 @@ class User extends Authenticatable
             ->withTimestamps()
             ->orderBy('name');
     }
+
+    public function getDisplayNameAttribute(): string
+    {
+        return app(\App\Services\PersonNameSanitizer::class)->displayName((string) ($this->attributes['name'] ?? ''));
+    }
 }

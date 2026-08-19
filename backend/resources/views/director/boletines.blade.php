@@ -12,7 +12,7 @@
     @include('partials.nova-theme')
     @include('partials.director-ui-styles')
 </head>
-<body class="min-h-screen overflow-x-hidden bg-slate-100 text-slate-900">
+<body class="min-h-screen overflow-x-hidden bg-slate-100 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
     @php
         $withGrades = collect($rows)->where('has_grades', true)->count();
         $withoutGrades = collect($rows)->where('has_grades', false)->count();

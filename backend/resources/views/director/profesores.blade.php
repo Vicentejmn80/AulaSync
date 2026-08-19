@@ -12,7 +12,7 @@
     @include('partials.nova-theme')
     @include('partials.director-ui-styles')
 </head>
-<body class="min-h-screen overflow-x-hidden bg-slate-100 text-slate-900">
+<body class="min-h-screen overflow-x-hidden bg-slate-100 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
     <main class="mx-auto max-w-7xl px-5 py-6 lg:px-8">
         <header class="director-header">
             <div class="flex items-center gap-4">
@@ -98,15 +98,15 @@
                     <article class="director-card">
                         <div class="flex flex-wrap items-center justify-between gap-3">
                             <div>
-                                <p class="font-bold text-slate-900">{{ $invite->name }}</p>
-                                <p class="text-xs text-slate-600">{{ $invite->email ?: 'Sin correo' }} · {{ $invite->subject_name ? $invite->subject_name.' '.$invite->grade : 'Sin materia nueva' }}</p>
+                                <p class="font-bold text-slate-900 dark:text-slate-100">{{ $invite->display_name }}</p>
+                                <p class="text-xs text-slate-600 dark:text-slate-400">{{ $invite->email ?: 'Sin correo' }} · {{ $invite->subject_name ? $invite->subject_name.' '.$invite->grade : 'Sin materia nueva' }}</p>
                             </div>
                             <div class="flex flex-col items-end gap-2 text-right">
                                 <p class="director-code">{{ $invite->invite_code }}</p>
                                 <span class="director-badge-pending">Pendiente de registro</span>
                                 <form method="POST"
                                       action="{{ route('director.profesores.invite.destroy', $invite) }}"
-                                      onsubmit="return confirm('¿Eliminar la invitación de {{ addslashes($invite->name) }}? Los cursos no se borrarán, solo se desvincularán.')">
+                                      onsubmit="return confirm('¿Eliminar la invitación de {{ addslashes($invite->display_name) }}? Los cursos no se borrarán, solo se desvincularán.')">
                                     @csrf
                                     @method('DELETE')
                                     <button type="submit" class="director-btn-danger inline-flex items-center gap-1.5 px-3 py-1.5 text-xs" title="Eliminar invitación">
@@ -137,8 +137,8 @@
                 <article class="director-card">
                     <div class="flex flex-wrap items-start justify-between gap-3">
                         <div>
-                            <h3 class="text-lg font-bold text-slate-900">{{ $teacher->name }}</h3>
-                            <p class="text-xs text-slate-600">{{ $teacher->email }}</p>
+                            <h3 class="text-lg font-bold text-slate-900 dark:text-slate-100">{{ $teacher->display_name }}</h3>
+                            <p class="text-xs text-slate-600 dark:text-slate-400">{{ $teacher->email }}</p>
                         </div>
                         <div class="flex flex-col items-end gap-2">
                             <span class="director-badge-active">
@@ -146,7 +146,7 @@
                             </span>
                             <form method="POST"
                                   action="{{ route('director.profesores.destroy', $teacher) }}"
-                                  onsubmit="return confirm('¿Eliminar a {{ addslashes($teacher->name) }}? Sus cursos quedarán sin docente asignado.')">
+                                  onsubmit="return confirm('¿Eliminar a {{ addslashes($teacher->display_name) }}? Sus cursos quedarán sin docente asignado.')">
                                 @csrf
                                 @method('DELETE')
                                 <button type="submit" class="director-btn-danger inline-flex items-center gap-1.5 px-3 py-1.5 text-xs" title="Eliminar docente">

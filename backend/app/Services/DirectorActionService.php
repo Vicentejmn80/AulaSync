@@ -37,7 +37,9 @@ class DirectorActionService
         }
 
         return DB::transaction(function () use ($director, $payload, $colegioId) {
-            $teacherName = trim((string) $payload['teacher_name']);
+            $sanitizer = app(PersonNameSanitizer::class);
+            $rawName = trim((string) $payload['teacher_name']);
+            $teacherName = $sanitizer->displayName($rawName) ?: $rawName;
             $invite = TeacherInvite::query()
                 ->where('colegio_id', $colegioId)
                 ->whereRaw('LOWER(name) = ?', [mb_strtolower($teacherName)])
@@ -1096,7 +1098,7 @@ class DirectorActionService
             ->first();
 
         if ($invite) {
-            return [null, $invite->id, $invite->name.' ('.$invite->invite_code.')'];
+            return [null, $invite->id, $invite->display_name.' ('.$invite->invite_code.')'];
         }
 
         $teachers = User::query()
