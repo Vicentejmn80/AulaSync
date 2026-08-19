@@ -164,7 +164,7 @@
     </div>
 
     <main class="director-dash-main mx-auto max-w-7xl px-5 py-6 lg:px-8">
-        <header class="director-dash-header mb-6 flex flex-col gap-4 rounded-[2rem] border border-white/10 bg-white/[.045] p-5 shadow-2xl shadow-black/20 backdrop-blur-2xl" style="position:relative;z-index:100">
+        <header class="director-dash-header mb-6 flex flex-col gap-4 overflow-visible rounded-[2rem] border border-white/10 bg-white/[.045] p-5 shadow-2xl shadow-black/20 backdrop-blur-2xl" style="position:relative;z-index:100">
             <div class="flex items-start justify-between gap-3">
                 <div class="flex min-w-0 items-center gap-3">
                     <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-500 to-cyan-400 shadow-lg shadow-cyan-500/20 sm:h-14 sm:w-14">

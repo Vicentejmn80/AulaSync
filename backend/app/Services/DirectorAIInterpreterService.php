@@ -173,6 +173,7 @@ Reglas:
 10. "Crea al alumno X" o "crea al estudiante X" → create_students_batch. NUNCA create_course.
 11. "Crea al alumno X y asígnalo/inscríbelo/matrículalo al curso de Y grado Z" → create_students_batch + enroll_students_course (dos tools). El curso ya existe; no crees uno nuevo.
 12. "Agrega al curso de Inglés de 1ro al alumno X" → enroll_students_course si el alumno existe, o create_students_batch + enroll_students_course si hay que crearlo.
+13. names/student_name NUNCA incluyen "en el", "de", "del", "en 1ro", "primer grado" ni la materia. Ejemplo: "crea a Andrés Pérez en el curso de 1ro de inglés" → names=["Andrés Pérez"], grade=1ro, subject=Inglés.
 
 Memoria conversacional: {$memoryJson}
 Datos visibles del colegio: {$school}
@@ -216,11 +217,12 @@ PROMPT;
                 'required' => ['teacher_name', 'subject_name', 'grades'],
             ],
             'create_students_batch' => [
-                'description' => 'Crear uno o varios alumnos en un grado y sección.',
+                'description' => 'Crear uno o varios alumnos en un grado. names debe ser SOLO el nombre de la persona (ej. "Andrés Pérez"), nunca "en el curso", "de 1ro" ni la materia.',
                 'properties' => [
                     'names' => ['type' => 'array', 'items' => ['type' => 'string']],
                     'grade' => ['type' => 'string'],
                     'section' => ['type' => ['string', 'null']],
+                    'subject_name' => ['type' => ['string', 'null']],
                 ],
                 'required' => ['names', 'grade'],
             ],

@@ -47,6 +47,7 @@ class ProfileController extends Controller
         ]);
 
         $user = $request->user();
+        app(\App\Services\AiChatHistoryService::class)->forget($user->id);
 
         Auth::logout();
 

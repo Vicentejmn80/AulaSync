@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\AICommandHandlerController;
 use App\Http\Controllers\AIController;
+use App\Http\Controllers\AiChatHistoryController;
 use App\Http\Controllers\CodesRevealController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DemoRequestController;
@@ -132,6 +133,8 @@ Route::middleware(['auth'])->group(function () {
                     ->name('students.store');
                 Route::get('/students/search', [DirectorStudentController::class, 'search'])
                     ->name('students.search');
+                Route::delete('/students/{student}', [DirectorStudentController::class, 'destroy'])
+                    ->name('students.destroy');
                 Route::get('/boletines', [DirectorReportCardController::class, 'index'])
                     ->name('boletines');
                 Route::get('/report-card/{student}', [DirectorReportCardController::class, 'preview'])
@@ -418,6 +421,10 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/notifications', [NotificationController::class, 'index'])->name('notifications');
         Route::post('/notifications/{id}/read', [NotificationController::class, 'markAsRead'])->name('notifications.read');
         Route::post('/notifications/read-all', [NotificationController::class, 'markAllAsRead'])->name('notifications.read-all');
+
+        Route::get('/ai/chat-history', [AiChatHistoryController::class, 'show'])->name('ai.chat.history');
+        Route::post('/ai/chat-history', [AiChatHistoryController::class, 'store'])->name('ai.chat.history.store');
+        Route::delete('/ai/chat-history', [AiChatHistoryController::class, 'destroy'])->name('ai.chat.history.destroy');
     });
 
     // Ruta para procesar el texto mágico
@@ -425,6 +432,7 @@ Route::middleware(['auth'])->group(function () {
 
     // Ruta de emergencia para cerrar sesión
     Route::get('/logout-manual', function () {
+        app(\App\Services\AiChatHistoryService::class)->forget(auth()->id());
         auth()->logout();
         request()->session()->invalidate();
         request()->session()->regenerateToken();

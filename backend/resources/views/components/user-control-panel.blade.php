@@ -15,21 +15,20 @@
     }
     html.dark .ucp-btn:hover { background: rgba(255,255,255,.2); color:#fff; }
     .ucp-dropdown {
-        display:none;
-        position:absolute; right:0; top:2.75rem; width:min(22rem, calc(100vw - 1.5rem)); max-height:min(24rem, 70dvh); overflow:auto;
-        border:1px solid #e2e8f0; border-radius:1rem; background:#ffffff; color:#0f172a;
-        box-shadow:0 22px 50px rgba(15,23,42,.12); z-index:10050;
+        position: fixed;
+        right: 1rem;
+        top: 4.5rem;
+        width: min(22rem, calc(100vw - 2rem));
+        max-height: min(24rem, 70dvh);
+        overflow: auto;
+        border: 1px solid #e2e8f0;
+        border-radius: 1rem;
+        background: #ffffff;
+        color: #0f172a;
+        box-shadow: 0 22px 50px rgba(15,23,42,.22);
+        z-index: 10060;
         -webkit-overflow-scrolling: touch;
         overscroll-behavior: contain;
-    }
-    @media (max-width: 767px) {
-        .ucp-dropdown {
-            position: fixed;
-            right: 1rem;
-            top: 4.75rem;
-            left: auto;
-            width: min(22rem, calc(100vw - 2rem));
-        }
     }
     [x-cloak] .ucp-dropdown,
     .ucp-dropdown[x-cloak] { display: none !important; }
@@ -65,26 +64,25 @@
     html.dark .ucp-unread-dot { color:#67e8f9; }
 </style>
 
-<div x-data="userControlPanel()" x-init="init()" class="relative z-[120] flex items-center gap-2" style="overflow:visible">
+<div x-data="userControlPanel()" x-init="init()" class="relative z-[200] flex items-center gap-2 overflow-visible">
     <button
         type="button"
-        @click.stop="toggleNotifications()"
+        @click.stop="open = !open; if (open) loadNotifications()"
         title="Notificaciones"
         class="ucp-btn relative flex items-center justify-center rounded-lg transition"
     >
         <i class="fa-solid fa-bell text-xs"></i>
         <span x-show="unreadCount > 0"
               x-text="unreadCount > 99 ? '99+' : unreadCount"
-              class="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-cyan-400 px-1 text-[9px] font-black text-cyan-950"
+              class="pointer-events-none absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-cyan-400 px-1 text-[9px] font-black text-cyan-950"
               x-cloak></span>
     </button>
 
-    <div x-show="showNotifications"
+    <div x-show="open"
          x-cloak
-         @click.outside="showNotifications = false"
          x-transition.opacity.scale.origin.top.right
-         class="ucp-dropdown"
-         :style="showNotifications ? 'display:block' : 'display:none'">
+         @click.outside="open = false"
+         class="ucp-dropdown">
         <div class="ucp-dropdown-header flex items-center justify-between px-4 py-3">
             <span class="ucp-dropdown-title">Notificaciones</span>
             <button type="button" @click="markAllNotificationsRead()" class="ucp-dropdown-action hover:opacity-80">
@@ -131,7 +129,7 @@ if (!window.userControlPanel) {
             isDark: false,
             notifications: [],
             unreadCount: 0,
-            showNotifications: false,
+            open: false,
             _pollTimer: null,
             _knownUnreadCount: 0,
             init() {
@@ -146,7 +144,7 @@ if (!window.userControlPanel) {
 
                 const pollMs = 8000;
                 const poll = () => {
-                    if (document.hidden || this.showNotifications) return;
+                    if (document.hidden || this.open) return;
                     this.loadNotifications();
                 };
 
@@ -190,8 +188,8 @@ if (!window.userControlPanel) {
                 }
             },
             toggleNotifications() {
-                this.showNotifications = !this.showNotifications;
-                if (this.showNotifications) {
+                this.open = !this.open;
+                if (this.open) {
                     this.loadNotifications();
                 }
             },
@@ -233,7 +231,7 @@ if (!window.userControlPanel) {
             },
             async handleNotificationClick(notification) {
                 await this.markAsRead(notification.id);
-                this.showNotifications = false;
+                this.open = false;
 
                 const href = this.notificationLink(notification);
                 try {

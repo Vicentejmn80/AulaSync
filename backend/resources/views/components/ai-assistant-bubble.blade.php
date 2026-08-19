@@ -1096,12 +1096,13 @@ function novaAIAssistant() {
         loading: false,
         listening: false,
         input: '',
-        messages: [],
+        messages: @json(auth()->check() ? app(\App\Services\AiChatHistoryService::class)->load(auth()->id()) : []),
         confirmation: null,
         recognition: null,
         panelAnimation: 'entering',
         pageContext: null,
         openingActivityId: null,
+        historyEndpoint: @json(auth()->check() ? route('ai.chat.history.store') : null),
         isTeacher: {{ auth()->check() && auth()->user()->role === 'profesor' ? 'true' : 'false' }},
         isDirector: {{ auth()->check() && auth()->user()->role === 'director' ? 'true' : 'false' }},
         commandEndpoint: @json(auth()->check() && auth()->user()->role === 'director' ? route('director.ai.command') : route('ai.command')),
@@ -1114,6 +1115,7 @@ function novaAIAssistant() {
 
         init() {
             this.refreshContext();
+            this._persistTimer = null;
 
             // Escuchar eventos globales
             window.addEventListener('ai-context-changed', (e) => {
@@ -1414,7 +1416,29 @@ function novaAIAssistant() {
 
         addMessage(role, text, extra = {}) {
             this.messages.push({ role, text, ...extra });
+            this.persistHistory();
             this.$nextTick(() => this.scrollToBottom());
+        },
+
+        persistHistory() {
+            if (!this.historyEndpoint) return;
+            clearTimeout(this._persistTimer);
+            this._persistTimer = setTimeout(() => {
+                const payload = this.messages.slice(-40).map((m) => ({
+                    role: m.role,
+                    text: m.text || '',
+                    activity: m.activity || null,
+                }));
+                fetch(this.historyEndpoint, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '',
+                    },
+                    body: JSON.stringify({ messages: payload }),
+                }).catch(() => {});
+            }, 300);
         },
 
         openCreatedActivity(activity) {

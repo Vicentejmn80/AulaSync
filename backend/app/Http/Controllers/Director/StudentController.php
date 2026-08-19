@@ -6,7 +6,9 @@ use App\Http\Controllers\Controller;
 use App\Models\Colegio;
 use App\Models\Course;
 use App\Models\Student;
+use App\Services\DirectorActionService;
 use App\Services\StudentEnrollmentService;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 
@@ -101,6 +103,23 @@ class StudentController extends Controller
 
         return redirect()->route('director.students')
             ->with('success', "Alumno «{$student->name}» matriculado. Código familiar: {$student->family_code}. Entrégaselo al representante.");
+    }
+
+    public function destroy(Request $request, Student $student, DirectorActionService $actions): RedirectResponse
+    {
+        abort_unless(
+            (int) $student->colegio_id === (int) $request->user()->colegio_id,
+            404
+        );
+
+        $name = $student->name;
+        $actions->deleteStudent($request->user(), [
+            'student_name' => $name,
+            'student_id' => $student->id,
+        ]);
+
+        return redirect()->route('director.students')
+            ->with('success', "Se eliminó al alumno «{$name}».");
     }
 
     public function search(Request $request)

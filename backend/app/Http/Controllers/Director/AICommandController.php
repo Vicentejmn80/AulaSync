@@ -15,6 +15,7 @@ use App\Models\User;
 use App\Services\DirectorActionService;
 use App\Services\DirectorAIInterpreterService;
 use App\Services\DirectorConversationContextService;
+use App\Services\PersonNameSanitizer;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
@@ -1870,6 +1871,11 @@ class AICommandController extends Controller
         $name = trim((string) $m[1]);
         $name = trim(preg_replace('/[.!?]+$/', '', $name) ?? $name);
         $name = trim(preg_replace('/^(?:al|a la|el|la|los|las)\s+/iu', '', $name) ?? $name);
+        $name = preg_replace(
+            '/\s+(?:en el|en la|al curso|de primer|de 1|en 1|y asigna|y inscribe|y matricula).*$/iu',
+            '',
+            $name
+        ) ?? $name;
 
         return $this->sanitizePersonName($name);
     }
@@ -1912,11 +1918,11 @@ class AICommandController extends Controller
                     $data['teacher_name'] = $teacher;
                 }
             }
-            if (in_array($intent, ['create_students_batch', 'enroll_students_course', 'unenroll_students_course'], true)) {
-                if (empty($data['grade']) && ($grades[0] ?? null)) {
+            if (in_array($intent, ['create_students_batch', 'enroll_students_course', 'unenroll_students_course', 'delete_student'], true)) {
+                if (empty($data['grade']) && ($grades[0] ?? null) && $intent !== 'delete_student') {
                     $data['grade'] = $grades[0];
                 }
-                if (empty($data['subject_name']) && $subject) {
+                if (empty($data['subject_name']) && $subject && $intent !== 'delete_student') {
                     $data['subject_name'] = $subject;
                 }
                 if (empty($data['names'])) {
@@ -1924,6 +1930,17 @@ class AICommandController extends Controller
                     if ($names !== []) {
                         $data['names'] = $names;
                     }
+                }
+                if (! empty($data['names']) && is_array($data['names'])) {
+                    $data['names'] = collect($data['names'])
+                        ->map(fn ($name) => $this->sanitizePersonName((string) $name))
+                        ->filter()
+                        ->unique()
+                        ->values()
+                        ->all();
+                }
+                if (! empty($data['student_name'])) {
+                    $data['student_name'] = $this->sanitizePersonName((string) $data['student_name']) ?? $data['student_name'];
                 }
             }
             $action['data'] = $data;
@@ -1935,11 +1952,11 @@ class AICommandController extends Controller
 
     private function sanitizePersonName(?string $name): ?string
     {
+        $name = app(PersonNameSanitizer::class)->clean($name);
         if ($name === null) {
             return null;
         }
 
-        $name = trim($name);
         $name = preg_replace(
             '/\s+(?:y\s+)?(?:agrega(?:lo|le|s)?|asigna(?:lo|le)?|crea(?:r)?(?:s|me|les)?|quiero|donde|con\s+(?:los|las|el|la)|cursos?|materias?|asignaturas?).*$/iu',
             '',

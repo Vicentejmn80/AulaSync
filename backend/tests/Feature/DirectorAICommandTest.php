@@ -255,6 +255,39 @@ class DirectorAICommandTest extends TestCase
         $intents = collect($draft->json('pending_actions'))->pluck('intent')->all();
         $this->assertNotContains('create_course', $intents);
         $this->assertContains('create_students_batch', $intents);
+        $name = mb_strtolower((string) data_get($draft->json(), 'pending_actions.0.data.names.0'));
+        $this->assertSame('andres perez', $name);
+        $this->assertStringNotContainsString('en el', $name);
+        $this->assertStringNotContainsString('ingles', $name);
+    }
+
+    public function test_director_can_delete_student_with_flexible_name_match(): void
+    {
+        [$director, $colegio] = $this->directorContext();
+
+        Student::create([
+            'colegio_id' => $colegio->id,
+            'teacher_id' => $director->id,
+            'name' => 'Andres Perez en el',
+            'grade' => '1ro',
+            'section' => null,
+            'family_code' => 'NV-DEL-01',
+        ]);
+
+        $draft = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'Elimina al alumno Andres Perez',
+        ]);
+        $draft->assertOk()->assertJsonPath('pending_actions.0.intent', 'delete_student');
+
+        $execute = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'confirmed' => true,
+            'pending_actions' => $draft->json('pending_actions'),
+        ]);
+        $execute->assertOk();
+        $this->assertDatabaseMissing('students', [
+            'colegio_id' => $colegio->id,
+            'family_code' => 'NV-DEL-01',
+        ]);
     }
 
     public function test_director_can_create_course_and_enroll_students_to_course(): void

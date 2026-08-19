@@ -333,7 +333,26 @@
                     <p class="text-sm mt-1">Ve a la pestaña "Acumulados" y haz clic en "Generar boletas".</p>
                 </div>
 
-                <div x-show="!loading.cards && cards.length > 0" class="glass overflow-hidden rounded-[2rem]">
+                <div x-show="!loading.cards && cards.length > 0" class="grid gap-3 md:hidden">
+                    <template x-for="card in cards" :key="'m'+card.id">
+                        <article class="rounded-2xl border p-4"
+                                 :class="card.status === 'published'
+                                    ? 'border-emerald-400/30 bg-emerald-400/10'
+                                    : 'border-amber-400/30 bg-amber-400/10'">
+                            <div class="flex items-start justify-between gap-3">
+                                <div>
+                                    <p class="font-bold text-white" x-text="card.student?.name ?? '—'"></p>
+                                    <p class="text-xs text-slate-300" x-text="(card.student?.grade ?? '') + ' ' + (card.student?.section ?? '')"></p>
+                                </div>
+                                <span class="badge" :class="card.status === 'published' ? 'badge-pub' : 'badge-draft-rc'" x-text="card.status_label"></span>
+                            </div>
+                            <p class="mt-2 text-lg font-black" :class="gradeColor(card.global_average)"
+                               x-text="card.global_average !== null ? card.global_average + '%' : '—'"></p>
+                        </article>
+                    </template>
+                </div>
+
+                <div x-show="!loading.cards && cards.length > 0" class="glass hidden overflow-hidden rounded-[2rem] md:block">
                     <table>
                         <thead>
                             <tr>

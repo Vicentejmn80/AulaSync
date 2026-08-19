@@ -13,9 +13,9 @@
     @include('partials.director-ui-styles')
 </head>
 <body class="min-h-screen overflow-x-hidden bg-slate-100 text-slate-900">
-    <div x-data="{ open: false, familyMode: 'new', submitting: false }"
+    <div x-data="{ open: false, familyMode: 'new', submitting: false, deleting: null }"
          x-cloak
-         @keydown.escape.window="open = false">
+         @keydown.escape.window="open = false; deleting = null">
 
         {{-- Modal de matriculación --}}
         <div x-show="open"
@@ -257,11 +257,20 @@
                                         @endif
                                     </td>
                                     <td class="py-3.5 text-right">
-                                        <a href="{{ route('director.report-card', $student->id) }}"
-                                           class="director-btn-secondary !text-xs">
-                                            <i class="fa-solid fa-file-lines"></i>
-                                            Boleta
-                                        </a>
+                                        <div class="flex flex-wrap items-center justify-end gap-2">
+                                            <a href="{{ route('director.report-card', $student->id) }}"
+                                               class="director-btn-secondary !text-xs">
+                                                <i class="fa-solid fa-file-lines"></i>
+                                                Boleta
+                                            </a>
+                                            <button type="button"
+                                                    @click="deleting = { id: {{ $student->id }}, name: {{ json_encode($student->name) }}, url: '{{ route('director.students.destroy', $student) }}' }"
+                                                    class="director-btn-danger inline-flex items-center gap-1.5 !px-3 !py-1.5 !text-xs"
+                                                    title="Eliminar alumno">
+                                                <i class="fa-solid fa-trash-can"></i>
+                                                Eliminar
+                                            </button>
+                                        </div>
                                     </td>
                                 </tr>
                             @empty
@@ -287,6 +296,28 @@
                 @endif
             </section>
         </main>
+
+        <div x-show="deleting"
+             x-cloak
+             x-transition.opacity
+             class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4 backdrop-blur-sm"
+             @click.self="deleting = null">
+            <div class="w-full max-w-md rounded-2xl border border-rose-200 bg-white p-6 shadow-2xl">
+                <div class="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-100 text-rose-600">
+                    <i class="fa-solid fa-trash-can"></i>
+                </div>
+                <h3 class="text-lg font-black text-slate-900">Eliminar alumno</h3>
+                <p class="mt-2 text-sm text-slate-600">
+                    ¿Eliminar a <strong x-text="deleting?.name"></strong>? Esta acción no se puede deshacer.
+                </p>
+                <form method="POST" class="mt-5 flex gap-3" :action="deleting?.url">
+                    @csrf
+                    @method('DELETE')
+                    <button type="button" @click="deleting = null" class="director-btn-secondary flex-1">Cancelar</button>
+                    <button type="submit" class="director-btn-danger flex-1">Sí, eliminar</button>
+                </form>
+            </div>
+        </div>
     </div>
 
     @include('components.ai-assistant-bubble')

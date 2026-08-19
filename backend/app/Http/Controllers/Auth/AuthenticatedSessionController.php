@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
+use App\Services\AiChatHistoryService;
 use App\Services\TeacherInviteClaimService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -57,6 +58,9 @@ class AuthenticatedSessionController extends Controller
      */
     public function destroy(Request $request): RedirectResponse
     {
+        $userId = $request->user()?->id;
+        app(AiChatHistoryService::class)->forget($userId);
+
         Auth::guard('web')->logout();
 
         $request->session()->invalidate();

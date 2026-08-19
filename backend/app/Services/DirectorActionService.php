@@ -253,8 +253,13 @@ class DirectorActionService
         $grade = trim((string) $payload['grade']);
         $section = trim((string) ($payload['section'] ?? ''));
         $section = $section !== '' ? $section : null;
+        $sanitizer = app(PersonNameSanitizer::class);
         $names = collect($payload['names'] ?? [])
-            ->map(fn ($name) => trim((string) $name))
+            ->map(function ($name) use ($sanitizer) {
+                $clean = $sanitizer->clean((string) $name);
+
+                return $clean ? $sanitizer->titleCase($clean) : trim((string) $name);
+            })
             ->filter()
             ->unique()
             ->values();
@@ -949,22 +954,30 @@ class DirectorActionService
     public function deleteStudent(User $director, array $payload): array
     {
         $colegioId = $this->requireColegioId($director);
-        $name = trim((string) ($payload['student_name'] ?? ''));
+        $sanitizer = app(PersonNameSanitizer::class);
+        $name = $sanitizer->searchNeedle((string) ($payload['student_name'] ?? ''));
         if ($name === '') {
             throw ValidationException::withMessages([
                 'student' => 'Indica el nombre del alumno a eliminar.',
             ]);
         }
 
-        $student = Student::query()
-            ->where('colegio_id', $colegioId)
-            ->where(function ($query) use ($name) {
-                $needle = mb_strtolower($name);
-                $query->whereRaw('LOWER(name) = ?', [$needle])
-                    ->orWhereRaw('LOWER(name) like ?', ['%'.$needle.'%']);
+        $likeLoose = '%'.str_replace(' ', '%', $name).'%';
+
+        $query = Student::query()->where('colegio_id', $colegioId);
+        if (! empty($payload['student_id'])) {
+            $query->where('id', (int) $payload['student_id']);
+        } else {
+            $query->where(function ($inner) use ($name, $likeLoose) {
+                $inner->whereRaw('LOWER(name) = ?', [$name])
+                    ->orWhereRaw('LOWER(TRIM(name)) = ?', [$name])
+                    ->orWhereRaw("LOWER(REPLACE(name, '  ', ' ')) like ?", ['%'.$name.'%'])
+                    ->orWhereRaw('LOWER(name) like ?', [$likeLoose]);
             })
-            ->orderByRaw('CASE WHEN LOWER(name) = ? THEN 0 ELSE 1 END', [mb_strtolower($name)])
-            ->first();
+                ->orderByRaw('CASE WHEN LOWER(TRIM(name)) = ? THEN 0 WHEN LOWER(name) like ? THEN 1 ELSE 2 END', [$name, $name.'%']);
+        }
+
+        $student = $query->first();
 
         if (! $student) {
             throw ValidationException::withMessages([
@@ -974,6 +987,7 @@ class DirectorActionService
 
         return DB::transaction(function () use ($colegioId, $student) {
             $student->courses()->detach();
+            $student->guardians()->detach();
             $student->delete();
 
             if (Student::query()->where('colegio_id', $colegioId)->where('id', $student->id)->exists()) {
