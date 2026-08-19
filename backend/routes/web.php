@@ -18,6 +18,7 @@ use App\Http\Controllers\Director\PlanificacionesController as DirectorPlanifica
 use App\Http\Controllers\Director\ReportCardController as DirectorReportCardController;
 use App\Http\Controllers\Director\StudentController as DirectorStudentController;
 use App\Http\Controllers\Director\ActivityFeedbackController;
+use App\Http\Controllers\Director\AICommandController as DirectorAICommandController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\AICommandHandlerController;
 use App\Http\Controllers\Teacher\HubController;
@@ -169,6 +170,10 @@ Route::middleware(['auth'])->group(function () {
                     ->name('planificaciones.activities');
                 Route::put('/planificaciones/{id}/sessions', [ActivityFeedbackController::class, 'updatePlanificacionSession'])
                     ->name('planificaciones.sessions.update');
+
+                // Asistente de IA operativo para directores
+                Route::post('/ai/command', [DirectorAICommandController::class, 'handle'])
+                    ->name('ai.command');
         });
         
         // Representante — Panel de seguimiento

@@ -27,6 +27,11 @@ class StaffController extends Controller
             ->get(['id', 'name', 'email', 'role', 'colegio_id']);
 
         $invites = TeacherInvite::where('colegio_id', $colegioId)
+            ->whereNull('revoked_at')
+            ->where(function ($query) {
+                $query->whereNull('expires_at')
+                    ->orWhere('expires_at', '>', now());
+            })
             ->with(['courses' => function ($query) {
                 $query->withCount('students')->orderBy('subject_name')->orderBy('grade');
             }])

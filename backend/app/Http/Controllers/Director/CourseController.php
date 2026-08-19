@@ -47,6 +47,11 @@ class CourseController extends Controller
         $pendingInvites = TeacherInvite::where('colegio_id', $colegioId)
             ->whereNull('claimed_by')
             ->whereNull('claimed_at')
+            ->whereNull('revoked_at')
+            ->where(function ($query) {
+                $query->whereNull('expires_at')
+                    ->orWhere('expires_at', '>', now());
+            })
             ->latest()
             ->get(['id', 'name', 'email', 'invite_code', 'subject_name', 'grade']);
 
@@ -169,6 +174,11 @@ class CourseController extends Controller
             $invite = TeacherInvite::where('colegio_id', $colegioId)
                 ->where('id', (int) substr($assignee, 7))
                 ->whereNull('claimed_by')
+                ->whereNull('revoked_at')
+                ->where(function ($query) {
+                    $query->whereNull('expires_at')
+                        ->orWhere('expires_at', '>', now());
+                })
                 ->firstOrFail();
 
             return [null, $invite->id, "{$invite->name} ({$invite->invite_code}, pendiente)"];

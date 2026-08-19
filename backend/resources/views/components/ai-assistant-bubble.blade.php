@@ -812,8 +812,11 @@
                     </div>
                 </div>
                 <div class="nova-ai-title">
-                    <h3>AulaSync Assistant</h3>
-                    <p><span class="nova-ai-badge">IA Educativa</span> <span>⚡ Siempre activa</span></p>
+                    <h3 x-text="isDirector ? 'Director AI Ops' : 'AulaSync Assistant'"></h3>
+                    <p>
+                        <span class="nova-ai-badge" x-text="isDirector ? 'Operación escolar' : 'IA Educativa'"></span>
+                        <span>⚡ Siempre activa</span>
+                    </p>
                 </div>
                 <div class="nova-ai-close" @click="open = false">
                     <i class="fa-solid fa-xmark"></i>
@@ -835,7 +838,7 @@
 
         <!-- Mensajes -->
         <div class="nova-ai-messages" x-ref="messagesContainer">
-            <template x-if="messages.length === 0">
+            <template x-if="messages.length === 0 && !isDirector">
                 <div class="nova-ai-quickstart">
                     <div class="nova-ai-quickstart-icon">
                         <i class="fa-solid fa-sparkles"></i>
@@ -864,6 +867,39 @@
                     </div>
                     <p class="nova-ai-quickstart-hint">
                         También puedo crear exámenes, agregarlos al plan, generar rúbricas, cargar notas o inscribir alumnos.
+                    </p>
+                </div>
+            </template>
+
+            <template x-if="messages.length === 0 && isDirector">
+                <div class="nova-ai-quickstart">
+                    <div class="nova-ai-quickstart-icon">
+                        <i class="fa-solid fa-building-user"></i>
+                    </div>
+                    <h4>¿Qué operación quieres ejecutar?</h4>
+                    <div class="nova-ai-quickstart-actions">
+                        <button type="button" class="quickstart-btn"
+                                @click="input = 'Crea al profesor Vicente Maduro y asígnale Inglés de 1ro a 6to'; sendCommand()">
+                            <i class="fa-solid fa-user-plus"></i>
+                            Crear profesor + asignaciones
+                        </button>
+                        <button type="button" class="quickstart-btn"
+                                @click="input = 'Agrega a Carlos José, Juan Carlos y María al 3er grado'; sendCommand()">
+                            <i class="fa-solid fa-users"></i>
+                            Crear estudiantes por lote
+                        </button>
+                        <button type="button" class="quickstart-btn"
+                                @click="input = 'Consulta el código DOC- de Vicente Maduro'; sendCommand()">
+                            <i class="fa-solid fa-key"></i>
+                            Consultar código DOC-
+                        </button>
+                        <button type="button" class="quickstart-btn" @click="$refs.novaMainTextarea?.focus()">
+                            <i class="fa-solid fa-comment-dots"></i>
+                            Escribir operación
+                        </button>
+                    </div>
+                    <p class="nova-ai-quickstart-hint">
+                        Las operaciones sensibles siempre pedirán confirmación antes de ejecutarse.
                     </p>
                 </div>
             </template>
@@ -913,7 +949,7 @@
         </div>
 
         <!-- Sugerencias rápidas -->
-        <div class="quick-suggestions" x-show="messages.length > 0 && !loading">
+        <div class="quick-suggestions" x-show="messages.length > 0 && !loading && !isDirector">
             <span class="suggestion-chip" @click="input = 'Modifica esta clase para que los alumnos copien en su cuaderno'; sendCommand()">
                 📝 Copiar en cuaderno
             </span>
@@ -925,6 +961,24 @@
             </span>
             <span class="suggestion-chip" @click="input = 'Adapta para estudiantes con TDAH'; sendCommand()">
                 🧠 Adaptación NEE
+            </span>
+        </div>
+
+        <div class="quick-suggestions" x-show="messages.length > 0 && !loading && isDirector">
+            <span class="suggestion-chip" @click="input = 'Crea al profesor Ana Rojas y asígnale Matemática de 1ro a 3ro'; sendCommand()">
+                👩‍🏫 Crear profesor
+            </span>
+            <span class="suggestion-chip" @click="input = 'Vicente dará Inglés de 1ro a 6to'; sendCommand()">
+                🧩 Asignar docente
+            </span>
+            <span class="suggestion-chip" @click="input = 'Agrega a Luis, Marta y Pedro al 2do grado'; sendCommand()">
+                🧒 Crear estudiantes
+            </span>
+            <span class="suggestion-chip" @click="input = '¿Cómo va el profesor Vicente Maduro?'; sendCommand()">
+                📊 Consultar estado
+            </span>
+            <span class="suggestion-chip" @click="input = 'Consulta el código DOC- de Vicente Maduro'; sendCommand()">
+                🔐 Consultar código
             </span>
         </div>
 
@@ -994,6 +1048,8 @@ function novaAIAssistant() {
         pageContext: null,
         openingActivityId: null,
         isTeacher: {{ auth()->check() && auth()->user()->role === 'profesor' ? 'true' : 'false' }},
+        isDirector: {{ auth()->check() && auth()->user()->role === 'director' ? 'true' : 'false' }},
+        commandEndpoint: @json(auth()->check() && auth()->user()->role === 'director' ? route('director.ai.command') : route('ai.command')),
         toast: {
             visible: false,
             message: '',
@@ -1108,7 +1164,7 @@ function novaAIAssistant() {
             const conversation = this.messages
                 .filter(m => m.role === 'user' || m.role === 'assistant')
                 .map(m => ({ role: m.role, content: m.text }));
-            const res = await fetch('/ai/command', {
+            const res = await fetch(this.commandEndpoint, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -1166,7 +1222,7 @@ function novaAIAssistant() {
                 const conversation = this.messages
                     .filter(m => m.role === 'user' || m.role === 'assistant')
                     .map(m => ({ role: m.role, content: m.text }));
-                const res = await fetch('/ai/command', {
+                const res = await fetch(this.commandEndpoint, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',

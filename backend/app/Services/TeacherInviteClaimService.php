@@ -31,6 +31,11 @@ class TeacherInviteClaimService
                 ->where('colegio_id', $user->colegio_id)
                 ->whereNull('claimed_by')
                 ->whereNull('claimed_at')
+                ->whereNull('revoked_at')
+                ->where(function ($query) {
+                    $query->whereNull('expires_at')
+                        ->orWhere('expires_at', '>', now());
+                })
                 ->where(function ($query) use ($user) {
                     if ($user->email) {
                         $query->whereRaw('LOWER(email) = ?', [mb_strtolower($user->email)]);
@@ -58,6 +63,11 @@ class TeacherInviteClaimService
                         ->whereIn('id', $orphanInviteIds)
                         ->whereNull('claimed_by')
                         ->whereNull('claimed_at')
+                        ->whereNull('revoked_at')
+                        ->where(function ($query) {
+                            $query->whereNull('expires_at')
+                                ->orWhere('expires_at', '>', now());
+                        })
                         ->get();
 
                     foreach ($orphans as $orphan) {
@@ -77,6 +87,9 @@ class TeacherInviteClaimService
 
         foreach ($invites->unique('id') as $item) {
             try {
+                if (! $item->isActive()) {
+                    continue;
+                }
                 if ($item->isClaimed() && (int) $item->claimed_by !== (int) $user->id) {
                     continue;
                 }

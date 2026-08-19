@@ -28,6 +28,10 @@ return new class extends Migration
                 Schema::table('courses', function (Blueprint $table) {
                     $table->foreign('teacher_id')->references('id')->on('users')->nullOnDelete();
                 });
+            } elseif ($driver === 'sqlite') {
+                Schema::table('courses', function (Blueprint $table) {
+                    $table->unsignedBigInteger('teacher_id')->nullable()->change();
+                });
             }
         }
     }

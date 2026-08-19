@@ -20,6 +20,9 @@ class TeacherInvite extends Model
         'section',
         'claimed_by',
         'claimed_at',
+        'expires_at',
+        'revoked_at',
+        'revoked_by',
     ];
 
     protected function casts(): array
@@ -27,6 +30,8 @@ class TeacherInvite extends Model
         return [
             'course_ids' => 'array',
             'claimed_at' => 'datetime',
+            'expires_at' => 'datetime',
+            'revoked_at' => 'datetime',
         ];
     }
 
@@ -53,6 +58,21 @@ class TeacherInvite extends Model
     public function isClaimed(): bool
     {
         return $this->claimed_at !== null || $this->claimed_by !== null;
+    }
+
+    public function isRevoked(): bool
+    {
+        return $this->revoked_at !== null;
+    }
+
+    public function isExpired(): bool
+    {
+        return $this->expires_at !== null && $this->expires_at->isPast();
+    }
+
+    public function isActive(): bool
+    {
+        return ! $this->isRevoked() && ! $this->isExpired();
     }
 
     public function claimFor(User $user): void

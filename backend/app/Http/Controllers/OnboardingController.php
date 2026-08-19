@@ -324,6 +324,18 @@ class OnboardingController extends Controller
 
         $teacherInvite = TeacherInvite::where('invite_code', $code)->first();
         if ($teacherInvite) {
+            if ($teacherInvite->isRevoked()) {
+                return response()->json([
+                    'valid' => false,
+                    'message' => 'Ese código DOC- fue revocado por el director.',
+                ], 404);
+            }
+            if ($teacherInvite->isExpired()) {
+                return response()->json([
+                    'valid' => false,
+                    'message' => 'Ese código DOC- expiró. Solicita uno nuevo al director.',
+                ], 404);
+            }
             if ($teacherInvite->isClaimed() && (int) $teacherInvite->claimed_by !== (int) auth()->id()) {
                 return response()->json([
                     'valid' => false,
@@ -472,6 +484,20 @@ class OnboardingController extends Controller
         if ((int) $invite->colegio_id !== (int) $colegio->id) {
             return [
                 'error' => 'Ese código DOC- no pertenece a esta institución.',
+                'field' => 'teacher_invite_code',
+            ];
+        }
+
+        if ($invite->isRevoked()) {
+            return [
+                'error' => 'Ese código DOC- fue revocado por el director.',
+                'field' => 'teacher_invite_code',
+            ];
+        }
+
+        if ($invite->isExpired()) {
+            return [
+                'error' => 'Ese código DOC- expiró. Solicita uno nuevo al director.',
                 'field' => 'teacher_invite_code',
             ];
         }

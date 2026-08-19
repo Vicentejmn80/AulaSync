@@ -40,6 +40,11 @@ class DashboardController extends Controller
         $totalCourses = Course::where('colegio_id', $colegioId)->count();
         $pendingInvites = TeacherInvite::where('colegio_id', $colegioId)
             ->whereNull('claimed_by')
+            ->whereNull('revoked_at')
+            ->where(function ($query) {
+                $query->whereNull('expires_at')
+                    ->orWhere('expires_at', '>', now());
+            })
             ->count();
 
         $globalAverageQuery = Grade::query()
