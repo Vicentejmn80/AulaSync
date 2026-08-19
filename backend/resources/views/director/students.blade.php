@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>Alumnos · Director</title>
     <script src="https://cdn.tailwindcss.com"></script>
@@ -12,7 +12,7 @@
     @include('partials.nova-theme')
     @include('partials.director-ui-styles')
 </head>
-<body class="min-h-screen bg-slate-100 text-slate-900">
+<body class="min-h-screen overflow-x-hidden bg-slate-100 text-slate-900">
     <div x-data="{ open: false, familyMode: 'new', submitting: false }"
          x-cloak
          @keydown.escape.window="open = false">
@@ -35,7 +35,7 @@
                  x-transition:leave-start="opacity-100 scale-100"
                  x-transition:leave-end="opacity-0 scale-95"
                  @click.stop
-                 class="relative w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl p-8">
+                 class="relative w-full max-w-lg max-h-[min(90dvh,90vh)] overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-xl p-5 sm:p-8">
 
                 <div class="mb-6 flex items-center justify-between">
                     <div class="flex items-center gap-3">

@@ -37,18 +37,33 @@ class DirectorActionService
         }
 
         return DB::transaction(function () use ($director, $payload, $colegioId) {
-            $invite = TeacherInvite::create([
-                'colegio_id' => $colegioId,
-                'created_by' => $director->id,
-                'name' => trim($payload['teacher_name']),
-                'email' => isset($payload['email']) ? trim((string) $payload['email']) : null,
-                'invite_code' => InviteCodeHelper::generateTeacherInvite(),
-                'expires_at' => ! empty($payload['expires_in_days'])
-                    ? now()->addDays((int) $payload['expires_in_days'])
-                    : now()->addDays(30),
-            ]);
+            $teacherName = trim((string) $payload['teacher_name']);
+            $invite = TeacherInvite::query()
+                ->where('colegio_id', $colegioId)
+                ->whereRaw('LOWER(name) = ?', [mb_strtolower($teacherName)])
+                ->whereNull('claimed_by')
+                ->whereNull('claimed_at')
+                ->whereNull('revoked_at')
+                ->where(function ($query) {
+                    $query->whereNull('expires_at')->orWhere('expires_at', '>', now());
+                })
+                ->latest('id')
+                ->first();
 
-            $courseIds = [];
+            if (! $invite) {
+                $invite = TeacherInvite::create([
+                    'colegio_id' => $colegioId,
+                    'created_by' => $director->id,
+                    'name' => $teacherName,
+                    'email' => isset($payload['email']) ? trim((string) $payload['email']) : null,
+                    'invite_code' => InviteCodeHelper::generateTeacherInvite(),
+                    'expires_at' => ! empty($payload['expires_in_days'])
+                        ? now()->addDays((int) $payload['expires_in_days'])
+                        : now()->addDays(30),
+                ]);
+            }
+
+            $courseIds = collect($invite->course_ids ?? [])->map(fn ($id) => (int) $id)->filter()->all();
             $createdCourses = [];
             $grades = collect($payload['grades'] ?? [])->filter()->values();
             $subject = trim((string) ($payload['subject_name'] ?? ''));
@@ -538,12 +553,25 @@ class DirectorActionService
         $missingStudents = [];
         $alreadyEnrolled = [];
 
-        DB::transaction(function () use ($colegioId, $names, $course, &$enrolled, &$missingStudents, &$alreadyEnrolled) {
+        DB::transaction(function () use ($director, $colegioId, $names, $course, &$enrolled, &$missingStudents, &$alreadyEnrolled) {
             foreach ($names as $name) {
                 $student = Student::query()
                     ->where('colegio_id', $colegioId)
                     ->whereRaw('LOWER(name) = ?', [mb_strtolower($name)])
                     ->first();
+
+                if (! $student) {
+                    $matches = Student::query()
+                        ->where('colegio_id', $colegioId)
+                        ->whereRaw('LOWER(name) like ?', ['%'.mb_strtolower($name).'%'])
+                        ->get();
+                    if ($matches->count() > 1) {
+                        throw ValidationException::withMessages([
+                            'student' => 'Encontré varios alumnos para '.$name.': '.$matches->pluck('name')->implode(', ').'.',
+                        ]);
+                    }
+                    $student = $matches->first();
+                }
 
                 if (! $student) {
                     $missingStudents[] = $name;
@@ -558,7 +586,7 @@ class DirectorActionService
                     continue;
                 }
 
-                $this->enrollmentService->attachExisting($course, $student);
+                $this->enrollmentService->attachExisting($course, $student, $director);
                 $enrolled[] = $student->name;
             }
         });
@@ -572,6 +600,393 @@ class DirectorActionService
             'missing_students' => $missingStudents,
             'total_students_in_course' => $verifiedCount,
         ];
+    }
+
+    /**
+     * @param array{
+     *   names:array<int,string>,
+     *   subject_name:string,
+     *   grade:string,
+     *   section?:string|null
+     * } $payload
+     */
+    public function unenrollStudentsFromCourse(User $director, array $payload): array
+    {
+        $colegioId = $this->requireColegioId($director);
+        $subject = trim((string) ($payload['subject_name'] ?? ''));
+        $grade = trim((string) ($payload['grade'] ?? ''));
+        $section = trim((string) ($payload['section'] ?? ''));
+        $section = $section !== '' ? $section : null;
+        $names = collect($payload['names'] ?? [])->map(fn ($name) => trim((string) $name))->filter()->unique()->values();
+
+        if ($subject === '' || $grade === '' || $names->isEmpty()) {
+            throw ValidationException::withMessages([
+                'unenroll' => 'Debes indicar alumnos, materia y grado para desmatricular.',
+            ]);
+        }
+
+        $course = $this->findCourseByAcademicKey($colegioId, $subject, $grade, $section);
+        if (! $course) {
+            throw ValidationException::withMessages([
+                'course' => "No encontré el curso {$subject} de {$grade}".($section ? " sección {$section}" : '').'.',
+            ]);
+        }
+
+        $removed = [];
+        $missing = [];
+        DB::transaction(function () use ($colegioId, $course, $names, &$removed, &$missing) {
+            foreach ($names as $name) {
+                $matches = Student::query()
+                    ->where('colegio_id', $colegioId)
+                    ->whereRaw('LOWER(name) like ?', ['%'.mb_strtolower($name).'%'])
+                    ->get();
+                if ($matches->count() !== 1) {
+                    $missing[] = $name;
+
+                    continue;
+                }
+                $student = $matches->first();
+                if (! $course->students()->where('students.id', $student->id)->exists()) {
+                    $missing[] = $name;
+
+                    continue;
+                }
+                $course->students()->detach($student->id);
+                $removed[] = $student->name;
+            }
+        });
+
+        return [
+            'course' => $course->fresh(),
+            'unenrolled' => $removed,
+            'missing_students' => $missing,
+            'total_students_in_course' => $course->fresh()->students()->count(),
+        ];
+    }
+
+    /**
+     * @param array{
+     *   teacher_name:string,
+     *   subject_name?:string|null,
+     *   grades?:array<int,string>
+     * } $payload
+     */
+    public function unassignTeacher(User $director, array $payload): array
+    {
+        $colegioId = $this->requireColegioId($director);
+        [$teacherId, $inviteId, $label] = $this->resolveAssigneeByName(
+            $colegioId,
+            (string) ($payload['teacher_name'] ?? ''),
+        );
+        $query = Course::query()->where('colegio_id', $colegioId);
+        $teacherId
+            ? $query->where('teacher_id', $teacherId)
+            : $query->where('teacher_invite_id', $inviteId);
+
+        if (! empty($payload['subject_name'])) {
+            $query->whereRaw('LOWER(subject_name) like ?', [
+                '%'.$this->subjectSearchStem((string) $payload['subject_name']).'%',
+            ]);
+        }
+        $grades = collect($payload['grades'] ?? [])->filter()->map(fn ($grade) => mb_strtolower((string) $grade))->all();
+        if ($grades !== []) {
+            $query->whereIn(DB::raw('LOWER(grade)'), $grades);
+        }
+
+        $courses = $query->get(['id', 'subject_name', 'grade']);
+        if ($courses->isEmpty()) {
+            throw ValidationException::withMessages([
+                'assignment' => "{$label} no tiene cursos que coincidan con la solicitud.",
+            ]);
+        }
+
+        Course::query()
+            ->where('colegio_id', $colegioId)
+            ->whereIn('id', $courses->pluck('id')->all())
+            ->update(['teacher_id' => null, 'teacher_invite_id' => null]);
+
+        return [
+            'message' => "Desasigné {$courses->count()} curso(s) de {$label}.",
+            'data' => ['course_ids' => $courses->pluck('id')->all(), 'teacher_name' => $label],
+        ];
+    }
+
+    /**
+     * @param array{
+     *   subject_name:string,
+     *   grade:string,
+     *   section?:string|null,
+     *   new_subject_name?:string|null,
+     *   new_grade?:string|null,
+     *   new_section?:string|null
+     * } $payload
+     */
+    public function updateCourse(User $director, array $payload): array
+    {
+        $colegioId = $this->requireColegioId($director);
+        $course = $this->findCourseByAcademicKey(
+            $colegioId,
+            (string) ($payload['subject_name'] ?? ''),
+            (string) ($payload['grade'] ?? ''),
+            $payload['section'] ?? null,
+        );
+        if (! $course) {
+            throw ValidationException::withMessages(['course' => 'No encontré el curso que deseas modificar.']);
+        }
+
+        $updates = array_filter([
+            'subject_name' => $payload['new_subject_name'] ?? null,
+            'grade' => $payload['new_grade'] ?? null,
+            'section' => array_key_exists('new_section', $payload) ? $payload['new_section'] : null,
+        ], fn ($value) => $value !== null && trim((string) $value) !== '');
+        if ($updates === []) {
+            throw ValidationException::withMessages(['course' => 'Indica qué dato del curso deseas cambiar.']);
+        }
+
+        $course->update($updates);
+
+        return [
+            'message' => 'Curso actualizado: '.$course->fresh()->subject_name.' '.$course->fresh()->grade.'.',
+            'data' => ['course' => $course->fresh()->only(['id', 'subject_name', 'grade', 'section'])],
+        ];
+    }
+
+    /**
+     * @param array{
+     *   student_name:string,
+     *   new_name?:string|null,
+     *   new_grade?:string|null,
+     *   new_section?:string|null
+     * } $payload
+     */
+    public function updateStudent(User $director, array $payload): array
+    {
+        $colegioId = $this->requireColegioId($director);
+        $student = $this->resolveUniqueStudent($colegioId, (string) ($payload['student_name'] ?? ''));
+        $updates = array_filter([
+            'name' => $payload['new_name'] ?? null,
+            'grade' => $payload['new_grade'] ?? null,
+            'section' => array_key_exists('new_section', $payload) ? $payload['new_section'] : null,
+        ], fn ($value) => $value !== null && trim((string) $value) !== '');
+        if ($updates === []) {
+            throw ValidationException::withMessages(['student' => 'Indica qué dato del alumno deseas cambiar.']);
+        }
+
+        $student->update($updates);
+
+        return [
+            'message' => 'Alumno actualizado: '.$student->fresh()->name.'.',
+            'data' => ['student' => $student->fresh()->only(['id', 'name', 'grade', 'section'])],
+        ];
+    }
+
+    /**
+     * Validate and resolve a registered teacher or active pending invite within the director's school.
+     *
+     * @return array{0:int|null,1:int|null,2:string}
+     */
+    public function resolveAssigneeForDirector(User $director, string $name): array
+    {
+        return $this->resolveAssigneeByName($this->requireColegioId($director), $name);
+    }
+
+    /**
+     * @param  array{teacher_name:string}  $payload
+     */
+    public function deleteTeacher(User $director, array $payload): array
+    {
+        $colegioId = $this->requireColegioId($director);
+        $name = trim((string) ($payload['teacher_name'] ?? ''));
+        if ($name === '') {
+            throw ValidationException::withMessages([
+                'teacher' => 'Indica el nombre del profesor a eliminar.',
+            ]);
+        }
+
+        $teacher = User::query()
+            ->where('colegio_id', $colegioId)
+            ->where('role', 'profesor')
+            ->where(function ($query) use ($name) {
+                $needle = mb_strtolower($name);
+                $query->whereRaw('LOWER(name) = ?', [$needle])
+                    ->orWhereRaw('LOWER(name) like ?', ['%'.$needle.'%']);
+            })
+            ->orderByRaw('CASE WHEN LOWER(name) = ? THEN 0 ELSE 1 END', [mb_strtolower($name)])
+            ->first();
+
+        if (! $teacher) {
+            throw ValidationException::withMessages([
+                'teacher' => 'No encontré al profesor "'.$name.'" en este colegio.',
+            ]);
+        }
+
+        return DB::transaction(function () use ($director, $colegioId, $teacher) {
+            $this->detachTeacherFromSchool($director, $colegioId, collect([$teacher]));
+            TeacherInvite::query()
+                ->where('colegio_id', $colegioId)
+                ->whereRaw('LOWER(name) = ?', [mb_strtolower($teacher->name)])
+                ->delete();
+            $teacher->delete();
+
+            $stillExists = User::query()
+                ->where('colegio_id', $colegioId)
+                ->where('id', $teacher->id)
+                ->exists();
+            if ($stillExists) {
+                throw ValidationException::withMessages([
+                    'teacher' => 'No se pudo verificar la eliminación del profesor.',
+                ]);
+            }
+
+            return [
+                'deleted_count' => 1,
+                'deleted_names' => [$teacher->name],
+            ];
+        });
+    }
+
+    /**
+     * @param  array{}  $payload
+     */
+    public function deleteAllTeachers(User $director, array $payload = []): array
+    {
+        $colegioId = $this->requireColegioId($director);
+
+        return DB::transaction(function () use ($director, $colegioId) {
+            $teachers = User::query()
+                ->where('colegio_id', $colegioId)
+                ->where('role', 'profesor')
+                ->get(['id', 'name']);
+
+            $this->detachTeacherFromSchool($director, $colegioId, $teachers);
+            $inviteCount = TeacherInvite::query()->where('colegio_id', $colegioId)->count();
+            TeacherInvite::query()->where('colegio_id', $colegioId)->delete();
+
+            $ids = $teachers->pluck('id')->all();
+            if ($ids !== []) {
+                User::query()
+                    ->where('colegio_id', $colegioId)
+                    ->where('role', 'profesor')
+                    ->whereIn('id', $ids)
+                    ->delete();
+            }
+
+            $remaining = User::query()
+                ->where('colegio_id', $colegioId)
+                ->where('role', 'profesor')
+                ->count();
+            if ($remaining > 0) {
+                throw ValidationException::withMessages([
+                    'teachers' => 'No se pudieron eliminar todos los profesores del colegio.',
+                ]);
+            }
+
+            return [
+                'deleted_count' => $teachers->count(),
+                'deleted_names' => $teachers->pluck('name')->values()->all(),
+                'deleted_invites' => $inviteCount,
+            ];
+        });
+    }
+
+    /**
+     * @param  array{subject_name:string, grade?:string|null, section?:string|null}  $payload
+     */
+    public function deleteCourse(User $director, array $payload): array
+    {
+        $colegioId = $this->requireColegioId($director);
+        $subject = trim((string) ($payload['subject_name'] ?? ''));
+        $grade = isset($payload['grade']) ? trim((string) $payload['grade']) : '';
+        $section = isset($payload['section']) ? trim((string) $payload['section']) : '';
+        $section = $section !== '' ? $section : null;
+
+        if ($subject === '') {
+            throw ValidationException::withMessages([
+                'course' => 'Indica la asignatura del curso a eliminar.',
+            ]);
+        }
+
+        $subjectKey = $this->subjectSearchStem($subject);
+
+        $query = Course::query()
+            ->where('colegio_id', $colegioId)
+            ->whereRaw('LOWER(subject_name) like ?', ['%'.$subjectKey.'%']);
+
+        if ($grade !== '') {
+            $query->whereRaw('LOWER(grade) = ?', [mb_strtolower($grade)]);
+        }
+        if ($section) {
+            $query->whereRaw('LOWER(COALESCE(section, ?)) = ?', ['', mb_strtolower($section)]);
+        }
+
+        $courses = $query->get(['id', 'subject_name', 'grade', 'section']);
+        if ($courses->isEmpty()) {
+            $label = $subject.($grade !== '' ? " {$grade}" : '').($section ? " sección {$section}" : '');
+            throw ValidationException::withMessages([
+                'course' => "No encontré el curso {$label} en este colegio.",
+            ]);
+        }
+
+        return $this->deleteCoursesCollection($colegioId, $courses);
+    }
+
+    /**
+     * @param  array{}  $payload
+     */
+    public function deleteAllCourses(User $director, array $payload = []): array
+    {
+        $colegioId = $this->requireColegioId($director);
+        $courses = Course::query()
+            ->where('colegio_id', $colegioId)
+            ->get(['id', 'subject_name', 'grade', 'section']);
+
+        return $this->deleteCoursesCollection($colegioId, $courses);
+    }
+
+    /**
+     * @param  array{student_name:string}  $payload
+     */
+    public function deleteStudent(User $director, array $payload): array
+    {
+        $colegioId = $this->requireColegioId($director);
+        $name = trim((string) ($payload['student_name'] ?? ''));
+        if ($name === '') {
+            throw ValidationException::withMessages([
+                'student' => 'Indica el nombre del alumno a eliminar.',
+            ]);
+        }
+
+        $student = Student::query()
+            ->where('colegio_id', $colegioId)
+            ->where(function ($query) use ($name) {
+                $needle = mb_strtolower($name);
+                $query->whereRaw('LOWER(name) = ?', [$needle])
+                    ->orWhereRaw('LOWER(name) like ?', ['%'.$needle.'%']);
+            })
+            ->orderByRaw('CASE WHEN LOWER(name) = ? THEN 0 ELSE 1 END', [mb_strtolower($name)])
+            ->first();
+
+        if (! $student) {
+            throw ValidationException::withMessages([
+                'student' => 'No encontré al alumno "'.$name.'" en este colegio.',
+            ]);
+        }
+
+        return DB::transaction(function () use ($colegioId, $student) {
+            $student->courses()->detach();
+            $student->delete();
+
+            if (Student::query()->where('colegio_id', $colegioId)->where('id', $student->id)->exists()) {
+                throw ValidationException::withMessages([
+                    'student' => 'No se pudo verificar la eliminación del alumno.',
+                ]);
+            }
+
+            return [
+                'deleted_count' => 1,
+                'deleted_names' => [$student->name],
+            ];
+        });
     }
 
     /**
@@ -670,6 +1085,44 @@ class DirectorActionService
             return [null, $invite->id, $invite->name.' ('.$invite->invite_code.')'];
         }
 
+        $teachers = User::query()
+            ->where('colegio_id', $colegioId)
+            ->where('role', 'profesor')
+            ->whereRaw('LOWER(name) like ?', ['%'.$needle.'%'])
+            ->get(['id', 'name']);
+        $invites = TeacherInvite::query()
+            ->where('colegio_id', $colegioId)
+            ->whereNull('claimed_by')
+            ->whereNull('claimed_at')
+            ->whereNull('revoked_at')
+            ->whereRaw('LOWER(name) like ?', ['%'.$needle.'%'])
+            ->where(function ($query) {
+                $query->whereNull('expires_at')
+                    ->orWhere('expires_at', '>', now());
+            })
+            ->get(['id', 'name', 'invite_code']);
+
+        $matches = $teachers->map(fn ($item) => [
+            'teacher_id' => $item->id,
+            'invite_id' => null,
+            'label' => $item->name,
+        ])->merge($invites->map(fn ($item) => [
+            'teacher_id' => null,
+            'invite_id' => $item->id,
+            'label' => $item->name.' ('.$item->invite_code.')',
+        ]))->values();
+
+        if ($matches->count() === 1) {
+            $match = $matches->first();
+
+            return [$match['teacher_id'], $match['invite_id'], $match['label']];
+        }
+        if ($matches->count() > 1) {
+            throw ValidationException::withMessages([
+                'teacher' => 'Encontré varias coincidencias: '.$matches->pluck('label')->implode(', ').'. Indica el nombre completo o código DOC-.',
+            ]);
+        }
+
         throw ValidationException::withMessages([
             'teacher' => 'No encontré un profesor o invitación activa con ese nombre.',
         ]);
@@ -705,5 +1158,115 @@ class DirectorActionService
             ->whereRaw('LOWER(grade) = ?', [mb_strtolower($grade)])
             ->whereRaw('LOWER(COALESCE(section, ?)) = ?', ['', mb_strtolower((string) $section)])
             ->first();
+    }
+
+    private function resolveUniqueStudent(int $colegioId, string $name): Student
+    {
+        $needle = mb_strtolower(trim($name));
+        $exact = Student::query()
+            ->where('colegio_id', $colegioId)
+            ->whereRaw('LOWER(name) = ?', [$needle])
+            ->first();
+        if ($exact) {
+            return $exact;
+        }
+
+        $matches = Student::query()
+            ->where('colegio_id', $colegioId)
+            ->whereRaw('LOWER(name) like ?', ['%'.$needle.'%'])
+            ->get();
+        if ($matches->count() === 1) {
+            return $matches->first();
+        }
+        if ($matches->count() > 1) {
+            throw ValidationException::withMessages([
+                'student' => 'Encontré varios alumnos: '.$matches->pluck('name')->implode(', ').'. Indica el nombre completo.',
+            ]);
+        }
+
+        throw ValidationException::withMessages(['student' => 'No encontré al alumno indicado en este colegio.']);
+    }
+
+    private function requireColegioId(User $director): int
+    {
+        $colegioId = (int) $director->colegio_id;
+        if (! $colegioId) {
+            throw ValidationException::withMessages([
+                'colegio_id' => 'Tu usuario no está vinculado a un colegio.',
+            ]);
+        }
+
+        return $colegioId;
+    }
+
+    private function subjectSearchStem(string $subject): string
+    {
+        return rtrim(mb_strtolower(trim($subject)), 's');
+    }
+
+    /**
+     * Evita que el cascade de teacher_id borre cursos o alumnos al eliminar docentes.
+     *
+     * @param  Collection<int,User>  $teachers
+     */
+    private function detachTeacherFromSchool(User $director, int $colegioId, Collection $teachers): void
+    {
+        $ids = $teachers->pluck('id')->filter()->values()->all();
+        if ($ids === []) {
+            return;
+        }
+
+        Course::query()
+            ->where('colegio_id', $colegioId)
+            ->whereIn('teacher_id', $ids)
+            ->update([
+                'teacher_id' => null,
+                'teacher_invite_id' => null,
+            ]);
+
+        Student::query()
+            ->where('colegio_id', $colegioId)
+            ->whereIn('teacher_id', $ids)
+            ->update(['teacher_id' => $director->id]);
+    }
+
+    /**
+     * @param  Collection<int,Course>  $courses
+     * @return array{deleted_count:int, deleted_courses:array<int,array{course_id:int,subject_name:string,grade:string,section:?string}>}
+     */
+    private function deleteCoursesCollection(int $colegioId, Collection $courses): array
+    {
+        return DB::transaction(function () use ($colegioId, $courses) {
+            $ids = $courses->pluck('id')->all();
+            if ($ids !== []) {
+                foreach ($courses as $course) {
+                    $course->students()->detach();
+                }
+                Course::query()
+                    ->where('colegio_id', $colegioId)
+                    ->whereIn('id', $ids)
+                    ->delete();
+            }
+
+            $remaining = Course::query()
+                ->where('colegio_id', $colegioId)
+                ->whereIn('id', $ids)
+                ->count();
+            if ($remaining > 0) {
+                throw ValidationException::withMessages([
+                    'course' => 'No se pudieron verificar todas las eliminaciones de cursos.',
+                ]);
+            }
+
+            return [
+                'deleted_count' => $courses->count(),
+                'deleted_courses' => $courses->map(fn ($course) => [
+                    'course_id' => $course->id,
+                    'subject_name' => $course->subject_name,
+                    'grade' => $course->grade,
+                    'section' => $course->section,
+                ])->values()->all(),
+            ];
+        });
     }
 }

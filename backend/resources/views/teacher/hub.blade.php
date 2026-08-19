@@ -3850,7 +3850,7 @@
         </div>
 
         <nav class="nav-section-account">
-            <a href="{{ route('profile') }}" class="nav-item">
+            <a href="{{ route('profile.edit') }}" class="nav-item">
                 <i class="fa-solid fa-gear"></i>
                 <span>Configuración</span>
             </a>

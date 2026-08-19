@@ -7,22 +7,21 @@ use App\Models\Course;
 use App\Models\CourseEvaluationPlan;
 use App\Models\Evaluation;
 use App\Models\EvaluationAttempt;
-use App\Models\EvaluationQuestion;
 use App\Models\Grade;
-use App\Models\Notification;
 use App\Models\Planificacion;
 use App\Models\Student;
-use App\Models\Tarea;
 use App\Models\User;
 use App\Services\DirectorAlertService;
 use App\Services\EvaluationPlanService;
+use App\Services\EvaluationSyncService;
+use App\Services\StudentEnrollmentService;
 use App\Services\StudentGradeAccumulationService;
 use App\Support\GradingScale;
 use App\Support\LessonTemplate;
-use Illuminate\Support\Carbon;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Database\QueryException;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -31,15 +30,15 @@ use Illuminate\Support\Str;
 
 class AICommandHandlerController extends Controller
 {
-private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'deleteResource', 'deleteActivities'];
+    private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'deleteResource', 'deleteActivities'];
 
     private ?string $activeLessonTemplate = null;
 
     public function __construct(
         private StudentGradeAccumulationService $accumulation,
-        private EvaluationPlanService $planService
-    ) {
-    }
+        private EvaluationPlanService $planService,
+        private StudentEnrollmentService $enrollmentService,
+    ) {}
 
     private function jsonOut(array $payload, int $status = 200): JsonResponse
     {
@@ -82,15 +81,15 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             [
                 'type' => 'function',
                 'function' => [
-                    'name'        => 'createCourse',
+                    'name' => 'createCourse',
                     'description' => 'NO crea cursos. El director es quien crea materias. Si el docente pide crear un curso, responde que debe pedirlo a dirección o usar su código DOC-.',
-                    'parameters'  => [
-                        'type'       => 'object',
+                    'parameters' => [
+                        'type' => 'object',
                         'properties' => [
                             'subject_name' => ['type' => 'string',  'description' => 'Nombre de la materia, ej: Matemáticas'],
-                            'grade'        => ['type' => 'string',  'description' => 'Grado, ej: 3ro Primaria'],
-                            'section'      => ['type' => 'string',  'description' => 'Sección opcional, ej: A, B'],
-                            'school_year'  => ['type' => 'string',  'description' => 'Año escolar, ej: 2025-2026'],
+                            'grade' => ['type' => 'string',  'description' => 'Grado, ej: 3ro Primaria'],
+                            'section' => ['type' => 'string',  'description' => 'Sección opcional, ej: A, B'],
+                            'school_year' => ['type' => 'string',  'description' => 'Año escolar, ej: 2025-2026'],
                         ],
                         'required' => ['subject_name', 'grade'],
                     ],
@@ -99,24 +98,24 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             [
                 'type' => 'function',
                 'function' => [
-                    'name'        => 'createActivity',
+                    'name' => 'createActivity',
                     'description' => 'Crea una clase (teórica), actividad evaluativa o tarea (homework) en un curso. Puede incluir adaptación NEE.',
-                    'parameters'  => [
-                        'type'       => 'object',
+                    'parameters' => [
+                        'type' => 'object',
                         'properties' => [
-                            'course_id'         => ['type' => 'integer'],
-                            'course_name_hint'  => ['type' => 'string'],
-                            'type'              => ['type' => 'string', 'enum' => ['clase', 'actividad', 'tarea']],
-                            'is_homework'       => ['type' => 'boolean'],
-                            'nee_type'          => ['type' => 'string', 'description' => 'Tipo de necesidad (TDAH, TEA/Autismo, Dislexia, Discalculia, Otro)'],
-                            'title'             => ['type' => 'string'],
-                            'description'       => [
-                                'type'        => 'string',
+                            'course_id' => ['type' => 'integer'],
+                            'course_name_hint' => ['type' => 'string'],
+                            'type' => ['type' => 'string', 'enum' => ['clase', 'actividad', 'tarea']],
+                            'is_homework' => ['type' => 'boolean'],
+                            'nee_type' => ['type' => 'string', 'description' => 'Tipo de necesidad (TDAH, TEA/Autismo, Dislexia, Discalculia, Otro)'],
+                            'title' => ['type' => 'string'],
+                            'description' => [
+                                'type' => 'string',
                                 'description' => "Markdown obligatorio con la plantilla activa del profesor ({$templateLabel}). Encabezados EXACTOS en negrita y en este orden: {$templateHeaders}. No uses encabezados de otra plantilla. Mínimo 3 párrafos, viñetas y negritas en conceptos clave.",
                             ],
-                            'max_score'         => ['type' => 'integer'],
+                            'max_score' => ['type' => 'integer'],
                             'weight_percentage' => ['type' => 'number'],
-                            'due_date'          => ['type' => 'string'],
+                            'due_date' => ['type' => 'string'],
                         ],
                         'required' => ['course_id', 'type', 'title', 'description', 'weight_percentage'],
                     ],
@@ -125,15 +124,15 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             [
                 'type' => 'function',
                 'function' => [
-                    'name'        => 'modifyActivity',
+                    'name' => 'modifyActivity',
                     'description' => 'Modifica una actividad o clase existente.',
-                    'parameters'  => [
-                        'type'       => 'object',
+                    'parameters' => [
+                        'type' => 'object',
                         'properties' => [
-                            'activity_id'       => ['type' => 'integer'],
-                            'title'             => ['type' => 'string'],
-                            'description'       => ['type' => 'string'],
-                            'due_date'          => ['type' => 'string'],
+                            'activity_id' => ['type' => 'integer'],
+                            'title' => ['type' => 'string'],
+                            'description' => ['type' => 'string'],
+                            'due_date' => ['type' => 'string'],
                             'weight_percentage' => ['type' => 'number'],
                         ],
                         'required' => ['activity_id'],
@@ -143,15 +142,15 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             [
                 'type' => 'function',
                 'function' => [
-                    'name'        => 'registerStudent',
+                    'name' => 'registerStudent',
                     'description' => 'Inscribe en el curso SOLO alumnos que ya existen en la nómina del colegio. Nunca crea estudiantes nuevos. Si no hay coincidencia, indica que el director debe matricularlos.',
-                    'parameters'  => [
-                        'type'       => 'object',
+                    'parameters' => [
+                        'type' => 'object',
                         'properties' => [
-                            'names'            => ['type' => 'array', 'items' => ['type' => 'string']],
-                            'course_id'        => ['type' => 'integer'],
+                            'names' => ['type' => 'array', 'items' => ['type' => 'string']],
+                            'course_id' => ['type' => 'integer'],
                             'course_name_hint' => ['type' => 'string'],
-                            'grade'            => ['type' => 'string'],
+                            'grade' => ['type' => 'string'],
                         ],
                         'required' => ['course_id'],
                     ],
@@ -160,19 +159,19 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             [
                 'type' => 'function',
                 'function' => [
-                    'name'        => 'bulkPlan',
+                    'name' => 'bulkPlan',
                     'description' => 'Genera planificación mensual o por rango parcial para cualquier mes/año. Respeta días pedidos por el usuario. Lunes suele ser teoría/cuaderno, martes-miércoles práctica guiada y jueves práctica/lúdica. Cada sesión guarda descripción Markdown detallada.',
-                    'parameters'  => [
-                        'type'       => 'object',
+                    'parameters' => [
+                        'type' => 'object',
                         'properties' => [
-                            'course_id'    => ['type' => 'integer'],
-                            'topic'        => ['type' => 'string'],
+                            'course_id' => ['type' => 'integer'],
+                            'topic' => ['type' => 'string'],
                             'target_month' => [
                                 'type' => 'string',
                                 'description' => 'Mes a planificar en español minúsculas (ej: "abril", "mayo", "mayo 2026"). OBLIGATORIO: siempre pasar el nombre del mes del prompt del usuario.',
                             ],
-                            'units'        => ['type' => 'array', 'items' => ['type' => 'object']],
-                            'topics'       => ['type' => 'array', 'items' => ['type' => 'string']],
+                            'units' => ['type' => 'array', 'items' => ['type' => 'object']],
+                            'topics' => ['type' => 'array', 'items' => ['type' => 'string']],
                             'calendar_preferences' => [
                                 'type' => 'object',
                                 'properties' => [
@@ -196,10 +195,10 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             [
                 'type' => 'function',
                 'function' => [
-                    'name'        => 'deleteActivities',
+                    'name' => 'deleteActivities',
                     'description' => 'BORRADO OBLIGATORIO en backend. Elimina múltiples actividades dentro de un rango de fechas para un curso. Úsalo cuando el usuario pida borrar varias clases/actividades en un mes o semana.',
-                    'parameters'  => [
-                        'type'       => 'object',
+                    'parameters' => [
+                        'type' => 'object',
                         'properties' => [
                             'course_id' => ['type' => 'integer'],
                             'start_date' => ['type' => 'string'],
@@ -213,17 +212,17 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             [
                 'type' => 'function',
                 'function' => [
-                    'name'        => 'deleteResource',
-                    'description' => 'BORRADO OBLIGATORIO en backend. Elimina un recurso específico por ID (actividad, curso, alumno). Úsalo cuando el usuario pide borrar UNA actividad específica y ya identificaste su activity_id del calendario. Ejemplo: "borra la clase de matemáticas del jueves" → busca en calendario → encuentra "actividad_id 42" → llama deleteResource.',
-                    'parameters'  => [
-                        'type'       => 'object',
+                    'name' => 'deleteResource',
+                    'description' => 'Elimina una actividad específica del propio profesor por ID. Los profesores no pueden eliminar cursos ni alumnos de la nómina.',
+                    'parameters' => [
+                        'type' => 'object',
                         'properties' => [
                             'resource_type' => [
-                                'type' => 'string', 
-                                'enum' => ['activity', 'student', 'course'],
-                                'description' => 'Tipo de recurso a eliminar. Usa "activity" para borrar una actividad específica por ID.',
+                                'type' => 'string',
+                                'enum' => ['activity'],
+                                'description' => 'Solo se permite "activity".',
                             ],
-                            'resource_id'   => [
+                            'resource_id' => [
                                 'type' => 'integer',
                                 'description' => 'ID único del recurso a eliminar. Para actividades, usa el activity_id que ves en el calendario inyectado (formato: "actividad_id 42").',
                             ],
@@ -235,14 +234,14 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             [
                 'type' => 'function',
                 'function' => [
-                    'name'        => 'getCalendarContext',
+                    'name' => 'getCalendarContext',
                     'description' => 'Lee el calendario del docente en un rango de fechas.',
-                    'parameters'  => [
-                        'type'       => 'object',
+                    'parameters' => [
+                        'type' => 'object',
                         'properties' => [
                             'start_date' => ['type' => 'string'],
-                            'end_date'   => ['type' => 'string'],
-                            'course_id'  => ['type' => 'integer'],
+                            'end_date' => ['type' => 'string'],
+                            'course_id' => ['type' => 'integer'],
                         ],
                         'required' => ['start_date', 'end_date'],
                     ],
@@ -251,16 +250,16 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             [
                 'type' => 'function',
                 'function' => [
-                    'name'        => 'setGrade',
+                    'name' => 'setGrade',
                     'description' => 'Guarda o actualiza una calificación para un alumno y actividad.',
-                    'parameters'  => [
-                        'type'       => 'object',
+                    'parameters' => [
+                        'type' => 'object',
                         'properties' => [
-                            'student_id'  => ['type' => 'integer'],
+                            'student_id' => ['type' => 'integer'],
                             'activity_id' => ['type' => 'integer', 'description' => 'ID de la actividad o del examen espejo'],
                             'evaluation_id' => ['type' => 'integer', 'description' => 'ID de la evaluación formal. Alternativa a activity_id.'],
-                            'score'       => ['type' => 'number'],
-                            'feedback'    => ['type' => 'string'],
+                            'score' => ['type' => 'number'],
+                            'feedback' => ['type' => 'string'],
                         ],
                         'required' => ['score'],
                     ],
@@ -269,10 +268,10 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             [
                 'type' => 'function',
                 'function' => [
-                    'name'        => 'findStudent',
+                    'name' => 'findStudent',
                     'description' => 'Busca alumnos por nombre y devuelve posibles coincidencias con IDs.',
-                    'parameters'  => [
-                        'type'       => 'object',
+                    'parameters' => [
+                        'type' => 'object',
                         'properties' => [
                             'query' => ['type' => 'string'],
                             'limit' => ['type' => 'integer'],
@@ -284,16 +283,16 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             [
                 'type' => 'function',
                 'function' => [
-                    'name'        => 'getGradebookContext',
+                    'name' => 'getGradebookContext',
                     'description' => 'Lee el libro de calificaciones por actividad o curso (con promedios y alertas).',
-                    'parameters'  => [
-                        'type'       => 'object',
+                    'parameters' => [
+                        'type' => 'object',
                         'properties' => [
                             'activity_id' => ['type' => 'integer'],
-                            'course_id'   => ['type' => 'integer'],
-                            'start_date'  => ['type' => 'string'],
-                            'end_date'    => ['type' => 'string'],
-                            'limit'       => ['type' => 'integer'],
+                            'course_id' => ['type' => 'integer'],
+                            'start_date' => ['type' => 'string'],
+                            'end_date' => ['type' => 'string'],
+                            'limit' => ['type' => 'integer'],
                         ],
                     ],
                 ],
@@ -301,14 +300,14 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             [
                 'type' => 'function',
                 'function' => [
-                    'name'        => 'getPedagogicalHistory',
+                    'name' => 'getPedagogicalHistory',
                     'description' => 'Devuelve historial pedagógico reciente (actividades y planificaciones).',
-                    'parameters'  => [
-                        'type'       => 'object',
+                    'parameters' => [
+                        'type' => 'object',
                         'properties' => [
-                            'limit'       => ['type' => 'integer'],
-                            'start_date'  => ['type' => 'string'],
-                            'end_date'    => ['type' => 'string'],
+                            'limit' => ['type' => 'integer'],
+                            'start_date' => ['type' => 'string'],
+                            'end_date' => ['type' => 'string'],
                         ],
                     ],
                 ],
@@ -316,10 +315,10 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             [
                 'type' => 'function',
                 'function' => [
-                    'name'        => 'getCurrentWeek',
+                    'name' => 'getCurrentWeek',
                     'description' => 'Consulta actividades de la semana actual (lunes-domingo). Devuelve respuesta JSON visual para el frontend.',
-                    'parameters'  => [
-                        'type'       => 'object',
+                    'parameters' => [
+                        'type' => 'object',
                         'properties' => [
                             'course_id' => ['type' => 'integer', 'description' => 'Filtrar por curso (opcional)'],
                         ],
@@ -329,24 +328,24 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             [
                 'type' => 'function',
                 'function' => [
-                    'name'        => 'setGradeBatch',
+                    'name' => 'setGradeBatch',
                     'description' => 'Califica a MÚLTIPLES alumnos en una misma actividad de una sola vez. Úsalo cuando el usuario pida «ponles nota a todos», «califica a varios», «carga las notas del grupo» en lugar de llamar setGrade varias veces.',
-                    'parameters'  => [
-                        'type'       => 'object',
+                    'parameters' => [
+                        'type' => 'object',
                         'properties' => [
                             'activity_id' => ['type' => 'integer', 'description' => 'ID de la actividad a calificar'],
                             'evaluation_id' => ['type' => 'integer', 'description' => 'ID de la evaluación formal. Alternativa a activity_id.'],
                             'grades' => [
-                                'type'  => 'array',
-                    'items' => [
-                        'type'       => 'object',
-                        'properties' => [
-                            'student_id'   => ['type' => 'integer', 'description' => 'ID del alumno (alternativa a student_name)'],
-                            'student_name' => ['type' => 'string', 'description' => 'Nombre exacto del alumno (alternativa a student_id). Úsalo cuando el usuario dé el nombre en lugar del ID. Ej: "Jason"'],
-                            'score'        => ['type' => 'number', 'description' => 'Nota del alumno (0 - max_score de la actividad)'],
-                            'feedback'     => ['type' => 'string', 'description' => 'Retroalimentación opcional'],
-                        ],
-                    ],
+                                'type' => 'array',
+                                'items' => [
+                                    'type' => 'object',
+                                    'properties' => [
+                                        'student_id' => ['type' => 'integer', 'description' => 'ID del alumno (alternativa a student_name)'],
+                                        'student_name' => ['type' => 'string', 'description' => 'Nombre exacto del alumno (alternativa a student_id). Úsalo cuando el usuario dé el nombre en lugar del ID. Ej: "Jason"'],
+                                        'score' => ['type' => 'number', 'description' => 'Nota del alumno (0 - max_score de la actividad)'],
+                                        'feedback' => ['type' => 'string', 'description' => 'Retroalimentación opcional'],
+                                    ],
+                                ],
                             ],
                         ],
                         'required' => ['activity_id', 'grades'],
@@ -356,10 +355,10 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             [
                 'type' => 'function',
                 'function' => [
-                    'name'        => 'publishGrades',
+                    'name' => 'publishGrades',
                     'description' => 'Publica TODAS las calificaciones en borrador de una actividad. Cambia el estado de draft a published. Úsalo cuando el usuario pida «publica las notas», «publica las calificaciones» de una actividad específica.',
-                    'parameters'  => [
-                        'type'       => 'object',
+                    'parameters' => [
+                        'type' => 'object',
                         'properties' => [
                             'activity_id' => ['type' => 'integer', 'description' => 'ID de la actividad cuyas notas se publicarán'],
                         ],
@@ -370,10 +369,10 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             [
                 'type' => 'function',
                 'function' => [
-                    'name'        => 'createEvaluation',
+                    'name' => 'createEvaluation',
                     'description' => 'Crea una evaluación formal (digital o física) en el módulo de Evaluaciones, genera preguntas con IA y opcionalmente la agrega al Plan de Evaluación del curso. Úsala cuando el usuario pida crear un examen, prueba, quiz o evaluación (NO uses createActivity para eso).',
-                    'parameters'  => [
-                        'type'       => 'object',
+                    'parameters' => [
+                        'type' => 'object',
                         'properties' => [
                             'course_id' => ['type' => 'integer', 'description' => 'ID del curso. Si no lo conoces, usa course_name_hint.'],
                             'course_name_hint' => ['type' => 'string', 'description' => 'Nombre/grado del curso, ej: Matemáticas 1er grado'],
@@ -397,10 +396,10 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             [
                 'type' => 'function',
                 'function' => [
-                    'name'        => 'attachEvaluationToPlan',
+                    'name' => 'attachEvaluationToPlan',
                     'description' => 'Agrega una evaluación ya existente al Plan de Evaluación del curso. Úsala cuando el usuario diga «agrégala al plan», «súbela al plan de evaluación» o similar.',
-                    'parameters'  => [
-                        'type'       => 'object',
+                    'parameters' => [
+                        'type' => 'object',
                         'properties' => [
                             'evaluation_id' => ['type' => 'integer'],
                             'evaluation_title_hint' => ['type' => 'string', 'description' => 'Si no tienes ID, busca por título'],
@@ -423,683 +422,693 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
     public function handle(Request $request): JsonResponse
     {
         try {
-        @set_time_limit(120);
-        @ini_set('max_execution_time', '120');
-        // Intercepción local ANTES de validar o llamar a OpenAI
-        $payload = $request->all();
-        $rawMessage = (string) (
-            data_get($payload, 'message')
-            ?? data_get($payload, 'prompt')
-            ?? data_get($payload, 'payload.mensaje_usuario')
-            ?? data_get($payload, 'payload.prompt')
-            ?? ''
-        );
-        $teacher = auth()->user();
-        if (! $teacher) {
-            return $this->jsonOut(['success' => false, 'error' => 'No autenticado.', 'message' => 'No autenticado.'], 401);
-        }
-        $requestedTemplate = $request->input('lesson_template');
-        $this->activeLessonTemplate = is_string($requestedTemplate) && $requestedTemplate !== ''
-            ? LessonTemplate::normalize($requestedTemplate)
-            : LessonTemplate::forUser($teacher);
-        $prompt = (string) (
-            $request->input('prompt')
-            ?? data_get($payload, 'payload.mensaje_usuario')
-            ?? $rawMessage
-        );
-        $hasDeleteIntent = $this->hasDeleteIntent($prompt ?: $rawMessage);
+            @set_time_limit(120);
+            @ini_set('max_execution_time', '120');
+            // Intercepción local ANTES de validar o llamar a OpenAI
+            $payload = $request->all();
+            $rawMessage = (string) (
+                data_get($payload, 'message')
+                ?? data_get($payload, 'prompt')
+                ?? data_get($payload, 'payload.mensaje_usuario')
+                ?? data_get($payload, 'payload.prompt')
+                ?? ''
+            );
+            $teacher = auth()->user();
+            if (! $teacher) {
+                return $this->jsonOut(['success' => false, 'error' => 'No autenticado.', 'message' => 'No autenticado.'], 401);
+            }
+            $requestedTemplate = $request->input('lesson_template');
+            $this->activeLessonTemplate = is_string($requestedTemplate) && $requestedTemplate !== ''
+                ? LessonTemplate::normalize($requestedTemplate)
+                : LessonTemplate::forUser($teacher);
+            $prompt = (string) (
+                $request->input('prompt')
+                ?? data_get($payload, 'payload.mensaje_usuario')
+                ?? $rawMessage
+            );
+            $hasDeleteIntent = $this->hasDeleteIntent($prompt ?: $rawMessage);
 
-        if (preg_match('/(borrar todo|limpiar todo|eliminar todo|vaciar todo|pizarra limpia)/i', $rawMessage)) {
-            $teacherId = auth()->id();
+            if (preg_match('/(borrar todo|limpiar todo|eliminar todo|vaciar todo|pizarra limpia)/i', $rawMessage)) {
+                $teacherId = auth()->id();
 
-            DB::table('tareas')
-                ->whereIn('actividad_id', function ($query) use ($teacherId) {
-                    $query->select('id')->from('activities')->where('teacher_id', $teacherId);
-                })
-                ->delete();
+                DB::table('tareas')
+                    ->whereIn('actividad_id', function ($query) use ($teacherId) {
+                        $query->select('id')->from('activities')->where('teacher_id', $teacherId);
+                    })
+                    ->delete();
 
-            DB::table('activities')->where('teacher_id', $teacherId)->delete();
+                DB::table('activities')->where('teacher_id', $teacherId)->delete();
 
-            return response()->json([
-                'success' => true,
-                'message' => 'Pizarra limpia.',
-                'action' => 'refresh',
-                'action_type' => 'delete',
-                'icon' => '🗑️',
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Pizarra limpia.',
+                    'action' => 'refresh',
+                    'action_type' => 'delete',
+                    'icon' => '🗑️',
+                ]);
+            }
+
+            $intentDeleteDates = $this->parseDatesFromText($rawMessage);
+            $intentCourseId = $this->detectCourseContext($prompt ?: $rawMessage, $teacher);
+
+            if ($hasDeleteIntent && ! empty($intentDeleteDates)) {
+                $courseId = $intentCourseId;
+                $result = $this->doDeleteActivities([
+                    'course_id' => $courseId ?? 0,
+                    'start_date' => $intentDeleteDates[0]->format('Y-m-d'),
+                    'end_date' => end($intentDeleteDates)->format('Y-m-d'),
+                ], $teacher->id);
+
+                return response()->json($result);
+            }
+
+            $request->validate([
+                'prompt' => ['sometimes', 'string', 'max:1000'],
+                'message' => ['nullable', 'string'],
+                'confirmed' => ['sometimes', 'boolean'],
+                'screen_context' => ['sometimes', 'nullable', 'array'],
+                'payload' => ['sometimes', 'array'],
+                'payload.mensaje_usuario' => ['sometimes', 'string', 'max:1000'],
+                'payload.contexto' => ['sometimes', 'nullable', 'array'],
+                'conversation' => ['sometimes', 'array', 'max:40'],
+                'conversation.*.role' => ['required_with:conversation', 'in:user,assistant'],
+                'conversation.*.content' => ['required_with:conversation', 'string', 'max:12000'],
+                'pending_actions' => ['sometimes', 'array', 'max:20'],
+                'lesson_template' => ['sometimes', 'nullable', 'string', 'max:50'],
             ]);
-        }
 
-        $intentDeleteDates = $this->parseDatesFromText($rawMessage);
-        $intentCourseId = $this->detectCourseContext($prompt ?: $rawMessage, $teacher);
+            $wrappedPayload = $request->input('payload', []);
+            $messageText = $request->input('message', '');
 
-        if ($hasDeleteIntent && !empty($intentDeleteDates)) {
-            $courseId = $intentCourseId;
-            $result = $this->doDeleteActivities([
-                'course_id' => $courseId ?? 0,
-                'start_date' => $intentDeleteDates[0]->format('Y-m-d'),
-                'end_date' => end($intentDeleteDates)->format('Y-m-d'),
-            ], $teacher->id);
-            return response()->json($result);
-        }
+            $prompt = $request->input('prompt', $wrappedPayload['mensaje_usuario'] ?? $messageText);
+            $confirmed = (bool) $request->input('confirmed', false);
+            $screenContext = $request->input('screen_context', $wrappedPayload['contexto'] ?? null);
+            $intentText = $prompt !== '' ? $prompt : $rawMessage;
+            $hasDeleteIntent = $this->hasDeleteIntent($intentText);
+            $hasModifyIntent = $this->hasModifyIntent($intentText);
+            $hasPlanningIntent = $this->hasPlanningIntent($intentText);
+            $hasCreateEvaluationIntent = $this->hasCreateEvaluationIntent($intentText);
+            $explicitProceed = $this->hasProceedIntent($intentText);
+            $deleteRange = $this->extractDateRangeFromText($intentText);
 
-        $request->validate([
-            'prompt' => ['sometimes', 'string', 'max:1000'],
-            'message' => ['nullable', 'string'],
-            'confirmed' => ['sometimes', 'boolean'],
-            'screen_context' => ['sometimes', 'nullable', 'array'],
-            'payload' => ['sometimes', 'array'],
-            'payload.mensaje_usuario' => ['sometimes', 'string', 'max:1000'],
-            'payload.contexto' => ['sometimes', 'nullable', 'array'],
-            'conversation' => ['sometimes', 'array', 'max:40'],
-            'conversation.*.role' => ['required_with:conversation', 'in:user,assistant'],
-            'conversation.*.content' => ['required_with:conversation', 'string', 'max:12000'],
-            'pending_actions' => ['sometimes', 'array', 'max:20'],
-            'lesson_template' => ['sometimes', 'nullable', 'string', 'max:50'],
-        ]);
-
-        $wrappedPayload = $request->input('payload', []);
-        $messageText = $request->input('message', '');
-        
-        $prompt = $request->input('prompt', $wrappedPayload['mensaje_usuario'] ?? $messageText);
-        $confirmed = (bool) $request->input('confirmed', false);
-        $screenContext = $request->input('screen_context', $wrappedPayload['contexto'] ?? null);
-        $intentText = $prompt !== '' ? $prompt : $rawMessage;
-        $hasDeleteIntent = $this->hasDeleteIntent($intentText);
-        $hasModifyIntent = $this->hasModifyIntent($intentText);
-        $hasPlanningIntent = $this->hasPlanningIntent($intentText);
-        $hasCreateEvaluationIntent = $this->hasCreateEvaluationIntent($intentText);
-        $explicitProceed = $this->hasProceedIntent($intentText);
-        $deleteRange = $this->extractDateRangeFromText($intentText);
-
-        Log::debug('AI_DELETE_ENTRY', [
-            'teacher_id' => $teacher->id,
-            'raw_message' => $rawMessage,
-            'prompt' => $prompt,
-            'intent_text' => $intentText,
-            'has_delete_intent' => $hasDeleteIntent,
-            'explicit_proceed' => $explicitProceed,
-            'delete_range' => $deleteRange,
-            'screen_course_id' => $screenContext['id'] ?? null,
-        ]);
-
-        if ($hasDeleteIntent && $deleteRange) {
-            session()->put('nova_last_delete_args', array_filter([
-                'course_id' => ! empty($screenContext['id']) ? (int) $screenContext['id'] : null,
-                'start_date' => $deleteRange['start_date'],
-                'end_date' => $deleteRange['end_date'],
-            ], fn ($value) => $value !== null));
-            Log::debug('AI_DELETE_SESSION', [
+            Log::debug('AI_DELETE_ENTRY', [
                 'teacher_id' => $teacher->id,
-                'nova_last_delete_args' => session('nova_last_delete_args'),
+                'raw_message' => $rawMessage,
+                'prompt' => $prompt,
+                'intent_text' => $intentText,
+                'has_delete_intent' => $hasDeleteIntent,
+                'explicit_proceed' => $explicitProceed,
+                'delete_range' => $deleteRange,
+                'screen_course_id' => $screenContext['id'] ?? null,
             ]);
-        }
 
-        $pendingActionsFromClient = $request->input('pending_actions');
-        if ($confirmed && (session()->has('nova_pending_actions') || is_array($pendingActionsFromClient))) {
-            $pendingToolCalls = session()->pull('nova_pending_actions', $pendingActionsFromClient);
-            Log::info('AICommandHandler: executing confirmed pending actions', [
+            if ($hasDeleteIntent && $deleteRange) {
+                session()->put('nova_last_delete_args', array_filter([
+                    'course_id' => ! empty($screenContext['id']) ? (int) $screenContext['id'] : null,
+                    'start_date' => $deleteRange['start_date'],
+                    'end_date' => $deleteRange['end_date'],
+                ], fn ($value) => $value !== null));
+                Log::debug('AI_DELETE_SESSION', [
+                    'teacher_id' => $teacher->id,
+                    'nova_last_delete_args' => session('nova_last_delete_args'),
+                ]);
+            }
+
+            $pendingActionsFromClient = $request->input('pending_actions');
+            if ($confirmed && (session()->has('nova_pending_actions') || is_array($pendingActionsFromClient))) {
+                $pendingToolCalls = session()->pull('nova_pending_actions', $pendingActionsFromClient);
+                Log::info('AICommandHandler: executing confirmed pending actions', [
+                    'teacher_id' => $teacher->id,
+                    'tool_calls_count' => count($pendingToolCalls),
+                ]);
+
+                $pendingToolCalls = $this->dedupeAndOrderToolCalls($pendingToolCalls);
+                $createdCourseMap = [];
+                $results = [];
+                foreach ($pendingToolCalls as $tc) {
+                    $fn = $tc['function']['name'];
+                    $args = $tc['function']['arguments'] ?? [];
+                    if (is_string($args)) {
+                        $args = json_decode($args, true) ?? [];
+                    }
+                    if (! is_array($args)) {
+                        $args = [];
+                    }
+                    if ($fn === 'bulkPlan') {
+                        $args['confirmed'] = true;
+                        $args = $this->enrichBulkPlanArgsFromIntent($args, $intentText, $teacher);
+                    }
+                    if (in_array($fn, ['createActivity', 'registerStudent', 'bulkPlan', 'deleteActivities', 'getCalendarContext', 'createEvaluation'], true)) {
+                        $resolvedCourseId = $this->resolveCourseIdForArgs($args, $teacher->id, $createdCourseMap, $screenContext);
+                        if ($resolvedCourseId > 0) {
+                            $args['course_id'] = $resolvedCourseId;
+                        }
+                    }
+                    $results[] = $this->executeAction($fn, $args, $teacher->id, $createdCourseMap);
+                }
+
+                $actions = collect($results)->map(function ($result) {
+                    $success = (bool) ($result['success'] ?? false);
+
+                    return [
+                        'success' => $success,
+                        'status' => $result['status'] ?? ($success ? 'success' : 'error'),
+                        'message' => $result['message'] ?? '',
+                        'action_type' => $result['action_type'] ?? 'info',
+                        'icon' => $result['icon'] ?? ($success ? '✅' : 'ℹ️'),
+                        'data' => $result['data'] ?? [],
+                    ];
+                })->toArray();
+
+                $anySuccess = collect($actions)->contains(fn ($action) => $action['success']);
+                $bulkMeta = $this->extractBulkPlanResponseMeta($results);
+
+                return $this->jsonOut(array_filter([
+                    'success' => true,
+                    'status' => $bulkMeta ? 'success' : ($anySuccess ? 'success' : 'partial'),
+                    'actions' => $actions,
+                    'any_success' => $anySuccess,
+                    'bulk_plan' => $bulkMeta,
+                    'message' => $bulkMeta['assistant_message'] ?? null,
+                    'data' => $actions,
+                ], fn ($v) => $v !== null));
+            }
+
+            if (($confirmed || $explicitProceed) && ! session()->has('nova_pending_actions')) {
+                $pendingDelete = session()->pull('nova_last_delete_args');
+                Log::debug('AI_DELETE_PROCEED', [
+                    'teacher_id' => $teacher->id,
+                    'confirmed' => $confirmed,
+                    'explicit_proceed' => $explicitProceed,
+                    'pending_delete' => $pendingDelete,
+                ]);
+                if (is_array($pendingDelete) && isset($pendingDelete['start_date'], $pendingDelete['end_date'])) {
+                    $deleteArgs = array_merge([
+                        'course_id' => $pendingDelete['course_id'] ?? null,
+                    ], $pendingDelete);
+                    $results = [$this->doDeleteActivities($deleteArgs, $teacher->id)];
+                    Log::debug('AI_DELETE_EXECUTED', [
+                        'teacher_id' => $teacher->id,
+                        'source' => 'proceed',
+                        'delete_args' => $deleteArgs,
+                        'result' => $results[0] ?? null,
+                    ]);
+
+                    return response()->json($this->buildActionResponsePayload($results));
+                }
+
+                if ($confirmed) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'No encuentro una acción técnica pendiente. Dime otra vez qué quieres crear o ajustar y lo ejecuto con el contexto actual.',
+                    ]);
+                }
+            }
+
+            $today = now()->format('Y-m-d');
+            $screenContextArray = is_array($screenContext) ? $screenContext : [];
+            $hasPendingEvaluationDraft = session()->has('nova_pending_evaluation_draft');
+
+            if ($hasPendingEvaluationDraft && preg_match('/\b(cancela|cancelar|olvida|det[eé]n)\b/u', mb_strtolower($intentText))) {
+                session()->forget('nova_pending_evaluation_draft');
+
+                return $this->jsonOut([
+                    'success' => true,
+                    'status' => 'success',
+                    'message' => 'Listo, cancelé la creación de la evaluación pendiente.',
+                    'data' => [],
+                ]);
+            }
+
+            if ($hasCreateEvaluationIntent || $hasPendingEvaluationDraft) {
+                $baseDraft = session()->get('nova_pending_evaluation_draft', []);
+                $evalArgs = $this->mergeEvaluationDraft(
+                    is_array($baseDraft) ? $baseDraft : [],
+                    $this->extractEvaluationArgsFromIntent($intentText, $screenContextArray, $teacher),
+                    $intentText
+                );
+
+                $missing = $this->missingEvaluationDraftFields($evalArgs);
+                if (! empty($missing)) {
+                    session()->put('nova_pending_evaluation_draft', $evalArgs);
+
+                    return $this->jsonOut([
+                        'success' => true,
+                        'status' => 'pending',
+                        'message' => $this->evaluationFollowupQuestion($missing[0], $evalArgs),
+                        'requires_followup' => true,
+                        'data' => [
+                            'pending_type' => 'create_evaluation',
+                            'missing' => $missing,
+                            'draft' => $evalArgs,
+                        ],
+                    ]);
+                }
+
+                session()->forget('nova_pending_evaluation_draft');
+
+                try {
+                    $results = [DB::transaction(fn () => $this->doCreateEvaluation($evalArgs, $teacher->id))];
+                } catch (\Throwable $e) {
+                    Log::error('AICommandHandler local createEvaluation failed', [
+                        'teacher_id' => $teacher->id,
+                        'args' => $evalArgs,
+                        'error' => $e->getMessage(),
+                    ]);
+                    $results = [[
+                        'success' => false,
+                        'status' => 'error',
+                        'message' => 'No se pudo completar esta acción en este momento. Inténtalo de nuevo.',
+                        'action_type' => 'evaluation',
+                        'icon' => '⚠️',
+                        'data' => [],
+                    ]];
+                }
+
+                return $this->jsonOut($this->buildActionResponsePayload($results));
+            }
+
+            // Plantilla de clase del profesor
+            $lessonTemplate = $this->activeLessonTemplateFor($teacher->id);
+            $templateSections = LessonTemplate::promptLine($lessonTemplate);
+            $templateLabel = LessonTemplate::label($lessonTemplate);
+
+            // Contexto de cursos para la IA (incluye alumnos para evitar duplicados y dar contexto real)
+            $courses = Course::where('teacher_id', $teacher->id)
+                ->withCount('students')
+                ->with(['students:id,name'])
+                ->get(['id', 'subject_name', 'grade', 'grading_scale']);
+            $coursesContext = "Cursos existentes del profesor (USA estos IDs exactos; NO crees cursos que ya existan en esta lista):\n"
+                .($courses->isEmpty()
+                    ? '(sin cursos creados todavía)'
+                    : $courses->map(function ($c) {
+                        $names = $c->students->take(15)->pluck('name')->implode(', ');
+                        $scale = GradingScale::label($c->grading_scale ?? null);
+                        $line = "ID:{$c->id} · {$c->subject_name} · grado: ".($c->grade ?: 's/grado')." · escala: {$scale} · {$c->students_count} alumno(s)";
+                        if ($names !== '') {
+                            $line .= " → [{$names}]";
+                        }
+
+                        return $line;
+                    })->join("\n"));
+
+            $contextJson = $screenContext ? json_encode($screenContext, JSON_UNESCAPED_UNICODE) : '{}';
+            $activeGradingScale = $this->resolveActiveGradingScale($screenContext, $teacher->id);
+            $gradingScaleLine = 'Escala de calificación activa del curso en pantalla: '
+                .GradingScale::label($activeGradingScale)
+                .' (notas válidas de 0 a '
+                .GradingScale::maxFor($activeGradingScale)
+                .'). Rechaza o ajusta notas fuera de ese rango.';
+
+            $calendarMonth = isset($screenContext['month']) ? $screenContext['month'] : null;
+            $calStart = Carbon::today();
+            $calEnd = Carbon::today()->copy()->addDays(14);
+
+            if ($calendarMonth && preg_match('/^\d{4}-\d{2}$/', $calendarMonth)) {
+                $calStart = Carbon::createFromFormat('Y-m', $calendarMonth)->startOfMonth();
+                $calEnd = Carbon::createFromFormat('Y-m', $calendarMonth)->endOfMonth();
+            }
+
+            $calendarTwoWeeks = $this->buildCalendarSnapshotLines(
+                $teacher->id,
+                $calStart,
+                $calEnd
+            );
+            $calendarTwoWeeks = '📅 Mes actual del calendario: '.($calendarMonth ?? 'próximas 2 semanas')."\n".$calendarTwoWeeks;
+            $extendedBlock = '';
+            if ($hasDeleteIntent || $hasModifyIntent) {
+                $calendarExtended = $this->buildCalendarSnapshotLines(
+                    $teacher->id,
+                    Carbon::today()->copy()->subMonths(6)->startOfMonth(),
+                    Carbon::today()->copy()->addMonths(12)->endOfMonth()
+                );
+                $extendedBlock = "[Pre-análisis interno: borrar/modificar] Calendario extendido ya cargado en servidor (misma fuente que getCalendarContext). Úsalo para localizar actividades por mes o rango antes de confirmar:\n".$calendarExtended;
+            }
+
+            $systemPromptLines = [
+                'Eres Aulasync, copiloto pedagógico profesional de Aulasync. No eres un bot de formularios: eres un asistente docente conversacional, resolutivo y con criterio didáctico.',
+                'Tu trabajo es ayudar a planificar, ajustar clases, leer el calendario, registrar alumnos, cargar notas, publicar calificaciones y proponer mejoras pedagógicas con lenguaje natural.',
+                '',
+                'PERSONALIDAD Y EXPERIENCIA:',
+                '- Habla como una coordinadora pedagógica experta: cálida, directa, útil y con seguridad. Evita respuestas frías como «necesito saber...».',
+                '- Mantén continuidad real: usa el historial de conversación, el contexto vivo, cursos y calendario antes de preguntar.',
+                '- Cuando no ejecutes una herramienta, ofrece una respuesta concreta con propuesta docente, no una frase genérica.',
+                '- Si detectas intención educativa vaga, ayuda a convertirla en plan: sugiere secuencia, objetivos, evaluación y adaptación.',
+                '- Si el usuario responde «sí», «ese», «correcto», «dale», «hazlo», interpreta que confirma la última propuesta de la conversación.',
+                '',
+                'MODO PODER DE DECISIÓN (estricto):',
+                '- PRIORIDAD DE EJECUCIÓN: si el usuario dice «hazlo tú», «como consideres», «genera todo» o equivalente, usa valores por defecto razonables y llama createActivity inmediatamente.',
+                '- Defaults al crear actividades cuando falten datos secundarios: weight_percentage=10, max_score='.GradingScale::maxFor($activeGradingScale).", due_date=fecha más cercana del contexto/calendario o hoy+1, type='clase' (o 'tarea' si el usuario pide tarea).",
+                '- MEMORIA DE CONTEXTO: está PROHIBIDO volver a preguntar datos ya presentes en historial o contexto vivo. Si el usuario ya dijo «1er grado» y «sports», reutilízalos directamente.',
+                '- UNA SOLA PREGUNTA: solo puedes hacer una pregunta a la vez. Si faltan 3 datos, pregunta solo el más crítico (normalmente course_id) y para los demás usa defaults.',
+                '- CONCISIÓN EXTREMA: sin bienvenida larga ni explicaciones de proceso. 1–2 líneas máximo cuando no ejecutes herramienta.',
+                '- COMANDO DE CIERRE EN CREACIÓN: si la instrucción de creación es clara, responde con esta línea y ejecuta de inmediato: «¡Entendido! Generando la actividad de [tema] para [grado] con los parámetros que sugeriste...»',
+                '- MODO EJECUTOR: no te quedes en entrevistas. Pregunta solo si falta un dato estrictamente vital que impide cualquier ejecución segura.',
+                '- AUTOCOMPLETADO: si faltan parámetros no críticos (peso, tipo de actividad, hora exacta), asúmelos con defaults y ejecuta; no preguntes por ellos.',
+                '- Si el «Contexto vivo actual» incluye id de curso, actividad o pantalla, úsalo y no vuelvas a preguntarlo.',
+                '- Si solo existe un curso disponible o una única coincidencia razonable, úsalo automáticamente. No preguntes «¿es para este curso?» salvo que haya dos o más cursos igualmente plausibles.',
+                "- Si el usuario pide «los lunes, martes y miércoles que quedan de junio», usa target_month='junio' y calendar_preferences.repeat_days=['monday','tuesday','wednesday']; si ya estamos dentro de junio, calendar_preferences.start_date debe ser hoy para evitar crear fechas pasadas.",
+                '',
+                'CONTEXTO DE CALENDARIO (inyectado automáticamente en cada mensaje):',
+                '- Antes de responder sobre planificación, borrados o qué hay agendado, asume que ya tienes el bloque «Estado actual del calendario» más abajo. No digas que no ves el calendario.',
+                '- El bloque de próximas 2 semanas es SOLO para lectura/estado. Para crear contenido (createActivity/bulkPlan), el horizonte temporal es ilimitado (cualquier mes y año).',
+                '- Si el usuario pide borrar por mes o rango (ej.: «borra las clases de abril»), cruza primero las fechas con las actividades listadas en los datos inyectados; identifica activity_id y course_id antes de ejecutar.',
+                '- Si los datos inyectados no cubren el mes pedido, entonces sí puedes llamar getCalendarContext con el rango necesario.',
+                '',
+                'RESOLUCIÓN DE CURSOS (evita preguntas redundantes):',
+                '- Si el usuario dice un grado vago («Primer Grado», «1º», «1ro») y en la lista de cursos hay una sola coincidencia razonable (ej.: «Inglés Primero» con grado Primero o nombre que incluye «Primero»), mapea automáticamente a ese course_id.',
+                '- Compara subject_name y grade sin exigir coincidencia literal: normaliza mentalmente números ordinales, abreviaturas y mayúsculas.',
+                '- Solo pregunta si hay dos o más cursos igualmente plausibles.',
+                '',
+                'OPERACIONES MULTI-ENTIDAD (inscribir alumnos existentes):',
+                '- PROHIBIDO crear cursos, grados o secciones. Eso lo hace solo el director. Si el usuario pide crear un curso, NO llames createCourse: explícale que debe pedir a dirección que le asigne la materia o usar su código DOC-.',
+                '- Para inscribir alumnos, emite registerStudent. El backend SOLO busca en la nómina del colegio (nunca crea alumnos). Si no existen, informa que el director debe matricularlos primero.',
+                '- Reparte los alumnos exactamente como los asignó el usuario: cada registerStudent va a su grado. No mezcles alumnos de un grado en otro.',
+                '- PROHIBIDO duplicar alumnos. Nunca inventes un registro nuevo.',
+                '- PROHIBIDO el bucle de confirmación: no respondas «¿sigo con el siguiente paso?» por cada curso. Ejecuta TODAS las herramientas necesarias de una sola vez y luego da UN resumen final breve.',
+                '',
+                'CUANDO SÍ EJECUTAR CON HERRAMIENTA:',
+                '- Lecturas (getCalendarContext, getGradebookContext, findStudent, getPedagogicalHistory) puedes llamarlas si el usuario pidió consultar y el rango o filtros están claros o se deducen del contexto sin adivinar cursos.',
+                '- Si este prompt ya incluye «Calendario extendido» (borrar/modificar), no llames getCalendarContext para repetir el mismo rango; solo si necesitas otro rango o course_id distinto.',
+                '- Escrituras de creación/modificación: ejecuta en el mismo turno cuando tengas intención clara + curso resoluble (por historial/contexto). Usa defaults en campos no críticos.',
+                '- Escrituras destructivas (borrar): cuando haya intención clara y objetivo identificable, ejecuta deleteActivities o deleteResource inmediatamente. NO pidas confirmación adicional.',
+                "- bulkPlan mensual: SIEMPRE pasa el target_month con el nombre del mes que el usuario mencionó (ej: si dice 'mayo', 'junio' o 'april', pasa ese mes). NUNCA lo omitas ni uses la fecha actual si el usuario dijo un mes.",
+                '- Mapping pedagógico obligatorio en bulkPlan: lunes = teoría/cuaderno, martes/miércoles = práctica guiada o ejercitación, jueves = práctica/lúdica. Si el usuario da otros días, respétalos.',
+                "- EJECUCIÓN DIRECTA DE bulkPlan: si el usuario da una instrucción completa o queda completa por conversación previa (mes + curso resoluble + tema + días), pasa 'confirmed': true en el primer llamado a bulkPlan para crear todo directamente sin pedir confirmación previa.",
+                '- LÍMITE DE REPETICIONES (max_occurrences_per_day): si el usuario dice «los primeros 3 lunes, martes y miércoles» o «las primeras 2 semanas», incluye max_occurrences_per_day: 3 (o el número exacto) en el llamado a bulkPlan. NUNCA omitas este parámetro cuando el usuario indica una cantidad específica de semanas o de días.',
+                '- Si bulkPlan devuelve requires_confirmation, significa que faltaban datos o había conflictos; repregunta entonces. Pero si la instrucción original era completa y clara, evita ese paso pasando confirmed desde el inicio.',
+                '- CRÍTICO: el target_month es OBLIGATORIO para bulkPlan. Si el usuario menciona un mes (abril, mayo, junio, etc.), DEBES incluirlo en el llamado a la herramienta.',
+                '',
+                'REGLAS DE ORO — DESCRIPCIONES PEDAGÓGICAS (createActivity Y bulkPlan):',
+                "- OBLIGATORIO: la plantilla activa del profesor es «{$templateLabel}» (id interno: {$lessonTemplate}).",
+                "- Estructura EXACTA en Markdown, encabezados en MAYÚSCULAS y negrita, en este orden: {$templateSections}.",
+                '- PROHIBIDO usar encabezados de otra plantilla (INICIO/DESARROLLO/CIERRE, MOTIVACIÓN/PRESENTACIÓN, 5E o DESAFÍO/INVESTIGACIÓN) si no coinciden con la plantilla activa.',
+                '- Riqueza: al menos tres párrafos sustantivos separados por línea en blanco; listas y **negritas**.',
+                '',
+                'MAPA DE INTENCIONES → HERRAMIENTA:',
+                '- crear curso / sección → NO crear. Indica que solo el director puede hacerlo.',
+                '- crear clase / actividad / tarea (NO examen formal) → createActivity  (type: clase|actividad|tarea)',
+                '- crear evaluación / examen / prueba / quiz formal → createEvaluation (NO uses createActivity). Eso la deja en Evaluaciones Y como actividad calificable.',
+                '- crear evaluación y agregarla al plan → createEvaluation con add_to_plan=true (es el default)',
+                '- agregar evaluación existente al plan de evaluación → attachEvaluationToPlan',
+                '- adaptación NEE / TDAH / TEA / dislexia / discalculia → createActivity con nee_type relleno',
+                '- modificar / cambiar / editar actividad existente → modifyActivity',
+                '- inscribir / agregar alumnos → registerStudent (solo nómina existente del colegio, sin duplicar)',
+                '- planificar mes / cronograma / calendario → bulkPlan',
+                '- borrar / eliminar / quitar actividades en un rango de fechas → deleteActivities',
+                '- borrar / eliminar / quitar una actividad, curso o alumno específico → deleteResource',
+                '- consultar calendario en rango de fechas → getCalendarContext',
+                '- buscar alumno por nombre → findStudent',
+                '- asignar calificación puntual → setGrade',
+                '- calificar VARIOS alumnos en una actividad a la vez → setGradeBatch (pasa student_name con el nombre exacto del alumno, student_id es opcional)',
+                '- publicar notas de una actividad (cambia de borrador a publicado) → publishGrades',
+                '- leer libro de calificaciones → getGradebookContext',
+                '- leer historial pedagógico → getPedagogicalHistory',
+                '- ver qué tengo esta semana / qué hay esta semana / mi agenda semanal → getCurrentWeek',
+                '',
+                'REGLAS DE EVALUACIONES Y PLAN:',
+                '1. Si el usuario pide un examen/evaluación/prueba, llama createEvaluation de inmediato. add_to_plan=true por defecto.',
+                '2. No uses createActivity para un examen formal.',
+                '3. Si la evaluación ya existe y pide agregarla al plan, usa attachEvaluationToPlan.',
+                '4. Resuelve el curso con course_id o course_name_hint. Si solo hay un curso, úsalo.',
+                '5. Defaults: mode=digital, difficulty=intermedio, question_mix=mixto, question_count=8, weight_percentage=20, category=summative, status=published, add_to_plan=true.',
+                '6. Para calificar un examen usa setGrade o setGradeBatch con evaluation_id o el activity_id del espejo (aparece en el calendario como «Examen: …»).',
+                '',
+                'REGLAS CRÍTICAS DE BORRADO:',
+                "1. IDENTIFICACIÓN DE ID: Cada línea del calendario inyectado incluye 'actividad_id XXXX'. Cuando el usuario pida borrar una actividad específica (ej: 'borra la clase del jueves' o 'elimina la actividad de números'), primero localiza su activity_id en el calendario inyectado.",
+                "2. BORRADO POR ID (preferido para actividades específicas): Si identificaste un activity_id único, usa deleteResource con resource_type='activity' y resource_id=<el_id>. Ejemplo: usuario dice 'borra la clase de matemáticas del 15 de abril' → busca en calendario inyectado esa fecha → encuentra 'actividad_id 42' → llama deleteResource(resource_type='activity', resource_id=42).",
+                "3. BORRADO POR RANGO (para múltiples actividades): Si el usuario pide borrar varias actividades (ej: 'borra todas las clases de marzo', 'elimina la semana completa'), usa deleteActivities con course_id, start_date y end_date.",
+                '4. LÍMITE DE PERMISOS: El profesor NO puede eliminar cursos ni alumnos de la nómina. Puede matricular alumnos existentes solo en sus cursos; para eliminar nómina o cursos debe pedirlo al director.',
+                '5. EJECUCIÓN DIRECTA: Si el calendario inyectado muestra claramente qué actividades se borrarán, ejecuta la herramienta de borrado de inmediato (sin pedir confirmación).',
+                '6. SOLO SI EL USUARIO LO PIDIÓ: deleteResource o deleteActivities ÚNICAMENTE si el usuario explícitamente pidió borrar/eliminar/limpiar/vaciar.',
+                '',
+                'REGLAS DE CALIFICACIÓN (setGradeBatch):',
+                '1. El calendario inyectado incluye actividad_id, course_id, título y fecha de cada actividad. Úsalo para localizar la actividad que el usuario menciona.',
+                "2. Cuando el usuario dé nombres de alumnos (ej: «ponle 15 a Jason y 20 a Vicente»), NO llames findStudent. Pasa directamente los nombres en setGradeBatch usando student_name. Ej: grades=[{student_name:'Jason', score:15}, {student_name:'Vicente', score:20}].",
+                '3. La herramienta setGradeBatch resuelve student_name automáticamente. Solo usa findStudent si el nombre no se encuentra y necesitas depurar.',
+                '4. Si encuentras la actividad en el calendario inyectado y el usuario dio nombres + notas, llama setGradeBatch DE INMEDIATO en el mismo turno, sin preguntar confirmación.',
+                '5. Valida cada nota contra la escala del curso (1-5, 1-10 o 1-20). Si el usuario pide una nota fuera de rango, explica el máximo permitido sin guardarla.',
+                $gradingScaleLine,
+                '',
+                "Fecha actual: $today.",
+                'Cursos del profesor:',
+                $coursesContext,
+                'Estado actual del calendario (próximas 2 semanas; usa estos datos antes de llamar a getCalendarContext):',
+                $calendarTwoWeeks,
+                'Contexto vivo actual:',
+                $contextJson,
+            ];
+            if ($extendedBlock !== '') {
+                array_splice($systemPromptLines, -2, 0, [$extendedBlock]);
+            }
+            $systemPrompt = implode("\n", $systemPromptLines);
+
+            if ($confirmed) {
+                $systemPrompt .= "\n\n[Interfaz] confirmed=true: el usuario ya confirmó en la app. Ejecuta la herramienta acordada sin pedir otra confirmación por texto.";
+            }
+
+            $chatMessages = [['role' => 'system', 'content' => $systemPrompt]];
+            $conversation = $request->input('conversation');
+            if (is_array($conversation) && count($conversation) > 0) {
+                $trimmed = array_slice($conversation, -32);
+                foreach ($trimmed as $turn) {
+                    if (! is_array($turn)) {
+                        continue;
+                    }
+                    $role = $turn['role'] ?? '';
+                    $content = isset($turn['content']) ? trim((string) $turn['content']) : '';
+                    if (($role === 'user' || $role === 'assistant') && $content !== '') {
+                        $chatMessages[] = ['role' => $role, 'content' => $content];
+                    }
+                }
+            } else {
+                $chatMessages[] = ['role' => 'user', 'content' => $prompt !== '' ? $prompt : $rawMessage];
+            }
+
+            $toolChoice = ($hasDeleteIntent || $hasCreateEvaluationIntent) ? 'required' : 'auto';
+            $response = Http::timeout(120)
+                ->withToken(env('OPENAI_API_KEY'))
+                ->post('https://api.openai.com/v1/chat/completions', [
+                    'model' => 'gpt-4o',
+                    'temperature' => 0.25,
+                    'tool_choice' => $toolChoice,
+                    'tools' => $this->toolDefinitions($lessonTemplate),
+                    'messages' => $chatMessages,
+                ]);
+
+            if ($response->failed()) {
+                return response()->json(['error' => 'Error de conexión con IA'], 500);
+            }
+
+            $message = $response->json('choices.0.message') ?? [];
+            $toolCalls = $message['tool_calls'] ?? [];
+
+            Log::debug('AI_TOOL_CALLS', [
                 'teacher_id' => $teacher->id,
-                'tool_calls_count' => count($pendingToolCalls),
+                'tool_choice' => $toolChoice,
+                'tool_calls_count' => count($toolCalls ?? []),
+                'tool_calls' => $toolCalls,
+                'assistant_text' => $message['content'] ?? null,
             ]);
 
-            $pendingToolCalls = $this->dedupeAndOrderToolCalls($pendingToolCalls);
+            if (! $hasDeleteIntent) {
+                $toolCalls = array_values(array_filter($toolCalls, function ($tc) {
+                    $fn = $tc['function']['name'] ?? '';
+
+                    return ! in_array($fn, self::DESTRUCTIVE, true);
+                }));
+            }
+
+            if ($hasPlanningIntent) {
+                $bulkCalls = array_values(array_filter($toolCalls, function ($tc) {
+                    return ($tc['function']['name'] ?? '') === 'bulkPlan';
+                }));
+                if (! empty($bulkCalls)) {
+                    $toolCalls = $bulkCalls;
+                }
+            }
+
+            if (empty($toolCalls)) {
+                if ($hasDeleteIntent && $deleteRange) {
+                    Log::warning('AICommandHandler: delete intent without tool_calls, forcing deleteActivities', [
+                        'teacher_id' => $teacher->id,
+                        'start_date' => $deleteRange['start_date'],
+                        'end_date' => $deleteRange['end_date'],
+                    ]);
+                    $forcedArgs = [
+                        'course_id' => ! empty($screenContext['id']) ? (int) $screenContext['id'] : null,
+                        'start_date' => $deleteRange['start_date'],
+                        'end_date' => $deleteRange['end_date'],
+                    ];
+                    $results = [$this->doDeleteActivities($forcedArgs, $teacher->id)];
+                    Log::debug('AI_DELETE_EXECUTED', [
+                        'teacher_id' => $teacher->id,
+                        'source' => 'empty_tool_calls_fallback',
+                        'delete_args' => $forcedArgs,
+                        'result' => $results[0] ?? null,
+                    ]);
+
+                    return response()->json($this->buildActionResponsePayload($results));
+                }
+                $fallback = $message['content'];
+                if (empty($fallback)) {
+                    $fallback = $hasDeleteIntent
+                        ? '¿Qué borramos exactamente: actividad, curso o fechas?'
+                        : 'Puedo ayudarte como copiloto docente: planificar clases, leer tu calendario, crear actividades, registrar alumnos o cargar notas. Dime el tema, curso o fecha y lo resolvemos.';
+                }
+
+                return response()->json(['message' => $fallback]);
+            }
+
+            // Check de confirmación para acciones destructivas (excepto borrado: se ejecuta directo)
+            $destructiveFound = collect($toolCalls)->filter(fn ($tc) => in_array($tc['function']['name'], self::DESTRUCTIVE));
+            $requiresDeleteConfirmation = $destructiveFound->contains(function ($tc) {
+                $fn = $tc['function']['name'] ?? '';
+
+                return ! in_array($fn, ['deleteActivities', 'deleteResource'], true);
+            });
+            if ($destructiveFound->isNotEmpty() && $requiresDeleteConfirmation && ! $confirmed) {
+                $destructiveActions = $destructiveFound->map(function ($tc) {
+                    $args = json_decode($tc['function']['arguments'] ?? '{}', true) ?? [];
+
+                    return ['function' => $tc['function']['name'], 'args' => $args];
+                })->values()->toArray();
+
+                session()->put('nova_pending_actions', $toolCalls);
+                Log::info('AICommandHandler: storing pending destructive actions in session', [
+                    'teacher_id' => $teacher->id,
+                    'actions' => $destructiveActions,
+                ]);
+
+                return response()->json([
+                    'requires_confirmation' => true,
+                    'pending_actions' => $toolCalls,
+                    'destructive_actions' => $destructiveActions,
+                    'warning' => 'Esta acción eliminará datos de forma permanente y no se puede deshacer.',
+                ]);
+            }
+
+            // Confirmación para calificación masiva (más de una nota en un solo comando)
+            $gradeCalls = collect($toolCalls)->filter(fn ($tc) => ($tc['function']['name'] ?? '') === 'setGrade');
+            if ($gradeCalls->count() > 1 && ! $confirmed) {
+                $gradeActions = $gradeCalls->map(function ($tc) {
+                    $args = json_decode($tc['function']['arguments'] ?? '{}', true) ?? [];
+
+                    return ['function' => 'setGrade', 'args' => $args];
+                })->values()->toArray();
+
+                session()->put('nova_pending_actions', $toolCalls);
+                Log::info('AICommandHandler: storing pending grade actions in session', [
+                    'teacher_id' => $teacher->id,
+                    'count' => $gradeCalls->count(),
+                ]);
+
+                return response()->json([
+                    'requires_confirmation' => true,
+                    'pending_actions' => $toolCalls,
+                    'grade_actions' => $gradeActions,
+                    'warning' => 'Vas a calificar múltiples alumnos. ¿Confirmas la acción?',
+                ]);
+            }
+
+            // Deduplicar y ordenar: las creaciones de curso van primero para poder
+            // enlazar a los alumnos/actividades del mismo turno con su course_id real.
+            $toolCalls = $this->dedupeAndOrderToolCalls($toolCalls);
+
             $createdCourseMap = [];
             $results = [];
-            foreach ($pendingToolCalls as $tc) {
+
+            foreach ($toolCalls as $tc) {
                 $fn = $tc['function']['name'];
-                $args = $tc['function']['arguments'] ?? [];
-                if (is_string($args)) {
-                    $args = json_decode($args, true) ?? [];
-                }
+                $args = json_decode($tc['function']['arguments'], true) ?? [];
                 if (! is_array($args)) {
                     $args = [];
                 }
-                if ($fn === 'bulkPlan') {
+
+                // Forward confirmed flag into bulkPlan so it skips the preview step
+                if ($confirmed && $fn === 'bulkPlan') {
                     $args['confirmed'] = true;
+                }
+                if ($fn === 'bulkPlan') {
                     $args = $this->enrichBulkPlanArgsFromIntent($args, $intentText, $teacher);
                 }
+
+                // Resolución robusta de curso: course_id válido > mapa de cursos del
+                // turno (por grado/nombre) > BD por hint > pantalla > único curso.
                 if (in_array($fn, ['createActivity', 'registerStudent', 'bulkPlan', 'deleteActivities', 'getCalendarContext', 'createEvaluation'], true)) {
                     $resolvedCourseId = $this->resolveCourseIdForArgs($args, $teacher->id, $createdCourseMap, $screenContext);
                     if ($resolvedCourseId > 0) {
                         $args['course_id'] = $resolvedCourseId;
                     }
                 }
+
                 $results[] = $this->executeAction($fn, $args, $teacher->id, $createdCourseMap);
             }
 
-            $actions = collect($results)->map(function ($result) {
+            $planConfirmation = collect($results)->first(fn ($result) => ($result['requires_confirmation'] ?? false));
+            if ($planConfirmation) {
+                session()->put('nova_pending_actions', $toolCalls);
+                Log::info('AICommandHandler: storing pending bulkPlan in session', [
+                    'teacher_id' => $teacher->id,
+                ]);
+
+                return response()->json([
+                    'requires_confirmation' => true,
+                    'pending_actions' => $toolCalls,
+                    'message' => $planConfirmation['message'] ?? 'Confirma la planificación propuesta.',
+                    'plan_preview' => $planConfirmation['plan_preview'] ?? [],
+                    'conflicts' => $planConfirmation['conflicts'] ?? [],
+                    'actions' => [$planConfirmation],
+                ]);
+            }
+
+            $successfulCount = collect($results)->filter(fn ($result) => (bool) ($result['success'] ?? false))->count();
+            // Solo añadimos el cierre proactivo «¿Quieres que siga...?» cuando hay una
+            // única acción exitosa; en operaciones multi-entidad sería ruido repetido.
+            $allowProactiveClose = $successfulCount === 1;
+
+            $actions = collect($results)->map(function ($result) use ($allowProactiveClose) {
                 $success = (bool) ($result['success'] ?? false);
+                $actionType = $result['action_type'] ?? 'info';
+                $message = $result['message'] ?? '';
+                if ($success && $allowProactiveClose && $actionType !== 'bulk_plan') {
+                    $message = $this->withProactiveClose($message, $actionType);
+                }
 
                 return [
-                    'success'     => $success,
-                    'status'      => $result['status'] ?? ($success ? 'success' : 'error'),
-                    'message'     => $result['message'] ?? '',
-                    'action_type' => $result['action_type'] ?? 'info',
-                    'icon'        => $result['icon'] ?? ($success ? '✅' : 'ℹ️'),
-                    'data'        => $result['data'] ?? [],
+                    'success' => $success,
+                    'status' => $result['status'] ?? ($success ? 'success' : 'error'),
+                    'message' => $message,
+                    'action_type' => $actionType,
+                    'icon' => $result['icon'] ?? ($success ? '✅' : 'ℹ️'),
+                    'data' => $result['data'] ?? [],
                 ];
             })->toArray();
 
             $anySuccess = collect($actions)->contains(fn ($action) => $action['success']);
             $bulkMeta = $this->extractBulkPlanResponseMeta($results);
+            $summaryMessage = $bulkMeta['assistant_message'] ?? $this->buildMultiActionSummary($results);
 
             return $this->jsonOut(array_filter([
-                'success'      => true,
-                'status'       => $bulkMeta ? 'success' : ($anySuccess ? 'success' : 'partial'),
-                'actions'      => $actions,
-                'any_success'  => $anySuccess,
-                'bulk_plan'    => $bulkMeta,
-                'message'      => $bulkMeta['assistant_message'] ?? null,
-                'data'         => $actions,
-            ], fn ($v) => $v !== null));
-        }
-
-        if (($confirmed || $explicitProceed) && ! session()->has('nova_pending_actions')) {
-            $pendingDelete = session()->pull('nova_last_delete_args');
-            Log::debug('AI_DELETE_PROCEED', [
-                'teacher_id' => $teacher->id,
-                'confirmed' => $confirmed,
-                'explicit_proceed' => $explicitProceed,
-                'pending_delete' => $pendingDelete,
-            ]);
-            if (is_array($pendingDelete) && isset($pendingDelete['start_date'], $pendingDelete['end_date'])) {
-                $deleteArgs = array_merge([
-                    'course_id' => $pendingDelete['course_id'] ?? null,
-                ], $pendingDelete);
-                $results = [$this->doDeleteActivities($deleteArgs, $teacher->id)];
-                Log::debug('AI_DELETE_EXECUTED', [
-                    'teacher_id' => $teacher->id,
-                    'source' => 'proceed',
-                    'delete_args' => $deleteArgs,
-                    'result' => $results[0] ?? null,
-                ]);
-                return response()->json($this->buildActionResponsePayload($results));
-            }
-
-            if ($confirmed) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'No encuentro una acción técnica pendiente. Dime otra vez qué quieres crear o ajustar y lo ejecuto con el contexto actual.',
-                ]);
-            }
-        }
-
-        $today = now()->format('Y-m-d');
-        $screenContextArray = is_array($screenContext) ? $screenContext : [];
-        $hasPendingEvaluationDraft = session()->has('nova_pending_evaluation_draft');
-
-        if ($hasPendingEvaluationDraft && preg_match('/\b(cancela|cancelar|olvida|det[eé]n)\b/u', mb_strtolower($intentText))) {
-            session()->forget('nova_pending_evaluation_draft');
-
-            return $this->jsonOut([
                 'success' => true,
-                'status' => 'success',
-                'message' => 'Listo, cancelé la creación de la evaluación pendiente.',
-                'data' => [],
-            ]);
-        }
-
-        if ($hasCreateEvaluationIntent || $hasPendingEvaluationDraft) {
-            $baseDraft = session()->get('nova_pending_evaluation_draft', []);
-            $evalArgs = $this->mergeEvaluationDraft(
-                is_array($baseDraft) ? $baseDraft : [],
-                $this->extractEvaluationArgsFromIntent($intentText, $screenContextArray, $teacher),
-                $intentText
-            );
-
-            $missing = $this->missingEvaluationDraftFields($evalArgs);
-            if (! empty($missing)) {
-                session()->put('nova_pending_evaluation_draft', $evalArgs);
-
-                return $this->jsonOut([
-                    'success' => true,
-                    'status' => 'pending',
-                    'message' => $this->evaluationFollowupQuestion($missing[0], $evalArgs),
-                    'requires_followup' => true,
-                    'data' => [
-                        'pending_type' => 'create_evaluation',
-                        'missing' => $missing,
-                        'draft' => $evalArgs,
-                    ],
-                ]);
-            }
-
-            session()->forget('nova_pending_evaluation_draft');
-
-            try {
-                $results = [DB::transaction(fn () => $this->doCreateEvaluation($evalArgs, $teacher->id))];
-            } catch (\Throwable $e) {
-                Log::error('AICommandHandler local createEvaluation failed', [
-                    'teacher_id' => $teacher->id,
-                    'args' => $evalArgs,
-                    'error' => $e->getMessage(),
-                ]);
-                $results = [[
-                    'success' => false,
-                    'status' => 'error',
-                    'message' => 'No se pudo completar esta acción en este momento. Inténtalo de nuevo.',
-                    'action_type' => 'evaluation',
-                    'icon' => '⚠️',
-                    'data' => [],
-                ]];
-            }
-
-            return $this->jsonOut($this->buildActionResponsePayload($results));
-        }
-
-        // Plantilla de clase del profesor
-        $lessonTemplate = $this->activeLessonTemplateFor($teacher->id);
-        $templateSections = LessonTemplate::promptLine($lessonTemplate);
-        $templateLabel = LessonTemplate::label($lessonTemplate);
-
-        // Contexto de cursos para la IA (incluye alumnos para evitar duplicados y dar contexto real)
-        $courses = Course::where('teacher_id', $teacher->id)
-            ->withCount('students')
-            ->with(['students:id,name'])
-            ->get(['id', 'subject_name', 'grade', 'grading_scale']);
-        $coursesContext = "Cursos existentes del profesor (USA estos IDs exactos; NO crees cursos que ya existan en esta lista):\n"
-            . ($courses->isEmpty()
-                ? '(sin cursos creados todavía)'
-                : $courses->map(function ($c) {
-                    $names = $c->students->take(15)->pluck('name')->implode(', ');
-                    $scale = GradingScale::label($c->grading_scale ?? null);
-                    $line = "ID:{$c->id} · {$c->subject_name} · grado: " . ($c->grade ?: 's/grado') . " · escala: {$scale} · {$c->students_count} alumno(s)";
-                    if ($names !== '') {
-                        $line .= " → [{$names}]";
-                    }
-                    return $line;
-                })->join("\n"));
-
-        $contextJson = $screenContext ? json_encode($screenContext, JSON_UNESCAPED_UNICODE) : '{}';
-        $activeGradingScale = $this->resolveActiveGradingScale($screenContext, $teacher->id);
-        $gradingScaleLine = 'Escala de calificación activa del curso en pantalla: '
-            . GradingScale::label($activeGradingScale)
-            . ' (notas válidas de 0 a '
-            . GradingScale::maxFor($activeGradingScale)
-            . '). Rechaza o ajusta notas fuera de ese rango.';
-
-        $calendarMonth = isset($screenContext['month']) ? $screenContext['month'] : null;
-        $calStart = Carbon::today();
-        $calEnd = Carbon::today()->copy()->addDays(14);
-        
-        if ($calendarMonth && preg_match('/^\d{4}-\d{2}$/', $calendarMonth)) {
-            $calStart = Carbon::createFromFormat('Y-m', $calendarMonth)->startOfMonth();
-            $calEnd = Carbon::createFromFormat('Y-m', $calendarMonth)->endOfMonth();
-        }
-
-        $calendarTwoWeeks = $this->buildCalendarSnapshotLines(
-            $teacher->id,
-            $calStart,
-            $calEnd
-        );
-        $calendarTwoWeeks = "📅 Mes actual del calendario: " . ($calendarMonth ?? 'próximas 2 semanas') . "\n" . $calendarTwoWeeks;
-        $extendedBlock = '';
-        if ($hasDeleteIntent || $hasModifyIntent) {
-            $calendarExtended = $this->buildCalendarSnapshotLines(
-                $teacher->id,
-                Carbon::today()->copy()->subMonths(6)->startOfMonth(),
-                Carbon::today()->copy()->addMonths(12)->endOfMonth()
-            );
-            $extendedBlock = "[Pre-análisis interno: borrar/modificar] Calendario extendido ya cargado en servidor (misma fuente que getCalendarContext). Úsalo para localizar actividades por mes o rango antes de confirmar:\n" . $calendarExtended;
-        }
-
-        $systemPromptLines = [
-            "Eres Aulasync, copiloto pedagógico profesional de Aulasync. No eres un bot de formularios: eres un asistente docente conversacional, resolutivo y con criterio didáctico.",
-            "Tu trabajo es ayudar a planificar, ajustar clases, leer el calendario, registrar alumnos, cargar notas, publicar calificaciones y proponer mejoras pedagógicas con lenguaje natural.",
-            "",
-            "PERSONALIDAD Y EXPERIENCIA:",
-            "- Habla como una coordinadora pedagógica experta: cálida, directa, útil y con seguridad. Evita respuestas frías como «necesito saber...».",
-            "- Mantén continuidad real: usa el historial de conversación, el contexto vivo, cursos y calendario antes de preguntar.",
-            "- Cuando no ejecutes una herramienta, ofrece una respuesta concreta con propuesta docente, no una frase genérica.",
-            "- Si detectas intención educativa vaga, ayuda a convertirla en plan: sugiere secuencia, objetivos, evaluación y adaptación.",
-            "- Si el usuario responde «sí», «ese», «correcto», «dale», «hazlo», interpreta que confirma la última propuesta de la conversación.",
-            "",
-            "MODO PODER DE DECISIÓN (estricto):",
-            "- PRIORIDAD DE EJECUCIÓN: si el usuario dice «hazlo tú», «como consideres», «genera todo» o equivalente, usa valores por defecto razonables y llama createActivity inmediatamente.",
-            "- Defaults al crear actividades cuando falten datos secundarios: weight_percentage=10, max_score=".GradingScale::maxFor($activeGradingScale).", due_date=fecha más cercana del contexto/calendario o hoy+1, type='clase' (o 'tarea' si el usuario pide tarea).",
-            "- MEMORIA DE CONTEXTO: está PROHIBIDO volver a preguntar datos ya presentes en historial o contexto vivo. Si el usuario ya dijo «1er grado» y «sports», reutilízalos directamente.",
-            "- UNA SOLA PREGUNTA: solo puedes hacer una pregunta a la vez. Si faltan 3 datos, pregunta solo el más crítico (normalmente course_id) y para los demás usa defaults.",
-            "- CONCISIÓN EXTREMA: sin bienvenida larga ni explicaciones de proceso. 1–2 líneas máximo cuando no ejecutes herramienta.",
-            "- COMANDO DE CIERRE EN CREACIÓN: si la instrucción de creación es clara, responde con esta línea y ejecuta de inmediato: «¡Entendido! Generando la actividad de [tema] para [grado] con los parámetros que sugeriste...»",
-            "- MODO EJECUTOR: no te quedes en entrevistas. Pregunta solo si falta un dato estrictamente vital que impide cualquier ejecución segura.",
-            "- AUTOCOMPLETADO: si faltan parámetros no críticos (peso, tipo de actividad, hora exacta), asúmelos con defaults y ejecuta; no preguntes por ellos.",
-            "- Si el «Contexto vivo actual» incluye id de curso, actividad o pantalla, úsalo y no vuelvas a preguntarlo.",
-            "- Si solo existe un curso disponible o una única coincidencia razonable, úsalo automáticamente. No preguntes «¿es para este curso?» salvo que haya dos o más cursos igualmente plausibles.",
-            "- Si el usuario pide «los lunes, martes y miércoles que quedan de junio», usa target_month='junio' y calendar_preferences.repeat_days=['monday','tuesday','wednesday']; si ya estamos dentro de junio, calendar_preferences.start_date debe ser hoy para evitar crear fechas pasadas.",
-            "",
-            "CONTEXTO DE CALENDARIO (inyectado automáticamente en cada mensaje):",
-            "- Antes de responder sobre planificación, borrados o qué hay agendado, asume que ya tienes el bloque «Estado actual del calendario» más abajo. No digas que no ves el calendario.",
-            "- El bloque de próximas 2 semanas es SOLO para lectura/estado. Para crear contenido (createActivity/bulkPlan), el horizonte temporal es ilimitado (cualquier mes y año).",
-            "- Si el usuario pide borrar por mes o rango (ej.: «borra las clases de abril»), cruza primero las fechas con las actividades listadas en los datos inyectados; identifica activity_id y course_id antes de ejecutar.",
-            "- Si los datos inyectados no cubren el mes pedido, entonces sí puedes llamar getCalendarContext con el rango necesario.",
-            "",
-            "RESOLUCIÓN DE CURSOS (evita preguntas redundantes):",
-            "- Si el usuario dice un grado vago («Primer Grado», «1º», «1ro») y en la lista de cursos hay una sola coincidencia razonable (ej.: «Inglés Primero» con grado Primero o nombre que incluye «Primero»), mapea automáticamente a ese course_id.",
-            "- Compara subject_name y grade sin exigir coincidencia literal: normaliza mentalmente números ordinales, abreviaturas y mayúsculas.",
-            "- Solo pregunta si hay dos o más cursos igualmente plausibles.",
-            "",
-            "OPERACIONES MULTI-ENTIDAD (inscribir alumnos existentes):",
-            "- PROHIBIDO crear cursos, grados o secciones. Eso lo hace solo el director. Si el usuario pide crear un curso, NO llames createCourse: explícale que debe pedir a dirección que le asigne la materia o usar su código DOC-.",
-            "- Para inscribir alumnos, emite registerStudent. El backend SOLO busca en la nómina del colegio (nunca crea alumnos). Si no existen, informa que el director debe matricularlos primero.",
-            "- Reparte los alumnos exactamente como los asignó el usuario: cada registerStudent va a su grado. No mezcles alumnos de un grado en otro.",
-            "- PROHIBIDO duplicar alumnos. Nunca inventes un registro nuevo.",
-            "- PROHIBIDO el bucle de confirmación: no respondas «¿sigo con el siguiente paso?» por cada curso. Ejecuta TODAS las herramientas necesarias de una sola vez y luego da UN resumen final breve.",
-            "",
-            "CUANDO SÍ EJECUTAR CON HERRAMIENTA:",
-            "- Lecturas (getCalendarContext, getGradebookContext, findStudent, getPedagogicalHistory) puedes llamarlas si el usuario pidió consultar y el rango o filtros están claros o se deducen del contexto sin adivinar cursos.",
-            "- Si este prompt ya incluye «Calendario extendido» (borrar/modificar), no llames getCalendarContext para repetir el mismo rango; solo si necesitas otro rango o course_id distinto.",
-            "- Escrituras de creación/modificación: ejecuta en el mismo turno cuando tengas intención clara + curso resoluble (por historial/contexto). Usa defaults en campos no críticos.",
-            "- Escrituras destructivas (borrar): cuando haya intención clara y objetivo identificable, ejecuta deleteActivities o deleteResource inmediatamente. NO pidas confirmación adicional.",
-            "- bulkPlan mensual: SIEMPRE pasa el target_month con el nombre del mes que el usuario mencionó (ej: si dice 'mayo', 'junio' o 'april', pasa ese mes). NUNCA lo omitas ni uses la fecha actual si el usuario dijo un mes.",
-            "- Mapping pedagógico obligatorio en bulkPlan: lunes = teoría/cuaderno, martes/miércoles = práctica guiada o ejercitación, jueves = práctica/lúdica. Si el usuario da otros días, respétalos.",
-            "- EJECUCIÓN DIRECTA DE bulkPlan: si el usuario da una instrucción completa o queda completa por conversación previa (mes + curso resoluble + tema + días), pasa 'confirmed': true en el primer llamado a bulkPlan para crear todo directamente sin pedir confirmación previa.",
-            "- LÍMITE DE REPETICIONES (max_occurrences_per_day): si el usuario dice «los primeros 3 lunes, martes y miércoles» o «las primeras 2 semanas», incluye max_occurrences_per_day: 3 (o el número exacto) en el llamado a bulkPlan. NUNCA omitas este parámetro cuando el usuario indica una cantidad específica de semanas o de días.",
-            "- Si bulkPlan devuelve requires_confirmation, significa que faltaban datos o había conflictos; repregunta entonces. Pero si la instrucción original era completa y clara, evita ese paso pasando confirmed desde el inicio.",
-            "- CRÍTICO: el target_month es OBLIGATORIO para bulkPlan. Si el usuario menciona un mes (abril, mayo, junio, etc.), DEBES incluirlo en el llamado a la herramienta.",
-            "",
-            "REGLAS DE ORO — DESCRIPCIONES PEDAGÓGICAS (createActivity Y bulkPlan):",
-            "- OBLIGATORIO: la plantilla activa del profesor es «{$templateLabel}» (id interno: {$lessonTemplate}).",
-            "- Estructura EXACTA en Markdown, encabezados en MAYÚSCULAS y negrita, en este orden: {$templateSections}.",
-            "- PROHIBIDO usar encabezados de otra plantilla (INICIO/DESARROLLO/CIERRE, MOTIVACIÓN/PRESENTACIÓN, 5E o DESAFÍO/INVESTIGACIÓN) si no coinciden con la plantilla activa.",
-            "- Riqueza: al menos tres párrafos sustantivos separados por línea en blanco; listas y **negritas**.",
-            "",
-            "MAPA DE INTENCIONES → HERRAMIENTA:",
-            "- crear curso / sección → NO crear. Indica que solo el director puede hacerlo.",
-            "- crear clase / actividad / tarea (NO examen formal) → createActivity  (type: clase|actividad|tarea)",
-            "- crear evaluación / examen / prueba / quiz formal → createEvaluation (NO uses createActivity). Eso la deja en Evaluaciones Y como actividad calificable.",
-            "- crear evaluación y agregarla al plan → createEvaluation con add_to_plan=true (es el default)",
-            "- agregar evaluación existente al plan de evaluación → attachEvaluationToPlan",
-            "- adaptación NEE / TDAH / TEA / dislexia / discalculia → createActivity con nee_type relleno",
-            "- modificar / cambiar / editar actividad existente → modifyActivity",
-            "- inscribir / agregar alumnos → registerStudent (solo nómina existente del colegio, sin duplicar)",
-            "- planificar mes / cronograma / calendario → bulkPlan",
-            "- borrar / eliminar / quitar actividades en un rango de fechas → deleteActivities",
-            "- borrar / eliminar / quitar una actividad, curso o alumno específico → deleteResource",
-            "- consultar calendario en rango de fechas → getCalendarContext",
-            "- buscar alumno por nombre → findStudent",
-            "- asignar calificación puntual → setGrade",
-            "- calificar VARIOS alumnos en una actividad a la vez → setGradeBatch (pasa student_name con el nombre exacto del alumno, student_id es opcional)",
-            "- publicar notas de una actividad (cambia de borrador a publicado) → publishGrades",
-            "- leer libro de calificaciones → getGradebookContext",
-            "- leer historial pedagógico → getPedagogicalHistory",
-            "- ver qué tengo esta semana / qué hay esta semana / mi agenda semanal → getCurrentWeek",
-            "",
-            "REGLAS DE EVALUACIONES Y PLAN:",
-            "1. Si el usuario pide un examen/evaluación/prueba, llama createEvaluation de inmediato. add_to_plan=true por defecto.",
-            "2. No uses createActivity para un examen formal.",
-            "3. Si la evaluación ya existe y pide agregarla al plan, usa attachEvaluationToPlan.",
-            "4. Resuelve el curso con course_id o course_name_hint. Si solo hay un curso, úsalo.",
-            "5. Defaults: mode=digital, difficulty=intermedio, question_mix=mixto, question_count=8, weight_percentage=20, category=summative, status=published, add_to_plan=true.",
-            "6. Para calificar un examen usa setGrade o setGradeBatch con evaluation_id o el activity_id del espejo (aparece en el calendario como «Examen: …»).",
-            "",
-            "REGLAS CRÍTICAS DE BORRADO:",
-            "1. IDENTIFICACIÓN DE ID: Cada línea del calendario inyectado incluye 'actividad_id XXXX'. Cuando el usuario pida borrar una actividad específica (ej: 'borra la clase del jueves' o 'elimina la actividad de números'), primero localiza su activity_id en el calendario inyectado.",
-            "2. BORRADO POR ID (preferido para actividades específicas): Si identificaste un activity_id único, usa deleteResource con resource_type='activity' y resource_id=<el_id>. Ejemplo: usuario dice 'borra la clase de matemáticas del 15 de abril' → busca en calendario inyectado esa fecha → encuentra 'actividad_id 42' → llama deleteResource(resource_type='activity', resource_id=42).",
-            "3. BORRADO POR RANGO (para múltiples actividades): Si el usuario pide borrar varias actividades (ej: 'borra todas las clases de marzo', 'elimina la semana completa'), usa deleteActivities con course_id, start_date y end_date.",
-            "4. BORRADO DE ALUMNOS: Si el usuario pide eliminar/borrar un alumno específico, usa findStudent primero para obtener su ID, luego deleteResource con resource_type='student' y resource_id=<el_id>. Ejemplo: usuario dice «borra a Juan Pérez» → findStudent(query='Juan Pérez') → obtienes ID → deleteResource(resource_type='student', resource_id=XX).",
-            "5. EJECUCIÓN DIRECTA: Si el calendario inyectado muestra claramente qué actividades se borrarán, ejecuta la herramienta de borrado de inmediato (sin pedir confirmación).",
-            "6. SOLO SI EL USUARIO LO PIDIÓ: deleteResource o deleteActivities ÚNICAMENTE si el usuario explícitamente pidió borrar/eliminar/limpiar/vaciar.",
-            "",
-            "REGLAS DE CALIFICACIÓN (setGradeBatch):",
-            "1. El calendario inyectado incluye actividad_id, course_id, título y fecha de cada actividad. Úsalo para localizar la actividad que el usuario menciona.",
-            "2. Cuando el usuario dé nombres de alumnos (ej: «ponle 15 a Jason y 20 a Vicente»), NO llames findStudent. Pasa directamente los nombres en setGradeBatch usando student_name. Ej: grades=[{student_name:'Jason', score:15}, {student_name:'Vicente', score:20}].",
-            "3. La herramienta setGradeBatch resuelve student_name automáticamente. Solo usa findStudent si el nombre no se encuentra y necesitas depurar.",
-            "4. Si encuentras la actividad en el calendario inyectado y el usuario dio nombres + notas, llama setGradeBatch DE INMEDIATO en el mismo turno, sin preguntar confirmación.",
-            "5. Valida cada nota contra la escala del curso (1-5, 1-10 o 1-20). Si el usuario pide una nota fuera de rango, explica el máximo permitido sin guardarla.",
-            $gradingScaleLine,
-            "",
-            "Fecha actual: $today.",
-            "Cursos del profesor:",
-            $coursesContext,
-            "Estado actual del calendario (próximas 2 semanas; usa estos datos antes de llamar a getCalendarContext):",
-            $calendarTwoWeeks,
-            "Contexto vivo actual:",
-            $contextJson,
-        ];
-        if ($extendedBlock !== '') {
-            array_splice($systemPromptLines, -2, 0, [$extendedBlock]);
-        }
-        $systemPrompt = implode("\n", $systemPromptLines);
-
-        if ($confirmed) {
-            $systemPrompt .= "\n\n[Interfaz] confirmed=true: el usuario ya confirmó en la app. Ejecuta la herramienta acordada sin pedir otra confirmación por texto.";
-        }
-
-        $chatMessages = [['role' => 'system', 'content' => $systemPrompt]];
-        $conversation = $request->input('conversation');
-        if (is_array($conversation) && count($conversation) > 0) {
-            $trimmed = array_slice($conversation, -32);
-            foreach ($trimmed as $turn) {
-                if (! is_array($turn)) {
-                    continue;
-                }
-                $role = $turn['role'] ?? '';
-                $content = isset($turn['content']) ? trim((string) $turn['content']) : '';
-                if (($role === 'user' || $role === 'assistant') && $content !== '') {
-                    $chatMessages[] = ['role' => $role, 'content' => $content];
-                }
-            }
-        } else {
-            $chatMessages[] = ['role' => 'user', 'content' => $prompt !== '' ? $prompt : $rawMessage];
-        }
-
-        $toolChoice = ($hasDeleteIntent || $hasCreateEvaluationIntent) ? 'required' : 'auto';
-        $response = Http::timeout(120)
-            ->withToken(env('OPENAI_API_KEY'))
-            ->post('https://api.openai.com/v1/chat/completions', [
-                'model'       => 'gpt-4o',
-                'temperature' => 0.25,
-                'tool_choice' => $toolChoice,
-                'tools'       => $this->toolDefinitions($lessonTemplate),
-                'messages'    => $chatMessages,
-            ]);
-
-        if ($response->failed()) {
-            return response()->json(['error' => 'Error de conexión con IA'], 500);
-        }
-
-        $message = $response->json('choices.0.message') ?? [];
-        $toolCalls = $message['tool_calls'] ?? [];
-
-        Log::debug('AI_TOOL_CALLS', [
-            'teacher_id' => $teacher->id,
-            'tool_choice' => $toolChoice,
-            'tool_calls_count' => count($toolCalls ?? []),
-            'tool_calls' => $toolCalls,
-            'assistant_text' => $message['content'] ?? null,
-        ]);
-
-        if (! $hasDeleteIntent) {
-            $toolCalls = array_values(array_filter($toolCalls, function ($tc) {
-                $fn = $tc['function']['name'] ?? '';
-                return ! in_array($fn, self::DESTRUCTIVE, true);
-            }));
-        }
-
-        if ($hasPlanningIntent) {
-            $bulkCalls = array_values(array_filter($toolCalls, function ($tc) {
-                return ($tc['function']['name'] ?? '') === 'bulkPlan';
-            }));
-            if (! empty($bulkCalls)) {
-                $toolCalls = $bulkCalls;
-            }
-        }
-
-        if (empty($toolCalls)) {
-            if ($hasDeleteIntent && $deleteRange) {
-                Log::warning('AICommandHandler: delete intent without tool_calls, forcing deleteActivities', [
-                    'teacher_id' => $teacher->id,
-                    'start_date' => $deleteRange['start_date'],
-                    'end_date' => $deleteRange['end_date'],
-                ]);
-                $forcedArgs = [
-                    'course_id' => ! empty($screenContext['id']) ? (int) $screenContext['id'] : null,
-                    'start_date' => $deleteRange['start_date'],
-                    'end_date' => $deleteRange['end_date'],
-                ];
-                $results = [$this->doDeleteActivities($forcedArgs, $teacher->id)];
-                Log::debug('AI_DELETE_EXECUTED', [
-                    'teacher_id' => $teacher->id,
-                    'source' => 'empty_tool_calls_fallback',
-                    'delete_args' => $forcedArgs,
-                    'result' => $results[0] ?? null,
-                ]);
-                return response()->json($this->buildActionResponsePayload($results));
-            }
-            $fallback = $message['content'];
-            if (empty($fallback)) {
-                $fallback = $hasDeleteIntent
-                    ? '¿Qué borramos exactamente: actividad, curso o fechas?'
-                    : 'Puedo ayudarte como copiloto docente: planificar clases, leer tu calendario, crear actividades, registrar alumnos o cargar notas. Dime el tema, curso o fecha y lo resolvemos.';
-            }
-            return response()->json(['message' => $fallback]);
-        }
-
-        // Check de confirmación para acciones destructivas (excepto borrado: se ejecuta directo)
-        $destructiveFound = collect($toolCalls)->filter(fn($tc) => in_array($tc['function']['name'], self::DESTRUCTIVE));
-        $requiresDeleteConfirmation = $destructiveFound->contains(function ($tc) {
-            $fn = $tc['function']['name'] ?? '';
-            return ! in_array($fn, ['deleteActivities', 'deleteResource'], true);
-        });
-        if ($destructiveFound->isNotEmpty() && $requiresDeleteConfirmation && ! $confirmed) {
-            $destructiveActions = $destructiveFound->map(function ($tc) {
-                $args = json_decode($tc['function']['arguments'] ?? '{}', true) ?? [];
-                return ['function' => $tc['function']['name'], 'args' => $args];
-            })->values()->toArray();
-
-            session()->put('nova_pending_actions', $toolCalls);
-            Log::info('AICommandHandler: storing pending destructive actions in session', [
-                'teacher_id' => $teacher->id,
-                'actions' => $destructiveActions,
-            ]);
-
-            return response()->json([
-                'requires_confirmation' => true,
-                'pending_actions'       => $toolCalls,
-                'destructive_actions'   => $destructiveActions,
-                'warning'               => 'Esta acción eliminará datos de forma permanente y no se puede deshacer.',
-            ]);
-        }
-
-        // Confirmación para calificación masiva (más de una nota en un solo comando)
-        $gradeCalls = collect($toolCalls)->filter(fn($tc) => ($tc['function']['name'] ?? '') === 'setGrade');
-        if ($gradeCalls->count() > 1 && !$confirmed) {
-            $gradeActions = $gradeCalls->map(function ($tc) {
-                $args = json_decode($tc['function']['arguments'] ?? '{}', true) ?? [];
-                return ['function' => 'setGrade', 'args' => $args];
-            })->values()->toArray();
-
-            session()->put('nova_pending_actions', $toolCalls);
-            Log::info('AICommandHandler: storing pending grade actions in session', [
-                'teacher_id' => $teacher->id,
-                'count' => $gradeCalls->count(),
-            ]);
-
-            return response()->json([
-                'requires_confirmation' => true,
-                'pending_actions'       => $toolCalls,
-                'grade_actions'         => $gradeActions,
-                'warning'               => 'Vas a calificar múltiples alumnos. ¿Confirmas la acción?',
-            ]);
-        }
-
-        // Deduplicar y ordenar: las creaciones de curso van primero para poder
-        // enlazar a los alumnos/actividades del mismo turno con su course_id real.
-        $toolCalls = $this->dedupeAndOrderToolCalls($toolCalls);
-
-        $createdCourseMap = [];
-        $results = [];
-
-        foreach ($toolCalls as $tc) {
-            $fn = $tc['function']['name'];
-            $args = json_decode($tc['function']['arguments'], true) ?? [];
-            if (! is_array($args)) {
-                $args = [];
-            }
-
-            // Forward confirmed flag into bulkPlan so it skips the preview step
-            if ($confirmed && $fn === 'bulkPlan') {
-                $args['confirmed'] = true;
-            }
-            if ($fn === 'bulkPlan') {
-                $args = $this->enrichBulkPlanArgsFromIntent($args, $intentText, $teacher);
-            }
-
-            // Resolución robusta de curso: course_id válido > mapa de cursos del
-            // turno (por grado/nombre) > BD por hint > pantalla > único curso.
-            if (in_array($fn, ['createActivity', 'registerStudent', 'bulkPlan', 'deleteActivities', 'getCalendarContext', 'createEvaluation'], true)) {
-                $resolvedCourseId = $this->resolveCourseIdForArgs($args, $teacher->id, $createdCourseMap, $screenContext);
-                if ($resolvedCourseId > 0) {
-                    $args['course_id'] = $resolvedCourseId;
-                }
-            }
-
-            $results[] = $this->executeAction($fn, $args, $teacher->id, $createdCourseMap);
-        }
-
-        $planConfirmation = collect($results)->first(fn ($result) => ($result['requires_confirmation'] ?? false));
-        if ($planConfirmation) {
-            session()->put('nova_pending_actions', $toolCalls);
-            Log::info('AICommandHandler: storing pending bulkPlan in session', [
-                'teacher_id' => $teacher->id,
-            ]);
-
-            return response()->json([
-                'requires_confirmation' => true,
-                'pending_actions' => $toolCalls,
-                'message' => $planConfirmation['message'] ?? 'Confirma la planificación propuesta.',
-                'plan_preview' => $planConfirmation['plan_preview'] ?? [],
-                'conflicts' => $planConfirmation['conflicts'] ?? [],
-                'actions' => [$planConfirmation],
-            ]);
-        }
-
-        $successfulCount = collect($results)->filter(fn ($result) => (bool) ($result['success'] ?? false))->count();
-        // Solo añadimos el cierre proactivo «¿Quieres que siga...?» cuando hay una
-        // única acción exitosa; en operaciones multi-entidad sería ruido repetido.
-        $allowProactiveClose = $successfulCount === 1;
-
-        $actions = collect($results)->map(function ($result) use ($allowProactiveClose) {
-            $success = (bool) ($result['success'] ?? false);
-            $actionType = $result['action_type'] ?? 'info';
-            $message = $result['message'] ?? '';
-            if ($success && $allowProactiveClose && $actionType !== 'bulk_plan') {
-                $message = $this->withProactiveClose($message, $actionType);
-            }
-
-            return [
-                'success'     => $success,
-                'status'      => $result['status'] ?? ($success ? 'success' : 'error'),
-                'message'     => $message,
-                'action_type' => $actionType,
-                'icon'        => $result['icon'] ?? ($success ? '✅' : 'ℹ️'),
-                'data'        => $result['data'] ?? [],
-            ];
-        })->toArray();
-
-        $anySuccess = collect($actions)->contains(fn ($action) => $action['success']);
-        $bulkMeta = $this->extractBulkPlanResponseMeta($results);
-        $summaryMessage = $bulkMeta['assistant_message'] ?? $this->buildMultiActionSummary($results);
-
-        return $this->jsonOut(array_filter([
-            'success'      => true,
-            'status'       => $bulkMeta ? 'success' : ($anySuccess ? 'success' : 'partial'),
-            'actions'      => $actions,
-            'any_success'  => $anySuccess,
-            'bulk_plan'    => $bulkMeta,
-            'message'      => $summaryMessage,
-            'data'         => $actions,
-        ], fn ($v) => $v !== null));
+                'status' => $bulkMeta ? 'success' : ($anySuccess ? 'success' : 'partial'),
+                'actions' => $actions,
+                'any_success' => $anySuccess,
+                'bulk_plan' => $bulkMeta,
+                'message' => $summaryMessage,
+                'data' => $actions,
+            ], fn ($v) => $v !== null));
         } catch (\Throwable $e) {
             Log::error('AICommandHandler error', ['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
+
             return $this->jsonOut([
                 'success' => false,
-                'status'  => 'error',
+                'status' => 'error',
                 'message' => 'No se pudo completar esta acción en este momento. Inténtalo de nuevo.',
-                'error'   => config('app.debug')
+                'error' => config('app.debug')
                     ? $e->getMessage()
                     : 'Error interno al procesar la solicitud.',
-                'data'    => [],
+                'data' => [],
             ]);
         }
     }
@@ -1118,24 +1127,24 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
         try {
             $run = function () use ($fn, $args, $teacherId, &$createdCourseMap) {
                 return match ($fn) {
-                    'createCourse'    => $this->doCreateCourse($args, $teacherId, $createdCourseMap),
-                    'createActivity'  => $this->doCreateActivity($args, $teacherId),
-                    'modifyActivity'  => $this->doModifyActivity($args, $teacherId),
+                    'createCourse' => $this->doCreateCourse($args, $teacherId, $createdCourseMap),
+                    'createActivity' => $this->doCreateActivity($args, $teacherId),
+                    'modifyActivity' => $this->doModifyActivity($args, $teacherId),
                     'registerStudent' => $this->doRegisterStudent($args, $teacherId),
-                    'bulkPlan'        => $this->doBulkPlan($args, $teacherId),
-                    'deleteActivities'=> $this->doDeleteActivities($args, $teacherId),
-                    'deleteResource'  => $this->doDeleteResource($args, $teacherId),
+                    'bulkPlan' => $this->doBulkPlan($args, $teacherId),
+                    'deleteActivities' => $this->doDeleteActivities($args, $teacherId),
+                    'deleteResource' => $this->doDeleteResource($args, $teacherId),
                     'getCalendarContext' => $this->getCalendarContext($args, $teacherId),
-                    'setGrade'        => $this->setGrade($args, $teacherId),
-                    'setGradeBatch'   => $this->setGradeBatch($args, $teacherId),
-                    'publishGrades'   => $this->publishGrades($args, $teacherId),
-                    'findStudent'     => $this->findStudent($args, $teacherId),
+                    'setGrade' => $this->setGrade($args, $teacherId),
+                    'setGradeBatch' => $this->setGradeBatch($args, $teacherId),
+                    'publishGrades' => $this->publishGrades($args, $teacherId),
+                    'findStudent' => $this->findStudent($args, $teacherId),
                     'getGradebookContext' => $this->getGradebookContext($args, $teacherId),
                     'getPedagogicalHistory' => $this->getPedagogicalHistory($args, $teacherId),
                     'getCurrentWeek' => $this->getCurrentWeek($args, $teacherId),
                     'createEvaluation' => $this->doCreateEvaluation($args, $teacherId),
                     'attachEvaluationToPlan' => $this->doAttachEvaluationToPlan($args, $teacherId),
-                    default           => ['success' => false, 'message' => "Acción $fn no definida."],
+                    default => ['success' => false, 'message' => "Acción $fn no definida."],
                 };
             };
 
@@ -1147,6 +1156,7 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
                 'args' => $args,
                 'error' => $e->getMessage(),
             ]);
+
             return [
                 'success' => false,
                 'status' => 'error',
@@ -1212,13 +1222,13 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             $map[$subject] = $course->id;
         }
         if ($grade !== '') {
-            $map['gradetext:' . mb_strtolower(trim($grade))] = $course->id;
+            $map['gradetext:'.mb_strtolower(trim($grade))] = $course->id;
         }
         $gradeKey = $this->normalizeGradeKey($grade);
         if ($gradeKey !== null) {
-            $map['grade:' . $gradeKey] = $course->id;
+            $map['grade:'.$gradeKey] = $course->id;
             if ($subject !== '') {
-                $map[$subject . '|' . $gradeKey] = $course->id;
+                $map[$subject.'|'.$gradeKey] = $course->id;
             }
         }
     }
@@ -1248,17 +1258,17 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
         $candidates = [];
         if ($hint !== '') {
             $candidates[] = mb_strtolower($hint);
-            $candidates[] = 'gradetext:' . mb_strtolower($hint);
+            $candidates[] = 'gradetext:'.mb_strtolower($hint);
             $gk = $this->normalizeGradeKey($hint);
             if ($gk !== null) {
-                $candidates[] = 'grade:' . $gk;
+                $candidates[] = 'grade:'.$gk;
             }
         }
         if ($gradeHint !== '') {
-            $candidates[] = 'gradetext:' . mb_strtolower($gradeHint);
+            $candidates[] = 'gradetext:'.mb_strtolower($gradeHint);
             $gk = $this->normalizeGradeKey($gradeHint);
             if ($gk !== null) {
-                $candidates[] = 'grade:' . $gk;
+                $candidates[] = 'grade:'.$gk;
             }
         }
         foreach ($candidates as $key) {
@@ -1354,6 +1364,7 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
         usort($unique, function ($a, $b) use ($priority) {
             $pa = $priority[$a['function']['name'] ?? ''] ?? 1;
             $pb = $priority[$b['function']['name'] ?? ''] ?? 1;
+
             return $pa <=> $pb;
         });
 
@@ -1367,8 +1378,8 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
     {
         if ($fn === 'createCourse') {
             return 'createCourse|'
-                . mb_strtolower(trim((string) ($args['subject_name'] ?? 'general')))
-                . '|' . mb_strtolower(trim((string) ($args['grade'] ?? '')));
+                .mb_strtolower(trim((string) ($args['subject_name'] ?? 'general')))
+                .'|'.mb_strtolower(trim((string) ($args['grade'] ?? '')));
         }
         if ($fn === 'registerStudent') {
             $names = array_map(
@@ -1379,10 +1390,12 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             $target = mb_strtolower(trim((string) (
                 $args['course_name_hint'] ?? $args['grade'] ?? $args['course_id'] ?? ''
             )));
-            return 'registerStudent|' . implode(',', $names) . '|' . $target;
+
+            return 'registerStudent|'.implode(',', $names).'|'.$target;
         }
         ksort($args);
-        return $fn . '|' . json_encode($args, JSON_UNESCAPED_UNICODE);
+
+        return $fn.'|'.json_encode($args, JSON_UNESCAPED_UNICODE);
     }
 
     // ─── IMPLEMENTACIONES DE LOGICA ──────────────────────────────────────────
@@ -1394,10 +1407,10 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
         $label = $grade !== '' ? "{$subject} · {$grade}" : $subject;
 
         return [
-            'success'     => false,
-            'message'     => "No puedo crear {$label}. Solo el director crea cursos, grados y secciones. Pídele que te asigne la materia o usa tu código de invitación DOC-.",
+            'success' => false,
+            'message' => "No puedo crear {$label}. Solo el director crea cursos, grados y secciones. Pídele que te asigne la materia o usa tu código de invitación DOC-.",
             'action_type' => 'course',
-            'icon'        => '🔒',
+            'icon' => '🔒',
         ];
     }
 
@@ -1472,7 +1485,7 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             ? ($args['category'] ?? 'summative')
             : 'summative';
         $topic = trim((string) ($args['topic'] ?? ''));
-        $title = trim((string) ($args['title'] ?? '')) ?: ('Evaluación · '.($topic !== '' ? $topic : \Illuminate\Support\Str::limit($prompt, 40, '')));
+        $title = trim((string) ($args['title'] ?? '')) ?: ('Evaluación · '.($topic !== '' ? $topic : Str::limit($prompt, 40, '')));
 
         $generated = $this->generateEvaluationPayloadForAi(
             prompt: $prompt,
@@ -1500,7 +1513,7 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
                 .'. Justifica cuando se pida explicación, usa el vocabulario de la unidad y revisa tu trabajo antes de entregar.';
         }
 
-        $evaluation = app(\App\Services\EvaluationSyncService::class)->persist($teacher, [
+        $evaluation = app(EvaluationSyncService::class)->persist($teacher, [
             'title' => $title,
             'description' => $purpose,
             'topic' => $topic !== '' ? $topic : null,
@@ -1717,6 +1730,7 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             return $payload;
         } catch (\Throwable $e) {
             Log::warning('AI createEvaluation generation failed: '.$e->getMessage());
+
             return $this->fallbackEvaluationPayload($topic, $count, $mix);
         }
     }
@@ -1779,17 +1793,17 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
 
         if (! $course) {
             return [
-                'success'     => false,
-                'message'     => 'No encontré ese curso dentro de tu colegio. Dime materia y grado, o abre el curso correcto y vuelve a pedírmelo.',
+                'success' => false,
+                'message' => 'No encontré ese curso dentro de tu colegio. Dime materia y grado, o abre el curso correcto y vuelve a pedírmelo.',
                 'action_type' => 'activity',
-                'icon'        => '⚠️',
+                'icon' => '⚠️',
             ];
         }
 
         // Autocompletado ejecutivo de parámetros no críticos.
         $normalizedArgs = is_array($args) ? $args : [];
         if (empty($normalizedArgs['type'])) {
-            $normalizedArgs['type'] = !empty($normalizedArgs['is_homework']) ? 'tarea' : 'clase';
+            $normalizedArgs['type'] = ! empty($normalizedArgs['is_homework']) ? 'tarea' : 'clase';
         }
         if (! isset($normalizedArgs['weight_percentage']) || $normalizedArgs['weight_percentage'] === '' || $normalizedArgs['weight_percentage'] === null) {
             $normalizedArgs['weight_percentage'] = 10;
@@ -1831,10 +1845,10 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
         $descError = $this->validateLessonDescriptionForNova($description, $semanticType, $lessonTemplate);
         if ($descError !== null) {
             return [
-                'success'     => false,
-                'message'     => $descError,
+                'success' => false,
+                'message' => $descError,
                 'action_type' => 'activity',
-                'icon'        => '⚠️',
+                'icon' => '⚠️',
             ];
         }
 
@@ -1849,18 +1863,18 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
         ]);
 
         $payload = [
-            'teacher_id'        => $teacherId,
-            'course_id'         => $course->id,
-            'colegio_id'        => $colegioId,
-            'type'              => $resolvedType,
-            'title'             => $normalizedArgs['title'],
-            'description'       => $description,
+            'teacher_id' => $teacherId,
+            'course_id' => $course->id,
+            'colegio_id' => $colegioId,
+            'type' => $resolvedType,
+            'title' => $normalizedArgs['title'],
+            'description' => $description,
             'weight_percentage' => $normalizedArgs['weight_percentage'],
-            'max_score'         => $normalizedArgs['max_score'] ?? 20,
-            'due_date'          => $normalizedArgs['due_date'] ?? null,
-            'is_homework'       => $isHomework,
-            'nee_type'          => $neeType,
-            'nee_adaptation'    => $neeAdaptation,
+            'max_score' => $normalizedArgs['max_score'] ?? 20,
+            'due_date' => $normalizedArgs['due_date'] ?? null,
+            'is_homework' => $isHomework,
+            'nee_type' => $neeType,
+            'nee_adaptation' => $neeAdaptation,
         ];
 
         // Guardrail final: el tipo que llega a BD debe estar normalizado.
@@ -1872,12 +1886,12 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
         $payload['is_homework'] = $payloadTypeMeta['is_homework'];
 
         $legacyCols = [
-            'id_curso'    => $payload['course_id'],
-            'id_docente'  => $teacherId,
+            'id_curso' => $payload['course_id'],
+            'id_docente' => $teacherId,
             'id_profesor' => $teacherId,
-            'id_modulo'   => null,
-            'id_periodo'  => null,
-            'estado'      => 'publicado',
+            'id_modulo' => null,
+            'id_periodo' => null,
+            'estado' => 'publicado',
         ];
 
         foreach ($legacyCols as $col => $val) {
@@ -1889,12 +1903,13 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
         $activity = Activity::create($payload);
 
         $courseName = $course->subject_name;
+
         return [
-            'success'     => true,
-            'message'     => "¡Entendido! Generando la actividad de {$activity->title} para {$courseName} con los parámetros que sugeriste...",
+            'success' => true,
+            'message' => "¡Entendido! Generando la actividad de {$activity->title} para {$courseName} con los parámetros que sugeriste...",
             'action_type' => 'activity',
-            'icon'        => '📝',
-            'data'        => [
+            'icon' => '📝',
+            'data' => [
                 'activity_id' => $activity->id,
                 'title' => $activity->title,
                 'course_id' => $activity->course_id,
@@ -1948,7 +1963,7 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             return null;
         }
 
-        return '¡Listo! Procesé ' . implode(' · ', $parts) . '. ¿Quieres que continúe con algo más?';
+        return '¡Listo! Procesé '.implode(' · ', $parts).'. ¿Quieres que continúe con algo más?';
     }
 
     private function withProactiveClose(string $message, string $actionType): string
@@ -1970,7 +1985,7 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             default => ' ¿Quieres que siga con el siguiente paso?',
         };
 
-        return rtrim($trimmed, " \t\n\r\0\x0B.") . '.' . $followUp;
+        return rtrim($trimmed, " \t\n\r\0\x0B.").'.'.$followUp;
     }
 
     private function doModifyActivity($args, $teacherId)
@@ -1992,19 +2007,21 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             }
 
             $activity->update($payload);
+
             return [
-                'success'     => true,
-                'message'     => "Actividad '{$activity->title}' actualizada.",
+                'success' => true,
+                'message' => "Actividad '{$activity->title}' actualizada.",
                 'action_type' => 'activity',
-                'icon'        => '📝',
-                'data'        => ['activity_id' => $activity->id],
+                'icon' => '📝',
+                'data' => ['activity_id' => $activity->id],
             ];
         }
+
         return [
-            'success'     => false,
-            'message'     => "No se encontró la actividad.",
+            'success' => false,
+            'message' => 'No se encontró la actividad.',
             'action_type' => 'activity',
-            'icon'        => '⚠️',
+            'icon' => '⚠️',
         ];
     }
 
@@ -2017,32 +2034,33 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             ->first();
         if (! $course) {
             $hint = trim((string) ($args['course_name_hint'] ?? $args['grade'] ?? ''));
+
             return [
-                'success'     => false,
-                'message'     => $hint !== ''
+                'success' => false,
+                'message' => $hint !== ''
                     ? "No encontré un curso que coincida con «{$hint}». Créalo primero o dime su nombre exacto."
                     : 'No se pudo identificar el curso. Indica el curso completo o su ID.',
                 'action_type' => 'student',
-                'icon'        => '⚠️',
+                'icon' => '⚠️',
             ];
         }
 
         $grade = $args['grade'] ?? $course->grade;
         if (empty($grade)) {
             return [
-                'success'     => false,
-                'message'     => '¿A qué grado quieres inscribir a ese estudiante? Por ejemplo: Primera sección.',
+                'success' => false,
+                'message' => '¿A qué grado quieres inscribir a ese estudiante? Por ejemplo: Primera sección.',
                 'action_type' => 'student',
-                'icon'        => '⚠️',
+                'icon' => '⚠️',
             ];
         }
 
         if (empty($args['names']) || ! is_array($args['names'])) {
             return [
-                'success'     => false,
-                'message'     => 'Dime el nombre del alumno o una lista de nombres para inscribirlos en ese curso.',
+                'success' => false,
+                'message' => 'Dime el nombre del alumno o una lista de nombres para inscribirlos en ese curso.',
                 'action_type' => 'student',
-                'icon'        => '⚠️',
+                'icon' => '⚠️',
             ];
         }
 
@@ -2055,7 +2073,7 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             }
 
             $studentQuery = Student::where('colegio_id', $colegioId)
-                ->where(function ($q) use ($name, $grade) {
+                ->where(function ($q) use ($name) {
                     $q->whereRaw('LOWER(name) = ?', [mb_strtolower($name)])
                         ->orWhere('name', 'like', $name.'%');
                 });
@@ -2078,38 +2096,39 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
 
             if (! $student) {
                 $missing[] = $name;
+
                 continue;
             }
 
-            $student->courses()->syncWithoutDetaching([$course->id]);
+            $this->enrollmentService->attachExisting($course, $student, User::findOrFail($teacherId));
             $results[] = $student->name;
         }
 
         if ($results && ! $missing) {
             return [
-                'success'     => true,
-                'message'     => 'Alumnos vinculados desde la nómina: '.implode(', ', $results),
+                'success' => true,
+                'message' => 'Alumnos vinculados desde la nómina: '.implode(', ', $results),
                 'action_type' => 'student',
-                'icon'        => '👩‍🎓',
-                'data'        => ['names' => $results, 'course_id' => $course->id, 'grade' => $grade],
+                'icon' => '👩‍🎓',
+                'data' => ['names' => $results, 'course_id' => $course->id, 'grade' => $grade],
             ];
         }
 
         if ($results && $missing) {
             return [
-                'success'     => true,
-                'message'     => 'Vinculados: '.implode(', ', $results).'. No están en la nómina del colegio (el director debe matricularlos): '.implode(', ', $missing).'.',
+                'success' => true,
+                'message' => 'Vinculados: '.implode(', ', $results).'. No están en la nómina del colegio (el director debe matricularlos): '.implode(', ', $missing).'.',
                 'action_type' => 'student',
-                'icon'        => '👩‍🎓',
-                'data'        => ['names' => $results, 'missing' => $missing, 'course_id' => $course->id],
+                'icon' => '👩‍🎓',
+                'data' => ['names' => $results, 'missing' => $missing, 'course_id' => $course->id],
             ];
         }
 
         return [
-            'success'     => false,
-            'message'     => 'No encontré a '.implode(', ', $missing).' en la nómina del colegio. El director debe matricularlos primero; no creo alumnos duplicados.',
+            'success' => false,
+            'message' => 'No encontré a '.implode(', ', $missing).' en la nómina del colegio. El director debe matricularlos primero; no creo alumnos duplicados.',
             'action_type' => 'student',
-            'icon'        => '⚠️',
+            'icon' => '⚠️',
         ];
     }
 
@@ -2117,7 +2136,7 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
     {
         $preferences = $args['calendar_preferences'] ?? [];
         $targetMonth = (string) ($args['target_month'] ?? '');
-        
+
         Log::info('bulkPlan.start', [
             'teacher_id' => $teacherId,
             'course_id' => $args['course_id'] ?? null,
@@ -2188,6 +2207,7 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
                 $dayOccurrences[$dow] = ($dayOccurrences[$dow] ?? 0) + 1;
                 if ($maxOccurrencesPerDay > 0 && $dayOccurrences[$dow] > $maxOccurrencesPerDay) {
                     $cursor->addDay();
+
                     continue;
                 }
 
@@ -2200,7 +2220,7 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
                 $topic = $topics[count($plan) % count($topics)];
                 $sessionNum = $isThursday ? $thursdayCount + 1 : $mondayCount + 1;
                 $titleDescriptive = $this->generateSessionTitle($topic, $isThursday, $sessionNum);
-                
+
                 Log::info('bulkPlan.slot_generated', [
                     'date' => $cursor->format('Y-m-d'),
                     'day_of_week' => $cursor->dayOfWeek,
@@ -2277,9 +2297,10 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
         if (! ($args['confirmed'] ?? false)) {
             $monthLabel = ucfirst($startDate->locale('es')->isoFormat('MMMM'));
             $yearLabel = $startDate->format('Y');
+
             return [
                 'requires_confirmation' => true,
-                'message' => "¡Perfecto! He calculado " . count($plan) . " sesiones para {$monthLabel} {$yearLabel} ({$mondayCount} lunes teóricos y {$thursdayCount} jueves prácticos). ¿Procedo a crearlas todas con los temas sugeridos?",
+                'message' => '¡Perfecto! He calculado '.count($plan)." sesiones para {$monthLabel} {$yearLabel} ({$mondayCount} lunes teóricos y {$thursdayCount} jueves prácticos). ¿Procedo a crearlas todas con los temas sugeridos?",
                 'plan_preview' => $planPreview,
                 'conflicts' => $conflictPreview,
                 'action_type' => 'bulk_plan',
@@ -2321,20 +2342,20 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
                 'icon' => '⚠️',
             ];
         }
-        $courseName = $course ? trim(($course->subject_name ?? '') . ' ' . ($course->grade ?? '')) : null;
+        $courseName = $course ? trim(($course->subject_name ?? '').' '.($course->grade ?? '')) : null;
         $topicsCsv = implode(', ', array_map(fn ($topic) => trim((string) $topic), $topics));
         $planTema = $courseName
             ? "Plan mensual {$monthLabel} {$yearLabel} · {$courseName}"
             : "Plan mensual {$monthLabel} {$yearLabel}";
         $planObjetivo = "Planificación mensual generada por IA para {$monthLabel} {$yearLabel}. Temas: {$topicsCsv}.";
-        $slugBase = Str::slug("bulk-{$monthLabel}-{$yearLabel}-" . ($courseName ?: 'curso'));
+        $slugBase = Str::slug("bulk-{$monthLabel}-{$yearLabel}-".($courseName ?: 'curso'));
         if ($slugBase === '') {
             $slugBase = 'bulk-plan';
         }
         $slug = $slugBase;
         $slugSuffix = 1;
         while (Planificacion::where('slug', $slug)->exists()) {
-            $slug = $slugBase . '-' . $slugSuffix;
+            $slug = $slugBase.'-'.$slugSuffix;
             $slugSuffix++;
         }
 
@@ -2364,7 +2385,7 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
         app(DirectorAlertService::class)->notifyDirectors(
             $colegioId,
             'Nueva planificación generada por Aulasync',
-            'El/La docente ' . ($teacher->name ?? '—') . " generó {$planTema}.",
+            'El/La docente '.($teacher->name ?? '—')." generó {$planTema}.",
             route('director.planificaciones', ['status' => 'pendiente']),
             '✨ Aulasync · Plan mensual'
         );
@@ -2386,19 +2407,20 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
                     'date' => $entry['date'],
                     'title' => $entry['title'],
                 ]);
+
                 continue;
             }
             $payload = [
-                'teacher_id'        => $teacherId,
-                'course_id'         => $args['course_id'],
-                'colegio_id'        => $colegioId,
-                'title'             => $entry['title'],
-                'description'       => $entry['description'],
-                'type'              => $entry['type'],
+                'teacher_id' => $teacherId,
+                'course_id' => $args['course_id'],
+                'colegio_id' => $colegioId,
+                'title' => $entry['title'],
+                'description' => $entry['description'],
+                'type' => $entry['type'],
                 'weight_percentage' => $entry['weight_percentage'],
-                'max_score'         => $entry['max_score'],
-                'due_date'          => $entry['date'],
-                'plan_block_id'     => $planificacion->id,
+                'max_score' => $entry['max_score'],
+                'due_date' => $entry['date'],
+                'plan_block_id' => $planificacion->id,
             ];
 
             Log::info('bulkPlan.before_insert', $payload);
@@ -2407,12 +2429,12 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
                 $activity = new Activity($payload);
 
                 $legacyCols = [
-                    'id_curso'    => $args['course_id'],
-                    'id_docente'  => $teacherId,
+                    'id_curso' => $args['course_id'],
+                    'id_docente' => $teacherId,
                     'id_profesor' => $teacherId,
-                    'id_modulo'   => null,
-                    'id_periodo'  => null,
-                    'estado'      => 'publicado',
+                    'id_modulo' => null,
+                    'id_periodo' => null,
+                    'estado' => 'publicado',
                 ];
                 foreach ($legacyCols as $col => $val) {
                     if (Schema::hasColumn('activities', $col)) {
@@ -2424,6 +2446,7 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
 
                 if (! $saved) {
                     Log::error('bulkPlan.save_false', $payload);
+
                     continue;
                 }
 
@@ -2451,6 +2474,7 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
 
         if (count($created) === 0) {
             $planificacion->delete();
+
             return [
                 'success' => false,
                 'status' => 'error',
@@ -2471,12 +2495,12 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
         $assistantLine = "¡Listo! He creado las {$n} actividades de {$monthLabel} correctamente";
 
         return [
-            'success'     => true,
-            'status'      => 'success',
-            'message'     => $assistantLine,
+            'success' => true,
+            'status' => 'success',
+            'message' => $assistantLine,
             'action_type' => 'bulk_plan',
-            'icon'        => '📅',
-            'data'        => [
+            'icon' => '📅',
+            'data' => [
                 'course_id' => $args['course_id'],
                 'planificacion_id' => $planificacion->id,
                 'activities_created' => $n,
@@ -2502,7 +2526,7 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             $month = $result['data']['month'] ?? '';
             $year = $result['data']['year'] ?? '';
             $monthTitle = $month !== '' ? ucfirst($month) : '';
-            $piece = trim($monthTitle . ($year !== '' ? " {$year}" : ''));
+            $piece = trim($monthTitle.($year !== '' ? " {$year}" : ''));
 
             return [
                 'status' => 'success',
@@ -2544,6 +2568,7 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             $year = (int) $isoMatch[1];
             $num = (int) $isoMatch[2];
             $start = Carbon::createFromDate($year, $num, 1)->startOfMonth();
+
             return ['start' => $start, 'end' => $start->copy()->endOfMonth()];
         }
 
@@ -2655,9 +2680,10 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
             ]);
+
             return [
                 'success' => false,
-                'message' => 'Ocurrió un error al eliminar actividades: ' . $e->getMessage(),
+                'message' => 'Ocurrió un error al eliminar actividades: '.$e->getMessage(),
                 'action_type' => 'delete',
                 'icon' => '⚠️',
             ];
@@ -2682,7 +2708,7 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             'octubre' => 10, 'noviembre' => 11, 'diciembre' => 12,
         ];
         $found = [];
-        if (preg_match_all('/(\d{1,2})\s*(de\s*)?(' . implode('|', array_keys($months)) . ')/iu', $text, $matches, PREG_SET_ORDER)) {
+        if (preg_match_all('/(\d{1,2})\s*(de\s*)?('.implode('|', array_keys($months)).')/iu', $text, $matches, PREG_SET_ORDER)) {
             $year = now()->format('Y');
             if (preg_match('/\b(20\d{2})\b/', $text, $yearMatch)) {
                 $year = (int) $yearMatch[1];
@@ -2697,6 +2723,7 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
                 }
             }
         }
+
         return $found;
     }
 
@@ -2712,7 +2739,7 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
                 $course = Course::where('teacher_id', $teacher->id)
                     ->where(function ($q) use ($grade) {
                         $q->where('grade', $grade)
-                          ->orWhere('subject_name', 'like', '%' . $grade . '%');
+                            ->orWhere('subject_name', 'like', '%'.$grade.'%');
                     })
                     ->first();
                 if ($course) {
@@ -2720,6 +2747,7 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
                 }
             }
         }
+
         return null;
     }
 
@@ -2747,6 +2775,7 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             $key = strtolower($day);
             $normalized[] = $map[$key] ?? Carbon::MONDAY;
         }
+
         return array_values(array_unique($normalized));
     }
 
@@ -2881,68 +2910,18 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
                     ],
                 ];
             } elseif ($resourceType === 'course') {
-                $course = Course::where('id', $resourceId)
-                    ->where('teacher_id', $teacherId)
-                    ->first();
-
-                if (! $course) {
-                    return [
-                        'success' => false,
-                        'message' => '⚠️ No encontré ese curso o no tienes permiso para eliminarlo.',
-                        'action_type' => 'delete',
-                        'icon' => '⚠️',
-                    ];
-                }
-
-                $courseName = $course->subject_name . ' ' . $course->grade;
-                $course->delete();
-
-                Log::info('doDeleteResource.course_deleted', [
-                    'course_id' => $resourceId,
-                    'name' => $courseName,
-                ]);
-
                 return [
-                    'success' => true,
-                    'message' => "✅ ¡Listo! Eliminé el curso «{$courseName}». ¿En qué más te ayudo?",
+                    'success' => false,
+                    'message' => 'Los profesores no pueden eliminar cursos. Solicita este cambio al director.',
                     'action_type' => 'delete',
-                    'icon' => '🗑️',
-                    'data' => [
-                        'deleted_course_id' => $resourceId,
-                        'name' => $courseName,
-                    ],
+                    'icon' => '⚠️',
                 ];
             } elseif ($resourceType === 'student') {
-                $student = Student::where('id', $resourceId)
-                    ->where('teacher_id', $teacherId)
-                    ->first();
-
-                if (! $student) {
-                    return [
-                        'success' => false,
-                        'message' => '⚠️ No encontré ese alumno o no tienes permiso para eliminarlo.',
-                        'action_type' => 'delete',
-                        'icon' => '⚠️',
-                    ];
-                }
-
-                $studentName = $student->name;
-                $student->delete();
-
-                Log::info('doDeleteResource.student_deleted', [
-                    'student_id' => $resourceId,
-                    'name' => $studentName,
-                ]);
-
                 return [
-                    'success' => true,
-                    'message' => "✅ ¡Listo! Eliminé al alumno «{$studentName}». ¿En qué más te ayudo?",
+                    'success' => false,
+                    'message' => 'Los profesores no pueden eliminar alumnos de la nómina. Solo pueden matricular o desmatricular alumnos en sus propios cursos.',
                     'action_type' => 'delete',
-                    'icon' => '🗑️',
-                    'data' => [
-                        'deleted_student_id' => $resourceId,
-                        'name' => $studentName,
-                    ],
+                    'icon' => '⚠️',
                 ];
             }
 
@@ -2960,7 +2939,7 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
 
             return [
                 'success' => false,
-                'message' => '⚠️ Ocurrió un error al eliminar el recurso: ' . $e->getMessage(),
+                'message' => '⚠️ Ocurrió un error al eliminar el recurso: '.$e->getMessage(),
                 'action_type' => 'delete',
                 'icon' => '⚠️',
             ];
@@ -2994,9 +2973,9 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
 
         $items = $activities->map(function ($a) {
             $course = $a->course;
-            $courseName = trim(($course->subject_name ?? '') . ' ' . ($course->grade ?? ''));
+            $courseName = trim(($course->subject_name ?? '').' '.($course->grade ?? ''));
             $color = $this->getCourseColor($a->course_id);
-            
+
             return [
                 'id' => $a->id,
                 'title' => $a->title,
@@ -3031,6 +3010,7 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
     private function getCourseColor(int $courseId): string
     {
         $colors = ['#6366f1', '#8b5cf6', '#d946ef', '#ec4899', '#f97316', '#14b8a6', '#06b6d4', '#3b82f6'];
+
         return $colors[$courseId % count($colors)];
     }
 
@@ -3054,7 +3034,7 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
 
     private function resolveGradableActivity(array $args, int $teacherId): ?Activity
     {
-        return app(\App\Services\EvaluationSyncService::class)->findActivityForEvaluation(
+        return app(EvaluationSyncService::class)->findActivityForEvaluation(
             $teacherId,
             isset($args['evaluation_id']) ? (int) $args['evaluation_id'] : null,
             isset($args['activity_id']) ? (int) $args['activity_id'] : null
@@ -3081,6 +3061,7 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
 
         if ($name !== '') {
             $like = '%'.mb_strtolower($name).'%';
+
             return (clone $query)->whereRaw('LOWER(name) LIKE ?', [$like])->orderBy('name')->first();
         }
 
@@ -3109,6 +3090,7 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
                 $evalLines = "\nEvaluaciones formales:\n".$evals->map(function (Evaluation $e) {
                     $cn = trim(($e->course?->subject_name ?? '').' '.($e->course?->grade ?? ''));
                     $date = optional($e->scheduled_at)->format('Y-m-d') ?: $e->created_at?->format('Y-m-d');
+
                     return "- {$date} | evaluation_id {$e->id} | activity_id ".($e->activity_id ?: '—')." | course_id {$e->course_id} | {$cn} | {$e->title} | {$e->status}";
                 })->join("\n");
             }
@@ -3120,7 +3102,7 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
 
         $activityLines = $items->map(function ($a) {
             $d = $a->due_date instanceof Carbon ? $a->due_date->format('Y-m-d') : (string) $a->due_date;
-            $cn = trim((optional($a->course)->subject_name ?? '') . ' ' . (optional($a->course)->grade ?? ''));
+            $cn = trim((optional($a->course)->subject_name ?? '').' '.(optional($a->course)->grade ?? ''));
             $title = str_replace(["\r", "\n"], ' ', (string) $a->title);
             $type = $a->type ?? 'actividad';
             $exam = $a->evaluation_id ? " | evaluation_id {$a->evaluation_id}" : '';
@@ -3143,26 +3125,26 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
         $activities = $this->calendarActivitiesBetween($teacherId, $start, $end, $courseId);
 
         $items = $activities->map(fn ($a) => [
-                'id' => $a->id,
-                'title' => $a->title,
-                'type' => $a->type ?? 'actividad',
-                'due_date' => $a->due_date instanceof Carbon ? $a->due_date->format('Y-m-d') : (string) $a->due_date,
-                'course_id' => $a->course_id,
-                'course_name' => optional($a->course)->subject_name . ' ' . optional($a->course)->grade,
-                'is_homework' => (bool) $a->is_homework,
-                'nee_type' => $a->nee_type,
-                'nee_adaptation' => $a->nee_adaptation,
-            ])->values();
+            'id' => $a->id,
+            'title' => $a->title,
+            'type' => $a->type ?? 'actividad',
+            'due_date' => $a->due_date instanceof Carbon ? $a->due_date->format('Y-m-d') : (string) $a->due_date,
+            'course_id' => $a->course_id,
+            'course_name' => optional($a->course)->subject_name.' '.optional($a->course)->grade,
+            'is_homework' => (bool) $a->is_homework,
+            'nee_type' => $a->nee_type,
+            'nee_adaptation' => $a->nee_adaptation,
+        ])->values();
 
         return [
-            'success'     => true,
-            'message'     => "Calendario leído entre {$start->format('d/m/Y')} y {$end->format('d/m/Y')}.",
+            'success' => true,
+            'message' => "Calendario leído entre {$start->format('d/m/Y')} y {$end->format('d/m/Y')}.",
             'action_type' => 'calendar',
-            'icon'        => '📅',
-            'data'        => [
+            'icon' => '📅',
+            'data' => [
                 'start_date' => $start->format('Y-m-d'),
-                'end_date'   => $end->format('Y-m-d'),
-                'items'      => $items,
+                'end_date' => $end->format('Y-m-d'),
+                'items' => $items,
             ],
         ];
     }
@@ -3173,20 +3155,20 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
         $activity = $this->resolveGradableActivity($args, $teacherId);
         if (! $activity) {
             return [
-                'success'     => false,
-                'message'     => 'No se encontró la actividad o el examen para calificar.',
+                'success' => false,
+                'message' => 'No se encontró la actividad o el examen para calificar.',
                 'action_type' => 'grade',
-                'icon'        => '⚠️',
+                'icon' => '⚠️',
             ];
         }
 
         $student = $this->resolveEnrolledStudent($activity, $args, $teacherId, $colegioId);
         if (! $student) {
             return [
-                'success'     => false,
-                'message'     => 'No se encontró el alumno para calificar en ese curso.',
+                'success' => false,
+                'message' => 'No se encontró el alumno para calificar en ese curso.',
                 'action_type' => 'grade',
-                'icon'        => '⚠️',
+                'icon' => '⚠️',
             ];
         }
 
@@ -3199,10 +3181,10 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             $max = GradingScale::effectiveMax($scale, (int) $activity->max_score);
 
             return [
-                'success'     => false,
-                'message'     => "La nota {$score} está fuera de la escala del curso (0–{$max}, ".GradingScale::label($scale).').',
+                'success' => false,
+                'message' => "La nota {$score} está fuera de la escala del curso (0–{$max}, ".GradingScale::label($scale).').',
                 'action_type' => 'grade',
-                'icon'        => '⚠️',
+                'icon' => '⚠️',
             ];
         }
         $score = GradingScale::clampScore($scale, $score, (int) $activity->max_score);
@@ -3224,16 +3206,16 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
         }
 
         return [
-            'success'     => true,
-            'message'     => "Calificación guardada para {$student->name} en «{$activity->title}».",
+            'success' => true,
+            'message' => "Calificación guardada para {$student->name} en «{$activity->title}».",
             'action_type' => 'grade',
-            'icon'        => '🧮',
-            'data'        => [
+            'icon' => '🧮',
+            'data' => [
                 'activity_id' => $activity->id,
                 'evaluation_id' => $activity->evaluation_id,
-                'student_id'  => $student->id,
-                'score'       => $grade->score,
-                'feedback'    => $grade->feedback_text,
+                'student_id' => $student->id,
+                'score' => $grade->score,
+                'feedback' => $grade->feedback_text,
             ],
         ];
     }
@@ -3244,10 +3226,10 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
         $activity = $this->resolveGradableActivity($args, $teacherId);
         if (! $activity) {
             return [
-                'success'     => false,
-                'message'     => 'No se encontró la actividad o el examen para calificar.',
+                'success' => false,
+                'message' => 'No se encontró la actividad o el examen para calificar.',
                 'action_type' => 'grade',
-                'icon'        => '⚠️',
+                'icon' => '⚠️',
             ];
         }
 
@@ -3258,10 +3240,10 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
         $gradesInput = $args['grades'] ?? [];
         if (empty($gradesInput) || ! is_array($gradesInput)) {
             return [
-                'success'     => false,
-                'message'     => 'No se recibieron calificaciones para guardar.',
+                'success' => false,
+                'message' => 'No se recibieron calificaciones para guardar.',
                 'action_type' => 'grade',
-                'icon'        => '⚠️',
+                'icon' => '⚠️',
             ];
         }
 
@@ -3278,6 +3260,7 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             if (! GradingScale::isValidScore($scale, $score, (int) $activity->max_score)) {
                 $errName = $studentName ?? "ID {$studentId}";
                 $errors[] = "Nota {$score} fuera de rango (0–{$scaleMax}) para «{$errName}».";
+
                 continue;
             }
             $score = GradingScale::clampScore($scale, $score, (int) $activity->max_score);
@@ -3287,11 +3270,13 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
                 $student = $this->resolveEnrolledStudent($activity, ['student_name' => $studentName], $teacherId, $colegioId);
             } else {
                 $errors[] = 'Cada calificación debe incluir student_id o student_name.';
+
                 continue;
             }
             if (! $student) {
                 $errName = $studentName ?? "ID {$studentId}";
                 $errors[] = "Alumno «{$errName}» no encontrado.";
+
                 continue;
             }
             Grade::updateOrCreate(
@@ -3312,18 +3297,18 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
 
         $msg = "{$graded} calificaciones guardadas en «{$activity->title}».";
         if (! empty($errors)) {
-            $msg .= ' Errores: ' . implode('; ', $errors);
+            $msg .= ' Errores: '.implode('; ', $errors);
         }
 
         return [
-            'success'     => true,
-            'message'     => $msg,
+            'success' => true,
+            'message' => $msg,
             'action_type' => 'grade',
-            'icon'        => '📊',
-            'data'        => [
-                'activity_id'  => $activity->id,
+            'icon' => '📊',
+            'data' => [
+                'activity_id' => $activity->id,
                 'graded_count' => $graded,
-                'errors'       => $errors,
+                'errors' => $errors,
             ],
         ];
     }
@@ -3337,10 +3322,10 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             ->first();
         if (! $activity) {
             return [
-                'success'     => false,
-                'message'     => 'No se encontró la actividad para publicar notas.',
+                'success' => false,
+                'message' => 'No se encontró la actividad para publicar notas.',
                 'action_type' => 'publish',
-                'icon'        => '⚠️',
+                'icon' => '⚠️',
             ];
         }
 
@@ -3348,17 +3333,17 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             ->whereNotNull('score')
             ->update([
                 'colegio_id' => $colegioId,
-                'status'       => 'published',
+                'status' => 'published',
                 'published_at' => now(),
             ]);
 
         return [
-            'success'     => true,
-            'message'     => "{$published} calificaciones publicadas para «{$activity->title}».",
+            'success' => true,
+            'message' => "{$published} calificaciones publicadas para «{$activity->title}».",
             'action_type' => 'publish',
-            'icon'        => '🚀',
-            'data'        => [
-                'activity_id'    => $activity->id,
+            'icon' => '🚀',
+            'data' => [
+                'activity_id' => $activity->id,
                 'published_count' => $published,
             ],
         ];
@@ -3374,7 +3359,7 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
 
         $results = Student::where('teacher_id', $teacherId)
             ->where('colegio_id', User::where('id', $teacherId)->value('colegio_id'))
-            ->where('name', 'like', '%' . $query . '%')
+            ->where('name', 'like', '%'.$query.'%')
             ->limit($limit)
             ->get()
             ->map(fn ($s) => [
@@ -3386,11 +3371,11 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             ->values();
 
         return [
-            'success'     => true,
-            'message'     => 'Búsqueda de alumnos completada.',
+            'success' => true,
+            'message' => 'Búsqueda de alumnos completada.',
             'action_type' => 'student_lookup',
-            'icon'        => '🔎',
-            'data'        => [
+            'icon' => '🔎',
+            'data' => [
                 'query' => $query,
                 'results' => $results,
             ],
@@ -3451,6 +3436,7 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
                 $pct = $score !== null && $activity->max_score > 0
                     ? round(($score / $activity->max_score) * 100, 1)
                     : null;
+
                 return [
                     'student_id' => $s->id,
                     'student_name' => $s->name,
@@ -3471,7 +3457,7 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
                         'id' => $activity->id,
                         'title' => $activity->title,
                         'max_score' => $activity->max_score,
-                        'course_name' => optional($activity->course)->subject_name . ' ' . optional($activity->course)->grade,
+                        'course_name' => optional($activity->course)->subject_name.' '.optional($activity->course)->grade,
                         'due_date' => $activity->due_date?->format('Y-m-d'),
                     ],
                     'items' => $items,
@@ -3537,6 +3523,7 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
                 $avg = round(collect($scores)->pluck('pct')->filter()->avg(), 1);
             }
             $row['avg_pct'] = $avg;
+
             return $row;
         })->values();
 
@@ -3548,7 +3535,7 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             'data' => [
                 'course' => [
                     'id' => $course->id,
-                    'name' => $course->subject_name . ' · ' . $course->grade,
+                    'name' => $course->subject_name.' · '.$course->grade,
                 ],
                 'activities' => $activities->map(fn ($a) => [
                     'id' => $a->id,
@@ -3593,7 +3580,7 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
                 'title' => $a->title,
                 'type' => $a->type ?? 'actividad',
                 'due_date' => $a->due_date?->format('Y-m-d'),
-                'course_name' => optional($a->course)->subject_name . ' ' . optional($a->course)->grade,
+                'course_name' => optional($a->course)->subject_name.' '.optional($a->course)->grade,
                 'created_at' => $a->created_at?->format('Y-m-d'),
             ])->values();
 
@@ -3610,6 +3597,7 @@ private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'd
             ->get()
             ->map(function ($p) {
                 $payload = is_array($p->payload) ? $p->payload : (json_decode($p->payload, true) ?? []);
+
                 return [
                     'id' => $p->id,
                     'tema' => $p->tema,
@@ -3816,7 +3804,7 @@ MD;
     private function generateSessionTitle(string $topic, bool $isThursday, int $sessionNum): string
     {
         $topicCapitalized = ucfirst(trim($topic));
-        
+
         if ($isThursday) {
             $patterns = [
                 "{$topicCapitalized}: Ejercicios prácticos",
@@ -3825,6 +3813,7 @@ MD;
                 "{$topicCapitalized}: Actividad lúdica",
                 "{$topicCapitalized}: Laboratorio",
             ];
+
             return $patterns[($sessionNum - 1) % count($patterns)];
         } else {
             $patterns = [
@@ -3834,6 +3823,7 @@ MD;
                 "{$topicCapitalized}: Profundización",
                 "{$topicCapitalized}: Repaso teórico",
             ];
+
             return $patterns[($sessionNum - 1) % count($patterns)];
         }
     }
@@ -3841,10 +3831,10 @@ MD;
     private function buildNeeAdaptation(string $neeType): string
     {
         return match (mb_strtolower($neeType)) {
-            'tdah' => "Para este alumno con TDAH, segmenta la actividad en pasos de 10 minutos, usa recordatorios visuales y alterna momentos de movimiento breve. Evita instrucciones largas y confirma comprensión con preguntas cortas.",
-            'tea', 'autismo', 'tea/autismo', 'tea - autismo' => "Para este alumno con TEA, anticipa la secuencia con un mini-guion visual, reduce estímulos distractores y ofrece ejemplos concretos. Permite tiempos de respuesta más amplios y valida con apoyos visuales.",
-            'dislexia' => "Para este alumno con dislexia, prioriza instrucciones orales claras, textos con tipografía legible y apoyos visuales. Permite responder de forma oral o con opciones guiadas y evita copiado extenso.",
-            'discalculia' => "Para este alumno con discalculia, utiliza material manipulativo, ejemplos paso a paso y apoyos visuales. Evita sobrecarga numérica y ofrece tiempo adicional para resolver.",
+            'tdah' => 'Para este alumno con TDAH, segmenta la actividad en pasos de 10 minutos, usa recordatorios visuales y alterna momentos de movimiento breve. Evita instrucciones largas y confirma comprensión con preguntas cortas.',
+            'tea', 'autismo', 'tea/autismo', 'tea - autismo' => 'Para este alumno con TEA, anticipa la secuencia con un mini-guion visual, reduce estímulos distractores y ofrece ejemplos concretos. Permite tiempos de respuesta más amplios y valida con apoyos visuales.',
+            'dislexia' => 'Para este alumno con dislexia, prioriza instrucciones orales claras, textos con tipografía legible y apoyos visuales. Permite responder de forma oral o con opciones guiadas y evita copiado extenso.',
+            'discalculia' => 'Para este alumno con discalculia, utiliza material manipulativo, ejemplos paso a paso y apoyos visuales. Evita sobrecarga numérica y ofrece tiempo adicional para resolver.',
             default => "Para este alumno con {$neeType}, adapta la actividad con instrucciones breves, apoyos visuales y tiempo extra según necesidad. Prioriza la comprensión del objetivo sobre la cantidad de ejercicios.",
         };
     }
@@ -3852,12 +3842,14 @@ MD;
     private function hasDeleteIntent(?string $text): bool
     {
         $value = mb_strtolower((string) $text);
+
         return (bool) preg_match('/\b(borr\w*|elimin\w*|limpi\w*|vaci\w*|quit\w*)\b/u', $value);
     }
 
     private function hasPlanningIntent(?string $text): bool
     {
         $value = mb_strtolower((string) $text);
+
         return (bool) preg_match('/\b(planifica|planificar|planificación|planificacion|cronograma|calendario|genera.*mes|organiza.*mes|mes de|desglosa|desglosar|siguientes d[ií]as|pr[oó]ximos d[ií]as)\b/u', $value);
     }
 
@@ -3879,12 +3871,14 @@ MD;
     private function hasModifyIntent(?string $text): bool
     {
         $value = mb_strtolower((string) $text);
+
         return (bool) preg_match('/\b(modificar|cambiar|editar|actualizar|reemplazar)\b/u', $value);
     }
 
     private function hasProceedIntent(?string $text): bool
     {
         $value = mb_strtolower((string) $text);
+
         return (bool) preg_match('/\b(procede|proceder|adelante|continua|continuar|confirmo|confirmar|ok|vale|sí|si)\b/u', $value);
     }
 
@@ -3906,16 +3900,18 @@ MD;
         if (preg_match('/(?:del?\s+)?(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?.*?(?:al|a|-|hasta)\s*(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?/u', $value, $m)) {
             $startYear = $this->normalizeYear($m[3] ?? $year);
             $endYear = $this->normalizeYear($m[6] ?? $startYear);
+
             return $this->buildDateRange($startYear, (int) $m[2], (int) $m[1], $endYear, (int) $m[5], (int) $m[4]);
         }
 
-        if (preg_match('/\b(?:todo(?:\s+lo\s+que\s+hay)?\s+en|todo\s+el\s+mes\s+de|el\s+mes\s+de|mes\s+de|en)\s+(' . $monthRegex . ')(?:\s+de\s+(\d{4}))?\b/u', $value, $m)) {
+        if (preg_match('/\b(?:todo(?:\s+lo\s+que\s+hay)?\s+en|todo\s+el\s+mes\s+de|el\s+mes\s+de|mes\s+de|en)\s+('.$monthRegex.')(?:\s+de\s+(\d{4}))?\b/u', $value, $m)) {
             $monthName = $m[1] ?? null;
             $parsedYear = isset($m[2]) ? (int) $m[2] : $year;
             $month = $monthMap[$monthName] ?? null;
             if ($month) {
                 try {
                     $start = Carbon::createFromDate($this->normalizeYear($parsedYear), $month, 1)->startOfMonth();
+
                     return [
                         'start_date' => $start->format('Y-m-d'),
                         'end_date' => $start->copy()->endOfMonth()->format('Y-m-d'),
@@ -3937,6 +3933,7 @@ MD;
             if ($end->lt($start)) {
                 [$start, $end] = [$end, $start];
             }
+
             return [
                 'start_date' => $start->format('Y-m-d'),
                 'end_date' => $end->format('Y-m-d'),
@@ -3952,6 +3949,7 @@ MD;
         if ($year < 100) {
             $year += 2000;
         }
+
         return $year > 0 ? $year : (int) now()->format('Y');
     }
 
@@ -3964,6 +3962,7 @@ MD;
             if ($success && $actionType !== 'bulk_plan') {
                 $message = $this->withProactiveClose($message, $actionType);
             }
+
             return [
                 'success' => $success,
                 'status' => $result['status'] ?? ($success ? 'success' : 'error'),

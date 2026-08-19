@@ -235,7 +235,11 @@ class DirectorAICommandTest extends TestCase
             'confirmed' => true,
             'pending_actions' => $enrollDraft->json('pending_actions'),
         ]);
-        $enrollExec->assertOk()->assertJsonPath('actions.0.success', true);
+        $enrollExec->assertOk();
+        $this->assertTrue(
+            (bool) $enrollExec->json('actions.0.success'),
+            json_encode($enrollExec->json(), JSON_UNESCAPED_UNICODE)
+        );
 
         $course = Course::where('colegio_id', $colegio->id)
             ->where('subject_name', 'Matemática')
@@ -597,6 +601,307 @@ class DirectorAICommandTest extends TestCase
         ]);
 
         $response->assertStatus(302);
+    }
+
+    public function test_director_can_delete_all_teachers_after_confirmation(): void
+    {
+        [$director, $colegio] = $this->directorContext();
+        $teacher = User::factory()->create([
+            'name' => 'Carlos Pérez',
+            'role' => 'profesor',
+            'colegio_id' => $colegio->id,
+            'onboarding_completed' => true,
+        ]);
+        $course = Course::create([
+            'colegio_id' => $colegio->id,
+            'teacher_id' => $teacher->id,
+            'subject_name' => 'Inglés',
+            'grade' => '3ro',
+            'section' => 'A',
+            'school_year' => '2026-2027',
+            'invite_code' => 'CURSO-ING-3',
+        ]);
+        $student = Student::create([
+            'colegio_id' => $colegio->id,
+            'teacher_id' => $teacher->id,
+            'name' => 'Ana Ruiz',
+            'grade' => '3ro',
+            'section' => 'A',
+            'family_code' => 'FAM-DEL',
+        ]);
+
+        $draft = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'elimina a los profesores que hay',
+        ]);
+
+        $draft->assertOk()
+            ->assertJsonPath('requires_confirmation', true)
+            ->assertJsonPath('pending_actions.0.intent', 'delete_all_teachers');
+
+        $execute = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'sí',
+        ]);
+
+        $execute->assertOk();
+        $this->assertTrue(
+            (bool) $execute->json('actions.0.success'),
+            json_encode($execute->json(), JSON_UNESCAPED_UNICODE)
+        );
+        $this->assertSame(0, User::where('colegio_id', $colegio->id)->where('role', 'profesor')->count());
+        $this->assertDatabaseHas('courses', [
+            'id' => $course->id,
+            'colegio_id' => $colegio->id,
+            'teacher_id' => null,
+        ]);
+        $this->assertDatabaseHas('students', [
+            'id' => $student->id,
+            'colegio_id' => $colegio->id,
+            'teacher_id' => $director->id,
+        ]);
+    }
+
+    public function test_director_can_delete_course_by_subject(): void
+    {
+        [$director, $colegio] = $this->directorContext();
+        Course::create([
+            'colegio_id' => $colegio->id,
+            'teacher_id' => null,
+            'subject_name' => 'Matemática',
+            'grade' => '4to',
+            'section' => 'A',
+            'school_year' => '2026-2027',
+            'invite_code' => 'CURSO-MAT-4TO',
+        ]);
+        Course::create([
+            'colegio_id' => $colegio->id,
+            'teacher_id' => null,
+            'subject_name' => 'Inglés',
+            'grade' => '4to',
+            'section' => 'A',
+            'school_year' => '2026-2027',
+            'invite_code' => 'CURSO-ING-4TO',
+        ]);
+
+        $draft = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'borra el curso de matemáticas',
+        ]);
+
+        $draft->assertOk(
+            json_encode($draft->json(), JSON_UNESCAPED_UNICODE)
+        )
+            ->assertJsonPath('requires_confirmation', true)
+            ->assertJsonPath('pending_actions.0.intent', 'delete_course');
+
+        $execute = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'confirmed' => true,
+            'pending_actions' => $draft->json('pending_actions'),
+        ]);
+
+        $execute->assertOk()->assertJsonPath('actions.0.success', true);
+        $this->assertDatabaseMissing('courses', [
+            'colegio_id' => $colegio->id,
+            'subject_name' => 'Matemática',
+        ]);
+        $this->assertDatabaseHas('courses', [
+            'colegio_id' => $colegio->id,
+            'subject_name' => 'Inglés',
+        ]);
+    }
+
+    public function test_delete_teachers_is_limited_to_director_colegio(): void
+    {
+        [$director, $colegio] = $this->directorContext();
+        User::factory()->create([
+            'name' => 'Local Teacher',
+            'role' => 'profesor',
+            'colegio_id' => $colegio->id,
+            'onboarding_completed' => true,
+        ]);
+
+        $otherDirector = User::factory()->create([
+            'role' => 'director',
+            'onboarding_completed' => true,
+        ]);
+        $otherColegio = Colegio::create([
+            'name' => 'Colegio Norte',
+            'invite_code' => 'CON-3003',
+            'codes_pin' => Colegio::hashPinFromInvite('CON-3003'),
+            'director_user_id' => $otherDirector->id,
+        ]);
+        $otherDirector->update(['colegio_id' => $otherColegio->id]);
+        $otherTeacher = User::factory()->create([
+            'name' => 'Remote Teacher',
+            'role' => 'profesor',
+            'colegio_id' => $otherColegio->id,
+            'onboarding_completed' => true,
+        ]);
+
+        $draft = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'elimina a todos los profesores',
+        ]);
+        $draft->assertOk()->assertJsonPath('pending_actions.0.intent', 'delete_all_teachers');
+
+        $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'confirmed' => true,
+            'pending_actions' => $draft->json('pending_actions'),
+        ])->assertOk()->assertJsonPath('actions.0.success', true);
+
+        $this->assertDatabaseMissing('users', [
+            'colegio_id' => $colegio->id,
+            'role' => 'profesor',
+        ]);
+        $this->assertDatabaseHas('users', [
+            'id' => $otherTeacher->id,
+            'colegio_id' => $otherColegio->id,
+            'role' => 'profesor',
+        ]);
+    }
+
+    public function test_reported_jason_conversation_creates_invite_and_assigns_english_first_to_sixth(): void
+    {
+        [$director, $colegio] = $this->directorContext();
+
+        $create = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'crea al profesor Jason David',
+        ]);
+        $create->assertOk()->assertJsonPath('pending_actions.0.intent', 'create_teacher');
+
+        $createExecution = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'créalo',
+        ]);
+        $createExecution->assertOk();
+        $this->assertTrue(
+            (bool) $createExecution->json('actions.0.success'),
+            json_encode($createExecution->json(), JSON_UNESCAPED_UNICODE)
+        );
+
+        $assign = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'ahora agrégale la materia de inglés de primer grado a sexto grado a Jason David',
+        ]);
+        $assign->assertOk(
+            json_encode($assign->json(), JSON_UNESCAPED_UNICODE)
+        )
+            ->assertJsonPath('requires_confirmation', true)
+            ->assertJsonPath('pending_actions.0.intent', 'assign_teacher')
+            ->assertJsonPath('pending_actions.0.data.grades', ['1ro', '2do', '3ro', '4to', '5to', '6to']);
+
+        $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'sí',
+        ])->assertOk()->assertJsonPath('actions.0.success', true);
+
+        $this->assertDatabaseHas('teacher_invites', [
+            'colegio_id' => $colegio->id,
+            'name' => 'Jason David',
+        ]);
+        $this->assertSame(6, Course::query()
+            ->where('colegio_id', $colegio->id)
+            ->whereRaw('LOWER(subject_name) = ?', ['inglés'])
+            ->count());
+    }
+
+    public function test_compound_prompt_creates_teacher_and_english_courses_in_one_confirmation(): void
+    {
+        [$director, $colegio] = $this->directorContext();
+
+        $draft = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'crea al profesor yovanny andrade, crea los cursos de ingles de 1ero a 6to grado y agregalo a esos cursos',
+        ]);
+
+        $draft->assertOk(json_encode($draft->json(), JSON_UNESCAPED_UNICODE))
+            ->assertJsonPath('requires_confirmation', true)
+            ->assertJsonPath('pending_actions.0.intent', 'create_teacher')
+            ->assertJsonPath('pending_actions.0.data.teacher_name', 'yovanny andrade')
+            ->assertJsonPath('pending_actions.0.data.subject_name', 'Inglés')
+            ->assertJsonPath('pending_actions.0.data.grades', ['1ro', '2do', '3ro', '4to', '5to', '6to']);
+        $this->assertStringContainsString('Inglés', (string) $draft->json('message'));
+        $this->assertStringNotContainsString('sin materias iniciales', (string) $draft->json('message'));
+
+        $execute = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'sí',
+        ]);
+        $execute->assertOk();
+        $this->assertTrue(
+            (bool) $execute->json('actions.0.success'),
+            json_encode($execute->json(), JSON_UNESCAPED_UNICODE)
+        );
+        $this->assertDatabaseHas('teacher_invites', [
+            'colegio_id' => $colegio->id,
+            'name' => 'yovanny andrade',
+        ]);
+        $this->assertSame(6, Course::query()
+            ->where('colegio_id', $colegio->id)
+            ->whereRaw('LOWER(subject_name) = ?', ['inglés'])
+            ->count());
+    }
+
+    public function test_cancel_discards_pending_plan_without_changes(): void
+    {
+        [$director, $colegio] = $this->directorContext();
+
+        $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'crea al profesor Jason David',
+        ])->assertOk()->assertJsonPath('requires_confirmation', true);
+
+        $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'mejor no',
+        ])
+            ->assertOk()
+            ->assertJsonPath('cancelled', true);
+
+        $this->assertDatabaseMissing('teacher_invites', [
+            'colegio_id' => $colegio->id,
+            'name' => 'Jason David',
+        ]);
+    }
+
+    public function test_client_cannot_replace_canonical_pending_plan(): void
+    {
+        [$director, $colegio] = $this->directorContext();
+        User::factory()->create([
+            'role' => 'profesor',
+            'colegio_id' => $colegio->id,
+            'onboarding_completed' => true,
+        ]);
+
+        $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'crea al profesor Jason David',
+        ])->assertOk()->assertJsonPath('requires_confirmation', true);
+
+        $execute = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'confirmed' => true,
+            'pending_actions' => [[
+                'intent' => 'delete_all_teachers',
+                'data' => ['count' => 1],
+            ]],
+        ]);
+
+        $execute->assertOk()->assertJsonPath('actions.0.action_type', 'create_teacher');
+        $this->assertDatabaseHas('teacher_invites', [
+            'colegio_id' => $colegio->id,
+            'name' => 'Jason David',
+        ]);
+        $this->assertSame(1, User::where('colegio_id', $colegio->id)->where('role', 'profesor')->count());
+    }
+
+    public function test_partial_teacher_name_ambiguity_requests_clarification(): void
+    {
+        [$director, $colegio] = $this->directorContext();
+        foreach (['Carlos Pérez', 'Carlos Gómez'] as $name) {
+            User::factory()->create([
+                'name' => $name,
+                'role' => 'profesor',
+                'colegio_id' => $colegio->id,
+                'onboarding_completed' => true,
+            ]);
+        }
+
+        $response = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'Carlos dará Inglés de 1ro a 2do',
+        ]);
+
+        $response->assertUnprocessable()
+            ->assertJsonPath('needs_clarification', true);
+        $this->assertStringContainsString('varias coincidencias', (string) $response->json('message'));
     }
 
     /**

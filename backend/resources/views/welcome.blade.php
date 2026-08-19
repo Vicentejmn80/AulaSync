@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=5">
     <meta name="csrf-token" content="{{ csrf_token() }}">
 
     <title>AulaSync | La plataforma que sincroniza a tu colegio</title>
@@ -64,7 +64,12 @@
 
         * { margin: 0; padding: 0; box-sizing: border-box; }
 
-        html { scroll-behavior: smooth; }
+        html {
+            scroll-behavior: smooth;
+            overflow-x: hidden;
+            -webkit-text-size-adjust: 100%;
+            text-size-adjust: 100%;
+        }
 
         @media (prefers-reduced-motion: reduce) {
             html { scroll-behavior: auto; }
@@ -83,6 +88,11 @@
             line-height: 1.6;
             -webkit-font-smoothing: antialiased;
             position: relative;
+            overflow-x: hidden;
+            max-width: 100%;
+            min-height: 100dvh;
+            padding-left: env(safe-area-inset-left);
+            padding-right: env(safe-area-inset-right);
         }
 
         body::before {
@@ -218,6 +228,7 @@
             background: rgba(255, 251, 255, 0.7);
             border-bottom: 1px solid transparent;
             transition: background-color 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+            padding-top: env(safe-area-inset-top);
         }
 
         .az-nav.is-scrolled {
@@ -232,9 +243,9 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
-            gap: 24px;
+            gap: 16px;
             min-height: 64px;
-            padding: 12px 24px;
+            padding: 10px 0;
         }
 
         .az-logo {
@@ -386,7 +397,7 @@
 
         @media (max-width: 900px) {
             .az-nav-links { display: none; }
-            .az-nav-actions .az-btn-secondary { display: none; }
+            .az-nav-inner > .az-nav-actions { display: none; }
             .az-burger { display: flex; }
         }
 
@@ -394,6 +405,8 @@
            Hero
            ============================================================ */
         .az-hero { padding: 64px 0 40px; position: relative; overflow: hidden; }
+
+        .az-hero-visual { position: relative; min-width: 0; }
 
         .az-hero-bg {
             position: absolute;
@@ -410,6 +423,7 @@
             grid-template-columns: 1.05fr 0.95fr;
             gap: 56px;
             align-items: center;
+            min-width: 0;
         }
 
         .az-hero-title {
@@ -442,7 +456,6 @@
         .az-hero-trust i { color: var(--az-mint-500); }
 
         /* ── Dashboard mockup ────────────────────────────────────── */
-        .az-hero-visual { position: relative; }
 
         .az-dashboard-mock {
             background: var(--az-surface);
@@ -623,11 +636,12 @@
         }
 
         @media (max-width: 980px) {
-            .az-hero-inner { grid-template-columns: 1fr; }
-            .az-hero-visual { order: -1; }
+            .az-hero-inner { grid-template-columns: 1fr; gap: 36px; }
+            .az-hero-visual { order: -1; padding: 28px 8px 20px; overflow: hidden; }
             .az-hero-title, .az-hero-text, .az-hero-actions, .az-hero-trust { text-align: left; }
-            .chip-1 { left: 0; }
-            .chip-2 { right: 0; }
+            .chip-1 { top: 6px; left: 4px; }
+            .chip-2 { right: 4px; bottom: 22%; }
+            .chip-3 { bottom: 6px; left: 10%; }
         }
 
         /* ============================================================
@@ -739,10 +753,16 @@
             display: flex;
             gap: 8px;
             overflow-x: auto;
-            padding-bottom: 6px;
-            margin-bottom: 28px;
-            scrollbar-width: thin;
+            overflow-y: hidden;
+            padding: 4px 2px 10px;
+            margin: 0 -4px 28px;
+            scrollbar-width: none;
+            -webkit-overflow-scrolling: touch;
+            overscroll-behavior-x: contain;
+            scroll-snap-type: x proximity;
         }
+
+        .az-tabs::-webkit-scrollbar { display: none; }
 
         .az-tab-btn {
             flex-shrink: 0;
@@ -758,6 +778,8 @@
             font-size: 13.5px;
             cursor: pointer;
             transition: all 0.2s ease;
+            scroll-snap-align: start;
+            min-height: 44px;
         }
 
         .az-tab-btn i { font-size: 12px; }
@@ -1187,8 +1209,10 @@
             display: none;
             align-items: center;
             justify-content: center;
-            padding: 20px;
+            padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
             z-index: 200;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
         }
 
         .az-modal-overlay.is-open { display: flex; }
@@ -1198,8 +1222,10 @@
             border-radius: var(--az-radius-lg);
             width: 100%;
             max-width: 540px;
-            max-height: 90vh;
+            max-height: min(90dvh, 90vh);
             overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+            overscroll-behavior: contain;
             padding: 36px;
             position: relative;
             box-shadow: var(--az-shadow-lg);
@@ -1237,11 +1263,13 @@
             border: 1px solid var(--az-border);
             border-radius: 11px;
             padding: 11px 14px;
-            font-size: 14.5px;
+            font-size: 16px;
             font-family: inherit;
             color: var(--az-ink);
             background: var(--az-bg);
             transition: border-color 0.2s ease;
+            width: 100%;
+            min-height: 44px;
         }
 
         .az-form-field input:focus,
@@ -1287,12 +1315,76 @@
         /* ============================================================
            Responsive base
            ============================================================ */
+        @media (max-width: 900px) {
+            .az-container { padding: 0 18px; }
+            .az-panel-copy h3 { font-size: 1.35rem; }
+        }
+
         @media (max-width: 640px) {
-            section { padding: 60px 0; }
-            .az-hero { padding-top: 40px; }
+            section { padding: 52px 0; }
+            .az-container { padding: 0 16px; }
+            .az-section-head { margin-bottom: 28px; }
+            .az-section-title { font-size: 1.7rem; }
+            .az-eyebrow {
+                font-size: 11px;
+                letter-spacing: 0.08em;
+                padding: 6px 12px;
+                white-space: normal;
+                text-align: left;
+                max-width: 100%;
+            }
+            .az-btn {
+                white-space: normal;
+                text-align: center;
+                min-height: 48px;
+            }
+            .az-nav .az-logo-mark {
+                width: 42px;
+                height: 42px;
+                min-width: 42px;
+                min-height: 42px;
+                border-radius: 11px;
+            }
+            .az-nav .az-logo-text { font-size: 1.05rem; }
+            .az-nav-inner { min-height: 56px; gap: 10px; }
+            .az-mobile-menu { padding: 8px 16px 20px; }
+            .az-hero { padding: 28px 0 20px; }
+            .az-hero-title { font-size: clamp(1.85rem, 8vw, 2.35rem); margin: 14px 0 14px; }
+            .az-hero-text { font-size: 1rem; margin-bottom: 22px; }
+            .az-hero-actions { flex-direction: column; align-items: stretch; gap: 10px; }
+            .az-hero-actions .az-btn { width: 100%; }
             .az-hero-mascot,
             .az-trust-mascot,
             .az-final-cta-mascot { display: none; }
+            .az-floating-chip.chip-2 { display: none; }
+            .az-floating-chip { font-size: 11.5px; padding: 7px 12px; max-width: calc(100% - 16px); }
+            .az-mock-sidebar { display: none; }
+            .az-mock-body { grid-template-columns: 1fr; min-height: 0; }
+            .az-mock-row { grid-template-columns: 1fr; }
+            .az-mock-main { padding: 14px; gap: 10px; }
+            .az-mock-topbar span { font-size: 11px; }
+            .az-dashboard-mock { border-radius: 18px; }
+            .az-ps-col { padding: 22px 18px; }
+            .az-panel-grid { padding: 20px 16px; gap: 20px; }
+            .az-role-card,
+            .az-step,
+            .az-security-card { padding: 22px 18px; }
+            .az-pilot-card { padding: 28px 20px; }
+            .az-pilot-card h2 { font-size: 1.45rem; }
+            .az-pilot-actions .az-btn { width: 100%; }
+            .az-faq-item summary { padding: 16px 16px; font-size: 14.5px; }
+            .az-faq-answer p { padding: 0 16px 16px; }
+            .az-final-cta-actions { flex-direction: column; align-items: stretch; }
+            .az-final-cta-actions .az-btn { width: 100%; }
+            .az-footer { padding: 40px 0 28px; }
+            .az-modal { padding: 28px 18px 20px; border-radius: 20px; }
+            .az-trustband { padding: 40px 0; }
+        }
+
+        @media (max-width: 380px) {
+            .az-hero-title { font-size: 1.7rem; }
+            .chip-1, .chip-3 { position: static; display: inline-flex; margin: 8px 8px 0 0; }
+            .az-hero-visual { padding-top: 8px; }
         }
     </style>
 </head>
@@ -1974,15 +2066,23 @@
             /* ── Mobile menu ────────────────────────────────────────── */
             var burger = document.getElementById('az-burger');
             var mobileMenu = document.getElementById('az-mobile-menu');
+            function closeMobileMenu() {
+                mobileMenu.classList.remove('is-open');
+                burger.setAttribute('aria-expanded', 'false');
+                burger.setAttribute('aria-label', 'Abrir menú de navegación');
+                document.body.style.overflow = '';
+            }
             burger.addEventListener('click', function () {
                 var isOpen = mobileMenu.classList.toggle('is-open');
                 burger.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+                burger.setAttribute('aria-label', isOpen ? 'Cerrar menú de navegación' : 'Abrir menú de navegación');
+                document.body.style.overflow = isOpen ? 'hidden' : '';
             });
-            mobileMenu.querySelectorAll('a').forEach(function (link) {
-                link.addEventListener('click', function () {
-                    mobileMenu.classList.remove('is-open');
-                    burger.setAttribute('aria-expanded', 'false');
-                });
+            mobileMenu.querySelectorAll('a, button').forEach(function (link) {
+                link.addEventListener('click', closeMobileMenu);
+            });
+            window.addEventListener('resize', function () {
+                if (window.innerWidth > 900) closeMobileMenu();
             });
 
             /* ── Feature tabs (roving tabindex, ARIA) ─────────────────── */

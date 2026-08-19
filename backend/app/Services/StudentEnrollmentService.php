@@ -7,6 +7,8 @@ use App\Models\Notification;
 use App\Models\Student;
 use App\Models\User;
 use App\Observers\StudentObserver;
+use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\ValidationException;
 
 class StudentEnrollmentService
@@ -40,7 +42,7 @@ class StudentEnrollmentService
         ]);
 
         if ($course && (int) $course->colegio_id === $colegioId) {
-            $this->attachExisting($course, $student);
+            $this->attachExisting($course, $student, $actor);
         }
 
         $this->notifyDirectors($actor, $student);
@@ -48,12 +50,16 @@ class StudentEnrollmentService
         return $student->fresh();
     }
 
-    public function attachExisting(Course $course, Student $student): Student
+    public function attachExisting(Course $course, Student $student, ?User $actor = null): Student
     {
         if ((int) $course->colegio_id !== (int) $student->colegio_id) {
             throw ValidationException::withMessages([
                 'student_id' => 'Ese alumno no pertenece a este colegio.',
             ]);
+        }
+
+        if ($actor && Gate::forUser($actor)->denies('enroll', [$student, $course])) {
+            throw new AuthorizationException('No tienes permiso para matricular alumnos en este curso.');
         }
 
         if (! $course->students()->where('students.id', $student->id)->exists()) {

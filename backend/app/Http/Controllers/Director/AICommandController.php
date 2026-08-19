@@ -13,6 +13,8 @@ use App\Models\Student;
 use App\Models\TeacherInvite;
 use App\Models\User;
 use App\Services\DirectorActionService;
+use App\Services\DirectorAIInterpreterService;
+use App\Services\DirectorConversationContextService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
@@ -25,7 +27,9 @@ class AICommandController extends Controller
     private const PENDING_SESSION_KEY = 'director_ai_pending_actions';
 
     public function __construct(
-        private DirectorActionService $actionService
+        private DirectorActionService $actionService,
+        private DirectorAIInterpreterService $interpreter,
+        private DirectorConversationContextService $conversationContext,
     ) {}
 
     public function handle(Request $request): JsonResponse
@@ -47,6 +51,9 @@ class AICommandController extends Controller
             'pending_actions.*.intent' => ['required_with:pending_actions', 'string'],
             'pending_actions.*.data' => ['required_with:pending_actions', 'array'],
             'pending_actions.*.audit_log_id' => ['nullable', 'integer'],
+            'conversation' => ['sometimes', 'array', 'max:40'],
+            'conversation.*.role' => ['required_with:conversation', 'in:user,assistant'],
+            'conversation.*.content' => ['required_with:conversation', 'string', 'max:12000'],
         ]);
 
         if ($request->boolean('confirmed')) {
@@ -67,87 +74,66 @@ class AICommandController extends Controller
             return $this->executePending($request, $director);
         }
 
-        $intent = $this->detectIntent($text);
-        if (! $intent) {
-            return response()->json([
-                'success' => false,
-                'message' => 'No pude interpretar la operación. Prueba con: crear profesor/curso/alumnos, asignar/inscribir o consultar estado académico.',
-            ], 422);
-        }
-
-        try {
-            [$operationData, $missingDataMessage] = $this->buildOperationData($director, $intent, $text);
-            if ($missingDataMessage) {
-                return response()->json([
-                    'success' => false,
-                    'message' => $missingDataMessage,
-                ], 422);
-            }
-
-            if (! $this->intentRequiresConfirmation($intent)) {
-                $log = DirectorAiOperationLog::create([
-                    'director_user_id' => $director->id,
-                    'colegio_id' => $director->colegio_id,
-                    'intent' => $intent,
-                    'status' => 'received',
-                    'input_payload' => [
-                        'raw_text' => $text,
-                        'data' => $operationData,
-                    ],
-                ]);
-
-                $result = $this->runIntent($director, $intent, $operationData);
-                $summary = $this->verifyResult($director, $intent, $result);
-
-                $log->update([
-                    'status' => 'verified',
-                    'executed_at' => now(),
-                    'verified_at' => now(),
-                    'result_payload' => $summary,
-                ]);
-
-                return response()->json([
-                    'success' => true,
-                    'any_success' => true,
-                    'actions' => [[
-                        'success' => true,
-                        'action_type' => $intent,
-                        'message' => $summary['message'] ?? 'Consulta completada.',
-                        'data' => $summary['data'] ?? [],
-                    ]],
-                    'message' => 'Consulta completada.',
-                ]);
-            }
-
-            $log = DirectorAiOperationLog::create([
-                'director_user_id' => $director->id,
-                'colegio_id' => $director->colegio_id,
-                'intent' => $intent,
-                'status' => 'pending_confirmation',
-                'input_payload' => [
-                    'raw_text' => $text,
-                    'data' => $operationData,
-                ],
-            ]);
-
-            $pending = [[
-                'intent' => $intent,
-                'data' => $operationData,
-                'audit_log_id' => $log->id,
-            ]];
-            session([self::PENDING_SESSION_KEY => $pending]);
+        if ($this->isNegativeText($text) && session()->has(self::PENDING_SESSION_KEY)) {
+            session()->forget(self::PENDING_SESSION_KEY);
+            $this->conversationContext->clearPendingReferences();
 
             return response()->json([
                 'success' => true,
-                'requires_confirmation' => true,
-                'message' => $this->confirmationMessageFor($intent, $operationData),
-                'pending_actions' => $pending,
+                'cancelled' => true,
+                'message' => 'Operación cancelada. No hice cambios.',
             ]);
+        }
+
+        try {
+            $interpreted = $this->interpreter->interpret(
+                $director,
+                $text,
+                (array) ($payload['conversation'] ?? []),
+                $this->conversationContext->current(),
+            );
+
+            $actions = $this->enrichActionsFromText((array) ($interpreted['actions'] ?? []), $text);
+
+            if ($actions === []) {
+                $contextualAction = $this->contextualFallbackAction($text);
+                if ($contextualAction !== null) {
+                    $actions = [$contextualAction];
+                }
+            }
+
+            if ($actions === []) {
+                $intent = $this->detectIntent($text);
+                if ($intent) {
+                    [$operationData, $missingDataMessage] = $this->buildOperationData($director, $intent, $text);
+                    if ($missingDataMessage) {
+                        return response()->json([
+                            'success' => false,
+                            'needs_clarification' => true,
+                            'message' => $missingDataMessage,
+                        ]);
+                    }
+                    $actions = $this->enrichActionsFromText([['intent' => $intent, 'data' => $operationData]], $text);
+                }
+            }
+
+            if ($actions === []) {
+                return response()->json([
+                    'success' => false,
+                    'needs_clarification' => true,
+                    'message' => (is_array($interpreted) ? ($interpreted['clarification'] ?? null) : null)
+                        ?: 'Puedo crear y eliminar profesores, cursos y alumnos, asignar materias, matricular y consultar notas o faltas. Dime qué necesitas, por ejemplo: "Crea al profesor Yovanny Andrade y asígnale Inglés de 1ro a 6to".',
+                ]);
+            }
+
+            return $this->prepareActions($director, $actions, $text);
         } catch (ValidationException $e) {
             $msg = collect($e->errors())->flatten()->first() ?: 'No se pudo procesar la instrucción.';
+            $this->conversationContext->rememberError($msg);
 
             return response()->json([
                 'success' => false,
+                'needs_clarification' => true,
                 'message' => $msg,
             ], 422);
         } catch (\Throwable $e) {
@@ -163,9 +149,159 @@ class AICommandController extends Controller
         }
     }
 
+    /**
+     * @param  array<int,array{intent:string,data:array}>  $actions
+     */
+    private function prepareActions(User $director, array $actions, string $rawText): JsonResponse
+    {
+        $actions = $this->enrichActionsFromText($actions, $rawText);
+        $prepared = [];
+        foreach ($actions as $action) {
+            $intent = (string) ($action['intent'] ?? '');
+            $data = $this->hydrateActionData($director, $intent, (array) ($action['data'] ?? []));
+            if ($intent === 'create_teacher' && $this->utteranceMentionsCourses($rawText)
+                && (empty($data['subject_name']) || empty($data['grades']))) {
+                throw ValidationException::withMessages([
+                    'prompt' => 'Entendí que también quieres crear o asignar cursos. Dime la materia y los grados, por ejemplo: "asígnale Inglés de 1ro a 6to".',
+                ]);
+            }
+            $this->validateActionReferences($director, $intent, $data);
+            $prepared[] = ['intent' => $intent, 'data' => $data];
+        }
+
+        $this->conversationContext->rememberPlan($prepared, $rawText);
+        $requiresConfirmation = collect($prepared)
+            ->contains(fn ($action) => $this->intentRequiresConfirmation($action['intent']));
+
+        if (! $requiresConfirmation) {
+            $results = [];
+            foreach ($prepared as $action) {
+                $intent = $action['intent'];
+                $data = $action['data'];
+                $log = $this->createAuditLog($director, $intent, 'received', $rawText, $data);
+                $result = $this->runIntent($director, $intent, $data);
+                $summary = $this->verifyResult($director, $intent, $result);
+                $log->update([
+                    'status' => 'verified',
+                    'executed_at' => now(),
+                    'verified_at' => now(),
+                    'result_payload' => $summary,
+                ]);
+                $this->conversationContext->rememberResult($intent, $data, $summary);
+                $results[] = [
+                    'success' => true,
+                    'action_type' => $intent,
+                    'message' => $summary['message'] ?? 'Consulta completada.',
+                    'data' => $summary['data'] ?? [],
+                ];
+            }
+
+            return response()->json([
+                'success' => true,
+                'any_success' => true,
+                'actions' => $results,
+                'message' => $this->interpreter->narrate($rawText, $results),
+            ]);
+        }
+
+        $pending = [];
+        foreach ($prepared as $action) {
+            $log = $this->createAuditLog(
+                $director,
+                $action['intent'],
+                'pending_confirmation',
+                $rawText,
+                $action['data'],
+            );
+            $pending[] = [
+                'intent' => $action['intent'],
+                'data' => $action['data'],
+                'audit_log_id' => $log->id,
+            ];
+        }
+
+        session([self::PENDING_SESSION_KEY => $pending]);
+        $confirmations = collect($pending)
+            ->map(fn ($action) => [
+                'success' => true,
+                'message' => $this->confirmationMessageFor($action['intent'], $action['data']),
+            ])
+            ->all();
+
+        return response()->json([
+            'success' => true,
+            'requires_confirmation' => true,
+            'message' => $this->interpreter->composeReply($confirmations, true),
+            'pending_actions' => $pending,
+        ]);
+    }
+
+    private function createAuditLog(
+        User $director,
+        string $intent,
+        string $status,
+        string $rawText,
+        array $data,
+    ): DirectorAiOperationLog {
+        return DirectorAiOperationLog::create([
+            'director_user_id' => $director->id,
+            'colegio_id' => $director->colegio_id,
+            'intent' => $intent,
+            'status' => $status,
+            'input_payload' => [
+                'raw_text' => $rawText,
+                'data' => $data,
+            ],
+        ]);
+    }
+
+    private function hydrateActionData(User $director, string $intent, array $data): array
+    {
+        if (in_array($intent, ['create_teacher', 'create_course', 'assign_teacher', 'unassign_teacher'], true)) {
+            $data['grades'] = array_values(array_filter((array) ($data['grades'] ?? [])));
+            if ($intent === 'create_course' && $data['grades'] !== []) {
+                $data['grade'] = $data['grade'] ?? $data['grades'][0];
+            }
+            $data['missing_grades'] = $this->missingGradesFor($director, $data['grades']);
+        }
+        if ($intent === 'create_teacher') {
+            $data['subject_name'] = $data['subject_name'] ?? null;
+            $data['expires_in_days'] = 30;
+        }
+        if ($intent === 'delete_all_teachers') {
+            $data['count'] = User::query()
+                ->where('colegio_id', $director->colegio_id)
+                ->where('role', 'profesor')
+                ->count();
+        }
+        if ($intent === 'delete_all_courses') {
+            $data['count'] = Course::query()->where('colegio_id', $director->colegio_id)->count();
+        }
+        if ($intent === 'delete_course') {
+            $subject = trim((string) ($data['subject_name'] ?? ''));
+            $query = Course::query()
+                ->where('colegio_id', $director->colegio_id)
+                ->whereRaw('LOWER(subject_name) like ?', ['%'.rtrim(mb_strtolower($subject), 's').'%']);
+            if (! empty($data['grade'])) {
+                $query->whereRaw('LOWER(grade) = ?', [mb_strtolower((string) $data['grade'])]);
+            }
+            $data['match_count'] = $query->count();
+        }
+
+        return $data;
+    }
+
+    private function validateActionReferences(User $director, string $intent, array $data): void
+    {
+        if (in_array($intent, ['create_course', 'assign_teacher', 'unassign_teacher'], true) && ! empty($data['teacher_name'])) {
+            $this->actionService->resolveAssigneeForDirector($director, (string) $data['teacher_name']);
+        }
+    }
+
     private function executePending(Request $request, User $director): JsonResponse
     {
-        $actions = collect($request->input('pending_actions', session(self::PENDING_SESSION_KEY, [])));
+        // The client copy is display-only. Execute only the canonical server-side plan.
+        $actions = collect(session(self::PENDING_SESSION_KEY, []));
         if ($actions->isEmpty()) {
             return response()->json([
                 'success' => false,
@@ -175,14 +311,26 @@ class AICommandController extends Controller
 
         $results = [];
         $anySuccess = false;
+        $failedActions = [];
 
         foreach ($actions as $action) {
             $intent = (string) Arr::get($action, 'intent', '');
             $data = (array) Arr::get($action, 'data', []);
             $logId = Arr::get($action, 'audit_log_id');
-            $log = $logId ? DirectorAiOperationLog::find($logId) : null;
+            $log = $logId
+                ? DirectorAiOperationLog::query()
+                    ->where('id', $logId)
+                    ->where('director_user_id', $director->id)
+                    ->where('colegio_id', $director->colegio_id)
+                    ->first()
+                : null;
 
             try {
+                if ($logId && ! $log) {
+                    throw ValidationException::withMessages([
+                        'pending_actions' => 'La acción pendiente no pertenece a este director o colegio.',
+                    ]);
+                }
                 if ($log) {
                     $log->update([
                         'status' => 'confirmed',
@@ -208,6 +356,7 @@ class AICommandController extends Controller
                     'message' => $summary['message'] ?? 'Operación ejecutada.',
                     'data' => $summary['data'] ?? [],
                 ];
+                $this->conversationContext->rememberResult($intent, $data, $summary);
                 $anySuccess = true;
             } catch (ValidationException $e) {
                 $msg = collect($e->errors())->flatten()->first() ?: 'Error de validación.';
@@ -223,6 +372,8 @@ class AICommandController extends Controller
                     'action_type' => $intent,
                     'message' => $msg,
                 ];
+                $failedActions[] = $action;
+                $this->conversationContext->rememberError($msg);
             } catch (\Throwable $e) {
                 Log::error('Director AI execution failed', [
                     'director_id' => $director->id,
@@ -243,18 +394,27 @@ class AICommandController extends Controller
                         ? 'Falló la ejecución de la operación: '.$e->getMessage()
                         : 'Falló la ejecución de la operación.',
                 ];
+                $failedActions[] = $action;
+                $this->conversationContext->rememberError($e->getMessage());
             }
         }
 
-        session()->forget(self::PENDING_SESSION_KEY);
+        if ($failedActions === []) {
+            session()->forget(self::PENDING_SESSION_KEY);
+        } else {
+            session([self::PENDING_SESSION_KEY => $failedActions]);
+        }
 
         return response()->json([
             'success' => $anySuccess,
             'any_success' => $anySuccess,
+            'requires_clarification' => $failedActions !== [],
+            'pending_actions' => $failedActions !== [] ? $failedActions : null,
             'actions' => $results,
-            'message' => $anySuccess
-                ? 'Operación del director ejecutada y verificada.'
-                : 'No se pudo ejecutar la operación.',
+            'message' => $this->interpreter->narrate(
+                (string) ($this->conversationContext->current()['last_user_text'] ?? ''),
+                $results,
+            ),
         ]);
     }
 
@@ -268,8 +428,17 @@ class AICommandController extends Controller
             'assign_teacher' => $this->actionService->assignTeacherToGradesSubject($director, $data),
             'create_students_batch' => $this->actionService->createStudentsBatch($director, $data),
             'enroll_students_course' => $this->actionService->enrollStudentsToCourse($director, $data),
+            'unenroll_students_course' => $this->actionService->unenrollStudentsFromCourse($director, $data),
+            'unassign_teacher' => $this->actionService->unassignTeacher($director, $data),
+            'update_course' => $this->actionService->updateCourse($director, $data),
+            'update_student' => $this->actionService->updateStudent($director, $data),
             'manage_invite_code' => $this->actionService->manageInviteCode($director, $data),
             'query_academic' => $this->queryAcademic($director, $data),
+            'delete_teacher' => $this->actionService->deleteTeacher($director, $data),
+            'delete_all_teachers' => $this->actionService->deleteAllTeachers($director, $data),
+            'delete_course' => $this->actionService->deleteCourse($director, $data),
+            'delete_all_courses' => $this->actionService->deleteAllCourses($director, $data),
+            'delete_student' => $this->actionService->deleteStudent($director, $data),
             default => throw ValidationException::withMessages([
                 'intent' => 'Intent no soportado para Director AI.',
             ]),
@@ -286,8 +455,15 @@ class AICommandController extends Controller
             'assign_teacher' => $this->verifyAssignTeacher($director, $result),
             'create_students_batch' => $this->verifyCreateStudentsBatch($director, $result),
             'enroll_students_course' => $this->verifyEnrollStudentsToCourse($director, $result),
+            'unenroll_students_course' => $this->verifyUnenrollStudentsFromCourse($director, $result),
+            'unassign_teacher', 'update_course', 'update_student' => $this->verifyGenericMutation($result),
             'manage_invite_code' => $this->verifyManageInviteCode($director, $result),
             'query_academic' => $this->verifyAcademicQueryResult($result),
+            'delete_teacher' => $this->verifyDeletePeople($director, $result, 'profesor'),
+            'delete_all_teachers' => $this->verifyDeletePeople($director, $result, 'profesor'),
+            'delete_course' => $this->verifyDeleteCourses($director, $result),
+            'delete_all_courses' => $this->verifyDeleteCourses($director, $result),
+            'delete_student' => $this->verifyDeletePeople($director, $result, 'alumno'),
             default => throw ValidationException::withMessages([
                 'intent' => 'No se pudo verificar el resultado.',
             ]),
@@ -466,6 +642,27 @@ class AICommandController extends Controller
         ];
     }
 
+    private function verifyUnenrollStudentsFromCourse(User $director, array $result): array
+    {
+        /** @var Course $course */
+        $course = $result['course'];
+        if ((int) $course->colegio_id !== (int) $director->colegio_id) {
+            throw ValidationException::withMessages([
+                'unenroll' => 'La desmatriculación resultó fuera del colegio del director.',
+            ]);
+        }
+
+        return [
+            'message' => 'Desmatriculé '.count($result['unenrolled']).' alumno(s) de '.$course->subject_name.' '.$course->grade.'.',
+            'data' => [
+                'course_id' => $course->id,
+                'unenrolled' => $result['unenrolled'],
+                'missing_students' => $result['missing_students'],
+                'total_students_in_course' => $result['total_students_in_course'],
+            ],
+        ];
+    }
+
     private function verifyManageInviteCode(User $director, array $result): array
     {
         /** @var TeacherInvite $invite */
@@ -498,6 +695,60 @@ class AICommandController extends Controller
         ];
     }
 
+    private function verifyGenericMutation(array $result): array
+    {
+        return [
+            'message' => $result['message'] ?? 'Cambio aplicado correctamente.',
+            'data' => $result['data'] ?? [],
+        ];
+    }
+
+    /**
+     * @param  array{deleted_count?:int, deleted_names?:array<int,string>}  $result
+     */
+    private function verifyDeletePeople(User $director, array $result, string $label): array
+    {
+        $count = (int) ($result['deleted_count'] ?? 0);
+        $names = collect($result['deleted_names'] ?? [])->filter()->values();
+        $suffix = $names->isNotEmpty() ? ' '.$names->implode(', ').'.' : '.';
+
+        return [
+            'message' => $count === 1
+                ? "Eliminé 1 {$label} correctamente.".$suffix
+                : "Eliminé {$count} {$label}(es) correctamente.".$suffix,
+            'data' => [
+                'deleted_count' => $count,
+                'deleted_names' => $names->all(),
+                'colegio_id' => $director->colegio_id,
+            ],
+        ];
+    }
+
+    /**
+     * @param  array{deleted_count?:int, deleted_courses?:array<int,array>}  $result
+     */
+    private function verifyDeleteCourses(User $director, array $result): array
+    {
+        $count = (int) ($result['deleted_count'] ?? 0);
+        $courses = collect($result['deleted_courses'] ?? []);
+        $labels = $courses->map(function ($course) {
+            $section = ! empty($course['section']) ? ' sección '.$course['section'] : '';
+
+            return trim(($course['subject_name'] ?? '').' '.($course['grade'] ?? '').$section);
+        })->filter()->implode(', ');
+
+        return [
+            'message' => $count === 0
+                ? 'No había cursos para eliminar.'
+                : "Eliminé {$count} curso(s)".($labels !== '' ? ': '.$labels : '').'.',
+            'data' => [
+                'deleted_count' => $count,
+                'deleted_courses' => $courses->all(),
+                'colegio_id' => $director->colegio_id,
+            ],
+        ];
+    }
+
     /**
      * @return array{0:array,1:?string}
      */
@@ -509,8 +760,14 @@ class AICommandController extends Controller
             'assign_teacher' => $this->parseAssignTeacher($director, $text),
             'create_students_batch' => $this->parseCreateStudentsBatch($director, $text),
             'enroll_students_course' => $this->parseEnrollStudentsCourse($director, $text),
+            'unenroll_students_course' => $this->parseEnrollStudentsCourse($director, $text),
             'manage_invite_code' => $this->parseManageInviteCode($text),
             'query_academic' => $this->parseQueryAcademic($text),
+            'delete_teacher' => $this->parseDeleteTeacher($director, $text),
+            'delete_all_teachers' => $this->parseDeleteAllTeachers($director),
+            'delete_course' => $this->parseDeleteCourse($director, $text),
+            'delete_all_courses' => $this->parseDeleteAllCourses($director),
+            'delete_student' => $this->parseDeleteStudent($director, $text),
             default => [[], 'No pude convertir tu solicitud en una operación segura.'],
         };
     }
@@ -530,7 +787,18 @@ class AICommandController extends Controller
             'assign_teacher' => "Voy a asignar a {$data['teacher_name']} la materia {$data['subject_name']} en ".implode(', ', $data['grades']).'. Responde "sí" para confirmar.',
             'create_students_batch' => 'Voy a crear '.count($data['names'])." estudiante(s) en {$data['grade']}".($data['section'] ? " / {$data['section']}" : '').'. Responde "sí" para confirmar.',
             'enroll_students_course' => 'Voy a inscribir '.count($data['names'])." alumno(s) en {$data['subject_name']} {$data['grade']}".(($data['section'] ?? null) ? " sección {$data['section']}" : '').'. Responde "sí" para confirmar.',
+            'unenroll_students_course' => 'Voy a desmatricular '.count($data['names'])." alumno(s) de {$data['subject_name']} {$data['grade']}".(($data['section'] ?? null) ? " sección {$data['section']}" : '').'. Responde "sí" para confirmar.',
+            'unassign_teacher' => 'Voy a desasignar los cursos indicados de '.($data['teacher_name'] ?? 'ese profesor').'. Responde "sí" para confirmar.',
+            'update_course' => 'Voy a modificar el curso '.($data['subject_name'] ?? '').' '.($data['grade'] ?? '').'. Responde "sí" para confirmar.',
+            'update_student' => 'Voy a actualizar los datos de '.($data['student_name'] ?? 'ese alumno').'. Responde "sí" para confirmar.',
             'manage_invite_code' => 'Voy a consultar el estado del código DOC-. Responde "sí" para confirmar.',
+            'delete_teacher' => 'Voy a eliminar al profesor '.($data['teacher_name'] ?? '').'. Los cursos se desasignarán, no se borrarán. Responde "sí" para confirmar.',
+            'delete_all_teachers' => 'Voy a eliminar a '.((int) ($data['count'] ?? 0)).' profesor(es) de tu colegio. Los cursos se desasignarán, no se borrarán. Responde "sí" para confirmar.',
+            'delete_course' => 'Voy a eliminar '.((int) ($data['match_count'] ?? 0)).' curso(s) de '.($data['subject_name'] ?? 'la asignatura indicada').
+                (($data['grade'] ?? null) ? ' '.$data['grade'] : '').
+                '. Responde "sí" para confirmar.',
+            'delete_all_courses' => 'Voy a eliminar todos los cursos del colegio ('.((int) ($data['count'] ?? 0)).'). Responde "sí" para confirmar.',
+            'delete_student' => 'Voy a eliminar al alumno '.($data['student_name'] ?? '').'. Responde "sí" para confirmar.',
             default => 'Confirma la operación.',
         };
 
@@ -553,9 +821,82 @@ class AICommandController extends Controller
         return 'También crearé automáticamente los grados que faltan: '.implode(', ', $missing).'.';
     }
 
+    /**
+     * Resolve terse follow-ups when the external interpreter is unavailable.
+     *
+     * @return array{intent:string,data:array}|null
+     */
+    private function contextualFallbackAction(string $text): ?array
+    {
+        $value = $this->normalizedText($text);
+        $context = $this->conversationContext->current();
+        $teacher = trim((string) ($context['teacher_name'] ?? ''));
+        $subject = trim((string) ($context['subject_name'] ?? ''));
+        $grades = array_values(array_filter((array) ($context['grades'] ?? [])));
+
+        if (preg_match('/^(?:crealo|crear?lo|hazlo)$/', $value) && $teacher !== '') {
+            return [
+                'intent' => 'create_teacher',
+                'data' => [
+                    'teacher_name' => $teacher,
+                    'subject_name' => $subject !== '' ? $subject : null,
+                    'grades' => $grades,
+                    'expires_in_days' => 30,
+                ],
+            ];
+        }
+
+        if ((str_contains($value, 'agregale') || str_contains($value, 'asignale') || str_contains($value, 'los cursos que dijimos'))
+            && $teacher !== '') {
+            $parsedSubject = $this->extractSubject($text)
+                ?? $this->extractSubjectFromDeletePrompt($text)
+                ?? ($subject !== '' ? $subject : null);
+            $parsedGrades = $this->extractGrades($text);
+            if ($parsedGrades === []) {
+                $parsedGrades = $grades;
+            }
+            if ($parsedSubject && $parsedGrades !== []) {
+                return [
+                    'intent' => 'assign_teacher',
+                    'data' => [
+                        'teacher_name' => $this->extractTeacherName($text) ?? $teacher,
+                        'subject_name' => $parsedSubject,
+                        'grades' => $parsedGrades,
+                    ],
+                ];
+            }
+        }
+
+        return null;
+    }
+
     private function detectIntent(string $text): ?string
     {
         $value = $this->normalizedText($text);
+
+        // Eliminar / borrar / quitar / remover / limpiar (antes de crear, para no confundir verbos).
+        if ($this->hasDeleteVerb($value)) {
+            if ($this->isMassPeopleTarget($value) && preg_match('/\b(?:profesores|profesoras|docentes)\b/', $value)) {
+                return 'delete_all_teachers';
+            }
+            if ($this->isMassCourseTarget($value)) {
+                return 'delete_all_courses';
+            }
+            if (preg_match('/\b(?:profesor(?:a)?|docente)\b/', $value)) {
+                return 'delete_teacher';
+            }
+            if (preg_match('/\b(?:alumno|estudiante)s?\b/', $value) && ! preg_match('/\b(?:profesores|docentes|cursos)\b/', $value)) {
+                return 'delete_student';
+            }
+            if (preg_match('/\b(?:curso|asignatura|materia)s?\b/', $value)) {
+                return 'delete_course';
+            }
+        }
+
+        // A teacher creation may also mention courses/subjects. It must win over create_course.
+        if (preg_match('/\b(?:cre(?:a|ar|es|e|o)|creame|invita)\s+(?:(?:a|al)\s+|el\s+|la\s+)?(?:profesor(?:a)?|docente)\b/', $value)) {
+            return 'create_teacher';
+        }
 
         // Crear uno o varios cursos: "crea el curso de X", "crees los cursos de: 1ero..6to de ingles",
         // "Crea Matemática para 4.º, 5.º y 6.º."
@@ -564,12 +905,14 @@ class AICommandController extends Controller
                 || preg_match('/\b(?:para|en|de|del)\s+(?:el\s+)?[1-6](?:ro|er|do|to|°|º|ero)?\s*(?:grado\b|[,.]|(?:y|e)\b|$)/', $value))) {
             return 'create_course';
         }
-        if ((preg_match('/\bcre(?:a|ar|es|e|o)\b/', $value) || str_contains($value, 'creame') || str_contains($value, 'crearme') || str_contains($value, 'invita')) && str_contains($value, 'profesor')) {
-            return 'create_teacher';
-        }
-        if ((str_contains($value, 'dara') || str_contains($value, 'asigna'))
-            && (str_contains($value, 'grado') || preg_match('/\b[1-6](ro|do|to|er)?\b/', $value))) {
+        if ((str_contains($value, 'dara') || str_contains($value, 'asigna') || str_contains($value, 'agregale') || str_contains($value, 'asignale'))
+            && (str_contains($value, 'grado') || str_contains($value, 'curso') || str_contains($value, 'materia') || preg_match('/\b[1-6](ro|do|to|er)?\b/', $value))) {
             return 'assign_teacher';
+        }
+        if ((str_contains($value, 'desmatricula') || str_contains($value, 'retira') || str_contains($value, 'saca'))
+            && str_contains($value, 'curso')
+            && (str_contains($value, 'alumno') || str_contains($value, 'estudiante') || preg_match('/\sa\s+[a-z]/', $value))) {
+            return 'unenroll_students_course';
         }
         if ((str_contains($value, 'inscribe') || str_contains($value, 'asigna'))
             && str_contains($value, 'curso')
@@ -618,14 +961,107 @@ class AICommandController extends Controller
     /**
      * @return array{0:array,1:?string}
      */
+    private function parseDeleteTeacher(User $director, string $text): array
+    {
+        $name = $this->extractNamedPersonAfterRole($text, 'profesor');
+        if (! $name) {
+            return [[], '¿A qué profesor deseas eliminar? Ejemplo: "Elimina al profesor Carlos Pérez".'];
+        }
+
+        return [[
+            'teacher_name' => $name,
+        ], null];
+    }
+
+    /**
+     * @return array{0:array,1:?string}
+     */
+    private function parseDeleteAllTeachers(User $director): array
+    {
+        $count = User::query()
+            ->where('colegio_id', $director->colegio_id)
+            ->where('role', 'profesor')
+            ->count();
+
+        return [[
+            'count' => $count,
+        ], null];
+    }
+
+    /**
+     * @return array{0:array,1:?string}
+     */
+    private function parseDeleteCourse(User $director, string $text): array
+    {
+        $subject = $this->extractSubjectFromCoursePrompt($text) ?? $this->extractSubjectFromDeletePrompt($text);
+        if (! $subject) {
+            return [[], '¿Qué curso debo eliminar? Ejemplo: "Borra el curso de matemáticas".'];
+        }
+
+        $grade = $this->extractTargetGrade($text);
+        $section = $this->extractSection($text);
+        $subjectKey = rtrim(mb_strtolower($subject), 's');
+        $query = Course::query()
+            ->where('colegio_id', $director->colegio_id)
+            ->whereRaw('LOWER(subject_name) like ?', ['%'.$subjectKey.'%']);
+        if ($grade) {
+            $query->whereRaw('LOWER(grade) = ?', [mb_strtolower($grade)]);
+        }
+        $matchCount = $query->count();
+        if ($matchCount === 0) {
+            return [[], 'No encontré un curso de '.$subject.($grade ? " {$grade}" : '').' en tu colegio.'];
+        }
+
+        return [[
+            'subject_name' => $subject,
+            'grade' => $grade,
+            'section' => $section,
+            'match_count' => $matchCount,
+        ], null];
+    }
+
+    /**
+     * @return array{0:array,1:?string}
+     */
+    private function parseDeleteAllCourses(User $director): array
+    {
+        $count = Course::query()->where('colegio_id', $director->colegio_id)->count();
+
+        return [[
+            'count' => $count,
+        ], null];
+    }
+
+    /**
+     * @return array{0:array,1:?string}
+     */
+    private function parseDeleteStudent(User $director, string $text): array
+    {
+        $name = $this->extractNamedPersonAfterRole($text, 'alumno')
+            ?? $this->extractNamedPersonAfterRole($text, 'estudiante');
+        if (! $name) {
+            return [[], '¿A qué alumno deseas eliminar? Ejemplo: "Elimina al alumno Carlos Pérez".'];
+        }
+
+        return [[
+            'student_name' => $name,
+        ], null];
+    }
+
+    /**
+     * @return array{0:array,1:?string}
+     */
     private function parseCreateTeacher(User $director, string $text): array
     {
-        $name = $this->extractTeacherName($text);
+        $name = $this->sanitizePersonName($this->extractTeacherName($text));
         if (! $name) {
             return [[], '¿Cuál es el nombre completo del profesor que deseas crear?'];
         }
 
-        $subject = $this->extractSubject($text);
+        $subject = $this->extractSubject($text)
+            ?? $this->extractSubjectFromCoursePrompt($text)
+            ?? $this->extractSubjectFromDeletePrompt($text)
+            ?? $this->extractKnownSubject($text);
         $grades = $this->extractGrades($text);
         $missingGrades = $this->missingGradesFor($director, $grades);
 
@@ -677,17 +1113,25 @@ class AICommandController extends Controller
      */
     private function parseAssignTeacher(User $director, string $text): array
     {
-        $name = $this->extractTeacherName($text);
+        $context = $this->conversationContext->current();
+        $name = $this->sanitizePersonName($this->extractTeacherName($text) ?? ($context['teacher_name'] ?? null));
         if (! $name) {
             return [[], '¿A qué profesor deseas asignar la materia?'];
         }
 
-        $subject = $this->extractSubject($text);
+        $subject = $this->extractSubject($text)
+            ?? $this->extractSubjectFromCoursePrompt($text)
+            ?? $this->extractSubjectFromDeletePrompt($text)
+            ?? $this->extractKnownSubject($text)
+            ?? ($context['subject_name'] ?? null);
         if (! $subject) {
             return [[], '¿Qué materia deseas asignar?'];
         }
 
         $grades = $this->extractGrades($text);
+        if ($grades === [] && is_array($context['grades'] ?? null)) {
+            $grades = $context['grades'];
+        }
         if ($grades === []) {
             return [[], '¿Qué grados debo asignar? Ejemplo: 1ro a 6to.'];
         }
@@ -1340,23 +1784,186 @@ class AICommandController extends Controller
     private function extractTeacherName(string $text): ?string
     {
         $patterns = [
-            '/profesor(?:a)?\s+(.+?)(?:\s+y\s+as[ií]gna|\s+para\s+as[ií]gna|\s+dara|\s+dará|,|\.|$)/iu',
+            '/profesor(?:a)?\s+(.+?)(?:\s+(?:donde|al\s+que|con\s+la|con\s+el|y\s+quiero|y\s+as[ií]gna|y\s+agrega|y\s+crea|que\s+crea|para\s+as[ií]gna|dara|dará)|,|\.|$)/iu',
+            '/(?:as[ií]gna(?:le)?|agrega(?:le)?|asignar)\s+(?:los\s+cursos\s+|las\s+materias\s+)?(?:a\s+)?([A-Za-zÁÉÍÓÚáéíóúÑñ][A-Za-zÁÉÍÓÚáéíóúÑñ\s]{1,80})$/iu',
             '/^(.+?)\s+(?:dara|dará|asigna)/iu',
         ];
         foreach ($patterns as $pattern) {
             if (preg_match($pattern, $text, $m)) {
-                $name = trim((string) $m[1]);
-                if ($name !== '' && mb_strlen($name) <= 80) {
+                $name = $this->sanitizePersonName((string) $m[1]);
+                if ($name) {
                     return $name;
                 }
+            }
+        }
+
+        return $this->sanitizePersonName($this->extractNamedPersonAfterRole($text, 'profesor'));
+    }
+
+    private function extractNamedPersonAfterRole(string $text, string $role): ?string
+    {
+        $rolePattern = $role === 'profesor'
+            ? 'profesor(?:a)?'
+            : ($role === 'alumno' ? 'alumnos?' : 'estudiantes?');
+
+        if (! preg_match('/(?:al?\s+)?'.$rolePattern.'\s+(.+)$/iu', $text, $m)) {
+            return null;
+        }
+
+        $name = trim((string) $m[1]);
+        $name = trim(preg_replace('/[.!?]+$/', '', $name) ?? $name);
+        $name = trim(preg_replace('/^(?:al|a la|el|la|los|las)\s+/iu', '', $name) ?? $name);
+
+        return $this->sanitizePersonName($name);
+    }
+
+    private function isGenericPersonLabel(string $value): bool
+    {
+        $normalized = $this->normalizedText($value);
+
+        return (bool) preg_match('/^(?:los|las|todos|todas|que hay|existentes?|registrados?|del colegio|de la escuela)(?:\s|$)/', $normalized)
+            || (bool) preg_match('/\b(?:que hay|existentes?|registrados?)\b/', $normalized);
+    }
+
+    /**
+     * @param  array<int,array{intent:string,data:array}>  $actions
+     * @return array<int,array{intent:string,data:array}>
+     */
+    private function enrichActionsFromText(array $actions, string $text): array
+    {
+        $subject = $this->extractSubject($text)
+            ?? $this->extractSubjectFromCoursePrompt($text)
+            ?? $this->extractSubjectFromDeletePrompt($text)
+            ?? $this->extractKnownSubject($text);
+        $grades = $this->extractGrades($text);
+        $teacher = $this->sanitizePersonName($this->extractTeacherName($text));
+
+        foreach ($actions as &$action) {
+            $intent = (string) ($action['intent'] ?? '');
+            $data = (array) ($action['data'] ?? []);
+            if (! empty($data['teacher_name'])) {
+                $data['teacher_name'] = $this->sanitizePersonName((string) $data['teacher_name']) ?? $data['teacher_name'];
+            }
+            if (in_array($intent, ['create_teacher', 'create_course', 'assign_teacher'], true)) {
+                if (empty($data['subject_name']) && $subject) {
+                    $data['subject_name'] = $subject;
+                }
+                if (empty($data['grades']) && $grades !== []) {
+                    $data['grades'] = $grades;
+                }
+                if (empty($data['teacher_name']) && $teacher) {
+                    $data['teacher_name'] = $teacher;
+                }
+            }
+            $action['data'] = $data;
+        }
+        unset($action);
+
+        return $actions;
+    }
+
+    private function sanitizePersonName(?string $name): ?string
+    {
+        if ($name === null) {
+            return null;
+        }
+
+        $name = trim($name);
+        $name = preg_replace(
+            '/\s+(?:y\s+)?(?:agrega(?:lo|le|s)?|asigna(?:lo|le)?|crea(?:r)?(?:s|me|les)?|quiero|donde|con\s+(?:los|las|el|la)|cursos?|materias?|asignaturas?).*$/iu',
+            '',
+            $name
+        ) ?? $name;
+        $name = trim($name, " \t\n\r\0\x0B,.");
+        if ($name === '' || $this->isGenericPersonLabel($name) || mb_strlen($name) > 80) {
+            return null;
+        }
+
+        return $name;
+    }
+
+    private function extractKnownSubject(?string $text): ?string
+    {
+        if ($text === null || trim($text) === '') {
+            return null;
+        }
+
+        $normalized = $this->normalizedText($text);
+        $aliases = [
+            'ingles' => 'Inglés',
+            'matematica' => 'Matemática',
+            'matematicas' => 'Matemática',
+            'lengua' => 'Lengua',
+            'ciencias' => 'Ciencias',
+            'historia' => 'Historia',
+            'geografia' => 'Geografía',
+            'fisica' => 'Física',
+            'quimica' => 'Química',
+            'biologia' => 'Biología',
+            'educacion fisica' => 'Educación Física',
+        ];
+        foreach ($aliases as $alias => $canonical) {
+            if (preg_match('/\b'.preg_quote($alias, '/').'\b/u', $normalized)) {
+                return $canonical;
             }
         }
 
         return null;
     }
 
+    private function utteranceMentionsCourses(string $text): bool
+    {
+        $value = $this->normalizedText($text);
+
+        return (bool) preg_match('/\b(?:curso|materia|asignatura|grado|ingles|matematic)\b/', $value)
+            || $this->extractGrades($text) !== [];
+    }
+
+    private function extractSubjectFromDeletePrompt(string $text): ?string
+    {
+        if (preg_match('/(?:curso|asignatura|materia)s?\s+(?:de\s+|del\s+)?([A-Za-zÁÉÍÓÚáéíóúÑñ][A-Za-zÁÉÍÓÚáéíóúÑñ\s]{1,60})$/iu', $text, $m)) {
+            $subject = trim((string) $m[1]);
+            $subject = trim(preg_replace('/\s+(?:de\s+)?[1-6](?:ro|er|do|to|°|º|ero)?\s*(?:grado)?.*$/iu', '', $subject) ?? $subject);
+            if ($this->isValidCourseSubject($subject)) {
+                return $this->titleCaseSubject($subject);
+            }
+        }
+
+        return null;
+    }
+
+    private function hasDeleteVerb(string $value): bool
+    {
+        return (bool) preg_match('/\b(?:elimina(?:r)?|borra(?:r)?|quita(?:r)?|remover|remueve|limpia(?:r)?)\b/', $value);
+    }
+
+    private function isMassPeopleTarget(string $value): bool
+    {
+        return (bool) preg_match('/\b(?:todos?|todas?|los|las)\s+(?:los\s+|las\s+)?(?:profesores|profesoras|docentes|alumnos|estudiantes)\b/', $value)
+            || (bool) preg_match('/\b(?:profesores|profesoras|docentes|alumnos|estudiantes)\s+(?:que hay|existentes?|registrados?)\b/', $value);
+    }
+
+    private function isMassCourseTarget(string $value): bool
+    {
+        if (preg_match('/\b(?:curso|asignatura|materia)\s+(?:de|del)\b/', $value)) {
+            return false;
+        }
+
+        return (bool) preg_match('/\b(?:todos?|todas?|los|las)\s+(?:los\s+|las\s+)?(?:cursos|asignaturas|materias)\b/', $value)
+            || (bool) preg_match('/\b(?:cursos|asignaturas|materias)\s+(?:que hay|existentes?|registrados?)\b/', $value);
+    }
+
     private function extractSubjectFromCoursePrompt(string $text): ?string
     {
+        // "cursos de inglés" / "materia de ingles" en cualquier parte del pedido.
+        if (preg_match('/(?:cursos?|materias?|asignaturas?)\s+de\s+([A-Za-zÁÉÍÓÚáéíóúÑñ][A-Za-zÁÉÍÓÚáéíóúÑñ]{2,40})/iu', $text, $m)) {
+            $subject = trim((string) $m[1]);
+            $known = $this->extractKnownSubject($subject) ?? $this->titleCaseSubject($subject);
+            if ($this->isValidCourseSubject($known)) {
+                return $known;
+            }
+        }
+
         // Forma 1: "los cursos de: 1ero, 2do...6to grado de INGLES" (lista de grados antes de la materia)
         if (preg_match('/(?:curso|cursos|cursso|asignatura|materia)s?\s+de\s*:?\s*([0-9].*?)\s+grado\s+de\s+([A-Za-zÁÉÍÓÚáéíóúÑñ][A-Za-zÁÉÍÓÚáéíóúÑñ\s]*?)(?:\s+(?:para|en|y|,|con)|\s*$)/iu', $text, $m)) {
             $subject = trim((string) $m[2]);
@@ -1421,10 +2028,15 @@ class AICommandController extends Controller
         $patterns = [
             '/(?:as[ií]gna(?:le)?|dara|dará)\s+([A-Za-zÁÉÍÓÚáéíóúÑñ\s]{3,50})\s+(?:de|del|para|en)\s+/u',
             '/(?:as[ií]gna(?:le)?|dara|dará)\s+([A-Za-zÁÉÍÓÚáéíóúÑñ\s]{3,50})(?:,|\.|$)/u',
+            '/(?:materia|asignatura)\s+de\s+([A-Za-zÁÉÍÓÚáéíóúÑñ][A-Za-zÁÉÍÓÚáéíóúÑñ\s]{1,50}?)(?:\s+(?:con|para|de|en|a)\s+|,|\.|$)/iu',
+            '/(?:agrega(?:le)?|asigna(?:le)?)\s+(?:la\s+materia\s+|las\s+materias\s+)?de?\s*([A-Za-zÁÉÍÓÚáéíóúÑñ][A-Za-zÁÉÍÓÚáéíóúÑñ\s]{1,50}?)(?:\s+(?:de|para|en|a)\s+|,|\.|$)/iu',
+            '/(?:cursos?|materias?|asignaturas?)\s+de\s+([A-Za-zÁÉÍÓÚáéíóúÑñ][A-Za-zÁÉÍÓÚáéíóúÑñ]{2,40})/iu',
         ];
         foreach ($patterns as $pattern) {
             if (preg_match($pattern, $text, $m)) {
-                return trim($m[1]);
+                $raw = trim($m[1]);
+
+                return $this->extractKnownSubject($raw) ?? trim($raw);
             }
         }
 
@@ -1437,6 +2049,18 @@ class AICommandController extends Controller
     private function extractGrades(string $text): array
     {
         $value = mb_strtolower($text);
+        $value = strtr($value, [
+            'primer grado' => '1ro grado',
+            'primero' => '1ro',
+            'segundo' => '2do',
+            'tercero' => '3ro',
+            'tercer grado' => '3ro grado',
+            'cuarto' => '4to',
+            'quinto' => '5to',
+            'sexto' => '6to',
+            '1ero' => '1ro',
+            '3ero' => '3ro',
+        ]);
 
         if (preg_match('/([1-6])(?:ro|ero|er|°|º|do|to)?\s*\.{2,}\s*([1-6])(?:to|do|ro|ero|er|°|º)?/u', $value, $m)) {
             $from = (int) $m[1];
@@ -1446,7 +2070,7 @@ class AICommandController extends Controller
             }
         }
 
-        if (preg_match('/de\s+([1-6])(?:ro|ero|er|°|º)?\s+a\s+([1-6])(?:to|do|ro|°|º)?/u', $value, $m)) {
+        if (preg_match('/de\s+([1-6])(?:ro|ero|er|°|º|do|to)?\s*(?:grado)?\s+a(?:l)?\s+([1-6])(?:to|do|ro|ero|er|°|º)?/u', $value, $m)) {
             $from = (int) $m[1];
             $to = (int) $m[2];
             if ($from <= $to) {
@@ -1578,6 +2202,15 @@ class AICommandController extends Controller
             'assign_teacher',
             'create_students_batch',
             'enroll_students_course',
+            'unenroll_students_course',
+            'unassign_teacher',
+            'update_course',
+            'update_student',
+            'delete_teacher',
+            'delete_all_teachers',
+            'delete_course',
+            'delete_all_courses',
+            'delete_student',
         ], true);
     }
 
@@ -1593,7 +2226,7 @@ class AICommandController extends Controller
             return false;
         }
 
-        $short = ['sí', 'si', 'ok', 'okay', 'sip', 'dale', 'adelante', 'confirmo', 'confirmar', 'procede', 'listo', 'hazlo', 'crealos', 'crealo', 'yes', 'yep', 'claro', 'correcto', 'afirmativo', 'exacto', 'siguiente'];
+        $short = ['sí', 'si', 'ok', 'okay', 'sip', 'dale', 'adelante', 'confirmo', 'confirmar', 'procede', 'listo', 'hazlo', 'crealos', 'créalo', 'créelos', 'crealo', 'yes', 'yep', 'claro', 'correcto', 'afirmativo', 'exacto', 'siguiente'];
         if (in_array($value, $short, true)) {
             return true;
         }
@@ -1603,6 +2236,14 @@ class AICommandController extends Controller
         }
 
         return false;
+    }
+
+    private function isNegativeText(string $text): bool
+    {
+        $value = $this->normalizedText($text);
+        $value = trim(preg_replace('/[.!?]+$/', '', $value) ?? $value);
+
+        return (bool) preg_match('/^(?:no|cancelar?|cancela|olvidalo|dejalo|detente|mejor no)$/', $value);
     }
 
     private function formatGrade(int $n): string

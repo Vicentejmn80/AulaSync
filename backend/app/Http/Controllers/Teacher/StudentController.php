@@ -11,9 +11,7 @@ use Illuminate\Http\Request;
 
 class StudentController extends Controller
 {
-    public function __construct(private StudentEnrollmentService $enrollment)
-    {
-    }
+    public function __construct(private StudentEnrollmentService $enrollment) {}
 
     public function store(Request $request): JsonResponse
     {
@@ -55,7 +53,7 @@ class StudentController extends Controller
             ->where('colegio_id', auth()->user()->colegio_id)
             ->firstOrFail();
 
-        $this->enrollment->attachExisting($course, $student);
+        $this->enrollment->attachExisting($course, $student, $request->user());
 
         return response()->json([
             'success' => true,

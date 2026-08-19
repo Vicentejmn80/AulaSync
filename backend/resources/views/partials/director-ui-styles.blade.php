@@ -283,4 +283,51 @@
         border-radius: 50%;
         animation: director-spin 0.65s linear infinite;
     }
+
+    html {
+        overflow-x: hidden;
+        -webkit-text-size-adjust: 100%;
+    }
+
+    body {
+        overflow-x: hidden;
+        max-width: 100%;
+        padding-bottom: calc(24px + env(safe-area-inset-bottom));
+    }
+
+    .director-input,
+    .director-select,
+    .director-textarea {
+        font-size: 16px;
+        min-height: 44px;
+    }
+
+    @media (max-width: 767px) {
+        .director-header {
+            padding: 1rem;
+            border-radius: 1rem;
+        }
+        .director-header > .flex.items-center.gap-4 {
+            align-items: flex-start;
+        }
+        .director-page-title {
+            font-size: 1.25rem;
+            line-height: 1.25;
+            word-break: break-word;
+        }
+        .director-page-subtitle {
+            font-size: 0.8125rem;
+            line-height: 1.45;
+        }
+        .director-card {
+            padding: 1rem;
+        }
+        .director-header .relative.flex.items-center.gap-2 {
+            align-self: flex-end;
+        }
+        .tracking-\[\.3em\],
+        .tracking-\[\.25em\] {
+            letter-spacing: 0.12em;
+        }
+    }
 </style>

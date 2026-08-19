@@ -1,23 +1,31 @@
 ﻿$ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
+$phpExe = if ($env:PHP_BIN) {
+    $env:PHP_BIN
+} elseif (Test-Path "$env:LOCALAPPDATA\Microsoft\WinGet\Packages\PHP.PHP.8.2_Microsoft.Winget.Source_8wekyb3d8bbwe\php.exe") {
+    "$env:LOCALAPPDATA\Microsoft\WinGet\Packages\PHP.PHP.8.2_Microsoft.Winget.Source_8wekyb3d8bbwe\php.exe"
+} else {
+    "php"
+}
 
 Write-Host "=== Aulasync - Dev Environment ===" -ForegroundColor Cyan
+Write-Host "PHP: $phpExe" -ForegroundColor DarkGray
 
 $jobs = @()
 
 # Start PHP server
 $jobs += Start-Job -Name "server" -ScriptBlock {
-    param($root)
+    param($root, $phpExe)
     Set-Location $root
-    php -S 127.0.0.1:8080 -t "$root\public" "$root\public\index.php"
-} -ArgumentList $root
+    & $phpExe -S 127.0.0.1:8080 -t "$root\public" "$root\public\index.php"
+} -ArgumentList $root, $phpExe
 
 # Start queue
 $jobs += Start-Job -Name "queue" -ScriptBlock {
-    param($root)
+    param($root, $phpExe)
     Set-Location $root
-    php artisan queue:listen --tries=1 --timeout=0
-} -ArgumentList $root
+    & $phpExe artisan queue:listen --tries=1 --timeout=0
+} -ArgumentList $root, $phpExe
 
 # Start Vite
 $jobs += Start-Job -Name "vite" -ScriptBlock {

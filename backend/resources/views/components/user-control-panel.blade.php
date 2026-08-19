@@ -14,9 +14,11 @@
     html.dark .ucp-btn:hover { background: rgba(255,255,255,.2); color:#fff; }
     .ucp-dropdown {
         display:none;
-        position:absolute; right:0; top:2.5rem; width:min(22rem, 88vw); max-height:24rem; overflow:auto;
+        position:absolute; right:0; top:2.5rem; width:min(22rem, calc(100vw - 1.5rem)); max-height:min(24rem, 70dvh); overflow:auto;
         border:1px solid #e2e8f0; border-radius:1rem; background:#ffffff; color:#0f172a;
         box-shadow:0 22px 50px rgba(15,23,42,.12); z-index:9999;
+        -webkit-overflow-scrolling: touch;
+        overscroll-behavior: contain;
     }
     [x-cloak] .ucp-dropdown,
     .ucp-dropdown[x-cloak] { display: none !important; }

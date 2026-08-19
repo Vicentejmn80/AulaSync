@@ -1,45 +1,52 @@
 <?php
 
-use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\AICommandHandlerController;
+use App\Http\Controllers\AIController;
 use App\Http\Controllers\CodesRevealController;
 use App\Http\Controllers\DashboardController;
-use App\Http\Controllers\OnboardingController;
-use App\Http\Controllers\AIController;
-use App\Http\Controllers\PlanningController;
-use App\Http\Controllers\Teacher\GradesController;
-use App\Http\Controllers\Teacher\CoursesController;
-use App\Http\Controllers\Teacher\ActivitiesController;
-use App\Http\Controllers\Teacher\TareaController;
-use App\Http\Controllers\Teacher\ManualPlanningController;
-use App\Http\Controllers\Director\DashboardController as DirectorDashboardController;
-use App\Http\Controllers\Director\StaffController as DirectorStaffController;
-use App\Http\Controllers\Director\CourseController as DirectorCourseController;
-use App\Http\Controllers\Director\PlanificacionesController as DirectorPlanificacionesController;
-use App\Http\Controllers\Director\ReportCardController as DirectorReportCardController;
-use App\Http\Controllers\Director\StudentController as DirectorStudentController;
+use App\Http\Controllers\DemoRequestController;
+use App\Http\Controllers\Director\AcademicPeriodController as DirectorAcademicPeriodController;
 use App\Http\Controllers\Director\ActivityFeedbackController;
 use App\Http\Controllers\Director\AICommandController as DirectorAICommandController;
-use App\Http\Controllers\NotificationController;
-use App\Http\Controllers\AICommandHandlerController;
-use App\Http\Controllers\Teacher\HubController;
-use App\Http\Controllers\Teacher\EvaluationController;
-use App\Http\Controllers\Teacher\CommunicationController;
-use App\Http\Controllers\Teacher\AssessmentStrategyController;
-use App\Http\Controllers\Teacher\AttendanceController;
-use App\Http\Controllers\Teacher\StudentController as TeacherStudentController;
 use App\Http\Controllers\Director\AttendanceDashboardController;
-use App\Http\Controllers\Director\AcademicPeriodController as DirectorAcademicPeriodController;
+use App\Http\Controllers\Director\CourseController as DirectorCourseController;
+use App\Http\Controllers\Director\DashboardController as DirectorDashboardController;
 use App\Http\Controllers\Director\EvaluationPlanOverviewController;
+use App\Http\Controllers\Director\PlanificacionesController as DirectorPlanificacionesController;
+use App\Http\Controllers\Director\ReportCardController as DirectorReportCardController;
+use App\Http\Controllers\Director\StaffController as DirectorStaffController;
+use App\Http\Controllers\Director\StudentController as DirectorStudentController;
+use App\Http\Controllers\FamilyCodeController;
+use App\Http\Controllers\NotificationController;
+use App\Http\Controllers\OnboardingController;
+use App\Http\Controllers\PlanningController;
+use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\RepresentanteController;
 use App\Http\Controllers\SmartPlannerController;
+use App\Http\Controllers\Teacher\ActivitiesController;
+use App\Http\Controllers\Teacher\AssessmentStrategyController;
+use App\Http\Controllers\Teacher\AttendanceController;
+use App\Http\Controllers\Teacher\CommunicationController;
+use App\Http\Controllers\Teacher\CoursesController;
+use App\Http\Controllers\Teacher\EvaluationController;
+use App\Http\Controllers\Teacher\GradesController;
+use App\Http\Controllers\Teacher\HubController;
+use App\Http\Controllers\Teacher\ManualPlanningController;
+use App\Http\Controllers\Teacher\ReportCardController;
+use App\Http\Controllers\Teacher\StudentController as TeacherStudentController;
+use App\Http\Controllers\Teacher\TareaController;
+use App\Models\Activity;
+use App\Models\UserSettings;
+use App\Support\LessonTemplate;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Route;
 
 // --- RUTAS PÚBLICAS ---
 Route::get('/', function () {
     return view('welcome');
 })->name('welcome');
 
-Route::post('/solicitar-demo', [App\Http\Controllers\DemoRequestController::class, 'store'])
+Route::post('/solicitar-demo', [DemoRequestController::class, 'store'])
     ->name('demo.request');
 
 Route::get('/e/{token}', [EvaluationController::class, 'take'])->name('evaluations.take');
@@ -53,27 +60,28 @@ require __DIR__.'/auth.php';
 
 // --- RUTAS PROTEGIDAS (Solo usuarios logueados) ---
 Route::middleware(['auth'])->group(function () {
-    
+
     // A. EXCEPCIÓN: Rutas de Onboarding
     Route::get('/onboarding', [OnboardingController::class, 'show'])->name('onboarding');
-        // RUTA TEMPORAL: Para ver el diseño sin loguearse
+    // RUTA TEMPORAL: Para ver el diseño sin loguearse
     Route::get('/debug-onboarding', function () {
         $preselectedRole = '';
+
         return view('onboarding.wizard', compact('preselectedRole'));
     })->name('debug.onboarding');
     Route::post('/api/validate-school-code', [OnboardingController::class, 'validateSchoolCode'])
         ->name('api.validate-school-code');
-    Route::post('/api/validate-family-code', [App\Http\Controllers\FamilyCodeController::class, 'validateFamilyCode'])
+    Route::post('/api/validate-family-code', [FamilyCodeController::class, 'validateFamilyCode'])
         ->name('api.validate-family-code');
     Route::post('/onboarding/save', [OnboardingController::class, 'save'])->name('onboarding.save');
     Route::get('/onboarding/director-success', [OnboardingController::class, 'directorSuccess'])
         ->name('onboarding.director_success');
     Route::post('/onboarding/demo', [OnboardingController::class, 'joinAsDemo'])
         ->name('onboarding.demo');
-    
+
     // B. RUTAS BLOQUEADAS HASTA COMPLETAR ONBOARDING
     Route::middleware(['onboarding.completed'])->group(function () {
-        
+
         // Dashboard Principal
         Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
 
@@ -174,8 +182,8 @@ Route::middleware(['auth'])->group(function () {
                 // Asistente de IA operativo para directores
                 Route::post('/ai/command', [DirectorAICommandController::class, 'handle'])
                     ->name('ai.command');
-        });
-        
+            });
+
         // Representante — Panel de seguimiento
         Route::prefix('representante')
             ->name('representante.')
@@ -242,7 +250,7 @@ Route::middleware(['auth'])->group(function () {
                 Route::post('/', [CoursesController::class, 'store'])->name('store');
                 Route::delete('/{course}', [CoursesController::class, 'destroy'])->name('destroy');
                 Route::post('/{course}/import-students', [CoursesController::class, 'importStudents'])->name('import_students');
-                Route::delete('/{course}/students/{student}', [CoursesController::class, 'removeStudent']) ->name('remove_student');
+                Route::delete('/{course}/students/{student}', [CoursesController::class, 'removeStudent'])->name('remove_student');
             });
 
             // Gestión Académica — Actividades
@@ -314,17 +322,17 @@ Route::middleware(['auth'])->group(function () {
 
             Route::prefix('teacher/planner')->name('teacher.planner.')->group(function () {
                 // El {id?} permite que el Hub entre a /manual sin error
-                Route::get('/manual/{id?}', [ManualPlanningController::class, 'show'])->name('manual'); 
+                Route::get('/manual/{id?}', [ManualPlanningController::class, 'show'])->name('manual');
                 Route::post('/manual', [ManualPlanningController::class, 'store'])->name('store');
-                
+
                 // Ruta show explícita para compatibilidad con redirecciones
                 Route::get('/show/{id}', [ManualPlanningController::class, 'show'])->name('show');
-                
+
                 Route::get('/manual/pdf/{manualPlanning?}', [ManualPlanningController::class, 'pdf'])->name('pdf');
             });
 
             // API: Guardar preferencia de plantilla de clase
-            Route::post('/teacher/api/lesson-template', function (Illuminate\Http\Request $request) {
+            Route::post('/teacher/api/lesson-template', function (Request $request) {
                 $data = $request->validate([
                     'lesson_template' => 'required|in:clasica,directa,constructivista,proyecto',
                     'activity_id' => 'nullable|integer',
@@ -332,8 +340,8 @@ Route::middleware(['auth'])->group(function () {
                     'activity_ids.*' => 'integer',
                     'planificacion_id' => 'nullable|integer',
                 ]);
-                $settings = \App\Models\UserSettings::firstOrCreate(
-                    ['user_id' => \Auth::id()],
+                $settings = UserSettings::firstOrCreate(
+                    ['user_id' => Auth::id()],
                     []
                 );
                 $settings->update(['lesson_template' => $data['lesson_template']]);
@@ -345,7 +353,7 @@ Route::middleware(['auth'])->group(function () {
                     ->unique()
                     ->values();
 
-                $query = \App\Models\Activity::where('teacher_id', \Auth::id());
+                $query = Activity::where('teacher_id', Auth::id());
                 if ($ids->isNotEmpty()) {
                     $query->whereIn('id', $ids->all());
                 } elseif (! empty($data['planificacion_id'])) {
@@ -357,7 +365,7 @@ Route::middleware(['auth'])->group(function () {
                 $rewritten = 0;
                 if ($query) {
                     foreach ($query->get() as $activity) {
-                        $next = \App\Support\LessonTemplate::rewrite((string) $activity->description, $data['lesson_template']);
+                        $next = LessonTemplate::rewrite((string) $activity->description, $data['lesson_template']);
                         if ($next !== '' && $next !== (string) $activity->description) {
                             $activity->update(['description' => $next]);
                             $rewritten++;
@@ -391,16 +399,16 @@ Route::middleware(['auth'])->group(function () {
 
             // Boleta de calificaciones del docente
             Route::prefix('teacher/report-card')->name('teacher.report-card.')->group(function () {
-                Route::get('/{student}', [\App\Http\Controllers\Teacher\ReportCardController::class, 'preview'])->name('preview');
-                Route::get('/{student}/pdf', [\App\Http\Controllers\Teacher\ReportCardController::class, 'pdf'])->name('pdf');
+                Route::get('/{student}', [ReportCardController::class, 'preview'])->name('preview');
+                Route::get('/{student}/pdf', [ReportCardController::class, 'pdf'])->name('pdf');
             });
 
         }); // end role.teacher
 
         // Perfil de Usuario
-        Route::get('/profile', function () {
-            return view('profile');
-        })->name('profile');
+        Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
+        Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
+        Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 
         // Notificaciones (docentes y directores)
         Route::get('/notifications', [NotificationController::class, 'index'])->name('notifications');
@@ -416,6 +424,7 @@ Route::middleware(['auth'])->group(function () {
         auth()->logout();
         request()->session()->invalidate();
         request()->session()->regenerateToken();
+
         return redirect('/');
     });
 });

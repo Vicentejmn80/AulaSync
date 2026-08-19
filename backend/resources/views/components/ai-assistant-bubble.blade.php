@@ -812,24 +812,38 @@
         color: #C4B5FD;
     }
 
-    /* Mobile/tablet: mantener panel visible sin bloquear interacción */
+    /* Mobile/tablet: panel usable a pantalla completa sin scroll infinito */
     @media (max-width: 767px) {
         .nova-ai-container {
-            right: 12px;
+            right: max(12px, env(safe-area-inset-right));
             bottom: calc(12px + env(safe-area-inset-bottom));
         }
 
+        .nova-ai-trigger {
+            width: 60px;
+            height: 60px;
+        }
+
         .nova-ai-panel {
-            width: min(92vw, 400px);
-            height: min(72dvh, 620px);
-            bottom: 76px;
+            width: min(calc(100vw - 24px), 400px);
+            height: min(78dvh, 640px);
+            max-height: calc(100dvh - 108px - env(safe-area-inset-bottom));
+            bottom: 72px;
             right: 0;
+            border-radius: 24px;
         }
 
         .nova-toast {
             right: 12px;
             bottom: 88px;
             max-width: calc(100vw - 24px);
+        }
+    }
+
+    @media (max-width: 420px) {
+        .nova-ai-panel {
+            width: calc(100vw - 16px);
+            right: -4px;
         }
     }
 </style>
@@ -1198,7 +1212,7 @@ function novaAIAssistant() {
         isConfirmationAffirmative(text) {
             const t = text.trim().replace(/[.!¡?¿]+$/g, '').toLowerCase();
             if (t === 'sí, créalos' || t === 'si, crealos' || t === 'sí, hazlo' || t === 'si, hazlo' || t === 'sí, créalo' || t === 'si, crealo') return true;
-            return /^(s[ií]|ok|okay|dale|adelante|confirmo|procede|proceder|hazlo|listo|yes|yep|crealos|cr[ée]alos|adelante|puedes|puede|perfecto|de acuerdo)$/i.test(t);
+            return /^(s[ií]|ok|okay|dale|adelante|confirmo|procede|proceder|hazlo|listo|yes|yep|crealo|créalo|crealos|cr[ée]alos|adelante|puedes|puede|perfecto|de acuerdo)$/i.test(t);
         },
 
         autoResizeTextarea() {
@@ -1248,7 +1262,11 @@ function novaAIAssistant() {
                 this.scrollToBottom();
                 try {
                     const json = await this.executeConfirmed();
-                    this.confirmation = null;
+                    if (json?.pending_actions?.length) {
+                        this.confirmation = { ...this.confirmation, pending_actions: json.pending_actions };
+                    } else if (json?.any_success || json?.success) {
+                        this.confirmation = null;
+                    }
                     try {
                         this.handleResponse(json);
                     } catch (handlerErr) {
@@ -1319,6 +1337,10 @@ function novaAIAssistant() {
                 return;
             }
 
+            if (json.cancelled) {
+                this.confirmation = null;
+            }
+
             if (json.message && !json.actions && !json.requires_confirmation) {
                 this.addMessage('assistant', json.message);
                 return;
@@ -1331,6 +1353,11 @@ function novaAIAssistant() {
             }
 
             let hasDeleteSuccess = false;
+            const directorNarrative = this.isDirector && json.message;
+
+            if (directorNarrative) {
+                this.addMessage('assistant', json.message);
+            }
 
             if (Array.isArray(json.actions)) {
                 if (json.any_success || (json.status === 'success' && json.bulk_plan)) {
@@ -1338,7 +1365,9 @@ function novaAIAssistant() {
                 }
                 json.actions.forEach(a => {
                     if (a.success) {
-                        this.addMessage('action', `✅ ${a.message}`);
+                        if (!directorNarrative) {
+                            this.addMessage('action', `✅ ${a.message}`);
+                        }
                         if (a.action_type === 'activity' && a.data?.activity_id) {
                             this.addMessage('activity_created', '', {
                                 activity: {
@@ -1372,7 +1401,7 @@ function novaAIAssistant() {
 
                 // Resumen único para operaciones multi-entidad (varios cursos/alumnos).
                 const successfulActions = json.actions.filter(a => a.success).length;
-                if (json.message && !json.bulk_plan && successfulActions > 1) {
+                if (json.message && !json.bulk_plan && successfulActions > 1 && !directorNarrative) {
                     this.addMessage('assistant', json.message);
                 }
             }
