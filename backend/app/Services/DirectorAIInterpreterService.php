@@ -2,15 +2,15 @@
 
 namespace App\Services;
 
-use App\Models\Course;
-use App\Models\Student;
-use App\Models\TeacherInvite;
 use App\Models\User;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 class DirectorAIInterpreterService
 {
+    public function __construct(
+        private SchoolRosterContextService $rosterContext,
+    ) {}
     /**
      * @param  array<int,array{role:string,content:string}>  $conversation
      * @return array{actions:array<int,array{intent:string,data:array}>,message:?string,clarification:?string}|null
@@ -119,64 +119,36 @@ class DirectorAIInterpreterService
 
     private function systemPrompt(User $director, array $memory): string
     {
-        $colegioId = (int) $director->colegio_id;
-        $teachers = User::query()
-            ->where('colegio_id', $colegioId)
-            ->where('role', 'profesor')
-            ->orderBy('name')
-            ->limit(60)
-            ->pluck('name')
-            ->all();
-        $invites = TeacherInvite::query()
-            ->where('colegio_id', $colegioId)
-            ->whereNull('claimed_at')
-            ->whereNull('revoked_at')
-            ->orderBy('name')
-            ->limit(60)
-            ->get(['name', 'invite_code'])
-            ->map(fn ($invite) => $invite->name.' ('.$invite->invite_code.')')
-            ->all();
-        $courses = Course::query()
-            ->where('colegio_id', $colegioId)
-            ->orderBy('subject_name')
-            ->orderBy('grade')
-            ->limit(100)
-            ->get(['subject_name', 'grade', 'section'])
-            ->map(fn ($course) => trim($course->subject_name.' '.$course->grade.' '.($course->section ?? '')))
-            ->all();
-        $students = Student::query()
-            ->where('colegio_id', $colegioId)
-            ->orderBy('name')
-            ->limit(100)
-            ->get(['name', 'grade', 'section'])
-            ->map(fn ($student) => trim($student->name.' '.$student->grade.' '.($student->section ?? '')))
-            ->all();
-
-        $school = json_encode(compact('teachers', 'invites', 'courses', 'students'), JSON_UNESCAPED_UNICODE);
+        $roster = $this->rosterContext->markdownForDirector($director);
         $memoryJson = json_encode($memory, JSON_UNESCAPED_UNICODE);
 
         return <<<PROMPT
-Eres el asistente del director de un colegio. Hablas español natural, como Gemini o ChatGPT: entiendes
-pedidos largos, errores, "créalo", "agrégale" y referencias al turno anterior. Laravel autoriza y ejecuta;
-tú debes llamar herramientas siempre que el usuario pida crear, asignar, matricular, actualizar, eliminar o consultar.
+Eres Nova, la IA experta de School Planner AI / AulaSync. Hablas español natural, como Gemini o ChatGPT:
+entiendes pedidos largos, errores, "créalo", "agrégale" y referencias al turno anterior. Laravel autoriza y ejecuta
+las mutaciones; tú llamas herramientas SOLO para crear, asignar, matricular, actualizar o eliminar.
 
-Reglas:
-1. Si el pedido es operativo, OBLIGATORIO llamar herramientas. No describas el plan en texto sin tools.
-2. Si piden crear un profesor Y además cursos/materia/grados, usa UNA sola create_teacher con teacher_name, subject_name y grades. No dejes subject_name vacío.
+Tienes acceso completo a la lista de datos del colegio listada a continuación. Si el usuario te pregunta por el código,
+información o estado de un profesor (ej. "dame el código de José Martínez") o alumno, BÚSCALO EN ESTA LISTA Y RESPONDE
+DIRECTAMENTE de forma amable, precisa y natural, sin pedirle datos adicionales al usuario a menos que no exista en la lista.
+No llames tools para consultas de códigos DOC-, NV-, correo, grado, materia o "quién es".
+
+Reglas operativas:
+1. Si el pedido es crear/asignar/matricular/eliminar, OBLIGATORIO llamar herramientas. No describas el plan en texto sin tools.
+2. Si piden crear un profesor Y además cursos/materia/grados, usa UNA sola create_teacher con teacher_name, subject_name y grades.
 3. "Crea al profesor X, crea los cursos de inglés de 1ero a 6to y agrégaselos" = create_teacher(X, Inglés, [1ro..6to]).
 4. Un profesor no registrado puede ser una invitación pendiente; asígnale por nombre.
 5. Convierte primer/1ero a 1ro, segundo a 2do, tercero/3ero a 3ro, cuarto a 4to, quinto a 5to, sexto a 6to.
 6. teacher_name es SOLO el nombre de la persona (ej. "Yovanny Andrade"), nunca "y agrégalo a esos cursos".
 7. Usa la memoria para "créalo", "agrégale", "esos cursos", "ese profesor".
-8. Si falta un dato indispensable, pregunta breve y no llames tools. Si el pedido ya trae materia y grados, no preguntes.
-9. Consultas → query_academic. Eliminar → la herramienta delete_*. Habla con el director si solo saluda o pide ayuda.
-10. "Crea al alumno X" o "crea al estudiante X" → create_students_batch. NUNCA create_course.
-11. "Crea al alumno X y asígnalo/inscríbelo/matrículalo al curso de Y grado Z" → create_students_batch + enroll_students_course (dos tools). El curso ya existe; no crees uno nuevo.
-12. "Agrega al curso de Inglés de 1ro al alumno X" → enroll_students_course si el alumno existe, o create_students_batch + enroll_students_course si hay que crearlo.
-13. names/student_name NUNCA incluyen "en el", "de", "del", "en 1ro", "primer grado" ni la materia. Ejemplo: "crea a Andrés Pérez en el curso de 1ro de inglés" → names=["Andrés Pérez"], grade=1ro, subject=Inglés.
+8. Si falta un dato indispensable para una mutación, pregunta breve y no llames tools.
+9. "Crea al alumno X" → create_students_batch. NUNCA create_course.
+10. "Crea al alumno X y asígnalo al curso de Y grado Z" → create_students_batch + enroll_students_course.
+11. names/student_name NUNCA incluyen "en el", "de", "del", "en 1ro" ni la materia.
 
 Memoria conversacional: {$memoryJson}
-Datos visibles del colegio: {$school}
+
+Datos del colegio:
+{$roster}
 PROMPT;
     }
 

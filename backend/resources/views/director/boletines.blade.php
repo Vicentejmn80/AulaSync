@@ -10,18 +10,9 @@
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     @include('partials.nova-theme')
-    <style>
-        [x-cloak] { display: none !important; }
-        body { font-family: Inter, ui-sans-serif, system-ui, sans-serif; background: var(--bg-primary); color: var(--text-primary); }
-    </style>
+    @include('partials.director-ui-styles')
 </head>
-<body class="min-h-screen">
-    <div class="fixed inset-0 -z-10 overflow-hidden">
-        <div class="absolute -left-32 -top-32 h-96 w-96 rounded-full bg-violet-700/35 blur-[120px]"></div>
-        <div class="absolute right-0 top-20 h-[28rem] w-[28rem] rounded-full bg-cyan-500/20 blur-[130px]"></div>
-        <div class="absolute bottom-0 left-1/3 h-80 w-80 rounded-full bg-emerald-600/15 blur-[110px]"></div>
-    </div>
-
+<body class="min-h-screen overflow-x-hidden bg-slate-100 text-slate-900">
     @php
         $withGrades = collect($rows)->where('has_grades', true)->count();
         $withoutGrades = collect($rows)->where('has_grades', false)->count();
@@ -30,45 +21,47 @@
     @endphp
 
     <main class="mx-auto max-w-7xl px-5 py-6 lg:px-8">
-        <header class="mb-6 flex flex-col gap-5 overflow-visible rounded-[2rem] border border-cyan-400/20 bg-gradient-to-r from-violet-600/20 via-slate-900/40 to-cyan-500/15 p-5 shadow-2xl shadow-violet-950/30 lg:flex-row lg:items-center lg:justify-between">
+        <header class="director-header">
             <div class="flex items-center gap-4">
-                <a href="{{ route('director.dashboard') }}" class="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-500 to-cyan-400 shadow-lg shadow-cyan-500/20">
-                    <i class="fa-solid fa-arrow-left text-xl text-white"></i>
+                <a href="{{ route('director.dashboard') }}" class="flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-600 shadow-sm">
+                    <i class="fa-solid fa-arrow-left text-white"></i>
                 </a>
                 <div>
-                    <p class="text-xs font-bold uppercase tracking-[.3em] text-cyan-300">Gestión académica</p>
-                    <h1 class="mt-1 text-2xl font-black text-white">Boletines de calificaciones</h1>
-                    <p class="text-sm text-slate-300">Las mismas notas que carga el docente, en un informe por alumno.</p>
+                    <p class="text-xs font-bold uppercase tracking-[.2em] text-indigo-600">Gestión académica</p>
+                    <h1 class="director-page-title">Boletines de calificaciones</h1>
+                    <p class="director-page-subtitle">Las mismas notas que carga el docente, en un informe por alumno.</p>
                 </div>
             </div>
             @include('components.user-control-panel')
         </header>
 
         <section class="mb-6 grid gap-3 sm:grid-cols-3">
-            <article class="rounded-2xl border border-emerald-400/25 bg-emerald-400/10 p-4">
-                <p class="text-[11px] font-bold uppercase tracking-wider text-emerald-300">Con notas</p>
-                <p class="mt-1 text-2xl font-black text-white">{{ $withGrades }}</p>
+            <article class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                <p class="text-[11px] font-bold uppercase tracking-wider text-emerald-700">Con notas</p>
+                <p class="mt-1 text-3xl font-black text-slate-900">{{ $withGrades }}</p>
             </article>
-            <article class="rounded-2xl border border-amber-400/25 bg-amber-400/10 p-4">
-                <p class="text-[11px] font-bold uppercase tracking-wider text-amber-300">Sin notas</p>
-                <p class="mt-1 text-2xl font-black text-white">{{ $withoutGrades }}</p>
+            <article class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                <p class="text-[11px] font-bold uppercase tracking-wider text-amber-700">Pendientes</p>
+                <p class="mt-1 text-3xl font-black text-slate-900">{{ $withoutGrades }}</p>
             </article>
-            <article class="rounded-2xl border border-cyan-400/25 bg-cyan-400/10 p-4">
-                <p class="text-[11px] font-bold uppercase tracking-wider text-cyan-300">Promedio del listado</p>
-                <p class="mt-1 text-2xl font-black text-white">{{ $schoolAvg !== null ? $schoolAvg.'%' : '—' }}</p>
+            <article class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                <p class="text-[11px] font-bold uppercase tracking-wider text-indigo-700">Promedio del listado</p>
+                <p class="mt-1 text-3xl font-black text-slate-900">{{ $schoolAvg !== null ? $schoolAvg.'%' : '—' }}</p>
             </article>
         </section>
 
-        <form method="GET" class="mb-6 flex flex-wrap gap-3 rounded-2xl border border-white/10 bg-white/[.04] p-4">
+        <form method="GET" class="director-card mb-6 flex flex-wrap gap-3">
             <input type="search" name="search" value="{{ request('search') }}" placeholder="Buscar alumno…"
-                   class="min-w-[200px] flex-1 rounded-xl border border-white/15 bg-slate-950/60 px-4 py-2.5 text-sm text-white placeholder:text-slate-500">
-            <select name="grade" class="rounded-xl border border-white/15 bg-slate-950 px-3 py-2.5 text-sm text-white">
+                   class="director-input min-w-[200px] flex-1">
+            <select name="grade" class="director-select w-auto min-w-[10rem]">
                 <option value="">Todos los grados</option>
                 @foreach($grades as $grade)
                     <option value="{{ $grade }}" @selected(request('grade') === $grade)>{{ $grade }}</option>
                 @endforeach
             </select>
-            <button class="rounded-xl bg-gradient-to-r from-violet-500 to-cyan-500 px-4 py-2.5 text-sm font-bold text-white shadow-lg shadow-cyan-900/30">Filtrar</button>
+            <button class="director-btn-primary">
+                <i class="fa-solid fa-filter"></i> Filtrar
+            </button>
         </form>
 
         <section class="space-y-3 md:hidden">
@@ -76,89 +69,84 @@
                 @php
                     $student = $row['student'];
                     $avg = $row['globalAverage'];
-                    $tone = ! $row['has_grades'] ? 'slate' : ($avg >= 80 ? 'emerald' : ($avg >= 60 ? 'amber' : 'rose'));
+                    $ready = (bool) $row['has_grades'];
                 @endphp
-                <article class="rounded-2xl border p-4
-                    {{ $tone === 'emerald' ? 'border-emerald-400/30 bg-emerald-400/10' : '' }}
-                    {{ $tone === 'amber' ? 'border-amber-400/30 bg-amber-400/10' : '' }}
-                    {{ $tone === 'rose' ? 'border-rose-400/30 bg-rose-400/10' : '' }}
-                    {{ $tone === 'slate' ? 'border-white/10 bg-white/[.04]' : '' }}">
+                <article class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
                     <div class="flex items-start justify-between gap-3">
                         <div>
-                            <p class="font-bold text-white">{{ $student->name }}</p>
-                            <span class="mt-1 inline-flex rounded-full border border-violet-400/30 bg-violet-400/10 px-2 py-0.5 text-[11px] font-bold text-violet-200">
+                            <p class="font-bold text-slate-900">{{ $student->name }}</p>
+                            <span class="mt-1 inline-flex rounded-full bg-indigo-100 px-2 py-0.5 text-[11px] font-bold text-indigo-800">
                                 {{ $student->grade }}{{ $student->section ? ' / '.$student->section : '' }}
                             </span>
                         </div>
-                        @if($row['has_grades'])
-                            <span class="rounded-full px-2.5 py-1 text-xs font-black
-                                {{ $tone === 'emerald' ? 'bg-emerald-400 text-emerald-950' : '' }}
-                                {{ $tone === 'amber' ? 'bg-amber-400 text-amber-950' : '' }}
-                                {{ $tone === 'rose' ? 'bg-rose-400 text-rose-950' : '' }}">{{ $avg }}%</span>
+                        @if($ready)
+                            <span class="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-bold text-emerald-800">{{ $avg }}%</span>
                         @else
-                            <span class="rounded-full bg-slate-700 px-2.5 py-1 text-[11px] font-bold text-slate-200">Sin notas</span>
+                            <span class="rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-bold text-amber-800">Pendiente</span>
                         @endif
                     </div>
-                    <p class="mt-2 text-xs text-slate-300">{{ $row['courses'] }} curso(s)</p>
+                    <p class="mt-2 text-xs text-slate-500">{{ $row['courses'] }} curso(s)</p>
                     <div class="mt-3 flex gap-2">
-                        <a href="{{ route('director.report-card', $student->id) }}" class="flex-1 rounded-xl border border-white/15 bg-white/5 py-2 text-center text-xs font-semibold text-slate-100">Ver</a>
-                        <a href="{{ route('director.report-card.pdf', $student->id) }}" class="flex-1 rounded-xl bg-gradient-to-r from-violet-500 to-cyan-500 py-2 text-center text-xs font-bold text-white">PDF</a>
+                        <a href="{{ route('director.report-card', $student->id) }}" class="director-btn-secondary flex-1 justify-center !text-xs">Ver</a>
+                        <a href="{{ route('director.report-card.pdf', $student->id) }}" class="director-btn-primary flex-1 justify-center !text-xs">
+                            <i class="fa-solid fa-file-pdf"></i> PDF
+                        </a>
                     </div>
                 </article>
             @empty
-                <div class="rounded-2xl border border-white/10 bg-white/[.04] px-5 py-12 text-center text-slate-400">No hay alumnos para mostrar.</div>
+                <div class="director-card py-12 text-center text-slate-500">No hay alumnos para mostrar.</div>
             @endforelse
         </section>
 
-        <section class="hidden overflow-hidden rounded-[2rem] border border-white/10 bg-slate-950/40 md:block">
+        <section class="director-card hidden overflow-hidden !p-0 md:block">
             <table class="w-full text-left text-sm">
-                <thead class="bg-gradient-to-r from-violet-500/20 to-cyan-500/10 text-xs uppercase tracking-wider text-cyan-200">
+                <thead class="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
                     <tr>
                         <th class="px-5 py-3">Alumno</th>
                         <th class="px-5 py-3">Grado</th>
                         <th class="px-5 py-3">Cursos</th>
                         <th class="px-5 py-3">Estado</th>
                         <th class="px-5 py-3">Promedio</th>
-                        <th class="px-5 py-3"></th>
+                        <th class="px-5 py-3 text-right">Acciones</th>
                     </tr>
                 </thead>
-                <tbody class="divide-y divide-white/10">
+                <tbody class="divide-y divide-slate-100">
                     @forelse($rows as $row)
                         @php
                             $student = $row['student'];
                             $avg = $row['globalAverage'];
-                            $tone = ! $row['has_grades'] ? 'slate' : ($avg >= 80 ? 'emerald' : ($avg >= 60 ? 'amber' : 'rose'));
+                            $ready = (bool) $row['has_grades'];
                         @endphp
-                        <tr class="hover:bg-white/[.04]">
-                            <td class="px-5 py-4 font-semibold text-white">{{ $student->name }}</td>
+                        <tr class="hover:bg-slate-50">
+                            <td class="px-5 py-4 font-semibold text-slate-900">{{ $student->name }}</td>
                             <td class="px-5 py-4">
-                                <span class="rounded-full border border-violet-400/30 bg-violet-400/10 px-2.5 py-1 text-xs font-bold text-violet-200">
+                                <span class="rounded-full bg-indigo-100 px-2.5 py-1 text-xs font-bold text-indigo-800">
                                     {{ $student->grade }}{{ $student->section ? ' / '.$student->section : '' }}
                                 </span>
                             </td>
-                            <td class="px-5 py-4 text-slate-300">{{ $row['courses'] }}</td>
+                            <td class="px-5 py-4 text-slate-600">{{ $row['courses'] }}</td>
                             <td class="px-5 py-4">
-                                @if($row['has_grades'])
-                                    <span class="rounded-full bg-emerald-400/15 px-2.5 py-1 text-[11px] font-bold text-emerald-300">Con notas</span>
+                                @if($ready)
+                                    <span class="rounded-full bg-emerald-100 px-2.5 py-1 text-[11px] font-bold text-emerald-800">Generado</span>
                                 @else
-                                    <span class="rounded-full bg-amber-400/15 px-2.5 py-1 text-[11px] font-bold text-amber-300">Pendiente</span>
+                                    <span class="rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-bold text-amber-800">Pendiente</span>
                                 @endif
                             </td>
                             <td class="px-5 py-4">
-                                @if($row['has_grades'])
-                                    <strong class="{{ $tone === 'emerald' ? 'text-emerald-300' : ($tone === 'amber' ? 'text-amber-300' : 'text-rose-300') }}">{{ $avg }}%</strong>
+                                @if($ready)
+                                    <strong class="text-slate-900">{{ $avg }}%</strong>
                                 @else
-                                    <span class="text-slate-500">Sin notas aún</span>
+                                    <span class="text-slate-400">Sin notas aún</span>
                                 @endif
                             </td>
                             <td class="px-5 py-4 text-right">
-                                <a href="{{ route('director.report-card', $student->id) }}" class="rounded-xl border border-cyan-400/30 bg-cyan-400/10 px-3 py-1.5 text-xs font-semibold text-cyan-100 hover:bg-cyan-400/20">Ver</a>
-                                <a href="{{ route('director.report-card.pdf', $student->id) }}" class="rounded-xl bg-gradient-to-r from-violet-500 to-cyan-500 px-3 py-1.5 text-xs font-semibold text-white">PDF</a>
+                                <a href="{{ route('director.report-card', $student->id) }}" class="inline-flex rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50">Ver</a>
+                                <a href="{{ route('director.report-card.pdf', $student->id) }}" class="inline-flex rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-indigo-700">PDF</a>
                             </td>
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="6" class="px-5 py-12 text-center text-slate-400">No hay alumnos para mostrar.</td>
+                            <td colspan="6" class="px-5 py-12 text-center text-slate-500">No hay alumnos para mostrar.</td>
                         </tr>
                     @endforelse
                 </tbody>

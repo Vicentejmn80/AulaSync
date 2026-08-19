@@ -134,4 +134,56 @@ class DirectorAIInterpreterServiceTest extends TestCase
         $this->assertSame('Inglés', $result['actions'][0]['data']['subject_name']);
         $this->assertSame(['1ro', '2do', '3ro', '4to', '5to', '6to'], $result['actions'][0]['data']['grades']);
     }
+
+    public function test_system_prompt_includes_school_roster_and_nova_lookup_rules(): void
+    {
+        config([
+            'services.openai.key' => 'test-key',
+            'services.openai.director_enabled' => true,
+            'services.openai.director_test_enabled' => true,
+        ]);
+        Http::fake([
+            'api.openai.com/*' => Http::response([
+                'choices' => [[
+                    'message' => [
+                        'role' => 'assistant',
+                        'content' => 'El código de José Martínez es DOC-ABCD.',
+                    ],
+                ]],
+            ]),
+        ]);
+
+        $director = User::factory()->create(['role' => 'director', 'onboarding_completed' => true]);
+        $colegio = Colegio::create([
+            'name' => 'Colegio Central',
+            'invite_code' => 'CEN-1003',
+            'codes_pin' => Colegio::hashPinFromInvite('CEN-1003'),
+            'director_user_id' => $director->id,
+        ]);
+        $director->update(['colegio_id' => $colegio->id]);
+
+        \App\Models\TeacherInvite::create([
+            'colegio_id' => $colegio->id,
+            'created_by' => $director->id,
+            'name' => 'José Martínez',
+            'email' => 'jose@colegio.edu',
+            'invite_code' => 'DOC-ABCD',
+        ]);
+
+        app(DirectorAIInterpreterService::class)->interpret(
+            $director->fresh(),
+            'dame el código de José Martínez',
+            [],
+            [],
+        );
+
+        Http::assertSent(function ($request) {
+            $system = (string) data_get($request, 'messages.0.content');
+
+            return str_contains($system, 'Eres Nova')
+                && str_contains($system, 'BÚSCALO EN ESTA LISTA')
+                && str_contains($system, 'José Martínez')
+                && str_contains($system, 'DOC-ABCD');
+        });
+    }
 }

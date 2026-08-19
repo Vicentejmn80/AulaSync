@@ -97,6 +97,19 @@ class AICommandController extends Controller
             $actions = $this->enrichActionsFromText((array) ($interpreted['actions'] ?? []), $text);
 
             if ($actions === []) {
+                $llmReply = is_array($interpreted)
+                    ? trim((string) ($interpreted['message'] ?? $interpreted['clarification'] ?? ''))
+                    : '';
+                $intentGuess = $this->detectIntent($text);
+                if ($llmReply !== '' && ! $this->intentRequiresConfirmation((string) $intentGuess)) {
+                    return response()->json([
+                        'success' => true,
+                        'message' => $llmReply,
+                    ]);
+                }
+            }
+
+            if ($actions === []) {
                 $contextualAction = $this->contextualFallbackAction($text);
                 if ($contextualAction !== null) {
                     $actions = [$contextualAction];
