@@ -15,8 +15,7 @@ class DirectorActionService
 {
     public function __construct(
         private StudentEnrollmentService $enrollmentService
-    ) {
-    }
+    ) {}
 
     /**
      * @param array{
@@ -80,6 +79,7 @@ class DirectorActionService
                             'teacher_invite_id' => $invite->id,
                         ]);
                         $courseIds[] = $existing->id;
+
                         continue;
                     }
 
@@ -90,7 +90,7 @@ class DirectorActionService
                         'subject_name' => $subject,
                         'grade' => $grade,
                         'section' => $section,
-                        'school_year' => date('Y') . '-' . (date('Y') + 1),
+                        'school_year' => date('Y').'-'.(date('Y') + 1),
                         'invite_code' => InviteCodeHelper::generateCourseCode($subject, $grade, $section),
                     ]);
                     $courseIds[] = $course->id;
@@ -178,7 +178,7 @@ class DirectorActionService
                         'subject_name' => $subject,
                         'grade' => $grade,
                         'section' => $section,
-                        'school_year' => date('Y') . '-' . (date('Y') + 1),
+                        'school_year' => date('Y').'-'.(date('Y') + 1),
                         'invite_code' => InviteCodeHelper::generateCourseCode($subject, $grade, $section),
                     ]);
                 } else {
@@ -272,6 +272,7 @@ class DirectorActionService
 
                 if ($exists) {
                     $duplicates[] = $name;
+
                     continue;
                 }
 
@@ -359,7 +360,7 @@ class DirectorActionService
                     'subject_name' => $subject,
                     'grade' => $grade,
                     'section' => $section,
-                    'school_year' => date('Y') . '-' . (date('Y') + 1),
+                    'school_year' => date('Y').'-'.(date('Y') + 1),
                     'invite_code' => InviteCodeHelper::generateCourseCode($subject, $grade, $section),
                 ]);
             }
@@ -422,7 +423,7 @@ class DirectorActionService
         $course = $this->findCourseByAcademicKey($colegioId, $subject, $grade, $section);
         if (! $course) {
             throw ValidationException::withMessages([
-                'course' => "No encontré el curso {$subject} de {$grade}" . ($section ? " sección {$section}" : '') . '.',
+                'course' => "No encontré el curso {$subject} de {$grade}".($section ? " sección {$section}" : '').'.',
             ]);
         }
 
@@ -439,12 +440,14 @@ class DirectorActionService
 
                 if (! $student) {
                     $missingStudents[] = $name;
+
                     continue;
                 }
 
                 $isAlready = $course->students()->where('students.id', $student->id)->exists();
                 if ($isAlready) {
                     $alreadyEnrolled[] = $student->name;
+
                     continue;
                 }
 
@@ -557,7 +560,7 @@ class DirectorActionService
             ->first();
 
         if ($invite) {
-            return [null, $invite->id, $invite->name . ' (' . $invite->invite_code . ')'];
+            return [null, $invite->id, $invite->name.' ('.$invite->invite_code.')'];
         }
 
         throw ValidationException::withMessages([

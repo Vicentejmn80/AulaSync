@@ -8,7 +8,7 @@
         position: fixed;
         bottom: 24px;
         right: 24px;
-        z-index: 90;
+        z-index: 9999;
         pointer-events: none;
     }
 
@@ -147,6 +147,7 @@
         overflow: hidden;
         transition: all 0.3s cubic-bezier(0.2, 0.9, 0.4, 1.1);
         transform-origin: bottom right;
+        z-index: 10000;
     }
 
     .nova-ai-panel.entering {
@@ -457,9 +458,9 @@
         display: flex;
         align-items: flex-end;
         gap: 10px;
-        background: #F3F4F6;
-        border-radius: 24px;
-        padding: 6px 6px 6px 16px;
+        background: #ffffff;
+        border-radius: 16px;
+        padding: 6px 6px 6px 12px;
         border: 1px solid rgba(124,58,237,0.25);
         transition: all 0.2s ease;
     }
@@ -473,12 +474,52 @@
         flex: 1;
         background: transparent;
         border: none;
-        color: #1E1B4B;
+        color: #0f172a;
         font-size: 13px;
         resize: none;
         outline: none;
         font-family: inherit;
-        max-height: 100px;
+        line-height: 1.5;
+        min-height: 48px;
+        max-height: 120px;
+        padding: 12px 8px 8px 4px;
+        overflow-y: auto;
+    }
+
+    .nova-ai-textarea-shell {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        background: #ffffff;
+        border: 1px solid #cbd5e1;
+        border-radius: 14px;
+        padding: 6px 6px 6px 12px;
+        transition: all 0.2s ease;
+    }
+
+    .nova-ai-textarea-shell:focus-within {
+        border-color: #7C3AED;
+        box-shadow: 0 0 0 2px rgba(124,58,237,0.2);
+    }
+
+    .nova-ai-textarea-shell textarea {
+        flex: 1;
+        background: transparent;
+        border: none;
+        color: #0f172a;
+        font-size: 13px;
+        resize: none;
+        outline: none;
+        font-family: inherit;
+        line-height: 1.5;
+        min-height: 56px;
+        max-height: 120px;
+        padding: 12px 8px 4px 4px;
+        overflow-y: auto;
+    }
+
+    .nova-ai-textarea-shell textarea::placeholder {
+        color: rgba(100,116,139,0.75);
     }
 
     .nova-ai-input textarea::placeholder {
@@ -573,7 +614,7 @@
         align-items: center;
         gap: 8px;
         box-shadow: 0 10px 25px -5px rgba(0,0,0,0.2);
-        z-index: 95;
+        z-index: 10005;
         pointer-events: none;
         animation: toast-in 0.3s ease;
     }
@@ -1009,7 +1050,7 @@
         <!-- Input -->
         <div class="nova-ai-input">
             <div class="input-wrapper">
-                <textarea x-ref="novaMainTextarea" x-model="input" @keydown.enter.prevent="if(!$event.shiftKey) sendCommand()" :disabled="loading" rows="1" placeholder="Escribe tu mensaje..."></textarea>
+                <textarea x-ref="novaMainTextarea" x-model="input" @keydown.enter.prevent="if(!$event.shiftKey) sendCommand()" @input="autoResizeTextarea()" :disabled="loading" rows="1" placeholder="Escribe tu mensaje..."></textarea>
                 <div class="input-actions">
                     <button class="voice-btn" :class="{ 'listening': listening }" @click="toggleVoice()" title="Dictado de voz">
                         <i class="fa-solid" :class="listening ? 'fa-stop' : 'fa-microphone'"></i>
@@ -1156,7 +1197,17 @@ function novaAIAssistant() {
 
         isConfirmationAffirmative(text) {
             const t = text.trim().replace(/[.!¡?¿]+$/g, '').toLowerCase();
-            return /^(s[ií]|ok|okay|dale|adelante|confirmo|procede|proceder|hazlo|listo|yes|yep)$/i.test(t);
+            if (t === 'sí, créalos' || t === 'si, crealos' || t === 'sí, hazlo' || t === 'si, hazlo' || t === 'sí, créalo' || t === 'si, crealo') return true;
+            return /^(s[ií]|ok|okay|dale|adelante|confirmo|procede|proceder|hazlo|listo|yes|yep|crealos|cr[ée]alos|adelante|puedes|puede|perfecto|de acuerdo)$/i.test(t);
+        },
+
+        autoResizeTextarea() {
+            this.$nextTick(() => {
+                const el = this.$refs.novaMainTextarea;
+                if (!el) return;
+                el.style.height = 'auto';
+                el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+            });
         },
 
         async executeConfirmed() {
@@ -1192,6 +1243,7 @@ function novaAIAssistant() {
             if (this.confirmation && this.isConfirmationAffirmative(text)) {
                 this.addMessage('user', text);
                 this.input = '';
+                this.autoResizeTextarea();
                 this.loading = true;
                 this.scrollToBottom();
                 try {
@@ -1214,6 +1266,7 @@ function novaAIAssistant() {
 
             this.addMessage('user', text);
             this.input = '';
+            this.autoResizeTextarea();
             this.loading = true;
             this.scrollToBottom();
 

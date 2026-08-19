@@ -26,8 +26,7 @@ class AICommandController extends Controller
 
     public function __construct(
         private DirectorActionService $actionService
-    ) {
-    }
+    ) {}
 
     public function handle(Request $request): JsonResponse
     {
@@ -60,6 +59,12 @@ class AICommandController extends Controller
                 'success' => false,
                 'message' => 'Escribe una instrucción. Ejemplo: "Crea al profesor Vicente Maduro y asígnale Inglés de 1ro a 6to".',
             ], 422);
+        }
+
+        // Respuestas cortas de confirmación ("sí", "sí, créalos", "confirmo")
+        // completan la acción pendiente guardada en sesión, sin bucle sin contexto.
+        if ($this->isAffirmativeText($text) && session()->has(self::PENDING_SESSION_KEY)) {
+            return $this->executePending($request, $director);
         }
 
         $intent = $this->detectIntent($text);
@@ -235,7 +240,7 @@ class AICommandController extends Controller
                     'success' => false,
                     'action_type' => $intent,
                     'message' => app()->environment('testing')
-                        ? 'Falló la ejecución de la operación: ' . $e->getMessage()
+                        ? 'Falló la ejecución de la operación: '.$e->getMessage()
                         : 'Falló la ejecución de la operación.',
                 ];
             }
@@ -295,7 +300,7 @@ class AICommandController extends Controller
             ]);
         }
 
-        /** @var Collection<int,\App\Models\Course> $courses */
+        /** @var Collection<int,Course> $courses */
         $courses = $result['courses'];
 
         return [
@@ -328,7 +333,7 @@ class AICommandController extends Controller
         $teacherText = $result['teacher_label'] ? " asignado a {$result['teacher_label']}" : '';
 
         return [
-            'message' => "{$action}: {$course->subject_name} {$course->grade}" . ($course->section ? " sección {$course->section}" : '') . "{$teacherText}.",
+            'message' => "{$action}: {$course->subject_name} {$course->grade}".($course->section ? " sección {$course->section}" : '')."{$teacherText}.",
             'data' => [
                 'course_id' => $course->id,
                 'subject_name' => $course->subject_name,
@@ -342,7 +347,7 @@ class AICommandController extends Controller
 
     private function verifyAssignTeacher(User $director, array $result): array
     {
-        /** @var Collection<int,\App\Models\Course> $courses */
+        /** @var Collection<int,Course> $courses */
         $courses = $result['courses'];
         foreach ($courses as $course) {
             if ((int) $course->colegio_id !== (int) $director->colegio_id) {
@@ -369,7 +374,7 @@ class AICommandController extends Controller
 
     private function verifyCreateStudentsBatch(User $director, array $result): array
     {
-        /** @var Collection<int,\App\Models\Student> $created */
+        /** @var Collection<int,Student> $created */
         $created = $result['created'];
         foreach ($created as $student) {
             if ((int) $student->colegio_id !== (int) $director->colegio_id) {
@@ -405,10 +410,10 @@ class AICommandController extends Controller
         }
 
         return [
-            'message' => 'Inscripción verificada en ' . $course->subject_name . ' ' . $course->grade . '.',
+            'message' => 'Inscripción verificada en '.$course->subject_name.' '.$course->grade.'.',
             'data' => [
                 'course_id' => $course->id,
-                'course' => $course->subject_name . ' ' . $course->grade . ($course->section ? ' sección ' . $course->section : ''),
+                'course' => $course->subject_name.' '.$course->grade.($course->section ? ' sección '.$course->section : ''),
                 'enrolled' => $result['enrolled'],
                 'already_enrolled' => $result['already_enrolled'],
                 'missing_students' => $result['missing_students'],
@@ -468,27 +473,48 @@ class AICommandController extends Controller
 
     private function confirmationMessageFor(string $intent, array $data): string
     {
-        return match ($intent) {
-            'create_teacher' => "Voy a crear la invitación para {$data['teacher_name']} y asignar " .
-                ($data['subject_name'] ? "{$data['subject_name']} en " . implode(', ', $data['grades']) : 'sin materias iniciales') .
-                ". Responde \"sí\" para confirmar.",
-            'create_course' => "Voy a crear el curso {$data['subject_name']} para {$data['grade']}" . (($data['section'] ?? null) ? " sección {$data['section']}" : '') . ". Responde \"sí\" para confirmar.",
-            'assign_teacher' => "Voy a asignar a {$data['teacher_name']} la materia {$data['subject_name']} en " . implode(', ', $data['grades']) . ". Responde \"sí\" para confirmar.",
-            'create_students_batch' => "Voy a crear " . count($data['names']) . " estudiante(s) en {$data['grade']}" . ($data['section'] ? " / {$data['section']}" : '') . ". Responde \"sí\" para confirmar.",
-            'enroll_students_course' => "Voy a inscribir " . count($data['names']) . " alumno(s) en {$data['subject_name']} {$data['grade']}" . (($data['section'] ?? null) ? " sección {$data['section']}" : '') . ". Responde \"sí\" para confirmar.",
-            'manage_invite_code' => "Voy a consultar el estado del código DOC-. Responde \"sí\" para confirmar.",
+        $createdGrades = $this->mentionMissingGrades($intent, $data);
+        $createdGrades = $createdGrades !== '' ? ' '.$createdGrades : '';
+
+        $message = match ($intent) {
+            'create_teacher' => "Voy a crear la invitación para {$data['teacher_name']} y asignar ".
+                ($data['subject_name'] ? "{$data['subject_name']} en ".implode(', ', $data['grades']) : 'sin materias iniciales').
+                '. Responde "sí" para confirmar.',
+            'create_course' => "Voy a crear el curso {$data['subject_name']} para {$data['grade']}".(($data['section'] ?? null) ? " sección {$data['section']}" : '').'. Responde "sí" para confirmar.',
+            'assign_teacher' => "Voy a asignar a {$data['teacher_name']} la materia {$data['subject_name']} en ".implode(', ', $data['grades']).'. Responde "sí" para confirmar.',
+            'create_students_batch' => 'Voy a crear '.count($data['names'])." estudiante(s) en {$data['grade']}".($data['section'] ? " / {$data['section']}" : '').'. Responde "sí" para confirmar.',
+            'enroll_students_course' => 'Voy a inscribir '.count($data['names'])." alumno(s) en {$data['subject_name']} {$data['grade']}".(($data['section'] ?? null) ? " sección {$data['section']}" : '').'. Responde "sí" para confirmar.',
+            'manage_invite_code' => 'Voy a consultar el estado del código DOC-. Responde "sí" para confirmar.',
             default => 'Confirma la operación.',
         };
+
+        return $message.$createdGrades;
+    }
+
+    /**
+     * Cuando faltan grados en el colegio, el flujo los crea automáticamente al ejecutar,
+     * así que el mensaje lo aclara para que el director confirme con "sí"/"confirmo".
+     */
+    private function mentionMissingGrades(string $intent, array $data): string
+    {
+        $missing = (array) ($data['missing_grades'] ?? []);
+        $missing = array_values(array_filter($missing, fn ($g) => (string) $g !== ''));
+
+        if ($missing === []) {
+            return '';
+        }
+
+        return 'También crearé automáticamente los grados que faltan: '.implode(', ', $missing).'.';
     }
 
     private function detectIntent(string $text): ?string
     {
         $value = $this->normalizedText($text);
 
-        if ((str_contains($value, 'crea') || str_contains($value, 'crear')) && (str_contains($value, 'curso') || str_contains($value, 'asignatura'))) {
+        if ((str_contains($value, 'crea') || str_contains($value, 'crear')) && (str_contains($value, 'curso') || str_contains($value, 'cursso') || str_contains($value, 'asignatura'))) {
             return 'create_course';
         }
-        if ((str_contains($value, 'crea') || str_contains($value, 'invita')) && str_contains($value, 'profesor')) {
+        if ((preg_match('/\bcrea(?:r|me)?\b/', $value) || str_contains($value, 'creame') || str_contains($value, 'crearme') || str_contains($value, 'invita')) && str_contains($value, 'profesor')) {
             return 'create_teacher';
         }
         if ((str_contains($value, 'dara') || str_contains($value, 'asigna'))
@@ -541,14 +567,12 @@ class AICommandController extends Controller
         $subject = $this->extractSubject($text);
         $grades = $this->extractGrades($text);
         $missingGrades = $this->missingGradesFor($director, $grades);
-        if ($grades !== [] && $missingGrades !== []) {
-            return [[], 'No encontré estos grados en tu colegio: ' . implode(', ', $missingGrades) . '. ¿Quieres crearlos igualmente?'];
-        }
 
         return [[
             'teacher_name' => $name,
             'subject_name' => $subject,
             'grades' => $grades,
+            'missing_grades' => $missingGrades,
             'expires_in_days' => 30,
         ], null];
     }
@@ -571,15 +595,13 @@ class AICommandController extends Controller
         $section = $this->extractSection($text);
         $teacherName = $this->extractTeacherName($text);
         $missingGrades = $this->missingGradesFor($director, [$grade]);
-        if ($missingGrades !== []) {
-            return [[], 'No encontré el grado ' . $grade . ' en tu colegio. ¿Quieres crearlo igualmente?'];
-        }
 
         return [[
             'subject_name' => $subject,
             'grade' => $grade,
             'section' => $section,
             'teacher_name' => $teacherName,
+            'missing_grades' => $missingGrades,
         ], null];
     }
 
@@ -604,14 +626,12 @@ class AICommandController extends Controller
         }
 
         $missingGrades = $this->missingGradesFor($director, $grades);
-        if ($missingGrades !== []) {
-            return [[], 'No encontré estos grados en tu colegio: ' . implode(', ', $missingGrades) . '. ¿Quieres crearlos igualmente?'];
-        }
 
         return [[
             'teacher_name' => $name,
             'subject_name' => $subject,
             'grades' => $grades,
+            'missing_grades' => $missingGrades,
         ], null];
     }
 
@@ -632,14 +652,12 @@ class AICommandController extends Controller
 
         $section = $this->extractSection($text);
         $missingGrades = $this->missingGradesFor($director, [$grade]);
-        if ($missingGrades !== []) {
-            return [[], 'No encontré el grado ' . $grade . ' en tu colegio. ¿Quieres crearlo igualmente?'];
-        }
 
         return [[
             'names' => $names,
             'grade' => $grade,
             'section' => $section,
+            'missing_grades' => $missingGrades,
         ], null];
     }
 
@@ -666,7 +684,7 @@ class AICommandController extends Controller
         $section = $this->extractSection($text);
         $missingGrades = $this->missingGradesFor($director, [$grade]);
         if ($missingGrades !== []) {
-            return [[], 'No encontré el grado ' . $grade . ' en tu colegio. Revisa la instrucción.'];
+            return [[], 'No encontré el grado '.$grade.' en tu colegio. Revisa la instrucción.'];
         }
 
         return [[
@@ -800,9 +818,9 @@ class AICommandController extends Controller
                 ->avg('grades.score');
         }
 
-        $msg = "Profesor {$teacher->name}: " . $courses->count() . ' curso(s) y ' . $courses->sum('students_count') . ' alumno(s) asignados.';
+        $msg = "Profesor {$teacher->name}: ".$courses->count().' curso(s) y '.$courses->sum('students_count').' alumno(s) asignados.';
         if ($average !== null) {
-            $msg .= ' Promedio reciente: ' . number_format((float) $average, 1) . '.';
+            $msg .= ' Promedio reciente: '.number_format((float) $average, 1).'.';
         }
 
         return [
@@ -827,7 +845,7 @@ class AICommandController extends Controller
 
         $courses = $student->courses()
             ->where('courses.colegio_id', $colegioId)
-            ->whereRaw('LOWER(courses.subject_name) like ?', ['%' . $subjectKey . '%'])
+            ->whereRaw('LOWER(courses.subject_name) like ?', ['%'.$subjectKey.'%'])
             ->get(['courses.id', 'courses.subject_name', 'courses.grade', 'courses.section']);
         $courseIds = $courses->pluck('id');
 
@@ -860,9 +878,9 @@ class AICommandController extends Controller
         }
 
         $average = $grades->avg('score');
-        $msg = "{$student->name} en {$subjectName}: " . $courses->count() . ' curso(s), ' . $grades->count() . ' calificación(es) registrada(s) y ' . $absences . ' falta(s).';
+        $msg = "{$student->name} en {$subjectName}: ".$courses->count().' curso(s), '.$grades->count().' calificación(es) registrada(s) y '.$absences.' falta(s).';
         if ($average !== null) {
-            $msg .= ' Promedio: ' . number_format((float) $average, 1) . '.';
+            $msg .= ' Promedio: '.number_format((float) $average, 1).'.';
         }
 
         return [
@@ -971,7 +989,7 @@ class AICommandController extends Controller
         $average = $gradeRows->avg('score');
         $msg = "{$student->name} tiene {$evaluationRows->count()} evaluación(es) recientes y {$gradeRows->count()} nota(s) registradas.";
         if ($average !== null) {
-            $msg .= ' Promedio de notas recientes: ' . number_format((float) $average, 1) . '.';
+            $msg .= ' Promedio de notas recientes: '.number_format((float) $average, 1).'.';
         }
 
         return [
@@ -1008,17 +1026,37 @@ class AICommandController extends Controller
 
     private function extractSubjectFromCoursePrompt(string $text): ?string
     {
-        $patterns = [
-            '/(?:curso|asignatura)\s+de\s+([A-Za-zÁÉÍÓÚáéíóúÑñ\s]+?)(?:\s+para|\s+de\s+[1-6]|,|\.|$)/u',
-            '/en\s+([A-Za-zÁÉÍÓÚáéíóúÑñ\s]+)\s+de\s+[1-6]/u',
-        ];
-        foreach ($patterns as $pattern) {
-            if (preg_match($pattern, $text, $m)) {
-                return trim($m[1]);
-            }
+        // Localizamos "curso/asignatura de" en el texto ORIGINAL para conservar
+        // acentos y manejar variantes tipográficas ("cursso") sin desfases de índice.
+        if (! preg_match('/(?:curso|cursso|asignatura)\s+de\s+(.+?)$/iu', $text, $m)) {
+            return null;
+        }
+        $rest = trim((string) $m[1]);
+
+        // Si el grado aparece antes de la materia ("1er grado de matematicas"),
+        // lo descartamos: "1er grado de" -> "".
+        $rest = preg_replace('/^(?:al\s+)?[1-6](?:ro|ero|do|to|er|º|°)?\s*grado\s+(?:de\s+)?/iu', '', $rest) ?? $rest;
+
+        // Cortamos en conectores/palabras reservadas (conserva acentos del original).
+        $rest = preg_split('/\s+(?:para|en|del|de|al|a\s+la|con|seccion|sección|y|nivel)\s+/iu', $rest)[0] ?? $rest;
+        $rest = trim((string) $rest);
+        $rest = trim(preg_replace('/^[1-6](?:ro|ero|do|to|er)?\.?\s*/iu', '', $rest) ?? '');
+
+        if ($rest === '' || preg_match('/(grado|curso|asignatura|profesor|profesora|alumno|estudiante|docente|materia)$/iu', $rest)) {
+            return null;
         }
 
-        return null;
+        $subject = $this->titleCaseSubject($rest);
+        if (mb_strlen($subject) < 2 || mb_strlen($subject) > 60 || preg_match('/\b(cursso|curso|asignatura)\b/iu', $subject)) {
+            return null;
+        }
+
+        return $subject;
+    }
+
+    private function titleCaseSubject(string $subject): string
+    {
+        return mb_convert_case(trim($subject), MB_CASE_TITLE, 'UTF-8');
     }
 
     private function extractSubject(string $text): ?string
@@ -1059,10 +1097,10 @@ class AICommandController extends Controller
     private function extractTargetGrade(string $text): ?string
     {
         $value = mb_strtolower($text);
-        if (preg_match('/al?\s+([1-6])(?:ro|ero|do|to|°|º)?\s*(?:er|do|to)?\s*grado/u', $value, $m)) {
+        if (preg_match('/al?\s+([1-6])(?:ro|ero|er|do|to|°|º)?\s*(?:er|do|to)?\s*grado/u', $value, $m)) {
             return $this->formatGrade((int) $m[1]);
         }
-        if (preg_match('/([1-6])(?:ro|ero|do|to|°|º)\s*(?:grado)?/u', $value, $m)) {
+        if (preg_match('/([1-6])(?:ro|ero|er|do|to|°|º)\s*(?:grado)?/u', $value, $m)) {
             return $this->formatGrade((int) $m[1]);
         }
 
@@ -1098,7 +1136,7 @@ class AICommandController extends Controller
     }
 
     /**
-     * @param array<int,string> $grades
+     * @param  array<int,string>  $grades
      * @return array<int,string>
      */
     private function missingGradesFor(User $director, array $grades): array
@@ -1131,7 +1169,7 @@ class AICommandController extends Controller
             ->where('role', 'profesor')
             ->where(function ($query) use ($name) {
                 $query->whereRaw('LOWER(name) = ?', [$name])
-                    ->orWhereRaw('LOWER(name) like ?', ['%' . $name . '%']);
+                    ->orWhereRaw('LOWER(name) like ?', ['%'.$name.'%']);
             })
             ->orderByRaw('CASE WHEN LOWER(name) = ? THEN 0 ELSE 1 END', [$name])
             ->first();
@@ -1152,7 +1190,7 @@ class AICommandController extends Controller
             ->where('colegio_id', $colegioId)
             ->where(function ($query) use ($name) {
                 $query->whereRaw('LOWER(name) = ?', [$name])
-                    ->orWhereRaw('LOWER(name) like ?', ['%' . $name . '%']);
+                    ->orWhereRaw('LOWER(name) like ?', ['%'.$name.'%']);
             })
             ->orderByRaw('CASE WHEN LOWER(name) = ? THEN 0 ELSE 1 END', [$name])
             ->first();
@@ -1177,6 +1215,30 @@ class AICommandController extends Controller
         ], true);
     }
 
+    /**
+     * Reconoce respuestas cortas de confirmación ("sí", "sí, créalos", "confirmo")
+     * para completar la acción pendiente guardada en sesión.
+     */
+    private function isAffirmativeText(string $text): bool
+    {
+        $value = mb_strtolower(trim($text));
+        $value = trim(preg_replace('/[.!?]+$/', '', $value) ?? '');
+        if ($value === '') {
+            return false;
+        }
+
+        $short = ['sí', 'si', 'ok', 'okay', 'sip', 'dale', 'adelante', 'confirmo', 'confirmar', 'procede', 'listo', 'hazlo', 'crealos', 'crealo', 'yes', 'yep', 'claro', 'correcto', 'afirmativo', 'exacto', 'siguiente'];
+        if (in_array($value, $short, true)) {
+            return true;
+        }
+
+        if (preg_match('/^(s[ií])(\s*[,.;:\-]\s*(cr[eé]alos|cr[eé]alos igualmente|crearlos|confirmo|dale|adelante|hazlo|por favor))?$/u', $value)) {
+            return true;
+        }
+
+        return false;
+    }
+
     private function formatGrade(int $n): string
     {
         return match ($n) {
@@ -1194,7 +1256,7 @@ class AICommandController extends Controller
     {
         $value = mb_strtolower($text);
 
-        return strtr($value, [
+        $value = strtr($value, [
             'á' => 'a',
             'é' => 'e',
             'í' => 'i',
@@ -1202,5 +1264,11 @@ class AICommandController extends Controller
             'ú' => 'u',
             'ñ' => 'n',
         ]);
+
+        // Variantes tipográficas comunes que deben interpretarse igual.
+        $value = preg_replace('/\bcurs+o\b/', 'curso', $value) ?? $value;
+        $value = preg_replace('/\b1(?:er|ero)?\s*grado\b/', '1er grado', $value) ?? $value;
+
+        return $value;
     }
 }
