@@ -308,6 +308,113 @@ class DirectorActionService
     /**
      * @param array{
      *   subject_name:string,
+     *   grades:array<int,string>,
+     *   section?:string|null,
+     *   teacher_name?:string|null
+     * } $payload
+     * @return array{
+     *   courses:Collection<int,Course>,
+     *   created_count:int,
+     *   existing_count:int,
+     *   teacher_label:?string
+     * }
+     */
+    public function createCourses(User $director, array $payload): array
+    {
+        $colegioId = (int) $director->colegio_id;
+        $subject = trim((string) $payload['subject_name']);
+        $section = trim((string) ($payload['section'] ?? ''));
+        $section = $section !== '' ? $section : null;
+        $grades = collect($payload['grades'] ?? [])
+            ->map(fn ($g) => trim((string) $g))
+            ->filter()
+            ->unique()
+            ->values();
+
+        if ($subject === '' || $grades->isEmpty()) {
+            throw ValidationException::withMessages([
+                'course' => 'Debes indicar materia y al menos un grado.',
+            ]);
+        }
+
+        return DB::transaction(function () use ($colegioId, $subject, $section, $grades, $payload) {
+            $teacherId = null;
+            $inviteId = null;
+            $teacherLabel = null;
+
+            if (! empty($payload['teacher_name'])) {
+                [$teacherId, $inviteId, $teacherLabel] = $this->resolveAssigneeByName($colegioId, (string) $payload['teacher_name']);
+            }
+
+            $courses = collect();
+            $created = 0;
+            $existing = 0;
+
+            foreach ($grades as $grade) {
+                $existingCourse = Course::query()
+                    ->where('colegio_id', $colegioId)
+                    ->whereRaw('LOWER(subject_name) = ?', [mb_strtolower($subject)])
+                    ->whereRaw('LOWER(grade) = ?', [mb_strtolower($grade)])
+                    ->when($section, fn ($query) => $query->whereRaw('LOWER(COALESCE(section, ?)) = ?', ['', mb_strtolower($section)]))
+                    ->first();
+
+                if ($existingCourse) {
+                    $existingCourse->update([
+                        'teacher_id' => $teacherId,
+                        'teacher_invite_id' => $inviteId,
+                    ]);
+                    $courses->push($existingCourse->fresh());
+                    $existing++;
+
+                    continue;
+                }
+
+                $course = Course::create([
+                    'teacher_id' => $teacherId,
+                    'teacher_invite_id' => $inviteId,
+                    'colegio_id' => $colegioId,
+                    'subject_name' => $subject,
+                    'grade' => $grade,
+                    'section' => $section,
+                    'school_year' => date('Y').'-'.(date('Y') + 1),
+                    'invite_code' => InviteCodeHelper::generateCourseCode($subject, $grade, $section),
+                ]);
+                $courses->push($course);
+                $created++;
+            }
+
+            if ($inviteId) {
+                $invite = TeacherInvite::find($inviteId);
+                if ($invite) {
+                    $ids = collect($invite->course_ids ?? [])->merge($courses->pluck('id'))->unique()->values()->all();
+                    $invite->update(['course_ids' => $ids]);
+                }
+            }
+
+            $verified = Course::query()
+                ->where('colegio_id', $colegioId)
+                ->whereIn('id', $courses->pluck('id')->all())
+                ->withCount('students')
+                ->get(['id', 'subject_name', 'grade', 'section', 'teacher_id', 'teacher_invite_id', 'invite_code']);
+
+            if ($verified->count() !== $courses->count()) {
+                throw ValidationException::withMessages([
+                    'course' => 'No se pudieron verificar todos los cursos creados.',
+                ]);
+            }
+
+            return [
+                'courses' => $verified,
+                'created_count' => $created,
+                'existing_count' => $existing,
+                'teacher_label' => $teacherLabel,
+            ];
+        });
+    }
+
+    /**
+     * @param array{
+     *   subject_name:string,
      *   grade:string,
      *   section?:string|null,
      *   teacher_name?:string|null

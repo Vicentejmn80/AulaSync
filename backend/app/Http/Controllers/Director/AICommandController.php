@@ -262,7 +262,9 @@ class AICommandController extends Controller
     {
         return match ($intent) {
             'create_teacher' => $this->actionService->createTeacherInviteWithAssignments($director, $data),
-            'create_course' => $this->actionService->createCourse($director, $data),
+            'create_course' => count($data['grades'] ?? []) > 1
+                ? $this->actionService->createCourses($director, $data)
+                : $this->actionService->createCourse($director, $data),
             'assign_teacher' => $this->actionService->assignTeacherToGradesSubject($director, $data),
             'create_students_batch' => $this->actionService->createStudentsBatch($director, $data),
             'enroll_students_course' => $this->actionService->enrollStudentsToCourse($director, $data),
@@ -278,7 +280,9 @@ class AICommandController extends Controller
     {
         return match ($intent) {
             'create_teacher' => $this->verifyCreateTeacher($director, $result),
-            'create_course' => $this->verifyCreateCourse($director, $result),
+            'create_course' => isset($result['courses'])
+                ? $this->verifyCreateCourses($director, $result)
+                : $this->verifyCreateCourse($director, $result),
             'assign_teacher' => $this->verifyAssignTeacher($director, $result),
             'create_students_batch' => $this->verifyCreateStudentsBatch($director, $result),
             'enroll_students_course' => $this->verifyEnrollStudentsToCourse($director, $result),
@@ -288,6 +292,46 @@ class AICommandController extends Controller
                 'intent' => 'No se pudo verificar el resultado.',
             ]),
         };
+    }
+
+    private function verifyCreateCourses(User $director, array $result): array
+    {
+        /** @var Collection<int,Course> $courses */
+        $courses = $result['courses'];
+        foreach ($courses as $course) {
+            if ((int) $course->colegio_id !== (int) $director->colegio_id) {
+                throw ValidationException::withMessages([
+                    'course' => 'Un curso creado no pertenece al colegio del director.',
+                ]);
+            }
+        }
+
+        $labels = $courses->map(fn ($c) => "{$c->subject_name} {$c->grade}".($c->section ? " sección {$c->section}" : ''))->implode(', ');
+        $created = (int) ($result['created_count'] ?? 0);
+        $existing = (int) ($result['existing_count'] ?? 0);
+        $parts = [];
+        if ($created > 0) {
+            $parts[] = "{$created} curso(s) creado(s)";
+        }
+        if ($existing > 0) {
+            $parts[] = "{$existing} ya existente(s) y actualizado(s)";
+        }
+        $teacherText = $result['teacher_label'] ? " asignado a {$result['teacher_label']}" : '';
+
+        return [
+            'message' => 'Cursos listos: '.$labels.'.'.($parts !== [] ? ' '.implode(', ', $parts).'.' : '').$teacherText.'.',
+            'data' => [
+                'courses' => $courses->map(fn ($c) => [
+                    'course_id' => $c->id,
+                    'subject_name' => $c->subject_name,
+                    'grade' => $c->grade,
+                    'section' => $c->section,
+                    'students_count' => $c->students_count,
+                ])->values()->all(),
+                'created_count' => $created,
+                'existing_count' => $existing,
+            ],
+        ];
     }
 
     private function verifyCreateTeacher(User $director, array $result): array
@@ -480,7 +524,9 @@ class AICommandController extends Controller
             'create_teacher' => "Voy a crear la invitación para {$data['teacher_name']} y asignar ".
                 ($data['subject_name'] ? "{$data['subject_name']} en ".implode(', ', $data['grades']) : 'sin materias iniciales').
                 '. Responde "sí" para confirmar.',
-            'create_course' => "Voy a crear el curso {$data['subject_name']} para {$data['grade']}".(($data['section'] ?? null) ? " sección {$data['section']}" : '').'. Responde "sí" para confirmar.',
+            'create_course' => count($data['grades'] ?? []) > 1
+                ? 'Voy a crear los cursos de '.$data['subject_name'].' para '.implode(', ', $data['grades']).(($data['section'] ?? null) ? " sección {$data['section']}" : '').'. Responde "sí" para confirmar.'
+                : "Voy a crear el curso {$data['subject_name']} para {$data['grade']}".(($data['section'] ?? null) ? " sección {$data['section']}" : '').'. Responde "sí" para confirmar.',
             'assign_teacher' => "Voy a asignar a {$data['teacher_name']} la materia {$data['subject_name']} en ".implode(', ', $data['grades']).'. Responde "sí" para confirmar.',
             'create_students_batch' => 'Voy a crear '.count($data['names'])." estudiante(s) en {$data['grade']}".($data['section'] ? " / {$data['section']}" : '').'. Responde "sí" para confirmar.',
             'enroll_students_course' => 'Voy a inscribir '.count($data['names'])." alumno(s) en {$data['subject_name']} {$data['grade']}".(($data['section'] ?? null) ? " sección {$data['section']}" : '').'. Responde "sí" para confirmar.',
@@ -511,10 +557,14 @@ class AICommandController extends Controller
     {
         $value = $this->normalizedText($text);
 
-        if ((str_contains($value, 'crea') || str_contains($value, 'crear')) && (str_contains($value, 'curso') || str_contains($value, 'cursso') || str_contains($value, 'asignatura'))) {
+        // Crear uno o varios cursos: "crea el curso de X", "crees los cursos de: 1ero..6to de ingles",
+        // "Crea Matemática para 4.º, 5.º y 6.º."
+        if ((preg_match('/\bcre(?:a|ar|es|e|o)\b/', $value) || str_contains($value, 'crea') || str_contains($value, 'crear') || str_contains($value, 'crees'))
+            && (str_contains($value, 'curso') || str_contains($value, 'cursso') || str_contains($value, 'asignatura') || str_contains($value, 'materia')
+                || preg_match('/\b(?:para|en|de|del)\s+(?:el\s+)?[1-6](?:ro|er|do|to|°|º|ero)?\s*(?:grado\b|[,.]|(?:y|e)\b|$)/', $value))) {
             return 'create_course';
         }
-        if ((preg_match('/\bcrea(?:r|me)?\b/', $value) || str_contains($value, 'creame') || str_contains($value, 'crearme') || str_contains($value, 'invita')) && str_contains($value, 'profesor')) {
+        if ((preg_match('/\bcre(?:a|ar|es|e|o)\b/', $value) || str_contains($value, 'creame') || str_contains($value, 'crearme') || str_contains($value, 'invita')) && str_contains($value, 'profesor')) {
             return 'create_teacher';
         }
         if ((str_contains($value, 'dara') || str_contains($value, 'asigna'))
@@ -526,16 +576,16 @@ class AICommandController extends Controller
             && (str_contains($value, 'alumno') || str_contains($value, 'estudiante') || preg_match('/\sa\s+[a-z]/', $value))) {
             return 'enroll_students_course';
         }
-        if ((str_contains($value, 'agrega') || str_contains($value, 'matricula') || str_contains($value, 'crear') || str_contains($value, 'inscribe'))
+        if ((str_contains($value, 'agrega') || str_contains($value, 'matricula') || str_contains($value, 'crear') || str_contains($value, 'inscribe') || str_contains($value, 'crea a') || str_contains($value, 'crear a'))
             && (str_contains($value, 'alumno') || str_contains($value, 'estudiante'))) {
             return 'create_students_batch';
         }
-        if ((str_contains($value, 'agrega') || str_contains($value, 'matricula') || str_contains($value, 'crear'))
+        if ((str_contains($value, 'agrega') || str_contains($value, 'matricula') || str_contains($value, 'crea') || str_contains($value, 'crear'))
             && preg_match('/\b[1-6](ro|do|to|er)?\b.*grado/', $value)) {
             return 'create_students_batch';
         }
         if ((str_contains($value, 'doc-') || str_contains($value, 'codigo'))
-            && (str_contains($value, 'consulta') || str_contains($value, 'estado') || str_contains($value, 'mostrar') || str_contains($value, 'tiene'))) {
+            && (str_contains($value, 'consulta') || str_contains($value, 'estado') || str_contains($value, 'mostrar') || str_contains($value, 'tiene') || str_contains($value, 'dame'))) {
             return 'manage_invite_code';
         }
         if (
@@ -545,7 +595,18 @@ class AICommandController extends Controller
             || str_contains($value, 'cuantas faltas')
             || str_contains($value, 'como estan sus evaluaciones')
             || str_contains($value, 'como estan las evaluaciones')
-            || ((str_contains($value, 'consulta') || str_contains($value, 'muestrame') || str_contains($value, 'mostrar') || str_contains($value, 'estado'))
+            || str_contains($value, 'cuantos alumnos')
+            || str_contains($value, 'cuantos profesores')
+            || str_contains($value, 'cuantos cursos')
+            || str_contains($value, 'que profesores')
+            || str_contains($value, 'que cursos')
+            || str_contains($value, 'quien ha faltado')
+            || str_contains($value, 'quienes han faltado')
+            || str_contains($value, 'quien esta faltando')
+            || str_contains($value, 'problemas en')
+            || str_contains($value, 'bajo rendimiento')
+            || str_contains($value, 'como esta')
+            || ((str_contains($value, 'consulta') || str_contains($value, 'muestrame') || str_contains($value, 'mostrar') || str_contains($value, 'estado') || str_contains($value, 'dame'))
                 && (str_contains($value, 'profesor') || str_contains($value, 'estudiante') || str_contains($value, 'alumno') || str_contains($value, 'curso')))
         ) {
             return 'query_academic';
@@ -582,23 +643,29 @@ class AICommandController extends Controller
      */
     private function parseCreateCourse(User $director, string $text): array
     {
+        $grades = $this->extractGrades($text);
+
         $subject = $this->extractSubjectFromCoursePrompt($text);
         if (! $subject) {
-            return [[], '¿Qué asignatura debo crear? Ejemplo: "Crea curso de Matemática para 4to grado".'];
+            return [[], '¿Qué asignatura debo crear? Ejemplo: "Crea Matemática para 4.º, 5.º y 6.º".'];
         }
 
-        $grade = $this->extractTargetGrade($text);
-        if (! $grade) {
-            return [[], '¿Para qué grado debo crear el curso?'];
+        if ($grades === []) {
+            $grade = $this->extractTargetGrade($text);
+            if (! $grade) {
+                return [[], '¿Para qué grado debo crear el curso?'];
+            }
+            $grades = [$grade];
         }
 
         $section = $this->extractSection($text);
         $teacherName = $this->extractTeacherName($text);
-        $missingGrades = $this->missingGradesFor($director, [$grade]);
+        $missingGrades = $this->missingGradesFor($director, $grades);
 
         return [[
             'subject_name' => $subject,
-            'grade' => $grade,
+            'grade' => $grades[0],
+            'grades' => $grades,
             'section' => $section,
             'teacher_name' => $teacherName,
             'missing_grades' => $missingGrades,
@@ -769,6 +836,65 @@ class AICommandController extends Controller
             ], null];
         }
 
+        // Consultas generales del colegio (school-wide, siempre dentro del colegio del director).
+        if (preg_match('/cu[aá]ntos\s+alumnos\s+hay\s+en\s+([1-6](?:ro|ero|do|to|er|°|º)?\s*grado)/iu', trim($text), $m)) {
+            return [[
+                'query_type' => 'grade_overview',
+                'grade' => $this->extractTargetGrade($m[1]) ?? trim($m[1]),
+            ], null];
+        }
+        if (preg_match('/c[oó]mo est[aá]\s+([1-6](?:ro|ero|do|to|er|°|º)?\s*grado)/iu', trim($text), $m)) {
+            return [[
+                'query_type' => 'grade_overview',
+                'grade' => $this->extractTargetGrade($m[1]) ?? trim($m[1]),
+            ], null];
+        }
+        if (preg_match('/cu[aá]ntos\s+(?:profesor(?:a|es)?|docentes?)\s+(?:tengo|hay|tenemos|existen|registrados)/iu', trim($text))) {
+            return [[
+                'query_type' => 'school_stats',
+                'stat' => 'teachers',
+            ], null];
+        }
+        if (preg_match('/cu[aá]ntos\s+(?:alumnos|estudiantes)\s+(?:tengo|hay|tenemos|existen|registrados)/iu', trim($text))) {
+            return [[
+                'query_type' => 'school_stats',
+                'stat' => 'students',
+            ], null];
+        }
+        if (preg_match('/cu[aá]ntos\s+cursos\s+(?:tengo|hay|tenemos|existen|registrados)/iu', trim($text))) {
+            return [[
+                'query_type' => 'school_stats',
+                'stat' => 'courses',
+            ], null];
+        }
+        if (preg_match('/qu[eé]\s+(?:cursos|cursoss)\s+(?:existen|tengo|tenemos|hay)/iu', trim($text))) {
+            return [[
+                'query_type' => 'school_courses',
+            ], null];
+        }
+        if (preg_match('/qu[eé]\s+profesores\s+(?:tengo|tenemos|hay|existen|est[aá]n asignados)/iu', trim($text))) {
+            return [[
+                'query_type' => 'school_teachers',
+            ], null];
+        }
+        if (preg_match('/(?:qui[ée]n|quiénes|qui[eé]nes)\s+ha(?:n)?\s+faltado(?:\s+m[aá]s)?/iu', trim($text))) {
+            return [[
+                'query_type' => 'frequent_absentees',
+            ], null];
+        }
+        if (preg_match('/qui[ée]n(?:es)?\s+est[aá]n?\s+(?:teniendo|presentando)\s+problemas\s+en\s+([A-Za-zÁÉÍÓÚáéíóúÑñ][A-Za-zÁÉÍÓÚáéíóúÑñ\s]{1,40}?)\??$/iu', trim($text), $m)) {
+            return [[
+                'query_type' => 'subject_at_risk',
+                'subject_name' => trim($m[1]),
+            ], null];
+        }
+        if (preg_match('/(?:alumnos|estudiantes)\s+(?:con\s+|que\s+)?(?:est[aá]n\s+|van\s+|tienen\s+)?bajo\s+rendimiento(?:\s+en\s+([A-Za-zÁÉÍÓÚáéíóúÑñ][A-Za-zÁÉÍÓÚáéíóúÑñ\s]{1,40}?))?\??$/iu', trim($text), $m)) {
+            return [[
+                'query_type' => 'at_risk_students',
+                'subject_name' => isset($m[1]) ? trim($m[1]) : null,
+            ], null];
+        }
+
         if (str_contains($value, 'profesor')) {
             return [[], 'Especifica así: "¿Cómo va el profesor Carlos Pérez?" o "¿Qué cursos tiene asignados la profesora María?"'];
         }
@@ -791,6 +917,13 @@ class AICommandController extends Controller
             'teacher_courses' => $this->queryTeacherCourses($colegioId, (string) $data['teacher_name']),
             'student_absences' => $this->queryStudentAbsences($colegioId, (string) $data['student_name']),
             'student_evaluations' => $this->queryStudentEvaluations($colegioId, (string) $data['student_name']),
+            'school_stats' => $this->querySchoolStats($colegioId, (string) ($data['stat'] ?? 'teachers')),
+            'school_courses' => $this->querySchoolCourses($colegioId),
+            'school_teachers' => $this->querySchoolTeachers($colegioId),
+            'grade_overview' => $this->queryGradeOverview($colegioId, (string) $data['grade']),
+            'frequent_absentees' => $this->queryFrequentAbsentees($colegioId),
+            'subject_at_risk' => $this->querySubjectAtRisk($colegioId, (string) $data['subject_name']),
+            'at_risk_students' => $this->queryAtRiskStudents($colegioId, isset($data['subject_name']) ? (string) $data['subject_name'] : null),
             default => throw ValidationException::withMessages([
                 'query' => 'No pude interpretar el tipo de consulta académica.',
             ]),
@@ -1006,6 +1139,204 @@ class AICommandController extends Controller
         ];
     }
 
+    private function querySchoolStats(int $colegioId, string $stat): array
+    {
+        return match ($stat) {
+            'teachers' => [
+                'message' => 'Tienes '.User::where('role', 'profesor')->where('colegio_id', $colegioId)->count().' profesor(es) registrado(s).',
+                'data' => ['teachers_count' => User::where('role', 'profesor')->where('colegio_id', $colegioId)->count()],
+            ],
+            'students' => [
+                'message' => 'Hay '.Student::where('colegio_id', $colegioId)->count().' alumno(s) en la nómina del colegio.',
+                'data' => ['students_count' => Student::where('colegio_id', $colegioId)->count()],
+            ],
+            default => [
+                'message' => 'El colegio tiene '.Course::where('colegio_id', $colegioId)->count().' curso(s) registrado(s).',
+                'data' => ['courses_count' => Course::where('colegio_id', $colegioId)->count()],
+            ],
+        };
+    }
+
+    private function querySchoolCourses(int $colegioId): array
+    {
+        $courses = Course::query()
+            ->where('colegio_id', $colegioId)
+            ->withCount('students')
+            ->orderBy('grade')
+            ->orderBy('subject_name')
+            ->get(['id', 'subject_name', 'grade', 'section']);
+
+        return [
+            'message' => 'El colegio tiene '.$courses->count().' curso(s): '.$courses->map(fn ($c) => "{$c->subject_name} {$c->grade}".($c->section ? " sección {$c->section}" : ''))->implode(', ').'.',
+            'data' => ['courses' => $courses],
+        ];
+    }
+
+    private function querySchoolTeachers(int $colegioId): array
+    {
+        $teachers = User::query()
+            ->where('colegio_id', $colegioId)
+            ->where('role', 'profesor')
+            ->withCount(['courses' => fn ($query) => $query->where('colegio_id', $colegioId)])
+            ->orderBy('name')
+            ->get(['id', 'name']);
+
+        return [
+            'message' => 'Hay '.$teachers->count().' profesor(es).'.($teachers->isNotEmpty() ? ' '.$teachers->map(fn ($t) => "{$t->name} ({$t->courses_count} curso(s))")->implode(', ').'.' : ''),
+            'data' => ['teachers' => $teachers],
+        ];
+    }
+
+    private function queryGradeOverview(int $colegioId, string $grade): array
+    {
+        $courses = Course::query()
+            ->where('colegio_id', $colegioId)
+            ->whereRaw('LOWER(grade) = ?', [mb_strtolower($grade)])
+            ->withCount('students')
+            ->orderBy('subject_name')
+            ->get(['id', 'subject_name', 'grade', 'section']);
+
+        $courseIds = $courses->pluck('id');
+        $students = $courseIds->isNotEmpty()
+            ? Student::query()
+                ->where('students.colegio_id', $colegioId)
+                ->join('course_student', 'students.id', '=', 'course_student.student_id')
+                ->whereIn('course_student.course_id', $courseIds->all())
+                ->distinct()
+                ->count('students.id')
+            : 0;
+
+        $average = null;
+        if ($courseIds->isNotEmpty()) {
+            $average = Grade::query()
+                ->join('activities', 'grades.activity_id', '=', 'activities.id')
+                ->whereIn('activities.course_id', $courseIds->all())
+                ->where('grades.colegio_id', $colegioId)
+                ->avg('grades.score');
+        }
+
+        $msg = "{$grade} grado tiene {$students} alumno(s) en ".$courses->count().' curso(s).';
+        if ($average !== null) {
+            $msg .= ' Promedio de notas: '.number_format((float) $average, 1).'.';
+        }
+
+        return [
+            'message' => $msg,
+            'data' => [
+                'grade' => $grade,
+                'students_count' => $students,
+                'courses_count' => $courses->count(),
+                'average_score' => $average !== null ? round((float) $average, 1) : null,
+                'courses' => $courses,
+            ],
+        ];
+    }
+
+    private function queryFrequentAbsentees(int $colegioId): array
+    {
+        $rows = Attendance::query()
+            ->select('students.name')
+            ->selectRaw('count(*) as total')
+            ->join('students', 'attendances.student_id', '=', 'students.id')
+            ->where('attendances.colegio_id', $colegioId)
+            ->where('attendances.status', Attendance::STATUS_ABSENT)
+            ->groupBy('students.id', 'students.name')
+            ->orderByDesc('total')
+            ->limit(5)
+            ->get();
+
+        if ($rows->isEmpty()) {
+            return [
+                'message' => 'No hay faltas de asistencia registradas.',
+                'data' => ['absentees' => []],
+            ];
+        }
+
+        $labels = $rows->map(fn ($row) => "{$row->name} ({$row->total})")->implode(', ');
+
+        return [
+            'message' => 'Alumnos con más faltas: '.$labels.'.',
+            'data' => ['absentees' => $rows],
+        ];
+    }
+
+    private function querySubjectAtRisk(int $colegioId, string $subjectName): array
+    {
+        $subjectKey = mb_strtolower(trim($subjectName));
+        $courseIds = Course::query()
+            ->where('colegio_id', $colegioId)
+            ->whereRaw('LOWER(subject_name) like ?', ['%'.$subjectKey.'%'])
+            ->pluck('id');
+
+        if ($courseIds->isEmpty()) {
+            return [
+                'message' => "No encontré cursos de {$subjectName} en tu colegio.",
+                'data' => ['students' => []],
+            ];
+        }
+
+        $rows = Grade::query()
+            ->select('students.name')
+            ->join('students', 'grades.student_id', '=', 'students.id')
+            ->join('activities', 'grades.activity_id', '=', 'activities.id')
+            ->whereIn('activities.course_id', $courseIds->all())
+            ->where('grades.colegio_id', $colegioId)
+            ->whereNotNull('grades.score')
+            ->selectRaw('avg(grades.score) as promedio, count(grades.id) as cantidad')
+            ->groupBy('students.id', 'students.name')
+            ->orderBy('promedio')
+            ->limit(8)
+            ->get();
+
+        if ($rows->isEmpty()) {
+            return [
+                'message' => "No tengo calificaciones registradas para calcular rendimiento en {$subjectName}.",
+                'data' => ['students' => []],
+            ];
+        }
+
+        $labels = $rows->map(fn ($row) => "{$row->name} (prom. {$row->promedio})")->implode(', ');
+
+        return [
+            'message' => "Alumnos con menor rendimiento en {$subjectName}: ".$labels.'.',
+            'data' => ['students' => $rows],
+        ];
+    }
+
+    private function queryAtRiskStudents(int $colegioId, ?string $subjectName): array
+    {
+        if ($subjectName !== null && trim($subjectName) !== '') {
+            return $this->querySubjectAtRisk($colegioId, $subjectName);
+        }
+
+        $rows = Grade::query()
+            ->select('students.name', 'courses.subject_name', 'courses.grade')
+            ->join('students', 'grades.student_id', '=', 'students.id')
+            ->join('activities', 'grades.activity_id', '=', 'activities.id')
+            ->join('courses', 'activities.course_id', '=', 'courses.id')
+            ->where('grades.colegio_id', $colegioId)
+            ->whereNotNull('grades.score')
+            ->selectRaw('avg(grades.score) as promedio')
+            ->groupBy('students.id', 'students.name', 'courses.subject_name', 'courses.grade')
+            ->orderBy('promedio')
+            ->limit(8)
+            ->get();
+
+        if ($rows->isEmpty()) {
+            return [
+                'message' => 'No tengo calificaciones suficientes para identificar bajo rendimiento.',
+                'data' => ['students' => []],
+            ];
+        }
+
+        $labels = $rows->map(fn ($row) => "{$row->name} en {$row->subject_name} {$row->grade} (prom. {$row->promedio})")->implode(', ');
+
+        return [
+            'message' => 'Alumnos con menor rendimiento registrado: '.$labels.'.',
+            'data' => ['students' => $rows],
+        ];
+    }
+
     private function extractTeacherName(string $text): ?string
     {
         $patterns = [
@@ -1026,6 +1357,22 @@ class AICommandController extends Controller
 
     private function extractSubjectFromCoursePrompt(string $text): ?string
     {
+        // Forma 1: "los cursos de: 1ero, 2do...6to grado de INGLES" (lista de grados antes de la materia)
+        if (preg_match('/(?:curso|cursos|cursso|asignatura|materia)s?\s+de\s*:?\s*([0-9].*?)\s+grado\s+de\s+([A-Za-zÁÉÍÓÚáéíóúÑñ][A-Za-zÁÉÍÓÚáéíóúÑñ\s]*?)(?:\s+(?:para|en|y|,|con)|\s*$)/iu', $text, $m)) {
+            $subject = trim((string) $m[2]);
+            if ($this->isValidCourseSubject($subject)) {
+                return $this->titleCaseSubject($subject);
+            }
+        }
+
+        // Forma 2: "Crea Matemática para 4.º, 5.º y 6.º." o "Crea curso de Matemática para 4to" (verbo crear al inicio y materia antes de "para")
+        if (preg_match('/^(?:cre(?:a|ar|arles|es|e|o)|creame)\s+(?:el\s+)?(?:curso\s+de\s+|cursos?\s+|cursso\s+|asignatura\s+|materia\s+)?([A-Za-zÁÉÍÓÚáéíóúÑñ][A-Za-zÁÉÍÓÚáéíóúÑñ\s]{2,60}?)\s+(?:para|en|de|del)\s+[1-6](?:ro|er|do|to|°|º|ero)?\s*(?:grado)?\b/iu', $text, $m)) {
+            $subject = trim((string) $m[1]);
+            if ($this->isValidCourseSubject($subject)) {
+                return $this->titleCaseSubject($subject);
+            }
+        }
+
         // Localizamos "curso/asignatura de" en el texto ORIGINAL para conservar
         // acentos y manejar variantes tipográficas ("cursso") sin desfases de índice.
         if (! preg_match('/(?:curso|cursso|asignatura)\s+de\s+(.+?)$/iu', $text, $m)) {
@@ -1054,6 +1401,16 @@ class AICommandController extends Controller
         return $subject;
     }
 
+    private function isValidCourseSubject(string $subject): bool
+    {
+        $subject = trim($subject);
+        if (mb_strlen($subject) < 2 || mb_strlen($subject) > 60) {
+            return false;
+        }
+
+        return ! preg_match('/(grado|curso|asignatura|profesor|profesora|alumno|estudiante|docente|materia|cursso|ingles de|\bde\s+[1-6])$/iu', $subject);
+    }
+
     private function titleCaseSubject(string $subject): string
     {
         return mb_convert_case(trim($subject), MB_CASE_TITLE, 'UTF-8');
@@ -1080,6 +1437,15 @@ class AICommandController extends Controller
     private function extractGrades(string $text): array
     {
         $value = mb_strtolower($text);
+
+        if (preg_match('/([1-6])(?:ro|ero|er|°|º|do|to)?\s*\.{2,}\s*([1-6])(?:to|do|ro|ero|er|°|º)?/u', $value, $m)) {
+            $from = (int) $m[1];
+            $to = (int) $m[2];
+            if ($from <= $to) {
+                return collect(range($from, $to))->map(fn ($n) => $this->formatGrade((int) $n))->all();
+            }
+        }
+
         if (preg_match('/de\s+([1-6])(?:ro|ero|er|°|º)?\s+a\s+([1-6])(?:to|do|ro|°|º)?/u', $value, $m)) {
             $from = (int) $m[1];
             $to = (int) $m[2];
@@ -1264,6 +1630,11 @@ class AICommandController extends Controller
             'ú' => 'u',
             'ñ' => 'n',
         ]);
+
+        // Frases introductorias que no aportan a la intención.
+        $value = preg_replace('/^(?:yo\s+)?quiero\s+que\s*/u', '', $value) ?? $value;
+        $value = preg_replace('/^(?:quiero|necesito|deber[íi]as)\s+/u', '', $value) ?? $value;
+        $value = preg_replace('/\bpor favor\b/u', '', $value) ?? $value;
 
         // Variantes tipográficas comunes que deben interpretarse igual.
         $value = preg_replace('/\bcurs+o\b/', 'curso', $value) ?? $value;
