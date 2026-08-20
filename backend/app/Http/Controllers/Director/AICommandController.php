@@ -983,7 +983,7 @@ class AICommandController extends Controller
      */
     private function summarizeCreateStudents(array $data): string
     {
-        $names = implode(', ', array_filter((array) ($data['names'] ?? []))) ?: 'alumno(s)';
+        $names = array_filter((array) ($data['names'] ?? []));
         $grade = trim((string) ($data['grade'] ?? ''));
         $section = trim((string) ($data['section'] ?? ''));
         $subject = trim((string) ($data['subject_name'] ?? ''));
@@ -991,11 +991,25 @@ class AICommandController extends Controller
         if ($section !== '') {
             $place .= " / {$section}";
         }
-        if ($subject !== '') {
-            return "Crear al Alumno {$names} en {$place} ({$subject}).";
+
+        if (count($names) > 1) {
+            $lines = [];
+            $idx = 1;
+            foreach ($names as $name) {
+                $lines[] = "{$idx}. {$name}";
+                $idx++;
+            }
+            $subjectPart = $subject !== '' ? " ({$subject})" : '';
+
+            return "Crear ".count($names)." estudiantes en {$place}{$subjectPart}:\n".implode("\n", $lines).'.';
         }
 
-        return "Crear al Alumno {$names} en {$place}.";
+        $namesStr = implode(', ', $names) ?: 'alumno(s)';
+        if ($subject !== '') {
+            return "Crear al Alumno {$namesStr} en {$place} ({$subject}).";
+        }
+
+        return "Crear al Alumno {$namesStr} en {$place}.";
     }
 
     /**
@@ -2499,7 +2513,7 @@ class AICommandController extends Controller
 
     private function extractSubjectFromCoursePrompt(string $text): ?string
     {
-        if (preg_match('/\b(?:primer|primero|segundo|tercer|tercero|cuarto|quinto|sexto|[1-6](?:ro|ero|do|to|er)?)\s*grado\s+de\s+([A-Za-zÁÉÍÓÚáéíóúÑñ][A-Za-zÁÉÍÓÚáéíóúÑñ\s]{1,40}?)(?:\s+(?:con|para|y|\.|$)|$)/iu', $text, $m)) {
+        if (preg_match('/\b(?:primer|primero|segundo|tercer|tercero|cuarto|quinto|sexto|[1-6](?:ro|ero|do|to|er)?)\s*grado\s+de\s+([A-Za-zÁÉÍÓÚáéíóúÑñ][A-Za-zÁÉÍÓÚáéíóúÑñ\s]{1,40}?)(?:\s+(?:con|para|y|[:\-]|\.|$)|$)/iu', $text, $m)) {
             $subject = trim((string) $m[1]);
             $known = $this->extractKnownSubject($subject) ?? $this->titleCaseSubject($subject);
             if ($this->isValidCourseSubject($known)) {
@@ -2543,8 +2557,8 @@ class AICommandController extends Controller
         // lo descartamos: "1er grado de" -> "".
         $rest = preg_replace('/^(?:al\s+)?(?:primer|primero|segundo|tercer|tercero|cuarto|quinto|sexto|[1-6](?:ro|ero|do|to|er|º|°)?)\s*grado\s+(?:de\s+)?/iu', '', $rest) ?? $rest;
 
-        // Cortamos en conectores/palabras reservadas (conserva acentos del original).
-        $rest = preg_split('/\s+(?:para|en|del|de|al|a\s+la|con|seccion|sección|y|nivel)\s+/iu', $rest)[0] ?? $rest;
+        // Cortamos en conectores/palabras reservadas y delimitadores de lista (:, -) (conserva acentos del original).
+        $rest = preg_split('/\s*(?:[:\-]|\s+(?:para|en|del|de|al|a\s+la|con|seccion|sección|y|nivel)\s+)/iu', $rest)[0] ?? $rest;
         $rest = trim((string) $rest);
         $rest = trim(preg_replace('/^[1-6](?:ro|ero|do|to|er)?\.?\s*/iu', '', $rest) ?? '');
 
@@ -2673,12 +2687,39 @@ class AICommandController extends Controller
      */
     private function extractStudentNames(string $text): array
     {
+        // 1. Try colon-separated list after "alumnos:" or "estudiantes:"
+        if (preg_match('/(?:alumnos?|estudiantes?)\s*[:\-]\s*(.+)$/iu', $text, $m)) {
+            $raw = trim((string) $m[1]);
+            $names = $this->splitAndSanitizeNames($raw);
+            if (count($names) > 0) {
+                return $names;
+            }
+        }
+
+        // 2. Try pattern: "crea/agrega... alumnos/estudiantes [context junk] : names"
+        if (preg_match('/(?:agrega|agregar|matricula|matricular|inscribe|inscribir|crea|crear)\s+(?:a\s+|al\s+)?(?:los\s+|las\s+)?(?:siguientes\s+)?(?:alumnos?|estudiantes?)\b[^:]*[:\-]\s*(.+)$/iu', $text, $m)) {
+            $names = $this->splitAndSanitizeNames(trim((string) $m[1]));
+            if (count($names) > 0) {
+                return $names;
+            }
+        }
+
+        // 3. Try pattern: "crea a los alumnos [junk] nombre1, nombre2 y nombre3 [para/en/al] ..."
+        if (preg_match('/(?:agrega|agregar|matricula|matricular|inscribe|inscribir|crea|crear)\s+(?:a\s+|al\s+)?(?:los\s+|las\s+)?(?:siguientes\s+)?(?:alumnos?|estudiantes?)\s+(.+?)(?:\s+(?:para(?:\s+(?:el|la|[1-6]))?|al\s+(?:curso|grado)|en\s+(?:el|la)|a\s+la|del\s+(?:curso|grado)))\b/iu', $text, $m)) {
+            $names = $this->splitAndSanitizeNames(trim((string) $m[1]));
+            if (count($names) > 0) {
+                return $names;
+            }
+        }
+
+        // 4. Single name after role
         $single = $this->sanitizePersonName($this->extractNamedPersonAfterRole($text, 'alumno'))
             ?? $this->sanitizePersonName($this->extractNamedPersonAfterRole($text, 'estudiante'));
         if ($single) {
             return [$single];
         }
 
+        // 5. Legacy pattern: names between verb and preposition
         if (preg_match('/(?:agrega|agregar|matricula|matricular|inscribe|inscribir|crea|crear)\s+(?:a|al)\s+(?:alumno|estudiante)\s+(.+?)\s+(?:y\s+)?(?:al|a la|en|asigna|inscribe|matricula)\s+/iu', $text, $m)) {
             $single = $this->sanitizePersonName(trim($m[1]));
             if ($single) {
@@ -2690,7 +2731,18 @@ class AICommandController extends Controller
             return [];
         }
         $raw = trim($m[1]);
-        $raw = preg_replace('/^(?:alumno|estudiante)\s+/iu', '', $raw) ?? $raw;
+
+        return $this->splitAndSanitizeNames($raw);
+    }
+
+    /**
+     * @return array<int,string>
+     */
+    private function splitAndSanitizeNames(string $raw): array
+    {
+        $raw = preg_replace('/^(?:alumno|estudiante|a\s+|al\s+|el\s+|la\s+|los\s+|las\s+)\s*/iu', '', $raw) ?? $raw;
+        $raw = preg_replace('/^(?:para\s+(?:el|la)\s+(?:curso|grado|materia|asignatura)\s+(?:de\s+)?)\s*/iu', '', $raw) ?? $raw;
+        $raw = preg_replace('/^(?:siguientes\s+|mismos\s+)\s*/iu', '', $raw) ?? $raw;
         $raw = preg_replace('/\s+y\s+/iu', ',', $raw) ?? $raw;
 
         return collect(explode(',', $raw))

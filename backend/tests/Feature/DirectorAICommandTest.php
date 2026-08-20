@@ -278,6 +278,84 @@ class DirectorAICommandTest extends TestCase
         $this->assertContains('Carlos José', $execute->json('actions.0.data.duplicates'));
     }
 
+    public function test_batch_create_students_from_colon_list_with_course_context(): void
+    {
+        [$director, $colegio] = $this->directorContext();
+
+        $draft = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'crea a los siguientes alumnos para el curso de 2do grado de computacion: Carlos Alvarez, Enrique Quesada, Marlon justo',
+        ]);
+
+        $draft->assertOk()->assertJsonPath('requires_confirmation', true);
+        $message = (string) $draft->json('message');
+        $this->assertStringContainsStringIgnoringCase('Carlos Alvarez', $message);
+        $this->assertStringContainsStringIgnoringCase('Enrique Quesada', $message);
+        $this->assertStringContainsStringIgnoringCase('Marlon Justo', $message);
+        $this->assertStringContainsStringIgnoringCase('2do', $message);
+
+        $pending = $draft->json('pending_actions');
+        $this->assertCount(1, $pending);
+        $this->assertSame('create_students_batch', $pending[0]['intent']);
+        $this->assertSame(['Carlos Alvarez', 'Enrique Quesada', 'Marlon Justo'], $pending[0]['data']['names']);
+
+        $execute = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'confirmed' => true,
+            'pending_actions' => $pending,
+        ]);
+
+        $execute->assertOk();
+        $this->assertTrue((bool) $execute->json('actions.0.success'));
+
+        foreach (['Carlos Alvarez', 'Enrique Quesada', 'Marlon Justo'] as $name) {
+            $this->assertDatabaseHas('students', [
+                'colegio_id' => $colegio->id,
+                'name' => $name,
+                'grade' => '2do',
+            ]);
+        }
+    }
+
+    public function test_batch_create_students_with_y_connector_and_no_colon(): void
+    {
+        [$director, $colegio] = $this->directorContext();
+
+        $draft = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'crea a los alumnos Juan Perez y Maria Garcia para 1er grado',
+        ]);
+
+        $draft->assertOk()->assertJsonPath('requires_confirmation', true);
+        $pending = $draft->json('pending_actions');
+        $this->assertSame(['Juan Perez', 'Maria Garcia'], $pending[0]['data']['names']);
+
+        $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'confirmed' => true,
+            'pending_actions' => $pending,
+        ]);
+
+        $this->assertDatabaseHas('students', ['colegio_id' => $colegio->id, 'name' => 'Juan Perez', 'grade' => '1ro']);
+        $this->assertDatabaseHas('students', ['colegio_id' => $colegio->id, 'name' => 'Maria Garcia', 'grade' => '1ro']);
+    }
+
+    public function test_batch_create_students_does_not_extract_context_words_as_names(): void
+    {
+        [$director, $colegio] = $this->directorContext();
+
+        $draft = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'crea a los siguientes alumnos para el curso de 3ro grado de matematicas: Ana Lopez, Pedro Ruiz',
+        ]);
+
+        $draft->assertOk()->assertJsonPath('requires_confirmation', true);
+        $pending = $draft->json('pending_actions');
+        $names = $pending[0]['data']['names'];
+        $this->assertCount(2, $names);
+        $this->assertSame(['Ana Lopez', 'Pedro Ruiz'], $names);
+        foreach ($names as $name) {
+            $this->assertStringNotContainsStringIgnoringCase('para el', $name);
+            $this->assertStringNotContainsStringIgnoringCase('curso', $name);
+            $this->assertStringNotContainsStringIgnoringCase('grado', $name);
+        }
+    }
+
     public function test_director_can_create_student_and_enroll_in_course_in_one_command(): void
     {
         [$director, $colegio] = $this->directorContext();
