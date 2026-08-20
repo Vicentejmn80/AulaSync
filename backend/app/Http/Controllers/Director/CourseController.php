@@ -123,6 +123,27 @@ class CourseController extends Controller
         return redirect()->route('director.courses')->with('success', 'Curso eliminado.');
     }
 
+    public function bulkDestroy(Request $request): RedirectResponse
+    {
+        $data = $request->validate([
+            'ids' => ['required', 'array', 'min:1'],
+            'ids.*' => ['integer'],
+        ]);
+
+        $courses = Course::query()
+            ->where('colegio_id', $request->user()->colegio_id)
+            ->whereIn('id', $data['ids'])
+            ->get();
+
+        $count = $courses->count();
+        foreach ($courses as $course) {
+            $course->delete();
+        }
+
+        return redirect()->route('director.courses')
+            ->with('success', "Se eliminaron {$count} curso(s).");
+    }
+
     public function assign(Request $request, Course $course): RedirectResponse
     {
         abort_unless((int) $course->colegio_id === (int) $request->user()->colegio_id, 403);
@@ -216,7 +237,7 @@ class CourseController extends Controller
             }
 
             if (! $course->students()->where('student_id', $student->id)->exists()) {
-                $course->students()->attach($student->id);
+                $course->students()->attach($student->id, ['enrolled_at' => now()]);
                 $attached++;
             }
         }

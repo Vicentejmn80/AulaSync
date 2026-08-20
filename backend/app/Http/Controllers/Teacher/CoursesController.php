@@ -82,7 +82,7 @@ class CoursesController extends Controller
             }
 
             if (! $course->students()->where('student_id', $student->id)->exists()) {
-                $course->students()->attach($student->id);
+                $course->students()->attach($student->id, ['enrolled_at' => now()]);
                 $enrolled++;
             }
         }

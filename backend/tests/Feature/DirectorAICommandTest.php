@@ -2013,6 +2013,176 @@ class DirectorAICommandTest extends TestCase
         }
     }
 
+    /**
+     * Crear alumno "en el curso de X con el profesor Y" debe escribir course_student.
+     */
+    public function test_create_student_in_named_course_enrolls_teacher_roster(): void
+    {
+        [$director, $colegio] = $this->directorContext();
+        $teacher = User::factory()->create([
+            'role' => 'profesor',
+            'colegio_id' => $colegio->id,
+            'name' => 'Rodrigo Massa',
+            'onboarding_completed' => true,
+        ]);
+        $course = $this->makeCourse($colegio, $teacher, 'Computación', '1ro', 'A');
+
+        $draft = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'Crea al alumno Vicente José en el curso de 1er grado de computación con el profesor Rodrigo Massa',
+        ]);
+
+        $draft->assertOk(json_encode($draft->json(), JSON_UNESCAPED_UNICODE))
+            ->assertJsonPath('requires_confirmation', true);
+        $pending = $draft->json('pending_actions');
+        $create = collect($pending)->firstWhere('intent', 'create_students_batch');
+        $this->assertNotNull($create);
+        $this->assertStringContainsString('Vicente', (string) ($create['data']['names'][0] ?? ''));
+        $this->assertSame('1ro', $create['data']['grade'] ?? null);
+        $this->assertSame('Computación', $create['data']['subject_name'] ?? null);
+        $this->assertSame('Rodrigo Massa', $create['data']['teacher_name'] ?? null);
+
+        $execute = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'confirmed' => true,
+            'pending_actions' => $pending,
+        ]);
+        $execute->assertOk(json_encode($execute->json(), JSON_UNESCAPED_UNICODE));
+
+        $student = Student::query()
+            ->where('colegio_id', $colegio->id)
+            ->whereRaw('LOWER(name) like ?', ['%vicente%'])
+            ->first();
+        $this->assertNotNull($student);
+        $this->assertTrue(
+            $course->fresh()->students()->where('students.id', $student->id)->exists(),
+            'El alumno debe quedar en course_student para que el docente vea la matrícula.'
+        );
+        $this->assertSame(1, $course->fresh()->students()->count());
+        $this->assertStringContainsString('alumno(s)', (string) $execute->json('actions.0.message'));
+    }
+
+    public function test_director_can_move_student_to_new_grade_and_relink_courses(): void
+    {
+        [$director, $colegio] = $this->directorContext();
+        $teacher = $this->makeTeacher($colegio);
+        $from = $this->makeCourse($colegio, $teacher, 'Computación', '1ro', 'A');
+        $to = $this->makeCourse($colegio, $teacher, 'Computación', '2do', 'B');
+        $student = $this->makeStudent($colegio, $teacher, 'Vicente Jose', '1ro', 'A');
+        $from->students()->attach($student->id, ['enrolled_at' => now()]);
+
+        $draft = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'Mueve al alumno Vicente Jose a 2do grado sección B',
+        ]);
+        $draft->assertOk()->assertJsonPath('requires_confirmation', true);
+        $this->assertSame('update_student', $draft->json('pending_actions.0.intent'));
+
+        $execute = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'confirmed' => true,
+            'pending_actions' => $draft->json('pending_actions'),
+        ]);
+        $execute->assertOk();
+
+        $student->refresh();
+        $this->assertSame('2do', $student->grade);
+        $this->assertSame('B', $student->section);
+        $this->assertFalse($from->fresh()->students()->where('students.id', $student->id)->exists());
+        $this->assertTrue($to->fresh()->students()->where('students.id', $student->id)->exists());
+    }
+
+    public function test_director_can_enroll_all_students_of_a_grade_into_subject(): void
+    {
+        [$director, $colegio] = $this->directorContext();
+        $teacher = User::factory()->create([
+            'role' => 'profesor',
+            'colegio_id' => $colegio->id,
+            'name' => 'Rodrigo Massa',
+            'onboarding_completed' => true,
+        ]);
+        $course = $this->makeCourse($colegio, $teacher, 'Computación', '1ro', 'A');
+        $a = $this->makeStudent($colegio, $teacher, 'Ana Uno', '1ro', 'A');
+        $b = $this->makeStudent($colegio, $teacher, 'Luis Dos', '1ro', 'A');
+
+        $draft = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'Inscribe a los alumnos de 1ro en la materia de Computación con el profesor Rodrigo',
+        ]);
+        $draft->assertOk()->assertJsonPath('pending_actions.0.intent', 'enroll_students_course');
+
+        $execute = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'confirmed' => true,
+            'pending_actions' => $draft->json('pending_actions'),
+        ]);
+        $execute->assertOk();
+        $this->assertTrue($course->fresh()->students()->where('students.id', $a->id)->exists());
+        $this->assertTrue($course->fresh()->students()->where('students.id', $b->id)->exists());
+        $this->assertSame(2, $course->fresh()->students()->count());
+    }
+
+    public function test_director_can_delete_students_in_batch_by_names(): void
+    {
+        [$director, $colegio] = $this->directorContext();
+        $teacher = $this->makeTeacher($colegio);
+        $this->makeStudent($colegio, $teacher, 'Carlos Perez', '1ro', 'A');
+        $this->makeStudent($colegio, $teacher, 'Juan Diaz', '1ro', 'A');
+        $this->makeStudent($colegio, $teacher, 'Maria Lopez', '1ro', 'A');
+
+        $draft = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'Elimina a los alumnos Carlos Perez, Juan Diaz y Maria Lopez',
+        ]);
+        $draft->assertOk()->assertJsonPath('pending_actions.0.intent', 'delete_student');
+        $this->assertCount(3, $draft->json('pending_actions.0.data.names'));
+
+        $execute = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'confirmed' => true,
+            'pending_actions' => $draft->json('pending_actions'),
+        ]);
+        $execute->assertOk();
+        $this->assertSame(0, Student::query()->where('colegio_id', $colegio->id)->count());
+    }
+
+    public function test_director_can_query_students_per_section_and_top_student(): void
+    {
+        [$director, $colegio] = $this->directorContext();
+        $teacher = $this->makeTeacher($colegio);
+        $course = $this->makeCourse($colegio, $teacher, 'Matemática', '4to', 'A');
+        $ana = $this->makeStudent($colegio, $teacher, 'Ana Ruiz', '4to', 'A');
+        $this->makeStudent($colegio, $teacher, 'Luis Mora', '4to', 'B');
+        $this->makeGrade($colegio, $course, $ana, 19, 20);
+
+        $sections = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => '¿Cuántos alumnos hay en cada sección?',
+        ]);
+        $sections->assertOk();
+        $this->assertStringContainsString('Alumnos por grado y sección', (string) $sections->json('actions.0.message'));
+        $this->assertStringContainsString('4to', (string) $sections->json('actions.0.message'));
+
+        $top = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => '¿Quién es el más destacado?',
+        ]);
+        $top->assertOk();
+        $this->assertStringContainsString('Ana Ruiz', (string) $top->json('actions.0.message'));
+    }
+
+    public function test_teacher_can_enroll_existing_student_and_see_updated_count(): void
+    {
+        [$director, $colegio] = $this->directorContext();
+        $teacher = $this->makeTeacher($colegio);
+        $course = $this->makeCourse($colegio, $teacher, 'Computación', '1ro', 'A');
+        $student = $this->makeStudent($colegio, $director, 'Vicente Jose', '1ro', 'A');
+
+        $response = $this->actingAs($teacher)->postJson(route('teacher.api.courses.enroll', $course), [
+            'student_id' => $student->id,
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('students_count', 1);
+        $this->assertTrue($course->fresh()->students()->where('students.id', $student->id)->exists());
+
+        $hub = $this->actingAs($teacher)->getJson(route('teacher.api.courses'));
+        $hub->assertOk();
+        $row = collect($hub->json())->firstWhere('id', $course->id);
+        $this->assertSame(1, $row['students_count'] ?? null);
+    }
+
     private function makeTeacher(Colegio $colegio): User
     {
         return User::factory()->create([

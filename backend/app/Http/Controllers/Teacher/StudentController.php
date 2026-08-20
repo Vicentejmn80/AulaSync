@@ -15,10 +15,33 @@ class StudentController extends Controller
 
     public function store(Request $request): JsonResponse
     {
+        $data = $request->validate([
+            'name' => ['required', 'string', 'max:180'],
+            'course_id' => ['required', 'integer'],
+        ]);
+
+        $course = Course::query()
+            ->where('id', $data['course_id'])
+            ->where('teacher_id', $request->user()->id)
+            ->firstOrFail();
+
+        $matcher = app(\App\Services\PersonNameMatcher::class);
+        $match = $matcher->resolveStudent((int) $request->user()->colegio_id, $data['name']);
+        if (! $match->isUnique()) {
+            return response()->json([
+                'success' => false,
+                'error' => $match->message ?? 'Solo puedes inscribir alumnos que el director ya matriculó. Búscalos en la nómina o pídele al director que los cree.',
+            ], 422);
+        }
+
+        $student = $this->enrollment->attachExisting($course, $match->model, $request->user());
+
         return response()->json([
-            'success' => false,
-            'error' => 'Solo el director puede registrar alumnos nuevos. Busca en la nómina del colegio o pide al director que lo matricule.',
-        ], 403);
+            'success' => true,
+            'student' => $student,
+            'students_count' => $course->students()->count(),
+            'message' => "{$student->name} quedó inscrito en el curso. Ahora hay ".$course->students()->count().' alumno(s).',
+        ]);
     }
 
     public function search(Request $request): JsonResponse
@@ -54,11 +77,13 @@ class StudentController extends Controller
             ->firstOrFail();
 
         $this->enrollment->attachExisting($course, $student, $request->user());
+        $count = $course->students()->count();
 
         return response()->json([
             'success' => true,
             'student' => $student,
-            'message' => "{$student->name} quedó inscrito en el curso.",
+            'students_count' => $count,
+            'message' => "{$student->name} quedó inscrito en el curso. Ahora hay {$count} alumno(s).",
         ]);
     }
 }

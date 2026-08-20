@@ -32,6 +32,8 @@ class AICommandHandlerController extends Controller
 {
     private const DESTRUCTIVE = ['destroyCourse', 'destroyAllStudentsFromCourse', 'deleteResource', 'deleteActivities'];
 
+    private const ACCESS_DENIED_MESSAGE = 'No tienes permisos para acceder a esta información o realizar esta acción.';
+
     private ?string $activeLessonTemplate = null;
 
     public function __construct(
@@ -1116,10 +1118,7 @@ class AICommandHandlerController extends Controller
             return $this->jsonOut([
                 'success' => false,
                 'status' => 'error',
-                'message' => 'No se pudo completar esta acción en este momento. Inténtalo de nuevo.',
-                'error' => config('app.debug')
-                    ? $e->getMessage()
-                    : 'Error interno al procesar la solicitud.',
+                'message' => self::ACCESS_DENIED_MESSAGE,
                 'data' => [],
             ]);
         }
@@ -1160,7 +1159,23 @@ class AICommandHandlerController extends Controller
                 };
             };
 
-            return in_array($fn, $writes, true) ? DB::transaction($run) : $run();
+            $result = in_array($fn, $writes, true) ? DB::transaction($run) : $run();
+
+            if (in_array($fn, $writes, true)) {
+                Log::info('nova_ai_write', [
+                    'user_id' => $teacherId,
+                    'school_id' => User::where('id', $teacherId)->value('colegio_id'),
+                    'action' => $fn,
+                    'status' => ($result['success'] ?? false) ? 'success' : 'error',
+                    'timestamp' => now()->toIso8601String(),
+                    'resource_ids' => collect($result['data'] ?? [])
+                        ->only(['activity_id', 'course_id', 'evaluation_id', 'plan_id', 'deleted', 'deleted_activity_id'])
+                        ->filter(fn ($v) => $v !== null && $v !== '')
+                        ->all(),
+                ]);
+            }
+
+            return $result;
         } catch (\Throwable $e) {
             Log::error('AICommandHandler executeAction failed', [
                 'function' => $fn,
@@ -1172,7 +1187,7 @@ class AICommandHandlerController extends Controller
             return [
                 'success' => false,
                 'status' => 'error',
-                'message' => 'No se pudo completar esta acción en este momento. Inténtalo de nuevo.',
+                'message' => self::ACCESS_DENIED_MESSAGE,
                 'action_type' => $fn,
                 'icon' => '⚠️',
                 'data' => [],
@@ -1295,7 +1310,14 @@ class AICommandHandlerController extends Controller
         }
 
         if (! empty($screenContext['id'])) {
-            return (int) $screenContext['id'];
+            $screenCourseId = (int) $screenContext['id'];
+            $owns = Course::where('id', $screenCourseId)
+                ->where('teacher_id', $teacherId)
+                ->when($colegioId, fn ($q) => $q->where('colegio_id', $colegioId))
+                ->exists();
+            if ($owns) {
+                return $screenCourseId;
+            }
         }
 
         $courses = Course::where('teacher_id', $teacherId)
@@ -2615,7 +2637,7 @@ class AICommandHandlerController extends Controller
         $courseId = ! empty($args['course_id']) ? (int) $args['course_id'] : null;
 
         Log::info('NOVA_DELETE_ATTEMPT', [
-            'session_completa' => session()->all(),
+            'teacher_id' => $teacherId,
             'argumentos' => $args ?? 'SIN ARGUMENTOS',
             'course_id' => $args['course_id'] ?? session('nova_pending_delete_course_id') ?? 'NULL',
             'fecha_inicio' => $args['start_date'] ?? session('nova_pending_delete_date_start') ?? 'NULL',
@@ -2669,7 +2691,10 @@ class AICommandHandlerController extends Controller
 
             $courseName = '';
             if ($courseId !== null && $courseId > 0) {
-                $course = Course::find($courseId);
+                $course = Course::where('id', $courseId)
+                    ->where('teacher_id', $teacherId)
+                    ->where('colegio_id', User::where('id', $teacherId)->value('colegio_id'))
+                    ->first();
                 if ($course) {
                     $courseName = " para {$course->subject_name} {$course->grade}";
                 }
@@ -2689,15 +2714,18 @@ class AICommandHandlerController extends Controller
             ];
         } catch (\Throwable $e) {
             Log::error('doDeleteActivities.error', [
+                'teacher_id' => $teacherId,
+                'course_id' => $courseId,
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
             ]);
 
             return [
                 'success' => false,
-                'message' => 'Ocurrió un error al eliminar actividades: '.$e->getMessage(),
+                'message' => self::ACCESS_DENIED_MESSAGE,
                 'action_type' => 'delete',
                 'icon' => '⚠️',
+                'data' => ['deleted' => 0],
             ];
         }
     }
@@ -2945,13 +2973,16 @@ class AICommandHandlerController extends Controller
             ];
         } catch (\Throwable $e) {
             Log::error('doDeleteResource.error', [
+                'teacher_id' => $teacherId,
+                'resource_type' => $resourceType,
+                'resource_id' => $resourceId,
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
             ]);
 
             return [
                 'success' => false,
-                'message' => '⚠️ Ocurrió un error al eliminar el recurso: '.$e->getMessage(),
+                'message' => self::ACCESS_DENIED_MESSAGE,
                 'action_type' => 'delete',
                 'icon' => '⚠️',
             ];

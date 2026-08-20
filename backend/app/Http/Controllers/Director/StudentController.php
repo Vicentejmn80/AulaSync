@@ -122,6 +122,31 @@ class StudentController extends Controller
             ->with('success', "Se eliminó al alumno «{$name}».");
     }
 
+    public function bulkDestroy(Request $request, DirectorActionService $actions): RedirectResponse
+    {
+        $data = $request->validate([
+            'ids' => ['required', 'array', 'min:1'],
+            'ids.*' => ['integer'],
+        ]);
+
+        $students = Student::query()
+            ->where('colegio_id', $request->user()->colegio_id)
+            ->whereIn('id', $data['ids'])
+            ->get();
+
+        $deleted = [];
+        foreach ($students as $student) {
+            $actions->deleteStudent($request->user(), [
+                'student_name' => $student->name,
+                'student_id' => $student->id,
+            ]);
+            $deleted[] = $student->name;
+        }
+
+        return redirect()->route('director.students')
+            ->with('success', 'Se eliminaron '.count($deleted).' alumno(s): '.implode(', ', $deleted).'.');
+    }
+
     public function search(Request $request)
     {
         $colegioId = auth()->user()->colegio_id;

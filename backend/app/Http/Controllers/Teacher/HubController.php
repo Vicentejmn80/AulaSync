@@ -282,6 +282,7 @@ class HubController extends Controller
             'grading_scale_max' => GradingScale::maxFor($course->grading_scale ?? null),
             'grading_scale_label' => GradingScale::label($course->grading_scale ?? null),
             'name'         => $course->subject_name . ' · ' . $course->grade . ($course->section ? ' / ' . $course->section : ''),
+            'students_count' => $totalStudents,
             'students'     => $course->students->map(function ($s) use ($accumulatedByStudent) {
                 $liveAccumulated = $accumulatedByStudent[$s->id] ?? null;
                 $pivotAccumulated = $s->pivot?->promedio_acumulado !== null

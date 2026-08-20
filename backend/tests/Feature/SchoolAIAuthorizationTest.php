@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Activity;
 use App\Models\Colegio;
 use App\Models\Course;
 use App\Models\Student;
@@ -83,6 +84,74 @@ class SchoolAIAuthorizationTest extends TestCase
         $response->assertStatus(422)
             ->assertJsonPath('success', false)
             ->assertJsonPath('message', fn ($message) => str_contains((string) $message, 'No encuentro una acción pendiente'));
+    }
+
+    public function test_teacher_delete_activities_with_foreign_course_does_not_leak_course_name(): void
+    {
+        [$director, $teacher, $colegio] = $this->school();
+        $otherTeacher = User::factory()->create([
+            'role' => 'profesor',
+            'colegio_id' => $colegio->id,
+            'onboarding_completed' => true,
+        ]);
+        $own = $this->course($colegio->id, $teacher->id, 'Inglés', '3ro', 'OWN-3');
+        $foreign = $this->course($colegio->id, $otherTeacher->id, 'Matemática Confidencial', '3ro', 'FOR-3');
+        Activity::create([
+            'teacher_id' => $teacher->id,
+            'course_id' => $own->id,
+            'colegio_id' => $colegio->id,
+            'title' => 'Prueba de inglés',
+            'due_date' => '2026-01-05',
+            'type' => 'actividad',
+            'max_score' => 100,
+        ]);
+
+        $response = $this->actingAs($teacher)
+            ->withSession(['nova_last_delete_args' => [
+                'course_id' => $foreign->id,
+                'start_date' => '2026-01-01',
+                'end_date' => '2026-01-10',
+            ]])
+            ->postJson(route('ai.command'), [
+                'confirmed' => true,
+            ]);
+
+        $response->assertStatus(200);
+        $message = (string) ($response->json('actions.0.message') ?? '');
+
+        $this->assertStringNotContainsString('Matemática Confidencial', $message);
+        $this->assertDatabaseHas('activities', ['teacher_id' => $teacher->id, 'course_id' => $own->id]);
+    }
+
+    public function test_teacher_delete_activities_scopes_course_name_read_to_own_course(): void
+    {
+        [$director, $teacher, $colegio] = $this->school();
+        $own = $this->course($colegio->id, $teacher->id, 'Inglés', '3ro', 'OWN-3');
+        Activity::create([
+            'teacher_id' => $teacher->id,
+            'course_id' => $own->id,
+            'colegio_id' => $colegio->id,
+            'title' => 'Prueba de inglés',
+            'due_date' => '2026-01-05',
+            'type' => 'actividad',
+            'max_score' => 100,
+        ]);
+
+        $response = $this->actingAs($teacher)
+            ->withSession(['nova_last_delete_args' => [
+                'course_id' => $own->id,
+                'start_date' => '2026-01-01',
+                'end_date' => '2026-01-10',
+            ]])
+            ->postJson(route('ai.command'), [
+                'confirmed' => true,
+            ]);
+
+        $response->assertStatus(200);
+        $message = (string) ($response->json('actions.0.message') ?? '');
+
+        $this->assertStringContainsString('Inglés', $message);
+        $this->assertDatabaseMissing('activities', ['teacher_id' => $teacher->id, 'course_id' => $own->id]);
     }
 
     /**

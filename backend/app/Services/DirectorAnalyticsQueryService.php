@@ -112,6 +112,36 @@ class DirectorAnalyticsQueryService
         ];
     }
 
+    public function getSectionCounts(int $colegioId): array
+    {
+        $rows = Student::query()
+            ->where('colegio_id', $colegioId)
+            ->selectRaw('grade, section, COUNT(*) as total')
+            ->groupBy('grade', 'section')
+            ->orderBy('grade')
+            ->orderBy('section')
+            ->get();
+
+        if ($rows->isEmpty()) {
+            return [
+                'message' => 'No hay alumnos registrados todavía, así que no puedo contar por sección.',
+                'data' => ['sections' => []],
+            ];
+        }
+
+        $table = $this->markdownTable(
+            ['Grado', 'Sección', 'Alumnos'],
+            $rows->map(fn ($r) => [$r->grade, $r->section ?: 's/sec', (string) $r->total])->all()
+        );
+
+        $total = (int) $rows->sum('total');
+
+        return [
+            'message' => "Alumnos por grado y sección ({$total} en total):\n".$table,
+            'data' => ['sections' => $rows, 'total' => $total],
+        ];
+    }
+
     // ─── Rendimiento por clase (get_class_performance) ──────────────────────
 
     public function getClassPerformance(int $colegioId, string $grade, ?string $section = null, ?string $subject = null): array

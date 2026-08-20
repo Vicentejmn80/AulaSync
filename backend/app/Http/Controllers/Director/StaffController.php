@@ -25,7 +25,7 @@ class StaffController extends Controller
             ->where('colegio_id', $colegioId)
             ->where('role', 'profesor')
             ->with(['courses' => function ($query) {
-                $query->orderBy('subject_name')->orderBy('grade')->orderBy('section');
+                $query->withCount('students')->orderBy('subject_name')->orderBy('grade')->orderBy('section');
             }])
             ->orderBy('name')
             ->get(['id', 'name', 'email', 'role', 'colegio_id']);
@@ -138,6 +138,31 @@ class StaffController extends Controller
 
         return redirect()->route('director.profesores')
             ->with('success', "Se eliminó a {$name} del plantel docente.");
+    }
+
+    public function bulkDestroyTeachers(Request $request): RedirectResponse
+    {
+        $data = $request->validate([
+            'ids' => ['required', 'array', 'min:1'],
+            'ids.*' => ['integer'],
+        ]);
+
+        $teachers = User::query()
+            ->where('colegio_id', $request->user()->colegio_id)
+            ->where('role', 'profesor')
+            ->whereIn('id', $data['ids'])
+            ->get();
+
+        $deleted = [];
+        foreach ($teachers as $teacher) {
+            $this->actionService->deleteTeacher($request->user(), [
+                'teacher_name' => $teacher->name,
+            ]);
+            $deleted[] = $teacher->name;
+        }
+
+        return redirect()->route('director.profesores')
+            ->with('success', 'Se eliminaron '.count($deleted).' docente(s).');
     }
 
     public function destroyInvite(Request $request, TeacherInvite $invite): RedirectResponse

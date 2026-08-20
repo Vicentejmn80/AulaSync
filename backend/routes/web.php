@@ -103,6 +103,8 @@ Route::middleware(['auth'])->group(function () {
                     ->name('profesores.invite');
                 Route::delete('/profesores/{teacher}', [DirectorStaffController::class, 'destroyTeacher'])
                     ->name('profesores.destroy');
+                Route::post('/profesores/bulk-destroy', [DirectorStaffController::class, 'bulkDestroyTeachers'])
+                    ->name('profesores.bulk-destroy');
                 Route::delete('/profesores/invite/{invite}', [DirectorStaffController::class, 'destroyInvite'])
                     ->name('profesores.invite.destroy');
                 Route::get('/courses', [DirectorCourseController::class, 'index'])
@@ -111,6 +113,8 @@ Route::middleware(['auth'])->group(function () {
                     ->name('courses.store');
                 Route::delete('/courses/{course}', [DirectorCourseController::class, 'destroy'])
                     ->name('courses.destroy');
+                Route::post('/courses/bulk-destroy', [DirectorCourseController::class, 'bulkDestroy'])
+                    ->name('courses.bulk-destroy');
                 Route::post('/courses/{course}/assign', [DirectorCourseController::class, 'assign'])
                     ->name('courses.assign');
                 Route::post('/courses/{course}/enroll-roster', [DirectorCourseController::class, 'enrollByRoster'])
@@ -135,6 +139,8 @@ Route::middleware(['auth'])->group(function () {
                     ->name('students.search');
                 Route::delete('/students/{student}', [DirectorStudentController::class, 'destroy'])
                     ->name('students.destroy');
+                Route::post('/students/bulk-destroy', [DirectorStudentController::class, 'bulkDestroy'])
+                    ->name('students.bulk-destroy');
                 Route::get('/boletines', [DirectorReportCardController::class, 'index'])
                     ->name('boletines');
                 Route::get('/report-card/{student}', [DirectorReportCardController::class, 'preview'])

@@ -13,7 +13,7 @@
     @include('partials.director-ui-styles')
 </head>
 <body class="min-h-screen overflow-x-hidden bg-slate-100 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
-    <div x-data="{ open: false, familyMode: 'new', submitting: false, deleting: null }"
+    <div x-data="{ open: false, familyMode: 'new', submitting: false, deleting: null, selected: [] }"
          x-cloak
          @keydown.escape.window="open = false; deleting = null">
 
@@ -188,7 +188,7 @@
             @endif
 
             <section class="director-card">
-                <form method="GET" class="mb-6 flex flex-wrap gap-3">
+                <form method="GET" class="mb-4 flex flex-wrap gap-3">
                     <input type="text" name="search" value="{{ request('search') }}"
                            placeholder="Buscar por nombre..."
                            class="director-input min-w-[200px] flex-1">
@@ -209,10 +209,39 @@
                     @endif
                 </form>
 
+                <form method="POST"
+                      action="{{ route('director.students.bulk-destroy') }}"
+                      class="mb-4 flex flex-wrap items-center gap-3"
+                      x-show="selected.length"
+                      x-cloak
+                      onsubmit="return confirm('¿Eliminar los alumnos seleccionados?')">
+                    @csrf
+                    <template x-for="id in selected" :key="id">
+                        <input type="hidden" name="ids[]" :value="id">
+                    </template>
+                    <button type="submit" class="director-btn-danger !py-2 !text-xs">
+                        <i class="fa-solid fa-trash-can"></i>
+                        Eliminar seleccionados (<span x-text="selected.length"></span>)
+                    </button>
+                    <label class="text-xs font-semibold text-slate-600">
+                        <input type="checkbox"
+                               class="mr-1 h-4 w-4 accent-indigo-600"
+                               @change="selected = $event.target.checked ? {{ $students->pluck('id') }} : []"
+                               :checked="selected.length && selected.length === {{ $students->count() }}">
+                        Seleccionar todos
+                    </label>
+                </form>
+
                 <div class="overflow-x-auto">
                     <table class="w-full text-sm">
                         <thead>
                             <tr class="border-b border-slate-200 text-left text-xs font-bold uppercase tracking-widest text-slate-500">
+                                <th class="pb-3 pr-3 w-10">
+                                    <input type="checkbox"
+                                           class="h-4 w-4 accent-indigo-600"
+                                           @change="selected = $event.target.checked ? {{ $students->pluck('id') }} : []"
+                                           :checked="selected.length && selected.length === {{ $students->count() }}">
+                                </th>
                                 <th class="pb-3 pr-4">Alumno</th>
                                 <th class="pb-3 pr-4">Grado / Sección</th>
                                 <th class="pb-3 pr-4">Cursos</th>
@@ -228,6 +257,13 @@
                         <tbody class="divide-y divide-slate-100">
                             @forelse($students as $student)
                                 <tr class="group transition hover:bg-slate-50">
+                                    <td class="py-3.5 pr-3">
+                                        <input type="checkbox"
+                                               class="h-4 w-4 accent-indigo-600"
+                                               value="{{ $student->id }}"
+                                               @change="selected = $event.target.checked ? [...selected, {{ $student->id }}] : selected.filter(id => id !== {{ $student->id }})"
+                                               :checked="selected.includes({{ $student->id }})">
+                                    </td>
                                     <td class="py-3.5 pr-4">
                                         <div class="flex items-center gap-3">
                                             <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-100 text-xs font-bold text-indigo-700">
@@ -275,7 +311,7 @@
                                 </tr>
                             @empty
                                 <tr>
-                                    <td colspan="5" class="py-12 text-center">
+                                    <td colspan="6" class="py-12 text-center">
                                         <i class="fa-regular fa-users-slash mb-3 block text-4xl text-slate-400"></i>
                                         <p class="text-slate-600">No se encontraron alumnos con los filtros aplicados.</p>
                                         <button @click="open = true" class="director-btn-primary mt-4">

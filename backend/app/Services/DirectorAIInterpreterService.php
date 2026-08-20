@@ -147,8 +147,9 @@ Notas, promedios, faltas, rankings, comparaciones y tendencias: NUNCA las invent
 
 ANALÍTICA EN TIEMPO REAL (OBLIGATORIO usar query_academic):
 - "¿Cómo van los de 4to A?", "¿Quién tiene mejor promedio?", "¿Quién tiene más faltas?", "Compara 2do con 4to",
-  "tendencia de notas", "¿cómo va Carlos?" (sin materia) → llama query_academic con el query_type adecuado
-  (class_performance, student_performance, rankings, trends, compare_grades, attendance).
+  "tendencia de notas", "¿cómo va Carlos?" (sin materia), "cuántos alumnos hay en cada sección",
+  "quién es el más destacado" → llama query_academic con el query_type adecuado
+  (class_performance, student_performance, rankings, trends, compare_grades, attendance, section_counts, students_list).
 - Los datos de notas, promedios y faltas NO están en el roster de abajo: la única forma de saberlos es query_academic.
 - El resultado viene en Markdown con tablas y rankings (1º, 2º, 3º). Preséntalo tal cual, con el sándwich.
 - CERO ALUCINACIONES: si el resultado no menciona un alumno, grado, curso o nota, NO lo inventes ni lo des por sentado.
@@ -171,8 +172,15 @@ Reglas operativas:
    "quiero que crees a los siguientes alumnos en la seccion de 2do grado de computacion: carlos duarte, fermin lopez, enrique quesada"
    → create_students_batch names=["Carlos Duarte","Fermin Lopez","Enrique Quesada"] grade=2do subject_name=Computación.
 6. "Crea al alumno X" → create_students_batch. Nunca create_course por mencionar "curso".
-7. "Crea al alumno X y asígnalo al curso de Y grado Z" → create_students_batch + enroll_students_course.
-8. Usa la memoria y el historial para "créalo", "agrégale", "esos cursos". Laravel arma el resumen de confirmación.
+7. "Crea al alumno X en el curso de Y grado Z con el profesor W" → UNA create_students_batch
+   con names, grade, subject_name y teacher_name. Laravel busca el curso, lo crea si falta y
+   escribe la matrícula en course_student. NO dejes al alumno solo en la nómina.
+8. "Crea al alumno X y asígnalo al curso de Y grado Z" → create_students_batch (con subject_name) + enroll_students_course si hace falta.
+9. "Mueve al alumno X a 2do sección B" → update_student (new_grade, new_section).
+10. "Inscribe a los alumnos de 1ro en Computación con el profesor Rodrigo" → enroll_students_course
+    con all_in_grade=true, subject_name, grade y teacher_name.
+11. "Elimina a los alumnos X, Y y Z" → delete_student con names=[X,Y,Z].
+12. Usa la memoria y el historial para "créalo", "agrégale", "esos cursos". Laravel arma el resumen de confirmación.
 
 Memoria conversacional: {$memoryJson}
 
@@ -218,24 +226,27 @@ PROMPT;
                 'required' => ['teacher_name', 'subject_name', 'grades'],
             ],
             'create_students_batch' => [
-                'description' => 'Crear uno o varios alumnos. names es un ARRAY de nombres propios completos (ej. ["Carlos Duarte","Fermin Lopez"]). Nunca "en la sección", "para el", "siguientes" ni la materia.',
+                'description' => 'Crear uno o varios alumnos y, si hay materia/profesor, matricularlos en course_student. names es un ARRAY de nombres propios completos. Incluye subject_name y teacher_name cuando el director mencione el curso o el docente.',
                 'properties' => [
                     'names' => ['type' => 'array', 'items' => ['type' => 'string']],
                     'grade' => ['type' => 'string'],
                     'section' => ['type' => ['string', 'null']],
                     'subject_name' => ['type' => ['string', 'null']],
+                    'teacher_name' => ['type' => ['string', 'null']],
                 ],
                 'required' => ['names', 'grade'],
             ],
             'enroll_students_course' => [
-                'description' => 'Matricular alumnos existentes en un curso.',
+                'description' => 'Matricular alumnos existentes en un curso. Usa all_in_grade=true para inscribir a todo un grado (ej. "los alumnos de 1ro").',
                 'properties' => [
                     'names' => ['type' => 'array', 'items' => ['type' => 'string']],
                     'subject_name' => ['type' => 'string'],
                     'grade' => ['type' => 'string'],
                     'section' => ['type' => ['string', 'null']],
+                    'teacher_name' => ['type' => ['string', 'null']],
+                    'all_in_grade' => ['type' => ['boolean', 'null']],
                 ],
-                'required' => ['names', 'subject_name', 'grade'],
+                'required' => ['subject_name', 'grade'],
             ],
             'unenroll_students_course' => [
                 'description' => 'Desmatricular alumnos de un curso sin eliminarlos del colegio.',
@@ -269,7 +280,7 @@ PROMPT;
                 'required' => ['subject_name', 'grade'],
             ],
             'update_student' => [
-                'description' => 'Modificar nombre, grado o sección de un alumno; también sirve para moverlo de grado.',
+                'description' => 'Modificar nombre, grado o sección de un alumno; también sirve para moverlo de grado. Al cambiar de grado se re-matricula en los cursos de destino.',
                 'properties' => [
                     'student_name' => ['type' => 'string'],
                     'new_name' => ['type' => ['string', 'null']],
@@ -308,9 +319,12 @@ PROMPT;
                 'required' => [],
             ],
             'delete_student' => [
-                'description' => 'Eliminar un alumno específico de la nómina.',
-                'properties' => ['student_name' => ['type' => 'string']],
-                'required' => ['student_name'],
+                'description' => 'Eliminar uno o varios alumnos de la nómina. Usa names para lotes.',
+                'properties' => [
+                    'student_name' => ['type' => ['string', 'null']],
+                    'names' => ['type' => ['array', 'null'], 'items' => ['type' => 'string']],
+                ],
+                'required' => [],
             ],
             'query_academic' => [
                 'description' => 'Consultar profesores, alumnos, cursos, notas, faltas o rendimiento. Para analítica en tiempo real (rendimiento por grado/sección, ranking de promedios o faltas, comparar grados, tendencias) usa los query_type class_performance, student_performance, attendance, rankings, trends o compare_grades.',
@@ -323,7 +337,7 @@ PROMPT;
                             'school_stats', 'school_courses', 'school_teachers', 'grade_overview',
                             'frequent_absentees', 'subject_at_risk', 'at_risk_students',
                             'class_performance', 'student_performance', 'attendance',
-                            'rankings', 'trends', 'compare_grades', 'students_list',
+                            'rankings', 'trends', 'compare_grades', 'students_list', 'section_counts',
                         ],
                     ],
                     'teacher_name' => ['type' => ['string', 'null']],

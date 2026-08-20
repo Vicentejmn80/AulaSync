@@ -5710,6 +5710,7 @@ function teacherHub() {
                 if (!data.success) { this.enrollError = data.message || data.error || 'No se pudo matricular.'; return; }
                 this.enrollNotice = data.message;
                 await this.loadCourse(this.currentCourseId);
+                await this.refreshCourseSidebar();
             } catch (e) {
                 this.enrollError = 'Error de conexión.';
             } finally {
@@ -5731,6 +5732,11 @@ function teacherHub() {
             if (!data.success) { this.enrollError = data.message || 'No se pudo inscribir.'; return; }
             this.enrollNotice = data.message;
             await this.loadCourse(this.currentCourseId);
+            await this.refreshCourseSidebar();
+            if (data.students_count != null) {
+                const course = (this.courses || []).find((c) => Number(c.id) === Number(this.currentCourseId));
+                if (course) course.students_count = data.students_count;
+            }
         },
 
         async loadCourse(id) {

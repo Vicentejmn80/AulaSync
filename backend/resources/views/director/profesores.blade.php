@@ -13,7 +13,7 @@
     @include('partials.director-ui-styles')
 </head>
 <body class="min-h-screen overflow-x-hidden bg-slate-100 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
-    <main class="mx-auto max-w-7xl px-5 py-6 lg:px-8">
+    <main class="mx-auto max-w-7xl px-5 py-6 lg:px-8" x-data="{ selected: [] }">
         <header class="director-header">
             <div class="flex items-center gap-4">
                 <a href="{{ route('director.dashboard') }}" class="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-600 to-violet-500 shadow-lg">
@@ -132,13 +132,45 @@
         @endif
 
         <section class="space-y-3">
-            <h2 class="director-section-title">Docentes activos</h2>
+            <div class="flex flex-wrap items-center justify-between gap-3">
+                <h2 class="director-section-title">Docentes activos</h2>
+                <form method="POST"
+                      action="{{ route('director.profesores.bulk-destroy') }}"
+                      class="flex flex-wrap items-center gap-3"
+                      x-show="selected.length"
+                      x-cloak
+                      onsubmit="return confirm('¿Eliminar los docentes seleccionados? Sus cursos quedarán sin docente.')">
+                    @csrf
+                    <template x-for="id in selected" :key="id">
+                        <input type="hidden" name="ids[]" :value="id">
+                    </template>
+                    <button type="submit" class="director-btn-danger !py-2 !text-xs">
+                        <i class="fa-solid fa-trash-can"></i>
+                        Eliminar seleccionados (<span x-text="selected.length"></span>)
+                    </button>
+                </form>
+            </div>
+            @if($teachers->isNotEmpty())
+                <label class="mb-1 inline-flex items-center gap-2 text-xs font-semibold text-slate-600">
+                    <input type="checkbox"
+                           class="h-4 w-4 accent-indigo-600"
+                           @change="selected = $event.target.checked ? {{ $teachers->pluck('id') }} : []"
+                           :checked="selected.length && selected.length === {{ $teachers->count() }}">
+                    Seleccionar todos
+                </label>
+            @endif
             @forelse($teachers as $teacher)
                 <article class="director-card">
                     <div class="flex flex-wrap items-start justify-between gap-3">
-                        <div>
+                        <div class="flex items-start gap-3">
+                            <input type="checkbox"
+                                   class="mt-1 h-4 w-4 accent-indigo-600"
+                                   @change="selected = $event.target.checked ? [...selected, {{ $teacher->id }}] : selected.filter(id => id !== {{ $teacher->id }})"
+                                   :checked="selected.includes({{ $teacher->id }})">
+                            <div>
                             <h3 class="text-lg font-bold text-slate-900 dark:text-slate-100">{{ $teacher->display_name }}</h3>
                             <p class="text-xs text-slate-600 dark:text-slate-400">{{ $teacher->email }}</p>
+                            </div>
                         </div>
                         <div class="flex flex-col items-end gap-2">
                             <span class="director-badge-active">
@@ -160,6 +192,7 @@
                         @forelse($teacher->courses as $course)
                             <span class="director-chip">
                                 {{ $course->subject_name }} · {{ $course->grade }}{{ $course->section ? ' / ' . $course->section : '' }}
+                                · {{ $course->students_count }} alumno(s)
                             </span>
                         @empty
                             <span class="text-xs italic text-slate-500">Sin cursos asignados</span>

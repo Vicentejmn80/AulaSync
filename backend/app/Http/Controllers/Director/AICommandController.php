@@ -291,6 +291,14 @@ class AICommandController extends Controller
         string $rawText,
         array $data,
     ): DirectorAiOperationLog {
+        Log::info('nova_ai_write', [
+            'user_id' => $director->id,
+            'school_id' => $director->colegio_id,
+            'action' => $intent,
+            'status' => $status,
+            'timestamp' => now()->toIso8601String(),
+        ]);
+
         return DirectorAiOperationLog::create([
             'director_user_id' => $director->id,
             'colegio_id' => $director->colegio_id,
@@ -414,8 +422,24 @@ class AICommandController extends Controller
             ]);
         }
 
-        if ($intent === 'delete_student' && ! empty($data['student_name'])) {
-            $match = $matcher->resolveStudent($colegioId, (string) $data['student_name']);
+        if ($intent === 'delete_student') {
+            $batchNames = collect($data['names'] ?? [])
+                ->map(fn ($name) => trim((string) $name))
+                ->filter()
+                ->unique()
+                ->values();
+            if ($batchNames->count() > 1) {
+                unset($data['student_id']);
+                $data['names'] = $batchNames->all();
+
+                return $data;
+            }
+
+            $name = (string) ($data['student_name'] ?? $batchNames->first() ?? '');
+            if ($name === '') {
+                return $data;
+            }
+            $match = $matcher->resolveStudent($colegioId, $name);
             if (! $match->isUnique()) {
                 throw ValidationException::withMessages([
                     'student' => $match->message ?? 'No encontré al alumno indicado en este colegio.',
@@ -509,6 +533,7 @@ class AICommandController extends Controller
                     'director_id' => $director->id,
                     'intent' => $intent,
                     'message' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString(),
                 ]);
                 if ($log) {
                     $log->update([
@@ -520,12 +545,10 @@ class AICommandController extends Controller
                 $results[] = [
                     'success' => false,
                     'action_type' => $intent,
-                    'message' => app()->environment('testing')
-                        ? 'Falló la ejecución de la operación: '.$e->getMessage()
-                        : 'Falló la ejecución de la operación.',
+                    'message' => 'Falló la ejecución de la operación.',
                 ];
                 $failedActions[] = $action;
-                $this->conversationContext->rememberError($e->getMessage());
+                $this->conversationContext->rememberError('Falló la ejecución de la operación.');
             }
         }
 
@@ -739,7 +762,7 @@ class AICommandController extends Controller
         }
 
         return [
-            'message' => "Creé {$created->count()} estudiante(s) correctamente.",
+            'message' => $this->composeCreateStudentsVerifiedMessage($created, $result),
             'data' => [
                 'students' => $created->map(fn ($student) => [
                     'student_id' => $student->id,
@@ -749,8 +772,35 @@ class AICommandController extends Controller
                     'family_code' => $student->family_code,
                 ])->values()->all(),
                 'duplicates' => $result['duplicates'],
+                'enrolled_count' => (int) ($result['enrolled_count'] ?? 0),
+                'course_id' => $result['course']->id ?? null,
+                'students_count' => $result['course']?->students()->count(),
             ],
         ];
+    }
+
+    private function composeCreateStudentsVerifiedMessage(Collection $created, array $result): string
+    {
+        $count = $created->count();
+        $message = "Creé {$count} estudiante(s) correctamente.";
+        /** @var Course|null $course */
+        $course = $result['course'] ?? null;
+        if ($course) {
+            $teacher = $course->teacher?->name;
+            $place = $course->subject_name.' '.$course->grade.($course->section ? ' / '.$course->section : '');
+            $enrolled = (int) ($result['enrolled_count'] ?? 0);
+            $total = (int) $course->students()->count();
+            if (! empty($result['course_created'])) {
+                $message .= " También creé el curso {$place}.";
+            }
+            $message .= $enrolled > 0
+                ? " Quedó(aron) matriculado(s) en {$place}".($teacher ? " con {$teacher}" : '').". El curso tiene {$total} alumno(s)."
+                : " Todavía no pude matricularlos en {$place}.";
+        } elseif (! empty($result['placement_note'])) {
+            $message .= ' '.$result['placement_note'];
+        }
+
+        return $message;
     }
 
     private function verifyEnrollStudentsToCourse(User $director, array $result): array
@@ -921,6 +971,7 @@ class AICommandController extends Controller
             'create_students_batch' => $this->parseCreateStudentsBatch($director, $text),
             'enroll_students_course' => $this->parseEnrollStudentsCourse($director, $text),
             'unenroll_students_course' => $this->parseEnrollStudentsCourse($director, $text),
+            'update_student' => $this->parseUpdateStudent($director, $text),
             'manage_invite_code' => $this->parseManageInviteCode($text),
             'query_academic' => $this->parseQueryAcademic($text),
             'delete_teacher' => $this->parseDeleteTeacher($director, $text),
@@ -945,11 +996,15 @@ class AICommandController extends Controller
                 : "Crear el curso {$data['subject_name']} para {$data['grade']}".(($data['section'] ?? null) ? " sección {$data['section']}" : '').'.',
             'assign_teacher' => "Asignar a {$data['teacher_name']} la materia {$data['subject_name']} en ".$this->formatGradeSpan((array) ($data['grades'] ?? [])).'.',
             'create_students_batch' => $this->summarizeCreateStudents($data),
-            'enroll_students_course' => 'Inscribir '.implode(', ', (array) ($data['names'] ?? []))." en {$data['subject_name']} {$data['grade']}".(($data['section'] ?? null) ? " sección {$data['section']}" : '').'.',
+            'enroll_students_course' => ! empty($data['all_in_grade'])
+                ? 'Inscribir a los alumnos de '.$data['grade'].(($data['section'] ?? null) ? " sección {$data['section']}" : '')." en {$data['subject_name']}".(! empty($data['teacher_name']) ? " con {$data['teacher_name']}" : '').'.'
+                : 'Inscribir '.implode(', ', (array) ($data['names'] ?? []))." en {$data['subject_name']} {$data['grade']}".(($data['section'] ?? null) ? " sección {$data['section']}" : '').'.',
             'unenroll_students_course' => 'Desmatricular '.count($data['names'] ?? [])." alumno(s) de {$data['subject_name']} {$data['grade']}".(($data['section'] ?? null) ? " sección {$data['section']}" : '').'.',
             'unassign_teacher' => 'Desasignar los cursos indicados de '.($data['teacher_name'] ?? 'ese profesor').'.',
             'update_course' => 'Modificar el curso '.($data['subject_name'] ?? '').' '.($data['grade'] ?? '').'.',
-            'update_student' => 'Actualizar los datos de '.($data['student_name'] ?? 'ese alumno').'.',
+            'update_student' => 'Mover / actualizar a '.($data['student_name'] ?? 'ese alumno')
+                .(! empty($data['new_grade']) ? ' a '.$data['new_grade'] : '')
+                .(! empty($data['new_section']) ? ' sección '.$data['new_section'] : '').'.',
             'manage_invite_code' => 'Consultar el estado del código DOC-.',
             'delete_teacher' => 'Eliminar al profesor '.($data['teacher_name'] ?? '').'. Los cursos se desasignarán, no se borrarán.',
             'delete_teacher_invite' => 'Cancelar la invitación pendiente de '.($data['teacher_name'] ?? '').
@@ -959,7 +1014,9 @@ class AICommandController extends Controller
             'delete_course' => 'Eliminar '.((int) ($data['match_count'] ?? 0)).' curso(s) de '.($data['subject_name'] ?? 'la asignatura indicada').
                 (($data['grade'] ?? null) ? ' '.$data['grade'] : '').'.',
             'delete_all_courses' => 'Eliminar todos los cursos del colegio ('.((int) ($data['count'] ?? 0)).').',
-            'delete_student' => 'Eliminar al alumno '.($data['student_name'] ?? '').'.',
+            'delete_student' => ! empty($data['names']) && count((array) $data['names']) > 1
+                ? 'Eliminar a '.count((array) $data['names']).' alumnos: '.implode(', ', (array) $data['names']).'.'
+                : 'Eliminar al alumno '.($data['student_name'] ?? implode(', ', (array) ($data['names'] ?? []))).'.',
             default => 'Confirmar la operación.',
         };
 
@@ -1011,8 +1068,16 @@ class AICommandController extends Controller
         }
 
         $namesStr = implode(', ', $names) ?: 'alumno(s)';
+        $teacher = trim((string) ($data['teacher_name'] ?? ''));
+        $extra = '';
         if ($subject !== '') {
-            return "Crear al Alumno {$namesStr} en {$place} ({$subject}).";
+            $extra .= " ({$subject})";
+        }
+        if ($teacher !== '') {
+            $extra .= " con {$teacher}";
+        }
+        if ($extra !== '') {
+            return "Crear al Alumno {$namesStr} en {$place}{$extra} y matricularlo en el curso.";
         }
 
         return "Crear al Alumno {$namesStr} en {$place}.";
@@ -1135,12 +1200,22 @@ class AICommandController extends Controller
             return 'create_teacher';
         }
 
+        // Mover / cambiar de grado o sección.
+        if (preg_match('/\b(?:mueve|mover|traslada|trasladar|pasa(?:r)?|cambi(?:a|ar))\b/', $value)
+            && preg_match('/\b(?:alumno|estudiante)s?\b/', $value)
+            && (str_contains($value, 'grado') || str_contains($value, 'seccion') || str_contains($value, 'curso'))) {
+            return 'update_student';
+        }
+
         // Student creation/enrollment must win over create_course when the user mentions alumnos.
         if (preg_match('/\b(?:alumno|estudiante)s?\b/', $value)
             && (preg_match('/\b(?:cre(?:a|ar|es|e|o)|creame|agrega|matricula|inscribe)\b/', $value)
                 || preg_match('/\b(?:asigna|inscribe|matricula|agregalo|añade)\b/', $value))) {
-            if (str_contains($value, 'curso')
-                && preg_match('/\b(?:asigna(?:lo|le|r|les)?|inscribe(?:lo|le|r|les)?|matricula(?:lo|le|r|les)?|agregalo|añade|anade)\b/', $value)) {
+            $looksLikeEnroll = (str_contains($value, 'curso') || str_contains($value, 'materia') || str_contains($value, 'asignatura'))
+                && preg_match('/\b(?:asigna(?:lo|le|r|les)?|inscribe(?:lo|le|r|les)?|matricula(?:lo|le|r|les)?|agregalo|añade|anade)\b/', $value);
+            $enrollWithoutCreate = preg_match('/\b(?:inscribe|asigna(?:lo|le)?|matricula(?:lo|le)?)\b/', $value)
+                && ! preg_match('/\b(?:cre(?:a|ar|es|e|o)|creame)\b/', $value);
+            if ($looksLikeEnroll || $enrollWithoutCreate) {
                 return 'enroll_students_course';
             }
 
@@ -1203,6 +1278,11 @@ class AICommandController extends Controller
             || str_contains($value, 'bajo rendimiento')
             || str_contains($value, 'como esta')
             // Analítica en tiempo real.
+            || str_contains($value, 'cada seccion')
+            || str_contains($value, 'por seccion')
+            || str_contains($value, 'mas destacado')
+            || str_contains($value, 'el destacado')
+            || str_contains($value, 'mejor alumno')
             || str_contains($value, 'mejor promedio')
             || str_contains($value, 'mejores promedios')
             || str_contains($value, 'mas faltas')
@@ -1246,8 +1326,9 @@ class AICommandController extends Controller
             );
             $wantsStudent = (bool) preg_match('/\b(?:alumno|estudiante)s?\b/', $value)
                 && (bool) preg_match('/\b(?:cre(?:a|ar|es|e|o)|creame|agrega|matricula)\b/', $value);
-            $wantsEnroll = $wantsStudent && str_contains($value, 'curso')
-                && (bool) preg_match('/\b(?:asigna(?:lo|le|r|les)?|inscribe(?:lo|le|r|les)?|matricula(?:lo|le|r|les)?|agregalo|añade|anade)\b/', $value);
+            $wantsEnroll = $wantsStudent && (
+                str_contains($value, 'curso') || str_contains($value, 'materia') || str_contains($value, 'asignatura')
+            ) && (bool) preg_match('/\b(?:asigna(?:lo|le|r|les)?|inscribe(?:lo|le|r|les)?|matricula(?:lo|le|r|les)?|agregalo|añade|anade)\b/', $value);
 
             if ($wantsTeacher) {
                 $names = $this->extractTeacherNames($clause);
@@ -1532,14 +1613,52 @@ class AICommandController extends Controller
      */
     private function parseDeleteStudent(User $director, string $text): array
     {
+        $blob = '';
+        if (preg_match('/(?:elimina(?:r)?|borra(?:r)?|quita(?:r)?)\s+(?:a\s+|al\s+)?(?:los\s+|las\s+)?(?:alumnos?|estudiantes?)\s+(.+)$/iu', $text, $m)) {
+            $blob = trim((string) $m[1]);
+        }
+        $names = $blob !== '' ? $this->splitAndSanitizeNames($blob) : [];
+        $single = $this->extractNamedPersonAfterRole($text, 'alumno')
+            ?? $this->extractNamedPersonAfterRole($text, 'estudiante');
+        if ($single) {
+            $names = array_values(array_unique(array_filter(array_merge(
+                $names,
+                count($this->splitAndSanitizeNames($single)) > 1
+                    ? $this->splitAndSanitizeNames($single)
+                    : [$single]
+            ))));
+        }
+        if ($names === []) {
+            return [[], '¿A qué alumno deseas eliminar? Ejemplo: "Elimina a los alumnos Carlos, Juan y María".'];
+        }
+
+        return [[
+            'student_name' => $names[0],
+            'names' => $names,
+        ], null];
+    }
+
+    /**
+     * @return array{0:array,1:?string}
+     */
+    private function parseUpdateStudent(User $director, string $text): array
+    {
         $name = $this->extractNamedPersonAfterRole($text, 'alumno')
             ?? $this->extractNamedPersonAfterRole($text, 'estudiante');
         if (! $name) {
-            return [[], '¿A qué alumno deseas eliminar? Ejemplo: "Elimina al alumno Carlos Pérez".'];
+            return [[], '¿A qué alumno debo mover? Ejemplo: "Mueve al alumno Vicente José a 2do grado sección B".'];
+        }
+
+        $grade = $this->extractTargetGrade($text);
+        $section = $this->extractSection($text);
+        if (! $grade && ! $section) {
+            return [[], 'Indica el grado o la sección destino. Ejemplo: "Mueve a Vicente José a 2do grado sección B".'];
         }
 
         return [[
             'student_name' => $name,
+            'new_grade' => $grade,
+            'new_section' => $section,
         ], null];
     }
 
@@ -1660,6 +1779,7 @@ class AICommandController extends Controller
         $subject = $this->extractKnownSubject($text)
             ?? $this->extractSubjectFromCoursePrompt($text)
             ?? $this->extractSubject($text);
+        $teacherName = $this->sanitizePersonName($this->extractTeacherName($text));
         $missingGrades = $this->missingGradesFor($director, [$grade]);
 
         return [[
@@ -1667,6 +1787,7 @@ class AICommandController extends Controller
             'grade' => $grade,
             'section' => $section,
             'subject_name' => $subject,
+            'teacher_name' => $teacherName,
             'missing_grades' => $missingGrades,
         ], null];
     }
@@ -1676,34 +1797,36 @@ class AICommandController extends Controller
      */
     private function parseEnrollStudentsCourse(User $director, string $text): array
     {
-        $names = $this->extractStudentNames($text);
-        if ($names === []) {
-            return [[], 'No pude detectar los alumnos para inscribir. Ejemplo: "Inscribe a Luis y Marta en Matemática de 4to grado".'];
-        }
-
-        $subject = $this->extractSubjectFromCoursePrompt($text)
-            ?? $this->extractSubject($text)
-            ?? $this->extractKnownSubject($text);
-        if (! $subject) {
-            return [[], '¿En qué asignatura debo inscribirlos?'];
-        }
-
         $grade = $this->extractTargetGrade($text);
         if (! $grade) {
             return [[], '¿En qué grado está ese curso?'];
         }
 
+        $subject = $this->extractKnownSubject($text)
+            ?? $this->extractSubjectFromCoursePrompt($text)
+            ?? $this->extractSubject($text);
+        if (! $subject) {
+            return [[], '¿En qué asignatura debo inscribirlos?'];
+        }
+
         $section = $this->extractSection($text);
-        $missingGrades = $this->missingGradesFor($director, [$grade]);
-        if ($missingGrades !== []) {
-            return [[], 'No encontré el grado '.$grade.' en tu colegio. Revisa la instrucción.'];
+        $teacherName = $this->sanitizePersonName($this->extractTeacherName($text));
+        $allInGrade = (bool) preg_match(
+            '/\b(?:alumnos|estudiantes)\s+de\s+(?:el\s+|la\s+)?(?:[1-6]|primer|segundo|tercer|cuarto|quinto|sexto)/iu',
+            $text
+        );
+        $names = $allInGrade ? [] : $this->extractStudentNames($text);
+        if (! $allInGrade && $names === []) {
+            return [[], 'No pude detectar los alumnos para inscribir. Ejemplo: "Inscribe a Luis y Marta en Matemática de 4to grado" o "Inscribe a los alumnos de 1ro en Computación".'];
         }
 
         return [[
             'names' => $names,
+            'all_in_grade' => $allInGrade,
             'subject_name' => $subject,
             'grade' => $grade,
             'section' => $section,
+            'teacher_name' => $teacherName,
         ], null];
     }
 
@@ -1919,6 +2042,25 @@ class AICommandController extends Controller
             }
         }
 
+        // "¿Cuántos alumnos hay en cada sección?"
+        if (preg_match('/cu[aá]ntos\s+(?:alumnos|estudiantes).*(?:cada\s+secci[oó]n|por\s+secci[oó]n|en\s+cada\s+grado)/iu', trim($text))) {
+            return [[
+                'query_type' => 'section_counts',
+            ], null];
+        }
+
+        // "¿Quién es el más destacado?" / "mejor alumno"
+        if (preg_match('/(?:m[aá]s\s+destacado|el\s+destacado|mejor\s+alumno|primer\s+lugar)/iu', trim($text))) {
+            return [[
+                'query_type' => 'rankings',
+                'metric' => 'average',
+                'limit' => 1,
+                'grade' => $this->extractTargetGrade($text),
+                'section' => $this->extractSection($text),
+                'subject_name' => $this->extractKnownSubject($text),
+            ], null];
+        }
+
         // Consultas generales del colegio (school-wide, siempre dentro del colegio del director).
         if (preg_match('/cu[aá]ntos\s+alumnos\s+hay\s+en\s+([1-6](?:ro|ero|do|to|er|°|º)?\s*grado)/iu', trim($text), $m)) {
             return [[
@@ -2046,6 +2188,7 @@ class AICommandController extends Controller
                 isset($data['grade']) ? (string) $data['grade'] : null,
                 isset($data['section']) ? (string) $data['section'] : null,
             ),
+            'section_counts' => $this->analytics->getSectionCounts($colegioId),
             default => throw ValidationException::withMessages([
                 'query' => 'No pude interpretar el tipo de consulta académica.',
             ]),
@@ -2462,6 +2605,7 @@ class AICommandController extends Controller
     private function extractTeacherName(string $text): ?string
     {
         $patterns = [
+            '/con\s+(?:el\s+|la\s+)?profesor(?:a)?\s+(.+)$/iu',
             '/profesor(?:a)?\s+de\s+[A-Za-zÁÉÍÓÚáéíóúÑñ]+\s+llamad[oa]\s+([A-Za-zÁÉÍÓÚáéíóúÑñ][A-Za-zÁÉÍÓÚáéíóúÑñ\s]{1,80}?)(?:\s+(?:y|para|con|tambien|también)|,|\.|$)/iu',
             '/profesor(?:a)?\s+(?:llamad[oa]\s+)?([A-Za-zÁÉÍÓÚáéíóúÑñ]+(?:\s+[A-Za-zÁÉÍÓÚáéíóúÑñ]+){0,3}?)\s+(?:tambien|también|que\s+te|ademas|además|y\s+crea)/iu',
             '/llamad[oa]\s+([A-Za-zÁÉÍÓÚáéíóúÑñ][A-Za-zÁÉÍÓÚáéíóúÑñ\s]{1,80}?)(?:\s+(?:y|para|con|de\s+[1-6]|tambien|también)|,|\.|$)/iu',
@@ -2528,7 +2672,7 @@ class AICommandController extends Controller
         $name = trim(preg_replace('/[.!?]+$/', '', $name) ?? $name);
         $name = trim(preg_replace('/^(?:al|a la|el|la|los|las)\s+/iu', '', $name) ?? $name);
         $name = preg_replace(
-            '/\s+(?:en el|en la|al curso|de primer|de 1|en 1|y as[ií]gna|y inscr[ií]be|y matr[ií]cula|y crea|tambien|también|que te|y\s+(?:a\s+)?(?:al|el|la)\s+(?:profesor(?:a)?|docente|maestr[oa])).*$/iu',
+            '/\s+(?:en el|en la|al curso|de primer|de 1|en 1|a\s+[1-6]|a\s+(?:primer|segundo|tercer|cuarto|quinto|sexto)|y as[ií]gna|y inscr[ií]be|y matr[ií]cula|y crea|tambien|también|que te|y\s+(?:a\s+)?(?:al|el|la)\s+(?:profesor(?:a)?|docente|maestr[oa])).*$/iu',
             '',
             $name
         ) ?? $name;
