@@ -11,6 +11,7 @@ class DirectorAIInterpreterService
     public function __construct(
         private SchoolRosterContextService $rosterContext,
     ) {}
+
     /**
      * @param  array<int,array{role:string,content:string}>  $conversation
      * @return array{actions:array<int,array{intent:string,data:array}>,message:?string,clarification:?string}|null
@@ -262,7 +263,12 @@ PROMPT;
                 'required' => ['student_name'],
             ],
             'delete_teacher' => [
-                'description' => 'Eliminar un profesor específico.',
+                'description' => 'Eliminar un profesor registrado específico. No usar para cancelar invitaciones; para eso usa delete_teacher_invite.',
+                'properties' => ['teacher_name' => ['type' => 'string']],
+                'required' => ['teacher_name'],
+            ],
+            'delete_teacher_invite' => [
+                'description' => 'Cancelar/revocar una invitación DOC- pendiente de un profesor. NO elimina el profesor registrado. teacher_name SOLO el nombre propio.',
                 'properties' => ['teacher_name' => ['type' => 'string']],
                 'required' => ['teacher_name'],
             ],
@@ -336,7 +342,7 @@ PROMPT;
             'create_teacher', 'create_course', 'assign_teacher',
             'create_students_batch', 'enroll_students_course', 'unenroll_students_course',
             'unassign_teacher', 'update_course', 'update_student',
-            'delete_teacher', 'delete_all_teachers', 'delete_course',
+            'delete_teacher', 'delete_teacher_invite', 'delete_all_teachers', 'delete_course',
             'delete_all_courses', 'delete_student', 'query_academic',
         ];
     }

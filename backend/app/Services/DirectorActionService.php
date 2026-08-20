@@ -857,6 +857,87 @@ class DirectorActionService
     }
 
     /**
+     * Cancela una invitación DOC- pendiente. Nunca toca un profesor registrado.
+     *
+     * @param  array{teacher_name:string, invite_id?:int|null, invite_code?:string|null}  $payload
+     */
+    public function deleteTeacherInvite(User $director, array $payload): array
+    {
+        $colegioId = $this->requireColegioId($director);
+        $inviteId = (int) ($payload['invite_id'] ?? 0);
+        $name = trim((string) ($payload['teacher_name'] ?? ''));
+
+        if ($inviteId) {
+            $invite = TeacherInvite::query()
+                ->where('colegio_id', $colegioId)
+                ->where('id', $inviteId)
+                ->first();
+        } else {
+            if ($name === '') {
+                throw ValidationException::withMessages([
+                    'teacher' => 'Indica el profesor de la invitación a cancelar.',
+                ]);
+            }
+
+            $match = $this->nameMatcher->resolveInvite($colegioId, $name);
+            if ($match->isNone()) {
+                throw ValidationException::withMessages([
+                    'teacher' => $match->message ?? 'No encontré una invitación pendiente con ese nombre.',
+                ]);
+            }
+            if ($match->isAmbiguous()) {
+                throw ValidationException::withMessages([
+                    'teacher' => $match->message,
+                ]);
+            }
+
+            /** @var TeacherInvite $invite */
+            $invite = $match->model;
+        }
+
+        if (! $invite || (int) $invite->colegio_id !== $colegioId) {
+            throw ValidationException::withMessages([
+                'teacher' => 'No encontré la invitación pendiente indicada en este colegio.',
+            ]);
+        }
+
+        return DB::transaction(function () use ($colegioId, $invite) {
+            $label = $invite->name;
+            $code = $invite->invite_code;
+
+            Course::query()
+                ->where('colegio_id', $colegioId)
+                ->where('teacher_invite_id', $invite->id)
+                ->update([
+                    'teacher_invite_id' => null,
+                    'teacher_id' => null,
+                ]);
+
+            TeacherInvite::query()
+                ->where('colegio_id', $colegioId)
+                ->where('id', $invite->id)
+                ->delete();
+
+            $stillExists = TeacherInvite::query()
+                ->where('colegio_id', $colegioId)
+                ->where('id', $invite->id)
+                ->exists();
+            if ($stillExists) {
+                throw ValidationException::withMessages([
+                    'teacher' => 'No se pudo verificar la cancelación de la invitación.',
+                ]);
+            }
+
+            return [
+                'deleted_count' => 1,
+                'deleted_invites' => 1,
+                'invite_label' => $label,
+                'invite_code' => $code,
+            ];
+        });
+    }
+
+    /**
      * @param  array{}  $payload
      */
     public function deleteAllTeachers(User $director, array $payload = []): array

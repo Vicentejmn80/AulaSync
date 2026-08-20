@@ -9,6 +9,7 @@ use App\Models\Course;
 use App\Models\DirectorAiOperationLog;
 use App\Models\Grade;
 use App\Models\Student;
+use App\Models\TeacherInvite;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -1210,6 +1211,261 @@ class DirectorAICommandTest extends TestCase
         $this->assertDatabaseHas('students', [
             'colegio_id' => $colegio2->id,
             'family_code' => 'NV-MAR-B',
+        ]);
+    }
+
+    /**
+     * E1. Crear múltiples profesores en un mensaje produce invitaciones independientes.
+     */
+    public function test_create_multiple_teachers_produces_separate_invites(): void
+    {
+        [$director, $colegio] = $this->directorContext();
+
+        $draft = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'crea al profesor mariano perez y al profesor mariano garcia',
+        ]);
+
+        $draft->assertOk()->assertJsonPath('requires_confirmation', true);
+
+        $pending = $draft->json('pending_actions');
+        $teacherActions = collect($pending)->where('intent', 'create_teacher')->values()->all();
+        $this->assertCount(2, $teacherActions);
+        $this->assertSame('Mariano Perez', $teacherActions[0]['data']['teacher_name']);
+        $this->assertSame('Mariano Garcia', $teacherActions[1]['data']['teacher_name']);
+
+        $execute = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'confirmed' => true,
+            'pending_actions' => $pending,
+        ]);
+        $execute->assertOk();
+
+        $this->assertDatabaseHas('teacher_invites', [
+            'colegio_id' => $colegio->id,
+            'name' => 'Mariano Perez',
+        ]);
+        $this->assertDatabaseHas('teacher_invites', [
+            'colegio_id' => $colegio->id,
+            'name' => 'Mariano Garcia',
+        ]);
+        $this->assertSame(2, TeacherInvite::where('colegio_id', $colegio->id)->count());
+    }
+
+    /**
+     * E2. El nombre extraído no debe contener conectores tipo "Y Al Profesor".
+     */
+    public function test_multi_teacher_name_does_not_contain_connector(): void
+    {
+        [$director] = $this->directorContext();
+
+        $draft = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'crea al profesor mariano perez y al profesor mariano garcia',
+        ]);
+
+        $draft->assertOk();
+        foreach ($draft->json('pending_actions') as $action) {
+            $name = (string) ($action['data']['teacher_name'] ?? '');
+            $this->assertStringNotContainsStringIgnoringCase('y al profesor', $name);
+            $this->assertStringNotContainsStringIgnoringCase('y profesor', $name);
+            $this->assertStringNotContainsStringIgnoringCase('y el profesor', $name);
+        }
+    }
+
+    /**
+     * E3. Eliminar invitación con dos candidatos devuelve ambigüedad y no borra nada.
+     */
+    public function test_delete_invite_with_two_matches_returns_ambiguity(): void
+    {
+        [$director, $colegio] = $this->directorContext();
+        TeacherInvite::create([
+            'colegio_id' => $colegio->id,
+            'created_by' => $director->id,
+            'name' => 'Mariano Pérez',
+            'invite_code' => 'DOC-MAR-1',
+            'expires_at' => now()->addDays(30),
+        ]);
+        TeacherInvite::create([
+            'colegio_id' => $colegio->id,
+            'created_by' => $director->id,
+            'name' => 'Mariano García',
+            'invite_code' => 'DOC-MAR-2',
+            'expires_at' => now()->addDays(30),
+        ]);
+
+        $response = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'elimina la invitacion del profesor mariano',
+        ]);
+
+        $response->assertUnprocessable()
+            ->assertJsonPath('needs_clarification', true);
+        $message = (string) $response->json('message');
+        $this->assertStringContainsString('varias coincidencias', $message);
+
+        $this->assertSame(2, TeacherInvite::where('colegio_id', $colegio->id)->count());
+    }
+
+    /**
+     * E4. Cancelar invitación única requiere confirmación server-side y elimina solo la invitación.
+     */
+    public function test_delete_invite_single_requires_confirmation_and_deletes_only_invite(): void
+    {
+        [$director, $colegio] = $this->directorContext();
+        TeacherInvite::create([
+            'colegio_id' => $colegio->id,
+            'created_by' => $director->id,
+            'name' => 'Mariano Pérez',
+            'invite_code' => 'DOC-MAR-3',
+            'expires_at' => now()->addDays(30),
+        ]);
+
+        $draft = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'cancela la invitación del profesor mariano',
+        ]);
+
+        $draft->assertOk()
+            ->assertJsonPath('requires_confirmation', true)
+            ->assertJsonPath('pending_actions.0.intent', 'delete_teacher_invite');
+
+        $pending = $draft->json('pending_actions');
+        $this->assertSame('Mariano Pérez', $pending[0]['data']['teacher_name'] ?? '');
+
+        $execute = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'confirmed' => true,
+            'pending_actions' => $pending,
+        ]);
+        $execute->assertOk();
+        $this->assertTrue((bool) $execute->json('actions.0.success'));
+
+        $this->assertDatabaseMissing('teacher_invites', [
+            'colegio_id' => $colegio->id,
+            'invite_code' => 'DOC-MAR-3',
+        ]);
+    }
+
+    /**
+     * E5. "elimina al profesor Mariano" con dos profesores registrados devuelve ambigüedad, no genérico.
+     */
+    public function test_delete_registered_teacher_ambiguous_returns_clarification_not_generic(): void
+    {
+        [$director, $colegio] = $this->directorContext();
+        User::factory()->create([
+            'name' => 'Mariano Pérez',
+            'role' => 'profesor',
+            'colegio_id' => $colegio->id,
+            'onboarding_completed' => true,
+        ]);
+        User::factory()->create([
+            'name' => 'Mariano García',
+            'role' => 'profesor',
+            'colegio_id' => $colegio->id,
+            'onboarding_completed' => true,
+        ]);
+
+        $response = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'elimina al profesor mariano',
+        ]);
+
+        $response->assertUnprocessable()
+            ->assertJsonPath('needs_clarification', true);
+        $message = (string) $response->json('message');
+        $this->assertStringContainsString('varias coincidencias', $message);
+        $this->assertStringNotContainsStringIgnoringCase('Puedo crear y eliminar profesores', $message);
+    }
+
+    /**
+     * E6. Variantes de borrado son reconocidas.
+     */
+    public function test_delete_synonyms_are_recognized_for_registered_teacher(): void
+    {
+        [$director, $colegio] = $this->directorContext();
+        User::factory()->create([
+            'name' => 'Carlos Ruiz',
+            'role' => 'profesor',
+            'colegio_id' => $colegio->id,
+            'onboarding_completed' => true,
+        ]);
+
+        foreach (['elimina al profesor carlos', 'borrar al profesor carlos', 'borra al profesor carlos', 'eliminar al profesor carlos', 'quita al profesor carlos'] as $prompt) {
+            $response = $this->actingAs($director)->postJson(route('director.ai.command'), [
+                'prompt' => $prompt,
+            ]);
+            $response->assertOk()->assertJsonPath('requires_confirmation', true);
+            $this->assertSame('delete_teacher', $response->json('pending_actions.0.intent'));
+            $this->assertStringContainsStringIgnoringCase('carlos', (string) ($response->json('pending_actions.0.data.teacher_name') ?? ''));
+        }
+    }
+
+    /**
+     * E7. Separación estricta por colegio_id para cancelación de invitaciones.
+     */
+    public function test_delete_invite_respects_colegio_isolation(): void
+    {
+        [$director1, $colegio1] = $this->directorContext();
+        [$director2, $colegio2] = $this->directorContext('Colegio Norte', 'COC-ISOL-02');
+
+        TeacherInvite::create([
+            'colegio_id' => $colegio1->id,
+            'created_by' => $director1->id,
+            'name' => 'Mariano Norte',
+            'invite_code' => 'DOC-N1',
+            'expires_at' => now()->addDays(30),
+        ]);
+        TeacherInvite::create([
+            'colegio_id' => $colegio2->id,
+            'created_by' => $director2->id,
+            'name' => 'Mariano Norte',
+            'invite_code' => 'DOC-N2',
+            'expires_at' => now()->addDays(30),
+        ]);
+
+        $draft = $this->actingAs($director1)->postJson(route('director.ai.command'), [
+            'prompt' => 'cancela la invitacion del profesor mariano norte',
+        ]);
+        $draft->assertOk()->assertJsonPath('pending_actions.0.intent', 'delete_teacher_invite');
+
+        $execute = $this->actingAs($director1)->postJson(route('director.ai.command'), [
+            'confirmed' => true,
+            'pending_actions' => $draft->json('pending_actions'),
+        ]);
+        $execute->assertOk();
+
+        $this->assertDatabaseMissing('teacher_invites', [
+            'colegio_id' => $colegio1->id,
+            'invite_code' => 'DOC-N1',
+        ]);
+        $this->assertDatabaseHas('teacher_invites', [
+            'colegio_id' => $colegio2->id,
+            'invite_code' => 'DOC-N2',
+        ]);
+    }
+
+    /**
+     * E8. Pedir cancelar invitación cuando no hay invitación pendiente pero sí profesor registrado
+     * no borra el profesor y explica la diferencia.
+     */
+    public function test_cancel_invite_does_not_delete_registered_teacher(): void
+    {
+        [$director, $colegio] = $this->directorContext();
+        User::factory()->create([
+            'name' => 'Mariano Pérez',
+            'role' => 'profesor',
+            'colegio_id' => $colegio->id,
+            'onboarding_completed' => true,
+        ]);
+
+        $response = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'cancela la invitación del profesor mariano',
+        ]);
+
+        $response->assertUnprocessable()
+            ->assertJsonPath('needs_clarification', true);
+        $message = (string) $response->json('message');
+        $this->assertStringContainsStringIgnoringCase('invitación pendiente', $message);
+        $this->assertStringContainsStringIgnoringCase('profesor registrado', $message);
+
+        $this->assertDatabaseHas('users', [
+            'colegio_id' => $colegio->id,
+            'role' => 'profesor',
+            'name' => 'Mariano Pérez',
         ]);
     }
 

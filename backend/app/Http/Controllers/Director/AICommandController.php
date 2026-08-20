@@ -105,11 +105,22 @@ class AICommandController extends Controller
                     ? trim((string) ($interpreted['message'] ?? $interpreted['clarification'] ?? ''))
                     : '';
                 $intentGuess = $this->detectIntent($text);
-                if ($llmReply !== '' && ! $this->intentRequiresConfirmation((string) $intentGuess)) {
-                    return response()->json([
-                        'success' => true,
-                        'message' => $llmReply,
-                    ]);
+                if ($llmReply !== '') {
+                    if (! $this->intentRequiresConfirmation((string) $intentGuess)) {
+                        return response()->json([
+                            'success' => true,
+                            'message' => $llmReply,
+                        ]);
+                    }
+                    if ($intentGuess !== null) {
+                        $this->conversationContext->rememberError($llmReply);
+
+                        return response()->json([
+                            'success' => false,
+                            'needs_clarification' => true,
+                            'message' => $llmReply,
+                        ], 422);
+                    }
                 }
             }
 
@@ -339,13 +350,62 @@ class AICommandController extends Controller
         $matcher = app(PersonNameMatcher::class);
 
         if ($intent === 'delete_teacher' && ! empty($data['teacher_name'])) {
-            $match = $matcher->resolveTeacher($colegioId, (string) $data['teacher_name']);
-            if (! $match->isUnique()) {
+            $name = (string) $data['teacher_name'];
+            $match = $matcher->resolveTeacher($colegioId, $name);
+            if ($match->isUnique()) {
+                $data['teacher_name'] = $match->model->name;
+
+                return $data;
+            }
+            if ($match->isNone()) {
+                $inviteMatch = $matcher->resolveInvite($colegioId, $name);
+                if ($inviteMatch->isUnique()) {
+                    throw ValidationException::withMessages([
+                        'teacher' => "No encontré a \"{$name}\" como profesor registrado. Sí hay una invitación pendiente: {$inviteMatch->label}. Para cancelarla escribe: \"Cancela la invitación del profesor {$inviteMatch->model->name}\".",
+                    ]);
+                }
+                if ($inviteMatch->isAmbiguous()) {
+                    throw ValidationException::withMessages([
+                        'teacher' => "No encontré un profesor registrado con \"{$name}\", pero hay varias invitaciones pendientes.\n{$inviteMatch->message}",
+                    ]);
+                }
+            }
+            throw ValidationException::withMessages([
+                'teacher' => $match->message ?? 'No encontré al profesor indicado en este colegio.',
+            ]);
+        }
+
+        if ($intent === 'delete_teacher_invite' && ! empty($data['teacher_name'])) {
+            $name = (string) $data['teacher_name'];
+            $inviteMatch = $matcher->resolveInvite($colegioId, $name);
+            if ($inviteMatch->isUnique()) {
+                $data['teacher_name'] = $inviteMatch->model->name;
+                $data['invite_id'] = $inviteMatch->model->id;
+                $data['invite_code'] = $inviteMatch->model->invite_code;
+
+                return $data;
+            }
+            if ($inviteMatch->isAmbiguous()) {
                 throw ValidationException::withMessages([
-                    'teacher' => $match->message ?? 'No encontré al profesor indicado en este colegio.',
+                    'teacher' => $inviteMatch->message,
                 ]);
             }
-            $data['teacher_name'] = $match->model->name;
+
+            $teacherMatch = $matcher->resolveTeacher($colegioId, $name);
+            if ($teacherMatch->isUnique()) {
+                throw ValidationException::withMessages([
+                    'teacher' => "No hay una invitación pendiente para \"{$name}\" en este colegio. Encontré al profesor registrado {$teacherMatch->label}. Para eliminarlo escribe: \"Elimina al profesor {$teacherMatch->label}\".",
+                ]);
+            }
+            if ($teacherMatch->isAmbiguous()) {
+                throw ValidationException::withMessages([
+                    'teacher' => "No hay una invitación pendiente para \"{$name}\" en este colegio, pero hay varios profesores registrados.\n{$teacherMatch->message}",
+                ]);
+            }
+
+            throw ValidationException::withMessages([
+                'teacher' => "No encontré una invitación pendiente ni un profesor registrado con \"{$name}\" en este colegio.",
+            ]);
         }
 
         if ($intent === 'delete_student' && ! empty($data['student_name'])) {
@@ -499,6 +559,7 @@ class AICommandController extends Controller
             'manage_invite_code' => $this->actionService->manageInviteCode($director, $data),
             'query_academic' => $this->queryAcademic($director, $data),
             'delete_teacher' => $this->actionService->deleteTeacher($director, $data),
+            'delete_teacher_invite' => $this->actionService->deleteTeacherInvite($director, $data),
             'delete_all_teachers' => $this->actionService->deleteAllTeachers($director, $data),
             'delete_course' => $this->actionService->deleteCourse($director, $data),
             'delete_all_courses' => $this->actionService->deleteAllCourses($director, $data),
@@ -524,6 +585,7 @@ class AICommandController extends Controller
             'manage_invite_code' => $this->verifyManageInviteCode($director, $result),
             'query_academic' => $this->verifyAcademicQueryResult($result),
             'delete_teacher' => $this->verifyDeletePeople($director, $result, 'profesor'),
+            'delete_teacher_invite' => $this->verifyDeleteInvite($result),
             'delete_all_teachers' => $this->verifyDeletePeople($director, $result, 'profesor'),
             'delete_course' => $this->verifyDeleteCourses($director, $result),
             'delete_all_courses' => $this->verifyDeleteCourses($director, $result),
@@ -588,10 +650,12 @@ class AICommandController extends Controller
         $courses = $result['courses'];
 
         return [
-            'message' => "Profesor invitado correctamente. Código DOC-: {$invite->invite_code}.",
+            'message' => "Profesor {$invite->name} invitado correctamente. Código DOC-: {$invite->invite_code}.",
             'data' => [
                 'invite_code' => $invite->invite_code,
                 'teacher_name' => $invite->name,
+                'invite_id' => $invite->id,
+                'status' => 'invitado',
                 'courses' => $courses->map(fn ($course) => [
                     'course_id' => $course->id,
                     'subject_name' => $course->subject_name,
@@ -789,6 +853,32 @@ class AICommandController extends Controller
     }
 
     /**
+     * @param  array{deleted_count?:int, deleted_invites?:int, invite_label?:string, invite_code?:string}  $result
+     */
+    private function verifyDeleteInvite(array $result): array
+    {
+        $label = trim((string) ($result['invite_label'] ?? ''));
+        $code = trim((string) ($result['invite_code'] ?? ''));
+        $message = $label !== ''
+            ? "Cancelé la invitación pendiente de {$label}."
+            : 'Cancelé la invitación pendiente.';
+        if ($code !== '') {
+            $message .= " El código DOC- {$code} ya no es válido.";
+        }
+        $message .= ' No se eliminó ningún profesor registrado.';
+
+        return [
+            'message' => $message,
+            'data' => [
+                'invite_name' => $label,
+                'invite_code' => $code,
+                'deleted_count' => (int) ($result['deleted_count'] ?? 1),
+                'deleted_invites' => (int) ($result['deleted_invites'] ?? 1),
+            ],
+        ];
+    }
+
+    /**
      * @param  array{deleted_count?:int, deleted_courses?:array<int,array>}  $result
      */
     private function verifyDeleteCourses(User $director, array $result): array
@@ -828,6 +918,7 @@ class AICommandController extends Controller
             'manage_invite_code' => $this->parseManageInviteCode($text),
             'query_academic' => $this->parseQueryAcademic($text),
             'delete_teacher' => $this->parseDeleteTeacher($director, $text),
+            'delete_teacher_invite' => $this->parseDeleteInvite($director, $text),
             'delete_all_teachers' => $this->parseDeleteAllTeachers($director),
             'delete_course' => $this->parseDeleteCourse($director, $text),
             'delete_all_courses' => $this->parseDeleteAllCourses($director),
@@ -855,6 +946,9 @@ class AICommandController extends Controller
             'update_student' => 'Actualizar los datos de '.($data['student_name'] ?? 'ese alumno').'.',
             'manage_invite_code' => 'Consultar el estado del código DOC-.',
             'delete_teacher' => 'Eliminar al profesor '.($data['teacher_name'] ?? '').'. Los cursos se desasignarán, no se borrarán.',
+            'delete_teacher_invite' => 'Cancelar la invitación pendiente de '.($data['teacher_name'] ?? '').
+                (($data['invite_code'] ?? null) ? ' (código DOC- '.$data['invite_code'].')' : '').
+                '. No se eliminará ningún profesor registrado.',
             'delete_all_teachers' => 'Eliminar a '.((int) ($data['count'] ?? 0)).' profesor(es) de tu colegio. Los cursos se desasignarán, no se borrarán.',
             'delete_course' => 'Eliminar '.((int) ($data['match_count'] ?? 0)).' curso(s) de '.($data['subject_name'] ?? 'la asignatura indicada').
                 (($data['grade'] ?? null) ? ' '.$data['grade'] : '').'.',
@@ -989,8 +1083,13 @@ class AICommandController extends Controller
     {
         $value = $this->normalizedText($text);
 
-        // Eliminar / borrar / quitar / remover / limpiar (antes de crear, para no confundir verbos).
+        // Eliminar / borrar / quitar / remover / limpiar / cancelar (antes de crear, para no confundir verbos).
         if ($this->hasDeleteVerb($value)) {
+            if (preg_match('/\b(?:invitaci[oó]n|invitaciones)\b/', $value)) {
+                if (preg_match('/\b(?:profesor(?:a)?|docente)\b/', $value) || preg_match('/\b(?:de|del)\s+[a-z]+\s+profesor\b/', $value)) {
+                    return 'delete_teacher_invite';
+                }
+            }
             if ($this->isMassPeopleTarget($value) && preg_match('/\b(?:profesores|profesoras|docentes)\b/', $value)) {
                 return 'delete_all_teachers';
             }
@@ -1113,9 +1212,25 @@ class AICommandController extends Controller
             );
 
             if ($wantsTeacher) {
-                [$data, $msg] = $this->parseCreateTeacher($director, $clause);
-                if (! $msg && ! empty($data['teacher_name'])) {
-                    $actions[] = ['intent' => 'create_teacher', 'data' => $data];
+                $names = $this->extractTeacherNames($clause);
+                if ($names === []) {
+                    [$data, $msg] = $this->parseCreateTeacher($director, $clause);
+                    if (! $msg && ! empty($data['teacher_name'])) {
+                        $names = [$data['teacher_name']];
+                    }
+                }
+                if (count($names) > 5) {
+                    throw ValidationException::withMessages([
+                        'teacher' => 'Veo más de 5 profesores en tu mensaje. Dime los nombres de a uno o máximo 5 a la vez.',
+                    ]);
+                }
+                if ($names !== []) {
+                    [$sharedData, $msg] = $this->parseCreateTeacher($director, $clause);
+                    foreach ($names as $name) {
+                        $data = $sharedData;
+                        $data['teacher_name'] = $name;
+                        $actions[] = ['intent' => 'create_teacher', 'data' => $data];
+                    }
                 }
             }
 
@@ -1182,10 +1297,15 @@ class AICommandController extends Controller
                 continue;
             }
             if ($intent === 'create_teacher') {
-                return $this->samePerson(
-                    (string) ($action['data']['teacher_name'] ?? ''),
-                    (string) ($candidate['data']['teacher_name'] ?? '')
-                ) || trim((string) ($action['data']['teacher_name'] ?? '')) !== '';
+                $existingName = trim((string) ($action['data']['teacher_name'] ?? ''));
+                $candidateName = trim((string) ($candidate['data']['teacher_name'] ?? ''));
+                if ($existingName === '' || $candidateName === '') {
+                    continue;
+                }
+                $left = mb_strtolower($existingName);
+                $right = mb_strtolower($candidateName);
+
+                return $left === $right || str_contains($left, $right) || str_contains($right, $left);
             }
             if (in_array($intent, ['create_students_batch', 'enroll_students_course'], true)) {
                 $existing = collect($action['data']['names'] ?? [])->map(fn ($name) => mb_strtolower(trim((string) $name)));
@@ -1243,6 +1363,25 @@ class AICommandController extends Controller
         $name = $this->extractNamedPersonAfterRole($text, 'profesor');
         if (! $name) {
             return [[], '¿A qué profesor deseas eliminar? Ejemplo: "Elimina al profesor Carlos Pérez".'];
+        }
+
+        return [[
+            'teacher_name' => $name,
+        ], null];
+    }
+
+    /**
+     * @return array{0:array,1:?string}
+     */
+    private function parseDeleteInvite(User $director, string $text): array
+    {
+        $name = $this->extractNamedPersonAfterRole($text, 'profesor');
+        if (! $name && preg_match('/invitaci[oó]n\s+(?:del\s+profesor|de\s+)?([A-Za-zÁÉÍÓÚáéíóúÑñ][A-Za-zÁÉÍÓÚáéíóúÑñ\s]{1,80}?)(?:\s+(?:y\s+(?:al|el|la)\s+profesor|\.|$))/iu', $text, $m)) {
+            $name = trim((string) $m[1]);
+        }
+        $name = $name ? $this->sanitizePersonName($name) : null;
+        if (! $name) {
+            return [[], '¿De qué profesor deseas cancelar la invitación? Ejemplo: "Cancela la invitación del profesor Carlos Pérez".'];
         }
 
         return [[
@@ -2084,6 +2223,35 @@ class AICommandController extends Controller
         return $this->sanitizePersonName($this->extractNamedPersonAfterRole($text, 'profesor'));
     }
 
+    /**
+     * Extrae uno o varios nombres de profesor de un mismo mensaje,
+     * separando conectores tipo "y al profesor", "y profesor", ", al profesor".
+     *
+     * @return array<int,string>
+     */
+    private function extractTeacherNames(string $text): array
+    {
+        $pattern = '/(?:a\s+)?(?:al\s+|a la\s+|el\s+|la\s+)?(?:profesor(?:a)?|docente|maestr[oa])\s+'
+            .'([A-Za-zÁÉÍÓÚáéíóúÑñ][A-Za-zÁÉÍÓÚáéíóúÑñ\s\'-]{0,120}?)'
+            .'(?=\s+(?:(?:y\s+|,\s*)?(?:a\s+)?(?:al\s+|a la\s+|el\s+|la\s+)?(?:profesor(?:a)?|docente|maestr[oa])'
+            .'|de\s+[1-6](?:ro|er|do|to|°|º)?\s*(?:grado)?'
+            .'|(?:de|para|en|del)\s+(?:el\s+|la\s+)?(?:curso|grado|materia|asignatura|seccion|sección))\b|$)/iu';
+
+        if (! preg_match_all($pattern, $text, $matches)) {
+            return [];
+        }
+
+        $names = [];
+        foreach ($matches[1] as $raw) {
+            $name = $this->sanitizePersonName($raw);
+            if ($name !== null && ! $this->isGenericPersonLabel($name)) {
+                $names[] = $name;
+            }
+        }
+
+        return array_values(array_unique($names));
+    }
+
     private function extractNamedPersonAfterRole(string $text, string $role): ?string
     {
         $rolePattern = $role === 'profesor'
@@ -2098,7 +2266,7 @@ class AICommandController extends Controller
         $name = trim(preg_replace('/[.!?]+$/', '', $name) ?? $name);
         $name = trim(preg_replace('/^(?:al|a la|el|la|los|las)\s+/iu', '', $name) ?? $name);
         $name = preg_replace(
-            '/\s+(?:en el|en la|al curso|de primer|de 1|en 1|y asigna|y inscribe|y matricula|y crea|tambien|también|que te).*$/iu',
+            '/\s+(?:en el|en la|al curso|de primer|de 1|en 1|y as[ií]gna|y inscr[ií]be|y matr[ií]cula|y crea|tambien|también|que te|y\s+(?:a\s+)?(?:al|el|la)\s+(?:profesor(?:a)?|docente|maestr[oa])).*$/iu',
             '',
             $name
         ) ?? $name;
@@ -2188,7 +2356,12 @@ class AICommandController extends Controller
         }
 
         $name = preg_replace(
-            '/\s+(?:y\s+)?(?:agrega(?:lo|le|s)?|asigna(?:lo|le)?|crea(?:r)?(?:s|me|les)?|quiero|donde|con\s+(?:los|las|el|la)|cursos?|materias?|asignaturas?).*$/iu',
+            '/\s+(?:y\s+)?(?:agrega(?:lo|le|s)?|as[ií]gna(?:lo|le)?|crea(?:r)?(?:s|me|les)?|quiero|donde|con\s+(?:los|las|el|la)|cursos?|materias?|asignaturas?).*$/iu',
+            '',
+            $name
+        ) ?? $name;
+        $name = preg_replace(
+            '/\s+(?:y\s+|,\s*)?(?:a\s+)?(?:al\s+|a la\s+|el\s+|la\s+)?(?:profesor(?:a)?|docente|maestr[oa])\b.*$/iu',
             '',
             $name
         ) ?? $name;
@@ -2253,7 +2426,7 @@ class AICommandController extends Controller
 
     private function hasDeleteVerb(string $value): bool
     {
-        return (bool) preg_match('/\b(?:elimina(?:r)?|borra(?:r)?|quita(?:r)?|remover|remueve|limpia(?:r)?)\b/', $value);
+        return (bool) preg_match('/\b(?:elimina(?:r)?|borra(?:r)?|quita(?:r)?|remover|remueve|limpia(?:r)?|cancel(?:a|ar|es)?)\b/', $value);
     }
 
     private function isMassPeopleTarget(string $value): bool
@@ -2556,6 +2729,7 @@ class AICommandController extends Controller
             'update_course',
             'update_student',
             'delete_teacher',
+            'delete_teacher_invite',
             'delete_all_teachers',
             'delete_course',
             'delete_all_courses',

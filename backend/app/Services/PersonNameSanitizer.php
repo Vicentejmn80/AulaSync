@@ -31,12 +31,13 @@ class PersonNameSanitizer
         $name = preg_replace('/\s+de\s+(?:la\s+|el\s+)?(?:'.self::SUBJECT_ALIASES.')\b.*$/iu', '', $name) ?? $name;
 
         $cutPattern = '/\s+(?:'
-            .'(?:y\s+)?(?:asigna(?:lo|le|r|les)?|inscribe(?:lo|le|r)?|matricula(?:lo|le|r)?|agrega(?:lo|le)?|añade|anade|crea(?:r|me)?)'
+            .'(?:y\s+)?(?:as[ií]gna(?:lo|le|r|les)?|inscr[ií]be(?:lo|le|r)?|matr[ií]cula(?:lo|le|r)?|agrega(?:lo|le)?|añade|anade|crea(?:r|me)?)'
             .'|en\s+el|en\s+la|en\s+los|en\s+las'
             .'|al\s+curso|a\s+el\s+curso|del\s+curso|de\s+el\s+curso'
             .'|(?:en|de|del|para)\s+(?:el\s+|la\s+)?(?:primer|primero|segundo|tercer|tercero|cuarto|quinto|sexto|[1-6](?:ro|ero|er|do|to|°|º)?)'
             .'|(?:en|de|del|para)\s+(?:el\s+|la\s+)?(?:curso|grado|materia|asignatura|seccion|sección)'
             .'|con\s+(?:el\s+|la\s+)?(?:profesor|profesora|docente)'
+            .'|(?:y\s+|,\s*)?(?:a\s+)?(?:al\s+|el\s+|la\s+)?(?:profesor(?:a)?|docente|maestr[oa])'
             .'|(?:tambien|también|ademas|además)'
             .').*$/iu';
         $name = preg_replace($cutPattern, '', $name) ?? $name;
