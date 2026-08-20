@@ -534,9 +534,19 @@ class AICommandHandlerController extends Controller
                 ]);
             }
 
-            $pendingActionsFromClient = $request->input('pending_actions');
-            if ($confirmed && (session()->has('nova_pending_actions') || is_array($pendingActionsFromClient))) {
-                $pendingToolCalls = session()->pull('nova_pending_actions', $pendingActionsFromClient);
+            if ($confirmed && ! session()->has('nova_pending_actions') && ! session()->has('nova_last_delete_args')) {
+                Log::warning('AICommandHandler: confirmed action without server-side pending plan', [
+                    'teacher_id' => $teacher->id,
+                ]);
+
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No encuentro una acción pendiente en esta sesión. Dime otra vez qué quieres crear o ajustar y lo ejecuto con el contexto actual.',
+                ], 422);
+            }
+
+            if ($confirmed && session()->has('nova_pending_actions')) {
+                $pendingToolCalls = session()->pull('nova_pending_actions');
                 Log::info('AICommandHandler: executing confirmed pending actions', [
                     'teacher_id' => $teacher->id,
                     'tool_calls_count' => count($pendingToolCalls),
@@ -594,7 +604,7 @@ class AICommandHandlerController extends Controller
                 ], fn ($v) => $v !== null));
             }
 
-            if (($confirmed || $explicitProceed) && ! session()->has('nova_pending_actions')) {
+            if (($confirmed || $explicitProceed) && session()->has('nova_last_delete_args')) {
                 $pendingDelete = session()->pull('nova_last_delete_args');
                 Log::debug('AI_DELETE_PROCEED', [
                     'teacher_id' => $teacher->id,
@@ -617,12 +627,10 @@ class AICommandHandlerController extends Controller
                     return response()->json($this->buildActionResponsePayload($results));
                 }
 
-                if ($confirmed) {
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'No encuentro una acción técnica pendiente. Dime otra vez qué quieres crear o ajustar y lo ejecuto con el contexto actual.',
-                    ]);
-                }
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No encuentro una acción de borrado pendiente en esta sesión.',
+                ], 422);
             }
 
             $today = now()->format('Y-m-d');

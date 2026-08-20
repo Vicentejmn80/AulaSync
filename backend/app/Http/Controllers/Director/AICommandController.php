@@ -15,6 +15,7 @@ use App\Models\User;
 use App\Services\DirectorActionService;
 use App\Services\DirectorAIInterpreterService;
 use App\Services\DirectorConversationContextService;
+use App\Services\PersonNameMatcher;
 use App\Services\PersonNameSanitizer;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -194,6 +195,7 @@ class AICommandController extends Controller
                     'prompt' => 'Entendí que también quieres crear o asignar cursos. Dime la materia y los grados, por ejemplo: "asígnale Inglés de 1ro a 6to".',
                 ]);
             }
+            $data = $this->resolveDeleteTarget($director, $intent, $data);
             $this->validateActionReferences($director, $intent, $data);
             $prepared[] = ['intent' => $intent, 'data' => $data];
         }
@@ -325,6 +327,39 @@ class AICommandController extends Controller
         if (in_array($intent, ['create_course', 'assign_teacher', 'unassign_teacher'], true) && ! empty($data['teacher_name'])) {
             $this->actionService->resolveAssigneeForDirector($director, (string) $data['teacher_name']);
         }
+    }
+
+    /**
+     * Resuelve el objetivo de eliminación antes de pedir confirmación.
+     * Si hay ambigüedad, lanza ValidationException para que Nova pida aclaración.
+     */
+    private function resolveDeleteTarget(User $director, string $intent, array $data): array
+    {
+        $colegioId = (int) $director->colegio_id;
+        $matcher = app(PersonNameMatcher::class);
+
+        if ($intent === 'delete_teacher' && ! empty($data['teacher_name'])) {
+            $match = $matcher->resolveTeacher($colegioId, (string) $data['teacher_name']);
+            if (! $match->isUnique()) {
+                throw ValidationException::withMessages([
+                    'teacher' => $match->message ?? 'No encontré al profesor indicado en este colegio.',
+                ]);
+            }
+            $data['teacher_name'] = $match->model->name;
+        }
+
+        if ($intent === 'delete_student' && ! empty($data['student_name'])) {
+            $match = $matcher->resolveStudent($colegioId, (string) $data['student_name']);
+            if (! $match->isUnique()) {
+                throw ValidationException::withMessages([
+                    'student' => $match->message ?? 'No encontré al alumno indicado en este colegio.',
+                ]);
+            }
+            $data['student_name'] = $match->model->name;
+            $data['student_id'] = $match->model->id;
+        }
+
+        return $data;
     }
 
     private function executePending(Request $request, User $director): JsonResponse
@@ -2478,43 +2513,32 @@ class AICommandController extends Controller
 
     private function resolveTeacherForQuery(int $colegioId, string $teacherName): User
     {
-        $name = mb_strtolower(trim($teacherName));
-        $teacher = User::query()
-            ->where('colegio_id', $colegioId)
-            ->where('role', 'profesor')
-            ->where(function ($query) use ($name) {
-                $query->whereRaw('LOWER(name) = ?', [$name])
-                    ->orWhereRaw('LOWER(name) like ?', ['%'.$name.'%']);
-            })
-            ->orderByRaw('CASE WHEN LOWER(name) = ? THEN 0 ELSE 1 END', [$name])
-            ->first();
+        $match = app(PersonNameMatcher::class)->resolveTeacher($colegioId, $teacherName);
 
-        if (! $teacher) {
+        if ($match->isAmbiguous() || $match->isNone()) {
             throw ValidationException::withMessages([
-                'teacher' => 'No encontré al profesor indicado en este colegio.',
+                'teacher' => $match->message ?? 'No encontré al profesor indicado en este colegio.',
             ]);
         }
+
+        /** @var User $teacher */
+        $teacher = $match->model;
 
         return $teacher;
     }
 
     private function resolveStudentForQuery(int $colegioId, string $studentName): Student
     {
-        $name = mb_strtolower(trim($studentName));
-        $student = Student::query()
-            ->where('colegio_id', $colegioId)
-            ->where(function ($query) use ($name) {
-                $query->whereRaw('LOWER(name) = ?', [$name])
-                    ->orWhereRaw('LOWER(name) like ?', ['%'.$name.'%']);
-            })
-            ->orderByRaw('CASE WHEN LOWER(name) = ? THEN 0 ELSE 1 END', [$name])
-            ->first();
+        $match = app(PersonNameMatcher::class)->resolveStudent($colegioId, $studentName);
 
-        if (! $student) {
+        if ($match->isAmbiguous() || $match->isNone()) {
             throw ValidationException::withMessages([
-                'student' => 'No encontré al alumno indicado en este colegio.',
+                'student' => $match->message ?? 'No encontré al alumno indicado en este colegio.',
             ]);
         }
+
+        /** @var Student $student */
+        $student = $match->model;
 
         return $student;
     }

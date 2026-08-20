@@ -131,7 +131,7 @@ class DirectorAICommandTest extends TestCase
             'name' => 'Mariano Garcia',
         ]);
         $this->assertTrue(
-            \App\Models\Student::query()
+            Student::query()
                 ->where('colegio_id', $colegio->id)
                 ->whereRaw('LOWER(name) = ?', ['laureano marquez'])
                 ->exists()
@@ -1099,19 +1099,133 @@ class DirectorAICommandTest extends TestCase
         $this->assertStringContainsString('varias coincidencias', (string) $response->json('message'));
     }
 
+    public function test_mariano_dirty_name_resolves_uniquely_for_deletion(): void
+    {
+        [$director, $colegio] = $this->directorContext();
+        Student::create([
+            'colegio_id' => $colegio->id,
+            'teacher_id' => $director->id,
+            'name' => 'Mariano Tambien Que Te Dije',
+            'grade' => '3ro',
+            'section' => 'A',
+            'family_code' => 'NV-MAR-DIRTY',
+        ]);
+
+        $draft = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'Elimina al alumno Mariano',
+        ]);
+
+        $draft->assertOk()
+            ->assertJsonPath('pending_actions.0.intent', 'delete_student');
+
+        $execute = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'confirmed' => true,
+            'pending_actions' => $draft->json('pending_actions'),
+        ]);
+
+        $execute->assertOk();
+        $this->assertTrue((bool) $execute->json('actions.0.success'));
+        $this->assertDatabaseMissing('students', [
+            'colegio_id' => $colegio->id,
+            'family_code' => 'NV-MAR-DIRTY',
+        ]);
+    }
+
+    public function test_two_marianos_are_ambiguous_and_prevent_deletion(): void
+    {
+        [$director, $colegio] = $this->directorContext();
+        Student::create([
+            'colegio_id' => $colegio->id,
+            'teacher_id' => $director->id,
+            'name' => 'Mariano Pérez',
+            'grade' => '3ro',
+            'section' => 'A',
+            'family_code' => 'NV-MAR-PEREZ',
+        ]);
+        Student::create([
+            'colegio_id' => $colegio->id,
+            'teacher_id' => $director->id,
+            'name' => 'Mariano Gómez',
+            'grade' => '3ro',
+            'section' => 'A',
+            'family_code' => 'NV-MAR-GOMEZ',
+        ]);
+
+        $response = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'Elimina al alumno Mariano',
+        ]);
+
+        $response->assertUnprocessable()
+            ->assertJsonPath('needs_clarification', true);
+        $this->assertStringContainsString('varias coincidencias', (string) $response->json('message'));
+
+        $this->assertDatabaseHas('students', [
+            'colegio_id' => $colegio->id,
+            'family_code' => 'NV-MAR-PEREZ',
+        ]);
+        $this->assertDatabaseHas('students', [
+            'colegio_id' => $colegio->id,
+            'family_code' => 'NV-MAR-GOMEZ',
+        ]);
+    }
+
+    public function test_student_deletion_respects_colegio_isolation(): void
+    {
+        [$director1, $colegio1] = $this->directorContext();
+        [$director2, $colegio2] = $this->directorContext('Colegio Norte', 'COC-2002');
+
+        Student::create([
+            'colegio_id' => $colegio1->id,
+            'teacher_id' => $director1->id,
+            'name' => 'Mariano Compartido',
+            'grade' => '3ro',
+            'section' => 'A',
+            'family_code' => 'NV-MAR-A',
+        ]);
+        Student::create([
+            'colegio_id' => $colegio2->id,
+            'teacher_id' => $director2->id,
+            'name' => 'Mariano Compartido',
+            'grade' => '3ro',
+            'section' => 'A',
+            'family_code' => 'NV-MAR-B',
+        ]);
+
+        $draft = $this->actingAs($director1)->postJson(route('director.ai.command'), [
+            'prompt' => 'Elimina al alumno Mariano Compartido',
+        ]);
+        $draft->assertOk()->assertJsonPath('pending_actions.0.intent', 'delete_student');
+
+        $execute = $this->actingAs($director1)->postJson(route('director.ai.command'), [
+            'confirmed' => true,
+            'pending_actions' => $draft->json('pending_actions'),
+        ]);
+        $execute->assertOk();
+        $this->assertTrue((bool) $execute->json('actions.0.success'));
+
+        $this->assertDatabaseMissing('students', [
+            'colegio_id' => $colegio1->id,
+            'family_code' => 'NV-MAR-A',
+        ]);
+        $this->assertDatabaseHas('students', [
+            'colegio_id' => $colegio2->id,
+            'family_code' => 'NV-MAR-B',
+        ]);
+    }
+
     /**
      * @return array{0:User,1:Colegio}
      */
-    private function directorContext(): array
+    private function directorContext(string $name = 'Colegio Central', string $code = 'COC-1001'): array
     {
         $director = User::factory()->create([
             'role' => 'director',
             'onboarding_completed' => true,
         ]);
         $colegio = Colegio::create([
-            'name' => 'Colegio Central',
-            'invite_code' => 'COC-1001',
-            'codes_pin' => Colegio::hashPinFromInvite('COC-1001'),
+            'name' => $name,
+            'invite_code' => $code,
+            'codes_pin' => Colegio::hashPinFromInvite($code),
             'director_user_id' => $director->id,
         ]);
         $director->update(['colegio_id' => $colegio->id]);

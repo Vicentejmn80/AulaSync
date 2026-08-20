@@ -14,7 +14,8 @@ use Illuminate\Validation\ValidationException;
 class DirectorActionService
 {
     public function __construct(
-        private StudentEnrollmentService $enrollmentService
+        private StudentEnrollmentService $enrollmentService,
+        private PersonNameMatcher $nameMatcher,
     ) {}
 
     /**
@@ -810,29 +811,32 @@ class DirectorActionService
             ]);
         }
 
-        $teacher = User::query()
-            ->where('colegio_id', $colegioId)
-            ->where('role', 'profesor')
-            ->where(function ($query) use ($name) {
-                $needle = mb_strtolower($name);
-                $query->whereRaw('LOWER(name) = ?', [$needle])
-                    ->orWhereRaw('LOWER(name) like ?', ['%'.$needle.'%']);
-            })
-            ->orderByRaw('CASE WHEN LOWER(name) = ? THEN 0 ELSE 1 END', [mb_strtolower($name)])
-            ->first();
-
-        if (! $teacher) {
+        $match = $this->nameMatcher->resolveTeacher($colegioId, $name);
+        if ($match->isNone()) {
             throw ValidationException::withMessages([
-                'teacher' => 'No encontré al profesor "'.$name.'" en este colegio.',
+                'teacher' => $match->message ?? 'No encontré al profesor "'.$name.'" en este colegio.',
+            ]);
+        }
+        if ($match->isAmbiguous()) {
+            throw ValidationException::withMessages([
+                'teacher' => $match->message,
             ]);
         }
 
+        /** @var User $teacher */
+        $teacher = $match->model;
+
         return DB::transaction(function () use ($director, $colegioId, $teacher) {
             $this->detachTeacherFromSchool($director, $colegioId, collect([$teacher]));
-            TeacherInvite::query()
-                ->where('colegio_id', $colegioId)
-                ->whereRaw('LOWER(name) = ?', [mb_strtolower($teacher->name)])
-                ->delete();
+
+            $inviteMatch = $this->nameMatcher->resolveInvite($colegioId, $teacher->name);
+            if ($inviteMatch->isUnique() && $inviteMatch->model instanceof TeacherInvite) {
+                TeacherInvite::query()
+                    ->where('colegio_id', $colegioId)
+                    ->where('id', $inviteMatch->model->id)
+                    ->delete();
+            }
+
             $teacher->delete();
 
             $stillExists = User::query()
@@ -951,40 +955,45 @@ class DirectorActionService
     }
 
     /**
-     * @param  array{student_name:string}  $payload
+     * @param  array{student_name:string, student_id?:int|null}  $payload
      */
     public function deleteStudent(User $director, array $payload): array
     {
         $colegioId = $this->requireColegioId($director);
-        $sanitizer = app(PersonNameSanitizer::class);
-        $name = $sanitizer->searchNeedle((string) ($payload['student_name'] ?? ''));
-        if ($name === '') {
-            throw ValidationException::withMessages([
-                'student' => 'Indica el nombre del alumno a eliminar.',
-            ]);
-        }
+        $rawName = trim((string) ($payload['student_name'] ?? ''));
 
-        $likeLoose = '%'.str_replace(' ', '%', $name).'%';
-
-        $query = Student::query()->where('colegio_id', $colegioId);
         if (! empty($payload['student_id'])) {
-            $query->where('id', (int) $payload['student_id']);
+            $student = Student::query()
+                ->where('colegio_id', $colegioId)
+                ->where('id', (int) $payload['student_id'])
+                ->first();
+
+            if (! $student) {
+                throw ValidationException::withMessages([
+                    'student' => 'No encontré al alumno indicado en este colegio.',
+                ]);
+            }
         } else {
-            $query->where(function ($inner) use ($name, $likeLoose) {
-                $inner->whereRaw('LOWER(name) = ?', [$name])
-                    ->orWhereRaw('LOWER(TRIM(name)) = ?', [$name])
-                    ->orWhereRaw("LOWER(REPLACE(name, '  ', ' ')) like ?", ['%'.$name.'%'])
-                    ->orWhereRaw('LOWER(name) like ?', [$likeLoose]);
-            })
-                ->orderByRaw('CASE WHEN LOWER(TRIM(name)) = ? THEN 0 WHEN LOWER(name) like ? THEN 1 ELSE 2 END', [$name, $name.'%']);
-        }
+            if ($rawName === '') {
+                throw ValidationException::withMessages([
+                    'student' => 'Indica el nombre del alumno a eliminar.',
+                ]);
+            }
 
-        $student = $query->first();
+            $match = $this->nameMatcher->resolveStudent($colegioId, $rawName);
+            if ($match->isNone()) {
+                throw ValidationException::withMessages([
+                    'student' => $match->message ?? 'No encontré al alumno "'.$rawName.'" en este colegio.',
+                ]);
+            }
+            if ($match->isAmbiguous()) {
+                throw ValidationException::withMessages([
+                    'student' => $match->message,
+                ]);
+            }
 
-        if (! $student) {
-            throw ValidationException::withMessages([
-                'student' => 'No encontré al alumno "'.$name.'" en este colegio.',
-            ]);
+            /** @var Student $student */
+            $student = $match->model;
         }
 
         return DB::transaction(function () use ($colegioId, $student) {
@@ -1074,69 +1083,22 @@ class DirectorActionService
      */
     private function resolveAssigneeByName(int $colegioId, string $name): array
     {
-        $needle = mb_strtolower(trim($name));
-        $teacher = User::query()
-            ->where('colegio_id', $colegioId)
-            ->where('role', 'profesor')
-            ->whereRaw('LOWER(name) = ?', [$needle])
-            ->first();
+        $match = $this->nameMatcher->resolveTeacherOrInvite($colegioId, $name);
 
-        if ($teacher) {
-            return [$teacher->id, null, $teacher->name];
-        }
-
-        $invite = TeacherInvite::query()
-            ->where('colegio_id', $colegioId)
-            ->whereNull('claimed_by')
-            ->whereNull('claimed_at')
-            ->whereNull('revoked_at')
-            ->whereRaw('LOWER(name) = ?', [$needle])
-            ->where(function ($query) {
-                $query->whereNull('expires_at')
-                    ->orWhere('expires_at', '>', now());
-            })
-            ->first();
-
-        if ($invite) {
-            return [null, $invite->id, $invite->display_name.' ('.$invite->invite_code.')'];
-        }
-
-        $teachers = User::query()
-            ->where('colegio_id', $colegioId)
-            ->where('role', 'profesor')
-            ->whereRaw('LOWER(name) like ?', ['%'.$needle.'%'])
-            ->get(['id', 'name']);
-        $invites = TeacherInvite::query()
-            ->where('colegio_id', $colegioId)
-            ->whereNull('claimed_by')
-            ->whereNull('claimed_at')
-            ->whereNull('revoked_at')
-            ->whereRaw('LOWER(name) like ?', ['%'.$needle.'%'])
-            ->where(function ($query) {
-                $query->whereNull('expires_at')
-                    ->orWhere('expires_at', '>', now());
-            })
-            ->get(['id', 'name', 'invite_code']);
-
-        $matches = $teachers->map(fn ($item) => [
-            'teacher_id' => $item->id,
-            'invite_id' => null,
-            'label' => $item->name,
-        ])->merge($invites->map(fn ($item) => [
-            'teacher_id' => null,
-            'invite_id' => $item->id,
-            'label' => $item->name.' ('.$item->invite_code.')',
-        ]))->values();
-
-        if ($matches->count() === 1) {
-            $match = $matches->first();
-
-            return [$match['teacher_id'], $match['invite_id'], $match['label']];
-        }
-        if ($matches->count() > 1) {
+        if ($match->isAmbiguous() || $match->isNone()) {
             throw ValidationException::withMessages([
-                'teacher' => 'Encontré varias coincidencias: '.$matches->pluck('label')->implode(', ').'. Indica el nombre completo o código DOC-.',
+                'teacher' => $match->message ?? 'No encontré un profesor o invitación activa con ese nombre.',
             ]);
+        }
+
+        $model = $match->model;
+
+        if ($model instanceof User) {
+            return [$model->id, null, $match->label];
+        }
+
+        if ($model instanceof TeacherInvite) {
+            return [null, $model->id, $match->label];
         }
 
         throw ValidationException::withMessages([
@@ -1156,11 +1118,10 @@ class DirectorActionService
         }
 
         if ($teacherName) {
-            return TeacherInvite::query()
-                ->where('colegio_id', $colegioId)
-                ->whereRaw('LOWER(name) = ?', [mb_strtolower(trim($teacherName))])
-                ->latest('id')
-                ->first();
+            $match = $this->nameMatcher->resolveInvite($colegioId, $teacherName);
+            if ($match->isUnique() && $match->model instanceof TeacherInvite) {
+                return $match->model;
+            }
         }
 
         return null;
@@ -1178,29 +1139,18 @@ class DirectorActionService
 
     private function resolveUniqueStudent(int $colegioId, string $name): Student
     {
-        $needle = mb_strtolower(trim($name));
-        $exact = Student::query()
-            ->where('colegio_id', $colegioId)
-            ->whereRaw('LOWER(name) = ?', [$needle])
-            ->first();
-        if ($exact) {
-            return $exact;
-        }
+        $match = $this->nameMatcher->resolveStudent($colegioId, $name);
 
-        $matches = Student::query()
-            ->where('colegio_id', $colegioId)
-            ->whereRaw('LOWER(name) like ?', ['%'.$needle.'%'])
-            ->get();
-        if ($matches->count() === 1) {
-            return $matches->first();
-        }
-        if ($matches->count() > 1) {
+        if ($match->isAmbiguous() || $match->isNone()) {
             throw ValidationException::withMessages([
-                'student' => 'Encontré varios alumnos: '.$matches->pluck('name')->implode(', ').'. Indica el nombre completo.',
+                'student' => $match->message ?? 'No encontré al alumno indicado en este colegio.',
             ]);
         }
 
-        throw ValidationException::withMessages(['student' => 'No encontré al alumno indicado en este colegio.']);
+        /** @var Student $student */
+        $student = $match->model;
+
+        return $student;
     }
 
     private function requireColegioId(User $director): int
