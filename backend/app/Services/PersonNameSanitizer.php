@@ -4,7 +4,7 @@ namespace App\Services;
 
 class PersonNameSanitizer
 {
-    private const SUBJECT_ALIASES = 'matem[aá]ticas?|ingl[eé]s|lenguaje|lengua|ciencias?|historia|geograf[ií]a|f[ií]sica|qu[ií]mica|biolog[ií]a|educaci[oó]n f[ií]sica';
+    private const SUBJECT_ALIASES = 'matem[aá]ticas?|ingl[eé]s|lenguaje|lengua|ciencias?|historia|geograf[ií]a|f[ií]sica|qu[ií]mica|biolog[ií]a|educaci[oó]n f[ií]sica|robotica|rob[oó]tica';
 
     /**
      * Extrae un nombre de persona limpio, sin preposiciones, grado, curso ni conectores.
@@ -24,7 +24,7 @@ class PersonNameSanitizer
 
         $name = $this->stripFillers($name);
 
-        $name = preg_replace('/^(?:al|a la|el|la|los|las)\s+/iu', '', $name) ?? $name;
+        $name = preg_replace('/^(?:a|al|a la|el|la|los|las)\s+/iu', '', $name) ?? $name;
         $name = preg_replace('/^(?:alumno|alumna|estudiante)s?\s+/iu', '', $name) ?? $name;
         $name = preg_replace('/^(?:profesor(?:a)?|docente)\s+/iu', '', $name) ?? $name;
         $name = preg_replace('/^(?:de\s+(?:la\s+|el\s+)?)(?:'.self::SUBJECT_ALIASES.')\s+/iu', '', $name) ?? $name;

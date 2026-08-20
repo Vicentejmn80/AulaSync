@@ -201,7 +201,7 @@ class AICommandController extends Controller
             if ($intent === 'create_teacher'
                 && $this->teacherClauseMentionsCourses($rawText)
                 && ! $hasStudentAction
-                && (empty($data['subject_name']) || empty($data['grades']))) {
+                && empty($data['subject_name'])) {
                 throw ValidationException::withMessages([
                     'prompt' => 'Entendí que también quieres crear o asignar cursos. Dime la materia y los grados, por ejemplo: "asígnale Inglés de 1ro a 6to".',
                 ]);
@@ -1085,8 +1085,11 @@ class AICommandController extends Controller
 
         // Eliminar / borrar / quitar / remover / limpiar / cancelar (antes de crear, para no confundir verbos).
         if ($this->hasDeleteVerb($value)) {
-            if (preg_match('/\b(?:invitaci[oó]n|invitaciones)\b/', $value)) {
+            if (preg_match('/\b(?:invitacion|invitaci[oó]n|invitaciones|invite|invites)\b/', $value)) {
                 if (preg_match('/\b(?:profesor(?:a)?|docente)\b/', $value) || preg_match('/\b(?:de|del)\s+[a-z]+\s+profesor\b/', $value)) {
+                    return 'delete_teacher_invite';
+                }
+                if (! preg_match('/\b(?:alumno|estudiante|curso|materia|asignatura)s?\b/', $value)) {
                     return 'delete_teacher_invite';
                 }
             }
@@ -1204,6 +1207,10 @@ class AICommandController extends Controller
                 '/\b(?:cre(?:a|ar|es|e|o)|creame|invita)\s+(?:(?:a|al)\s+|el\s+|la\s+)?(?:profesor(?:a)?|docente)\b/',
                 $value
             );
+            $wantsAssignTeacher = (bool) preg_match(
+                '/\b(?:as[ií]gna(?:le)?|dara|dará|agrega(?:le)?)\b/',
+                $value
+            );
             $wantsStudent = (bool) preg_match('/\b(?:alumno|estudiante)s?\b/', $value)
                 && (bool) preg_match('/\b(?:cre(?:a|ar|es|e|o)|creame|agrega|matricula)\b/', $value);
             $wantsEnroll = $wantsStudent && (
@@ -1230,6 +1237,32 @@ class AICommandController extends Controller
                         $data = $sharedData;
                         $data['teacher_name'] = $name;
                         $actions[] = ['intent' => 'create_teacher', 'data' => $data];
+                    }
+                }
+            }
+
+            if ($wantsAssignTeacher) {
+                $assignSegments = preg_split(
+                    '/\s+y\s+(?=a\s+[A-Za-zÁÉÍÓÚáéíóúÑñ]|as[ií]gna(?:le)?\s+|dara\s+|dará\s+|agrega(?:le)?\s+)/iu',
+                    $clause,
+                    -1,
+                    PREG_SPLIT_NO_EMPTY
+                );
+                if ($assignSegments === [] || count($assignSegments) === 1) {
+                    [$data, $msg] = $this->parseAssignTeacher($director, $clause);
+                    if (! $msg && ! empty($data['teacher_name']) && ! empty($data['subject_name']) && $data['grades'] !== []) {
+                        $actions[] = ['intent' => 'assign_teacher', 'data' => $data];
+                    }
+                } else {
+                    foreach ($assignSegments as $segment) {
+                        $segment = trim((string) $segment);
+                        if ($segment === '') {
+                            continue;
+                        }
+                        [$data, $msg] = $this->parseAssignTeacher($director, $segment);
+                        if (! $msg && ! empty($data['teacher_name']) && ! empty($data['subject_name']) && $data['grades'] !== []) {
+                            $actions[] = ['intent' => 'assign_teacher', 'data' => $data];
+                        }
                     }
                 }
             }
@@ -1307,6 +1340,21 @@ class AICommandController extends Controller
 
                 return $left === $right || str_contains($left, $right) || str_contains($right, $left);
             }
+            if ($intent === 'assign_teacher') {
+                $existingName = trim((string) ($action['data']['teacher_name'] ?? ''));
+                $candidateName = trim((string) ($candidate['data']['teacher_name'] ?? ''));
+                $existingSubject = trim((string) ($action['data']['subject_name'] ?? ''));
+                $candidateSubject = trim((string) ($candidate['data']['subject_name'] ?? ''));
+                if ($existingName === '' || $candidateName === '') {
+                    continue;
+                }
+                $leftName = mb_strtolower($existingName);
+                $rightName = mb_strtolower($candidateName);
+                $sameName = $leftName === $rightName || str_contains($leftName, $rightName) || str_contains($rightName, $leftName);
+                $sameSubject = $existingSubject !== '' && $candidateSubject !== '' && mb_strtolower($existingSubject) === mb_strtolower($candidateSubject);
+
+                return $sameName && $sameSubject;
+            }
             if (in_array($intent, ['create_students_batch', 'enroll_students_course'], true)) {
                 $existing = collect($action['data']['names'] ?? [])->map(fn ($name) => mb_strtolower(trim((string) $name)));
                 $incoming = collect($candidate['data']['names'] ?? [])->map(fn ($name) => mb_strtolower(trim((string) $name)));
@@ -1376,7 +1424,7 @@ class AICommandController extends Controller
     private function parseDeleteInvite(User $director, string $text): array
     {
         $name = $this->extractNamedPersonAfterRole($text, 'profesor');
-        if (! $name && preg_match('/invitaci[oó]n\s+(?:del\s+profesor|de\s+)?([A-Za-zÁÉÍÓÚáéíóúÑñ][A-Za-zÁÉÍÓÚáéíóúÑñ\s]{1,80}?)(?:\s+(?:y\s+(?:al|el|la)\s+profesor|\.|$))/iu', $text, $m)) {
+        if (! $name && preg_match('/invitaci[oó]n\s+(?:del\s+profesor|de\s+)?([A-Za-zÁÉÍÓÚáéíóúÑñ]+(?:\s+[A-Za-zÁÉÍÓÚáéíóúÑñ]+){0,3})\b/iu', $text, $m)) {
             $name = trim((string) $m[1]);
         }
         $name = $name ? $this->sanitizePersonName($name) : null;
@@ -2210,6 +2258,8 @@ class AICommandController extends Controller
             '/profesor(?:a)?\s+(.+?)(?:\s+(?:donde|al\s+que|con\s+la|con\s+el|y\s+quiero|y\s+as[ií]gna|y\s+agrega|y\s+crea|que\s+crea|para\s+as[ií]gna|tambien|también|dara|dará)|,|\.|$)/iu',
             '/(?:as[ií]gna(?:le)?|agrega(?:le)?|asignar)\s+(?:los\s+cursos\s+|las\s+materias\s+)?(?:a\s+)?([A-Za-zÁÉÍÓÚáéíóúÑñ][A-Za-zÁÉÍÓÚáéíóúÑñ\s]{1,80})$/iu',
             '/^(.+?)\s+(?:dara|dará|asigna)/iu',
+            '/(?:as[ií]gna(?:le)?|agrega(?:le)?|asignar|dara|dará)\s+(?:a\s+|al\s+)?([A-Za-zÁÉÍÓÚáéíóúÑñ][A-Za-zÁÉÍÓÚáéíóúÑñ\s]{1,80}?)(?:\s+(?:la\s+materia|el\s+curso|la\s+asignatura|robotica|rob[oó]tica|matematic|ingl[eé]s|lenguaje|ciencias|historia|fisica|quimica|biologia|geografia|de\s+[1-6]|para\s+el|del\s+curso)|,|\.|$)/iu',
+            '/^(?:a\s+|al\s+)([A-Za-zÁÉÍÓÚáéíóúÑñ][A-Za-zÁÉÍÓÚáéíóúÑñ\s]{1,80}?)(?:\s+(?:as[ií]gna(?:le)?|dara|dará|agrega(?:le)?))/iu',
         ];
         foreach ($patterns as $pattern) {
             if (preg_match($pattern, $text, $m)) {
@@ -2393,6 +2443,8 @@ class AICommandController extends Controller
             'quimica' => 'Química',
             'biologia' => 'Biología',
             'educacion fisica' => 'Educación Física',
+            'robotica' => 'Robótica',
+            'robotica' => 'Robótica',
         ];
         foreach ($aliases as $alias => $canonical) {
             if (preg_match('/\b'.preg_quote($alias, '/').'\b/u', $normalized)) {

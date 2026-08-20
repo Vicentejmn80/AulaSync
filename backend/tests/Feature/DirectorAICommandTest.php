@@ -1470,6 +1470,127 @@ class DirectorAICommandTest extends TestCase
     }
 
     /**
+     * F1. "borra la invitación de mariano" detecta delete_teacher_invite sin depender de tilde.
+     */
+    public function test_delete_invite_intent_detected_without_tilde(): void
+    {
+        [$director, $colegio] = $this->directorContext();
+        TeacherInvite::create([
+            'name' => 'Mariano López',
+            'email' => 'mariano@test.com',
+            'colegio_id' => $colegio->id,
+            'subject_name' => 'Robótica',
+            'created_by' => $director->id,
+            'invite_code' => 'MAR-LOP-001',
+        ]);
+
+        $response = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'borra la invitacion de mariano',
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath('requires_confirmation', true);
+        $this->assertStringContainsStringIgnoringCase('Cancelar la invitación pendiente de Mariano', (string) $response->json('message'));
+        $this->assertStringContainsStringIgnoringCase('Cancelar la invitación pendiente de Mariano', (string) $response->json('message'));
+    }
+
+    /**
+     * F2. Crear dos profesores con materias distintas pero sin grados produce dos acciones
+     * y pregunta confirmación en lugar de lanzar excepción.
+     */
+    public function test_create_two_teachers_with_subjects_no_grades_produces_confirmation(): void
+    {
+        [$director, $colegio] = $this->directorContext();
+
+        $response = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'crea al profesor mariano lopez para el curso de robotica y crea al profesor mariano guevara para el curso de lenguaje',
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath('requires_confirmation', true);
+        $message = (string) $response->json('message');
+        $this->assertStringContainsStringIgnoringCase('Mariano Lopez', $message);
+        $this->assertStringContainsStringIgnoringCase('Robótica', $message);
+        $this->assertStringContainsStringIgnoringCase('Mariano Guevara', $message);
+        $this->assertStringContainsStringIgnoringCase('Lenguaje', $message);
+        $message = (string) $response->json('message');
+        $this->assertStringContainsStringIgnoringCase('Mariano Lopez', $message);
+        $this->assertStringContainsStringIgnoringCase('Robótica', $message);
+        $this->assertStringContainsStringIgnoringCase('Mariano Guevara', $message);
+        $this->assertStringContainsStringIgnoringCase('Lenguaje', $message);
+    }
+
+    /**
+     * F3. Asignar materias a dos profesores existentes en una sola frase genera dos acciones
+     * assign_teacher con nombres limpios y materias correctas.
+     */
+    public function test_assign_two_teachers_in_one_phrase_produces_two_actions(): void
+    {
+        [$director, $colegio] = $this->directorContext();
+        foreach (['1ro', '2do', '3ro', '4to', '5to', '6to'] as $grade) {
+            Course::create([
+                'teacher_id' => $director->id,
+                'colegio_id' => $colegio->id,
+                'subject_name' => 'Robótica',
+                'grade' => $grade,
+                'section' => null,
+                'school_year' => '2025-2026',
+                'invite_code' => 'ROB-' . strtoupper($grade),
+            ]);
+            Course::create([
+                'teacher_id' => $director->id,
+                'colegio_id' => $colegio->id,
+                'subject_name' => 'Lenguaje',
+                'grade' => $grade,
+                'section' => null,
+                'school_year' => '2025-2026',
+                'invite_code' => 'LEN-' . strtoupper($grade),
+            ]);
+        }
+
+        $lopez = User::factory()->create([
+            'name' => 'Mariano López',
+            'role' => 'profesor',
+            'colegio_id' => $colegio->id,
+            'onboarding_completed' => true,
+        ]);
+        $guevara = User::factory()->create([
+            'name' => 'Mariano Guevara',
+            'role' => 'profesor',
+            'colegio_id' => $colegio->id,
+            'onboarding_completed' => true,
+        ]);
+
+        $response = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'asignale a mariano lopez robotica de 1ero a 6to grado y a mariano guevara asignale el curso de lenguaje de 1ero a 6to grado',
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath('requires_confirmation', true);
+        $message = (string) $response->json('message');
+        $this->assertStringContainsStringIgnoringCase('Mariano Lopez', $message);
+        $this->assertStringContainsStringIgnoringCase('Robótica', $message);
+        $this->assertStringContainsStringIgnoringCase('Mariano Guevara', $message);
+        $this->assertStringContainsStringIgnoringCase('Lenguaje', $message);
+
+        // Confirmar
+        $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'sí',
+        ]);
+
+        $this->assertDatabaseHas('courses', [
+            'teacher_id' => $lopez->id,
+            'subject_name' => 'Robótica',
+            'colegio_id' => $colegio->id,
+        ]);
+        $this->assertDatabaseHas('courses', [
+            'teacher_id' => $guevara->id,
+            'subject_name' => 'Lenguaje',
+            'colegio_id' => $colegio->id,
+        ]);
+    }
+
+    /**
      * @return array{0:User,1:Colegio}
      */
     private function directorContext(string $name = 'Colegio Central', string $code = 'COC-1001'): array
