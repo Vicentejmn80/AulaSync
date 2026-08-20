@@ -349,7 +349,7 @@ Route::middleware(['auth'])->group(function () {
                 ]);
                 $settings = UserSettings::firstOrCreate(
                     ['user_id' => Auth::id()],
-                    []
+                    ['lesson_template' => \App\Support\LessonTemplate::CLASSIC]
                 );
                 $settings->update(['lesson_template' => $data['lesson_template']]);
 

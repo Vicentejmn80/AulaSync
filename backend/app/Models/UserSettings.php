@@ -9,6 +9,10 @@ class UserSettings extends Model
 {
     protected $table = 'user_settings';
 
+    protected $attributes = [
+        'lesson_template' => 'clasica',
+    ];
+
     protected $fillable = [
         'user_id',
         'materias',
@@ -40,6 +44,15 @@ class UserSettings extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    protected static function booted(): void
+    {
+        static::saving(function (UserSettings $settings) {
+            if (blank($settings->lesson_template)) {
+                $settings->lesson_template = \App\Support\LessonTemplate::CLASSIC;
+            }
+        });
     }
 
     public function getMateriasListAttribute(): string

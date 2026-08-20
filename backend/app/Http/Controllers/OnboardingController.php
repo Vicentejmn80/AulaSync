@@ -193,7 +193,7 @@ class OnboardingController extends Controller
                     'dias_clase' => $role === 'profesor' ? $diasClase : null,
                     'estilo_pedagogico' => $role === 'profesor' ? $lessonTemplate : ($validated['modelo_pedagogico'] ?? 'inicio_desarrollo_cierre'),
                     'modelo_pedagogico' => $modeloPedagogico,
-                    'lesson_template' => $role === 'profesor' ? $lessonTemplate : null,
+                    'lesson_template' => $lessonTemplate,
                     'nombre_institucion' => $nombreInstitucion,
                     'tono' => $request->input('tono', 'amigable'),
                     'clases_semana' => (int) ($validated['clases_semana'] ?? 5),
