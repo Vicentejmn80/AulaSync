@@ -141,8 +141,19 @@ PROHIBIDO (tono robótico): "no se obtuvo información", "consulte con el área 
 "no pude encontrar datos", "error de consulta". Si algo no está en las listas, responde con empatía
 ("todavía no veo a esa persona en el colegio") y ofrece crearla o invitarla en el acto.
 
-Consultas (códigos, conteos, quién es, qué cursos tiene, estado): responde SOLO con texto, sin tools.
+Consultas de roster (códigos DOC-/NV-, conteos del resumen de abajo, quién es, qué cursos tiene): responde SOLO con texto, sin tools.
 Mutaciones (crear, asignar, matricular, actualizar, eliminar): OBLIGATORIO llamar herramientas. Laravel ejecuta.
+Notas, promedios, faltas, rankings, comparaciones y tendencias: NUNCA las inventes ni las leas del roster; usa query_academic.
+
+ANALÍTICA EN TIEMPO REAL (OBLIGATORIO usar query_academic):
+- "¿Cómo van los de 4to A?", "¿Quién tiene mejor promedio?", "¿Quién tiene más faltas?", "Compara 2do con 4to",
+  "tendencia de notas", "¿cómo va Carlos?" (sin materia) → llama query_academic con el query_type adecuado
+  (class_performance, student_performance, rankings, trends, compare_grades, attendance).
+- Los datos de notas, promedios y faltas NO están en el roster de abajo: la única forma de saberlos es query_academic.
+- El resultado viene en Markdown con tablas y rankings (1º, 2º, 3º). Preséntalo tal cual, con el sándwich.
+- CERO ALUCINACIONES: si el resultado no menciona un alumno, grado, curso o nota, NO lo inventes ni lo des por sentado.
+  Di con claridad qué no encontraste ("todavía no veo datos de 4to A") y ofrece el siguiente paso (crear el curso,
+  cargar notas, revisar la asistencia).
 
 Reglas operativas:
 1. MULTI-INTENT: si el mensaje trae VARIAS órdenes, llama TODAS las tools en paralelo. Nunca te quedes solo con la primera.
@@ -302,7 +313,7 @@ PROMPT;
                 'required' => ['student_name'],
             ],
             'query_academic' => [
-                'description' => 'Consultar profesores, alumnos, cursos, notas, faltas o rendimiento.',
+                'description' => 'Consultar profesores, alumnos, cursos, notas, faltas o rendimiento. Para analítica en tiempo real (rendimiento por grado/sección, ranking de promedios o faltas, comparar grados, tendencias) usa los query_type class_performance, student_performance, attendance, rankings, trends o compare_grades.',
                 'properties' => [
                     'query_type' => [
                         'type' => 'string',
@@ -311,12 +322,20 @@ PROMPT;
                             'student_subject_overview', 'student_absences', 'student_evaluations',
                             'school_stats', 'school_courses', 'school_teachers', 'grade_overview',
                             'frequent_absentees', 'subject_at_risk', 'at_risk_students',
+                            'class_performance', 'student_performance', 'attendance',
+                            'rankings', 'trends', 'compare_grades', 'students_list',
                         ],
                     ],
                     'teacher_name' => ['type' => ['string', 'null']],
                     'student_name' => ['type' => ['string', 'null']],
                     'subject_name' => ['type' => ['string', 'null']],
                     'grade' => ['type' => ['string', 'null']],
+                    'grade_b' => ['type' => ['string', 'null']],
+                    'section' => ['type' => ['string', 'null']],
+                    'metric' => ['type' => ['string', 'null'], 'enum' => ['average', 'absences', null]],
+                    'limit' => ['type' => ['integer', 'null']],
+                    'days' => ['type' => ['integer', 'null']],
+                    'weeks' => ['type' => ['integer', 'null']],
                     'stat' => ['type' => ['string', 'null'], 'enum' => ['teachers', 'students', 'courses', null]],
                 ],
                 'required' => ['query_type'],
@@ -364,6 +383,9 @@ PROMPT;
         }
         if (isset($arguments['grade']) && is_string($arguments['grade'])) {
             $arguments['grade'] = $this->normalizeGrade($arguments['grade']);
+        }
+        if (isset($arguments['grade_b']) && is_string($arguments['grade_b'])) {
+            $arguments['grade_b'] = $this->normalizeGrade($arguments['grade_b']);
         }
         if (isset($arguments['new_grade']) && is_string($arguments['new_grade'])) {
             $arguments['new_grade'] = $this->normalizeGrade($arguments['new_grade']);

@@ -12,6 +12,7 @@ use App\Models\Student;
 use App\Models\TeacherInvite;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 class DirectorAICommandTest extends TestCase
@@ -364,8 +365,8 @@ class DirectorAICommandTest extends TestCase
             'services.openai.director_enabled' => true,
             'services.openai.director_test_enabled' => true,
         ]);
-        \Illuminate\Support\Facades\Http::fake([
-            'api.openai.com/*' => \Illuminate\Support\Facades\Http::response([
+        Http::fake([
+            'api.openai.com/*' => Http::response([
                 'choices' => [[
                     'message' => [
                         'role' => 'assistant',
@@ -1695,7 +1696,7 @@ class DirectorAICommandTest extends TestCase
                 'grade' => $grade,
                 'section' => null,
                 'school_year' => '2025-2026',
-                'invite_code' => 'ROB-' . strtoupper($grade),
+                'invite_code' => 'ROB-'.strtoupper($grade),
             ]);
             Course::create([
                 'teacher_id' => $director->id,
@@ -1704,7 +1705,7 @@ class DirectorAICommandTest extends TestCase
                 'grade' => $grade,
                 'section' => null,
                 'school_year' => '2025-2026',
-                'invite_code' => 'LEN-' . strtoupper($grade),
+                'invite_code' => 'LEN-'.strtoupper($grade),
             ]);
         }
 
@@ -1747,6 +1748,319 @@ class DirectorAICommandTest extends TestCase
             'teacher_id' => $guevara->id,
             'subject_name' => 'Lenguaje',
             'colegio_id' => $colegio->id,
+        ]);
+    }
+
+    /**
+     * G1. Consulta de rendimiento de un grado/sección con tabla Markdown y ranking ordinal.
+     */
+    public function test_director_can_query_class_performance_with_markdown_ranking(): void
+    {
+        [$director, $colegio] = $this->directorContext();
+        $teacher = $this->makeTeacher($colegio);
+        $course = $this->makeCourse($colegio, $teacher, 'Matemática', '4to', 'A');
+        $ana = $this->makeStudent($colegio, $teacher, 'Ana Ruiz', '4to', 'A');
+        $luis = $this->makeStudent($colegio, $teacher, 'Luis Mora', '4to', 'A');
+        $this->makeGrade($colegio, $course, $ana, 18, 20);
+        $this->makeGrade($colegio, $course, $luis, 14, 20);
+
+        $response = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => '¿Cómo van los de 4to A?',
+        ]);
+
+        $response->assertOk()->assertJsonPath('actions.0.success', true);
+        $message = (string) $response->json('actions.0.message');
+        $this->assertStringContainsString('Rendimiento de 4to sección A', $message);
+        $this->assertStringContainsString('| # | Alumno | Promedio | Evaluaciones |', $message);
+        $this->assertStringContainsString('1º', $message);
+        $this->assertStringContainsString('Ana Ruiz', $message);
+        $this->assertStringContainsString('Luis Mora', $message);
+    }
+
+    /**
+     * G2. Ranking por mejor promedio con posiciones ordinales (1º, 2º).
+     */
+    public function test_director_ranking_best_average_uses_ordinal(): void
+    {
+        [$director, $colegio] = $this->directorContext();
+        $teacher = $this->makeTeacher($colegio);
+        $course = $this->makeCourse($colegio, $teacher, 'Matemática', '4to', 'A');
+        $ana = $this->makeStudent($colegio, $teacher, 'Ana Ruiz', '4to', 'A');
+        $luis = $this->makeStudent($colegio, $teacher, 'Luis Mora', '4to', 'A');
+        $this->makeGrade($colegio, $course, $ana, 18, 20);
+        $this->makeGrade($colegio, $course, $luis, 15, 20);
+
+        $response = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => '¿Quién tiene mejor promedio?',
+        ]);
+
+        $response->assertOk()->assertJsonPath('actions.0.success', true);
+        $this->assertSame('average', $response->json('actions.0.data.metric'));
+        $message = (string) $response->json('actions.0.message');
+        $this->assertStringContainsString('Ranking por promedio', $message);
+        $this->assertStringContainsString('1º', $message);
+        $this->assertStringContainsString('2º', $message);
+        $this->assertStringContainsString('Ana Ruiz', $message);
+    }
+
+    /**
+     * G3. Ranking de inasistencias: quien más faltas tiene encabeza la tabla.
+     */
+    public function test_director_ranking_most_absences(): void
+    {
+        [$director, $colegio] = $this->directorContext();
+        $teacher = $this->makeTeacher($colegio);
+        $course = $this->makeCourse($colegio, $teacher, 'Matemática', '4to', 'A');
+        $ana = $this->makeStudent($colegio, $teacher, 'Ana Ruiz', '4to', 'A');
+        $luis = $this->makeStudent($colegio, $teacher, 'Luis Mora', '4to', 'A');
+        foreach ([$ana, $ana, $luis] as $i => $student) {
+            Attendance::create([
+                'colegio_id' => $colegio->id,
+                'course_id' => $course->id,
+                'student_id' => $student->id,
+                'teacher_id' => $teacher->id,
+                'attended_on' => now()->subDays($i + 1)->toDateString(),
+                'status' => Attendance::STATUS_ABSENT,
+            ]);
+        }
+
+        $response = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => '¿Quién tiene más faltas?',
+        ]);
+
+        $response->assertOk()->assertJsonPath('actions.0.success', true);
+        $this->assertSame('absences', $response->json('actions.0.data.metric'));
+        $message = (string) $response->json('actions.0.message');
+        $this->assertStringContainsString('Ranking de faltas', $message);
+        $this->assertStringContainsString('1º', $message);
+        $this->assertStringContainsString('Ana Ruiz', $message);
+    }
+
+    /**
+     * G4. Comparación de dos grados con veredicto.
+     */
+    public function test_director_can_compare_two_grades(): void
+    {
+        [$director, $colegio] = $this->directorContext();
+        $teacher = $this->makeTeacher($colegio);
+        $course2 = $this->makeCourse($colegio, $teacher, 'Matemática', '2do', 'A');
+        $course4 = $this->makeCourse($colegio, $teacher, 'Matemática', '4to', 'A');
+        $s2 = $this->makeStudent($colegio, $teacher, 'Pepe Sol', '2do', 'A');
+        $s4 = $this->makeStudent($colegio, $teacher, 'Ana Ruiz', '4to', 'A');
+        $this->makeGrade($colegio, $course2, $s2, 18, 20);
+        $this->makeGrade($colegio, $course4, $s4, 14, 20);
+
+        $response = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'Compara 2do con 4to',
+        ]);
+
+        $response->assertOk()->assertJsonPath('actions.0.success', true);
+        $message = (string) $response->json('actions.0.message');
+        $this->assertStringContainsString('Comparación 2do vs 4to', $message);
+        $this->assertStringContainsString('90%', $message);
+        $this->assertStringContainsString('70%', $message);
+        $this->assertStringContainsString('Lidera 2do', $message);
+    }
+
+    /**
+     * G5. Cero alucinaciones: sin datos, Nova lo dice explícitamente.
+     */
+    public function test_director_analytics_is_honest_when_no_data(): void
+    {
+        [$director, $colegio] = $this->directorContext();
+
+        $response = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => '¿Cómo van los de 6to?',
+        ]);
+
+        $response->assertOk()->assertJsonPath('actions.0.success', true);
+        $this->assertSame([], $response->json('actions.0.data.students'));
+        $this->assertStringContainsString('No hay alumnos registrados en 6to', (string) $response->json('actions.0.message'));
+    }
+
+    /**
+     * G6. Rendimiento individual de un alumno por nombre (sin materia).
+     */
+    public function test_director_can_query_student_performance_by_name(): void
+    {
+        [$director, $colegio] = $this->directorContext();
+        $teacher = $this->makeTeacher($colegio);
+        $course = $this->makeCourse($colegio, $teacher, 'Matemática', '4to', 'A');
+        $ana = $this->makeStudent($colegio, $teacher, 'Ana Ruiz', '4to', 'A');
+        $this->makeGrade($colegio, $course, $ana, 18, 20);
+
+        $response = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => '¿Cómo va Ana Ruiz?',
+        ]);
+
+        $response->assertOk()->assertJsonPath('actions.0.success', true);
+        $message = (string) $response->json('actions.0.message');
+        $this->assertStringContainsString('Rendimiento de Ana Ruiz', $message);
+        $this->assertStringContainsString('90%', $message);
+    }
+
+    /**
+     * G7. Tendencias: evolución semanal de promedios.
+     */
+    public function test_director_can_query_average_trend(): void
+    {
+        [$director, $colegio] = $this->directorContext();
+        $teacher = $this->makeTeacher($colegio);
+        $course = $this->makeCourse($colegio, $teacher, 'Matemática', '4to', 'A');
+        $ana = $this->makeStudent($colegio, $teacher, 'Ana Ruiz', '4to', 'A');
+        $this->makeGrade($colegio, $course, $ana, 15, 20);
+        $this->makeGrade($colegio, $course, $ana, 17, 20);
+
+        $response = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => '¿Cuál es la tendencia de notas?',
+        ]);
+
+        $response->assertOk()->assertJsonPath('actions.0.success', true);
+        $this->assertStringContainsString('Tendencia de promedios', (string) $response->json('actions.0.message'));
+    }
+
+    /**
+     * G9. El ranking no mezcla datos de otro colegio.
+     */
+    public function test_director_analytics_stays_scoped_to_own_school(): void
+    {
+        [$director, $colegio] = $this->directorContext('Colegio A', 'COC-A001');
+        [, $otherColegio] = $this->directorContext('Colegio B', 'COC-B001');
+        $teacherA = $this->makeTeacher($colegio);
+        $teacherB = $this->makeTeacher($otherColegio);
+        $courseA = $this->makeCourse($colegio, $teacherA, 'Matemática', '4to', 'A');
+        $courseB = $this->makeCourse($otherColegio, $teacherB, 'Inglés', '4to', 'A');
+        $local = $this->makeStudent($colegio, $teacherA, 'Ana Local', '4to', 'A');
+        $foreign = $this->makeStudent($otherColegio, $teacherB, 'Eva Externa', '4to', 'A');
+        $this->makeGrade($colegio, $courseA, $local, 18, 20);
+        $this->makeGrade($otherColegio, $courseB, $foreign, 20, 20);
+
+        $response = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => '¿Quién tiene mejor promedio?',
+        ]);
+
+        $response->assertOk()->assertJsonPath('actions.0.success', true);
+        $message = (string) $response->json('actions.0.message');
+        $this->assertStringContainsString('Ana Local', $message);
+        $this->assertStringNotContainsString('Eva Externa', $message);
+    }
+
+    /**
+     * G10. Si el LLM contesta en texto sin tools, igual se ejecuta la consulta Eloquent.
+     */
+    public function test_analytics_runs_when_llm_replies_without_tools(): void
+    {
+        config([
+            'services.openai.key' => 'test-key',
+            'services.openai.director_enabled' => true,
+            'services.openai.director_test_enabled' => true,
+        ]);
+        Http::fake([
+            'api.openai.com/*' => Http::response([
+                'choices' => [[
+                    'message' => [
+                        'role' => 'assistant',
+                        'content' => '🏫 En 4to A van bien, según el roster.',
+                    ],
+                ]],
+            ]),
+        ]);
+
+        [$director, $colegio] = $this->directorContext();
+        $teacher = $this->makeTeacher($colegio);
+        $course = $this->makeCourse($colegio, $teacher, 'Matemática', '4to', 'A');
+        $ana = $this->makeStudent($colegio, $teacher, 'Ana Ruiz', '4to', 'A');
+        $this->makeGrade($colegio, $course, $ana, 18, 20);
+
+        $response = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => '¿Cómo van los de 4to A?',
+        ]);
+
+        $response->assertOk()->assertJsonPath('actions.0.success', true);
+        $message = (string) $response->json('actions.0.message');
+        $this->assertStringContainsString('Ana Ruiz', $message);
+        $this->assertStringContainsString('Rendimiento de 4to sección A', $message);
+        $this->assertStringNotContainsString('según el roster', $message);
+    }
+
+    /**
+     * G8. La confirmación pendiente acepta variantes naturales ("¡sí!", "si'",
+     * "confirmado", "proceder", "correcto", "dale", "sip") sin romper la operación.
+     */
+    public function test_director_accepts_affirmation_variants(): void
+    {
+        [$director, $colegio] = $this->directorContext();
+        $variants = ['¡sí!', "si'", 'confirmado', 'proceder', 'correcto', 'dale', 'sip'];
+        $subjects = ['Matemática', 'Inglés', 'Ciencias', 'Sociales', 'Robótica', 'Lenguaje', 'Arte'];
+
+        foreach ($variants as $i => $variant) {
+            $subject = $subjects[$i];
+            $draft = $this->actingAs($director)->postJson(route('director.ai.command'), [
+                'prompt' => "Crea curso de {$subject} para 4to grado sección A.",
+            ]);
+            $draft->assertOk()->assertJsonPath('requires_confirmation', true);
+
+            $confirm = $this->actingAs($director)->postJson(route('director.ai.command'), [
+                'prompt' => $variant,
+            ]);
+            $confirm->assertOk()->assertJsonPath('actions.0.success', true);
+
+            $this->assertDatabaseHas('courses', [
+                'colegio_id' => $colegio->id,
+                'subject_name' => $subject,
+                'grade' => '4to',
+            ]);
+        }
+    }
+
+    private function makeTeacher(Colegio $colegio): User
+    {
+        return User::factory()->create([
+            'role' => 'profesor',
+            'colegio_id' => $colegio->id,
+            'onboarding_completed' => true,
+        ]);
+    }
+
+    private function makeCourse(Colegio $colegio, User $teacher, string $subject, string $grade, string $section): Course
+    {
+        return Course::create([
+            'colegio_id' => $colegio->id,
+            'teacher_id' => $teacher->id,
+            'subject_name' => $subject,
+            'grade' => $grade,
+            'section' => $section,
+            'school_year' => '2026-2027',
+            'invite_code' => 'CURSO-'.strtoupper(preg_replace('/[^A-Za-z]/', '', $subject).'-'.$grade.'-'.$section),
+        ]);
+    }
+
+    private function makeStudent(Colegio $colegio, User $teacher, string $name, string $grade, string $section): Student
+    {
+        return Student::create([
+            'colegio_id' => $colegio->id,
+            'teacher_id' => $teacher->id,
+            'name' => $name,
+            'grade' => $grade,
+            'section' => $section,
+            'family_code' => 'FAM-'.strtoupper(preg_replace('/[^A-Za-z]/', '', $name)),
+        ]);
+    }
+
+    private function makeGrade(Colegio $colegio, Course $course, Student $student, float $score, int $maxScore): void
+    {
+        $activity = Activity::create([
+            'teacher_id' => $course->teacher_id,
+            'course_id' => $course->id,
+            'title' => 'Evaluación',
+            'max_score' => $maxScore,
+        ]);
+        Grade::create([
+            'activity_id' => $activity->id,
+            'student_id' => $student->id,
+            'colegio_id' => $colegio->id,
+            'score' => $score,
+            'status' => 'published',
         ]);
     }
 

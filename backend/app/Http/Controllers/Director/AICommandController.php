@@ -14,6 +14,7 @@ use App\Models\TeacherInvite;
 use App\Models\User;
 use App\Services\DirectorActionService;
 use App\Services\DirectorAIInterpreterService;
+use App\Services\DirectorAnalyticsQueryService;
 use App\Services\DirectorConversationContextService;
 use App\Services\PersonNameMatcher;
 use App\Services\PersonNameSanitizer;
@@ -32,6 +33,7 @@ class AICommandController extends Controller
         private DirectorActionService $actionService,
         private DirectorAIInterpreterService $interpreter,
         private DirectorConversationContextService $conversationContext,
+        private DirectorAnalyticsQueryService $analytics,
     ) {}
 
     public function handle(Request $request): JsonResponse
@@ -106,13 +108,17 @@ class AICommandController extends Controller
                     : '';
                 $intentGuess = $this->detectIntent($text);
                 if ($llmReply !== '') {
-                    if (! $this->intentRequiresConfirmation((string) $intentGuess)) {
+                    // query_academic no puede contestarse desde el roster: si el LLM
+                    // respondió en texto sin tool, caemos al parser local.
+                    $trustLlmText = $intentGuess !== 'query_academic'
+                        && ! $this->intentRequiresConfirmation((string) $intentGuess);
+                    if ($trustLlmText) {
                         return response()->json([
                             'success' => true,
                             'message' => $llmReply,
                         ]);
                     }
-                    if ($intentGuess !== null) {
+                    if ($intentGuess !== null && $intentGuess !== 'query_academic') {
                         $this->conversationContext->rememberError($llmReply);
 
                         return response()->json([
@@ -1001,7 +1007,7 @@ class AICommandController extends Controller
             }
             $subjectPart = $subject !== '' ? " ({$subject})" : '';
 
-            return "Crear ".count($names)." estudiantes en {$place}{$subjectPart}:\n".implode("\n", $lines).'.';
+            return 'Crear '.count($names)." estudiantes en {$place}{$subjectPart}:\n".implode("\n", $lines).'.';
         }
 
         $namesStr = implode(', ', $names) ?: 'alumno(s)';
@@ -1177,7 +1183,10 @@ class AICommandController extends Controller
         }
         if (
             str_contains($value, 'como va')
+            || str_contains($value, 'como van')
+            || str_contains($value, 'como estan')
             || str_contains($value, 'que alumnos tiene')
+            || str_contains($value, 'que alumnos hay')
             || str_contains($value, 'que cursos tiene')
             || str_contains($value, 'cuantas faltas')
             || str_contains($value, 'como estan sus evaluaciones')
@@ -1193,6 +1202,16 @@ class AICommandController extends Controller
             || str_contains($value, 'problemas en')
             || str_contains($value, 'bajo rendimiento')
             || str_contains($value, 'como esta')
+            // Analítica en tiempo real.
+            || str_contains($value, 'mejor promedio')
+            || str_contains($value, 'mejores promedios')
+            || str_contains($value, 'mas faltas')
+            || str_contains($value, 'compara')
+            || str_contains($value, 'tendencia')
+            || str_contains($value, 'evolucion')
+            || str_contains($value, 'ranking')
+            || preg_match('/\btop\s+\d/', $value)
+            || preg_match('/\bquien(?:es)?\s+tiene(?:n)?\b/', $value)
             || ((str_contains($value, 'consulta') || str_contains($value, 'muestrame') || str_contains($value, 'mostrar') || str_contains($value, 'estado') || str_contains($value, 'dame'))
                 && (str_contains($value, 'profesor') || str_contains($value, 'estudiante') || str_contains($value, 'alumno') || str_contains($value, 'curso')))
         ) {
@@ -1762,6 +1781,144 @@ class AICommandController extends Controller
             ], null];
         }
 
+        // ── Analítica en tiempo real (motor seguro de solo lectura, scope colegio) ──
+
+        // "Compara 2do con 4to", "comparame 2do grado con 4to grado de matemática"
+        if (preg_match('/compara(?:r|me)?\s+(.+?)\s+con\s+(.+?)\s*[?¿.!]*$/iu', trim($text), $m)) {
+            $gradeA = $this->extractTargetGrade($m[1]);
+            $gradeB = $this->extractTargetGrade($m[2]);
+            if ($gradeA && $gradeB) {
+                return [[
+                    'query_type' => 'compare_grades',
+                    'grade' => $gradeA,
+                    'grade_b' => $gradeB,
+                    'subject_name' => $this->extractKnownSubject($text),
+                ], null];
+            }
+        }
+
+        // "tendencia de notas", "evolución de faltas"
+        if (preg_match('/\b(?:tendencia|evoluci[oó]n)\b/iu', trim($text))) {
+            return [[
+                'query_type' => 'trends',
+                'metric' => preg_match('/falta|asistencia|inasistencia/iu', $text) ? 'absences' : 'average',
+            ], null];
+        }
+
+        // "¿Quién tiene mejor promedio?" / "¿Quiénes tienen mejor promedio en 4to?"
+        if (preg_match('/qui[ée]n(?:es)?\s+(?:tiene|tienen)\s+(?:el\s+)?mejor\s+promedio/iu', trim($text))) {
+            return [[
+                'query_type' => 'rankings',
+                'metric' => 'average',
+                'grade' => $this->extractTargetGrade($text),
+                'section' => $this->extractSection($text),
+                'subject_name' => $this->extractKnownSubject($text),
+            ], null];
+        }
+
+        // "¿Quién tiene más faltas?" / "¿Quiénes tienen más faltas en 2do?"
+        if (preg_match('/qui[ée]n(?:es)?\s+(?:tiene|tienen|ha|han)\s+m[aá]s\s+faltas/iu', trim($text))) {
+            return [[
+                'query_type' => 'rankings',
+                'metric' => 'absences',
+                'grade' => $this->extractTargetGrade($text),
+                'section' => $this->extractSection($text),
+            ], null];
+        }
+
+        // "ranking de promedios", "ranking de faltas en 4to"
+        if (preg_match('/\branking\s+de\s+(promedios?|notas?|calificaciones|faltas|asistencias?)/iu', trim($text), $m)) {
+            $absences = (bool) preg_match('/faltas|asistencias?/iu', (string) $m[1]);
+
+            return [[
+                'query_type' => 'rankings',
+                'metric' => $absences ? 'absences' : 'average',
+                'grade' => $this->extractTargetGrade($text),
+                'section' => $this->extractSection($text),
+                'subject_name' => $this->extractKnownSubject($text),
+            ], null];
+        }
+
+        // "top 5 alumnos", "top 3 estudiantes de 2do"
+        if (preg_match('/\btop\s+(\d{1,2})\s+(?:alumnos|estudiantes)/iu', trim($text), $m)) {
+            return [[
+                'query_type' => 'rankings',
+                'metric' => 'average',
+                'limit' => (int) $m[1],
+                'grade' => $this->extractTargetGrade($text),
+                'section' => $this->extractSection($text),
+            ], null];
+        }
+
+        // "¿Cómo van los de 4to?", "¿Cómo van los alumnos de 4to A?"
+        if (preg_match('/c[oó]mo\s+van\s+(?:los\s+|las\s+)?(?:alumnos?\s+|estudiantes?\s+)?(?:de\s+|del\s+)?(.+?)\s*[?¿.!]*$/iu', trim($text), $m)) {
+            $grade = $this->extractTargetGrade($m[1]);
+            if ($grade) {
+                $section = $this->extractSection($text);
+                if (! $section && preg_match('/[1-6](?:ro|ero|do|to|er|°|º)?\s+([A-Ca-c])\b/u', (string) $m[1], $sm)) {
+                    $section = strtoupper($sm[1]);
+                }
+
+                return [[
+                    'query_type' => 'class_performance',
+                    'grade' => $grade,
+                    'section' => $section,
+                    'subject_name' => $this->extractKnownSubject($text),
+                ], null];
+            }
+        }
+
+        // "¿Cómo están los alumnos de 4to A?" (plural + contexto). El singular
+        // "cómo está 4to grado" lo sigue manejando grade_overview más abajo.
+        if (preg_match('/c[oó]mo\s+est[aá]n\s+(?:los\s+|las\s+)?(?:alumnos?\s+|estudiantes?\s+)?(?:de\s+|del\s+)?(.+?)\s*[?¿.!]*$/iu', trim($text), $m)) {
+            $grade = $this->extractTargetGrade($m[1]);
+            if ($grade) {
+                $section = $this->extractSection($text);
+                if (! $section && preg_match('/[1-6](?:ro|ero|do|to|er|°|º)?\s+([A-Ca-c])\b/u', (string) $m[1], $sm)) {
+                    $section = strtoupper($sm[1]);
+                }
+
+                return [[
+                    'query_type' => 'class_performance',
+                    'grade' => $grade,
+                    'section' => $section,
+                    'subject_name' => $this->extractKnownSubject($text),
+                ], null];
+            }
+        }
+
+        // "¿Cómo va Carlos?" (sin materia) → rendimiento general del alumno.
+        // "¿Cómo va 4to?" → rendimiento del grado.
+        // ("cómo va el profesor X" y "cómo va X en Y" ya se capturaron arriba).
+        if (preg_match('/c[oó]mo\s+va\s+(.+?)\s*[?¿.!]*$/iu', trim($text), $m)) {
+            $target = trim((string) $m[1]);
+            $grade = $this->extractTargetGrade($target);
+            if ($grade) {
+                return [[
+                    'query_type' => 'class_performance',
+                    'grade' => $grade,
+                    'section' => $this->extractSection($text),
+                ], null];
+            }
+
+            return [[
+                'query_type' => 'student_performance',
+                'student_name' => $target,
+            ], null];
+        }
+
+        // "¿Qué alumnos hay en 2do?" → lista filtrada por grado/sección.
+        if (preg_match('/qu[eé]\s+(?:alumnos|estudiantes)\s+hay\s+en\s+(.+?)\s*[?¿.!]*$/iu', trim($text), $m)) {
+            $grade = $this->extractTargetGrade($m[1]);
+            if ($grade) {
+                return [[
+                    'query_type' => 'students_list',
+                    'grade' => $grade,
+                    'section' => $this->extractSection($text),
+                ], null];
+            }
+        }
+
         // Consultas generales del colegio (school-wide, siempre dentro del colegio del director).
         if (preg_match('/cu[aá]ntos\s+alumnos\s+hay\s+en\s+([1-6](?:ro|ero|do|to|er|°|º)?\s*grado)/iu', trim($text), $m)) {
             return [[
@@ -1850,6 +2007,45 @@ class AICommandController extends Controller
             'frequent_absentees' => $this->queryFrequentAbsentees($colegioId),
             'subject_at_risk' => $this->querySubjectAtRisk($colegioId, (string) $data['subject_name']),
             'at_risk_students' => $this->queryAtRiskStudents($colegioId, isset($data['subject_name']) ? (string) $data['subject_name'] : null),
+            // Motor analítico seguro (solo lectura, scope colegio_id, salida Markdown).
+            'class_performance' => $this->analytics->getClassPerformance(
+                $colegioId,
+                (string) $data['grade'],
+                isset($data['section']) ? (string) $data['section'] : null,
+                isset($data['subject_name']) ? (string) $data['subject_name'] : null,
+            ),
+            'student_performance' => $this->analytics->getStudentPerformance($colegioId, (string) $data['student_name']),
+            'attendance' => $this->analytics->getAttendance(
+                $colegioId,
+                isset($data['grade']) ? (string) $data['grade'] : null,
+                isset($data['section']) ? (string) $data['section'] : null,
+                isset($data['student_name']) ? (string) $data['student_name'] : null,
+                (int) ($data['days'] ?? 30),
+            ),
+            'rankings' => $this->analytics->getRankings(
+                $colegioId,
+                (string) ($data['metric'] ?? 'average'),
+                isset($data['grade']) ? (string) $data['grade'] : null,
+                isset($data['section']) ? (string) $data['section'] : null,
+                isset($data['subject_name']) ? (string) $data['subject_name'] : null,
+                (int) ($data['limit'] ?? 5),
+            ),
+            'trends' => $this->analytics->getTrends(
+                $colegioId,
+                (string) ($data['metric'] ?? 'average'),
+                (int) ($data['weeks'] ?? 4),
+            ),
+            'compare_grades' => $this->analytics->compareGrades(
+                $colegioId,
+                (string) $data['grade'],
+                (string) $data['grade_b'],
+                isset($data['subject_name']) ? (string) $data['subject_name'] : null,
+            ),
+            'students_list' => $this->analytics->getStudents(
+                $colegioId,
+                isset($data['grade']) ? (string) $data['grade'] : null,
+                isset($data['section']) ? (string) $data['section'] : null,
+            ),
             default => throw ValidationException::withMessages([
                 'query' => 'No pude interpretar el tipo de consulta académica.',
             ]),
@@ -2382,7 +2578,7 @@ class AICommandController extends Controller
                     $data['teacher_name'] = $teacher;
                 }
             }
-                if (in_array($intent, ['create_students_batch', 'enroll_students_course', 'unenroll_students_course', 'delete_student'], true)) {
+            if (in_array($intent, ['create_students_batch', 'enroll_students_course', 'unenroll_students_course', 'delete_student'], true)) {
                 if (empty($data['grade']) && ($grades[0] ?? null) && $intent !== 'delete_student') {
                     $data['grade'] = $grades[0];
                 }
@@ -2857,22 +3053,34 @@ class AICommandController extends Controller
      */
     private function isAffirmativeText(string $text): bool
     {
-        $value = mb_strtolower(trim($text));
-        $value = trim(preg_replace('/[.!?]+$/', '', $value) ?? '');
+        $value = $this->affirmativeNormalized($text);
         if ($value === '') {
             return false;
         }
 
-        $short = ['sí', 'si', 'ok', 'okay', 'sip', 'dale', 'adelante', 'confirmo', 'confirmar', 'procede', 'listo', 'hazlo', 'crealos', 'créalo', 'créelos', 'crealo', 'yes', 'yep', 'claro', 'correcto', 'afirmativo', 'exacto', 'siguiente'];
+        $short = ['si', 'ok', 'okay', 'sip', 'dale', 'adelante', 'confirmo', 'confirmado', 'confirmar', 'proceder', 'procede', 'listo', 'hazlo', 'crealos', 'crealo', 'yes', 'yep', 'claro', 'correcto', 'afirmativo', 'exacto', 'de acuerdo', 'deacuerdo', 'por supuesto', 'claro que si', 'siguiente', 'eso es'];
         if (in_array($value, $short, true)) {
             return true;
         }
 
-        if (preg_match('/^(s[ií])(\s*[,.;:\-]\s*(cr[eé]alos|cr[eé]alos igualmente|crearlos|confirmo|dale|adelante|hazlo|por favor))?$/u', $value)) {
+        if (preg_match('/^si(?:\s+(crealos|crealos igualmente|crearlos|confirmo|confirmado|dale|adelante|hazlo|por favor|proceder|procede))?$/u', $value)) {
             return true;
         }
 
         return false;
+    }
+
+    private function affirmativeNormalized(string $text): string
+    {
+        $value = mb_strtolower(trim($text));
+        // Remover comillas, apóstrofes, signos de exclamación y puntuación accidental.
+        $value = preg_replace('/[\'\"`´’‘¡!¿?*.,;:\-]/u', ' ', $value) ?? $value;
+        // Normalizar acentos para que "sí" sea equivalente a "si".
+        $value = strtr($value, [
+            'á' => 'a', 'é' => 'e', 'í' => 'i', 'ó' => 'o', 'ú' => 'u', 'ñ' => 'n',
+        ]);
+
+        return trim((string) preg_replace('/\s+/u', ' ', $value));
     }
 
     private function isNegativeText(string $text): bool
