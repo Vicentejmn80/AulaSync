@@ -154,9 +154,14 @@ Reglas operativas:
    "que te dije", "el que te mencioné", "también", "además", "llamado", "de la materia", "profesor",
    "alumno", "crea a", "también crea a", "en el curso", "y agrégalo".
    "crea al profesor mariano tambien que te dije" → teacher_name = "Mariano".
-5. "Crea al alumno X" → create_students_batch. Nunca create_course por mencionar "curso".
-6. "Crea al alumno X y asígnalo al curso de Y grado Z" → create_students_batch + enroll_students_course.
-7. Usa la memoria y el historial para "créalo", "agrégale", "esos cursos". Laravel arma el resumen de confirmación.
+5. LISTAS DE ALUMNOS: si hay dos puntos o una lista con comas/"y", names es el ARRAY completo
+   (["Carlos Duarte","Fermin Lopez","Enrique Quesada"]). NUNCA uses como nombre "en la sección",
+   "para el", "siguientes alumnos", "curso", "grado" ni la materia.
+   "quiero que crees a los siguientes alumnos en la seccion de 2do grado de computacion: carlos duarte, fermin lopez, enrique quesada"
+   → create_students_batch names=["Carlos Duarte","Fermin Lopez","Enrique Quesada"] grade=2do subject_name=Computación.
+6. "Crea al alumno X" → create_students_batch. Nunca create_course por mencionar "curso".
+7. "Crea al alumno X y asígnalo al curso de Y grado Z" → create_students_batch + enroll_students_course.
+8. Usa la memoria y el historial para "créalo", "agrégale", "esos cursos". Laravel arma el resumen de confirmación.
 
 Memoria conversacional: {$memoryJson}
 
@@ -202,7 +207,7 @@ PROMPT;
                 'required' => ['teacher_name', 'subject_name', 'grades'],
             ],
             'create_students_batch' => [
-                'description' => 'Crear uno o varios alumnos en un grado. names debe ser SOLO el nombre propio (ej. "Laureano Márquez"), nunca "en el curso", "de 1ro", "también", "que te dije" ni la materia.',
+                'description' => 'Crear uno o varios alumnos. names es un ARRAY de nombres propios completos (ej. ["Carlos Duarte","Fermin Lopez"]). Nunca "en la sección", "para el", "siguientes" ni la materia.',
                 'properties' => [
                     'names' => ['type' => 'array', 'items' => ['type' => 'string']],
                     'grade' => ['type' => 'string'],
@@ -376,10 +381,9 @@ PROMPT;
         if (isset($arguments['names']) && is_array($arguments['names'])) {
             $arguments['names'] = collect($arguments['names'])
                 ->map(function ($name) use ($sanitizer) {
-                    $raw = trim((string) $name);
-                    $clean = $sanitizer->displayName($raw);
+                    $clean = $sanitizer->clean((string) $name);
 
-                    return $clean !== '' ? $clean : $raw;
+                    return $clean ? $sanitizer->titleCase($clean) : null;
                 })
                 ->filter()
                 ->values()

@@ -38,4 +38,15 @@ class PersonNameSanitizerTest extends TestCase
         $this->assertSame('Mariano García', $sanitizer->displayName('mariano garcía el que te mencioné antes'));
         $this->assertSame('Laureano Márquez', $sanitizer->displayName('alumno laureano márquez en 2do'));
     }
+
+    public function test_rejects_section_and_course_context_as_names(): void
+    {
+        $sanitizer = new PersonNameSanitizer();
+
+        $this->assertNull($sanitizer->clean('en la seccion'));
+        $this->assertNull($sanitizer->clean('En La Seccion'));
+        $this->assertNull($sanitizer->clean('para el'));
+        $this->assertNull($sanitizer->clean('siguientes alumnos'));
+        $this->assertSame('carlos duarte', $sanitizer->clean('carlos duarte'));
+    }
 }

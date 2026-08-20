@@ -4,7 +4,7 @@ namespace App\Services;
 
 class PersonNameSanitizer
 {
-    private const SUBJECT_ALIASES = 'matem[aá]ticas?|ingl[eé]s|lenguaje|lengua|ciencias?|historia|geograf[ií]a|f[ií]sica|qu[ií]mica|biolog[ií]a|educaci[oó]n f[ií]sica|robotica|rob[oó]tica';
+    private const SUBJECT_ALIASES = 'matem[aá]ticas?|ingl[eé]s|lenguaje|lengua|ciencias?|historia|geograf[ií]a|f[ií]sica|qu[ií]mica|biolog[ií]a|educaci[oó]n f[ií]sica|robotica|rob[oó]tica|computaci[oó]n';
 
     /**
      * Extrae un nombre de persona limpio, sin preposiciones, grado, curso ni conectores.
@@ -55,7 +55,11 @@ class PersonNameSanitizer
             return null;
         }
 
-        if (preg_match('/^(?:en el|en la|en los|en las|en|de|del|el|la|los|las|al|a la|para|curso|grado|alumno|estudiante|profesor|profesora|docente|llamado|llamada|tambien|también|ademas|además)$/iu', $name)) {
+        if (preg_match('/^(?:en el|en la|en los|en las|en|de|del|el|la|los|las|al|a la|para|curso|grado|alumno|estudiante|profesor|profesora|docente|llamado|llamada|tambien|también|ademas|además|seccion|sección|siguientes?)$/iu', $name)) {
+            return null;
+        }
+
+        if ($this->isStopwordOnlyName($name)) {
             return null;
         }
 
@@ -84,6 +88,22 @@ class PersonNameSanitizer
         $name = preg_replace('/\b(?:tambien|también|ademas|además)\b/iu', ' ', $name) ?? $name;
 
         return trim(preg_replace('/\s+/u', ' ', $name) ?? $name);
+    }
+
+    private function isStopwordOnlyName(string $name): bool
+    {
+        $stop = 'a|al|el|la|los|las|en|de|del|para|por|con|un|una|curso|cursos|grado|grados|materia|materias|asignatura|seccion|sección|alumno|alumna|alumnos|estudiante|estudiantes|siguientes?|computaci[oó]n|profesor|profesora|docente';
+        $tokens = preg_split('/\s+/u', mb_strtolower(trim($name))) ?: [];
+        if ($tokens === [] || $tokens === ['']) {
+            return true;
+        }
+        foreach ($tokens as $token) {
+            if (! preg_match('/^(?:'.$stop.')$/u', $token)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     public function cleanTeacher(?string $name): ?string

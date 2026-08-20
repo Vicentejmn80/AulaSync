@@ -939,14 +939,14 @@
                             Crear profesor + asignaciones
                         </button>
                         <button type="button" class="quickstart-btn"
-                                @click="input = 'Agrega a Carlos José, Juan Carlos y María al 3er grado'; sendCommand()">
+                                @click="input = 'Crea a los siguientes alumnos en 2do grado: Carlos José, Juan Carlos y María'; sendCommand()">
                             <i class="fa-solid fa-users"></i>
                             Crear estudiantes por lote
                         </button>
                         <button type="button" class="quickstart-btn"
-                                @click="input = 'Consulta el código DOC- de Vicente Maduro'; sendCommand()">
-                            <i class="fa-solid fa-key"></i>
-                            Consultar código DOC-
+                                @click="input = '¿Cuántos alumnos, profesores y cursos hay en el colegio?'; sendCommand()">
+                            <i class="fa-solid fa-chart-simple"></i>
+                            Consultar el colegio
                         </button>
                         <button type="button" class="quickstart-btn" @click="$refs.novaMainTextarea?.focus()">
                             <i class="fa-solid fa-comment-dots"></i>
@@ -1023,17 +1023,11 @@
             <span class="suggestion-chip" @click="input = 'Crea al profesor Ana Rojas y asígnale Matemática de 1ro a 3ro'; sendCommand()">
                 👩‍🏫 Crear profesor
             </span>
-            <span class="suggestion-chip" @click="input = 'Vicente dará Inglés de 1ro a 6to'; sendCommand()">
-                🧩 Asignar docente
-            </span>
-            <span class="suggestion-chip" @click="input = 'Agrega a Luis, Marta y Pedro al 2do grado'; sendCommand()">
+            <span class="suggestion-chip" @click="input = 'Crea a los siguientes alumnos en 2do grado: Luis Perez, Marta Gomez, Pedro Ruiz'; sendCommand()">
                 🧒 Crear estudiantes
             </span>
-            <span class="suggestion-chip" @click="input = '¿Cómo va el profesor Vicente Maduro?'; sendCommand()">
-                📊 Consultar estado
-            </span>
-            <span class="suggestion-chip" @click="input = 'Consulta el código DOC- de Vicente Maduro'; sendCommand()">
-                🔐 Consultar código
+            <span class="suggestion-chip" @click="input = '¿Cuántos alumnos, profesores y cursos hay en el colegio?'; sendCommand()">
+                📊 Consultar colegio
             </span>
         </div>
 

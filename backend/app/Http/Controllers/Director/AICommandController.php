@@ -1227,10 +1227,8 @@ class AICommandController extends Controller
             );
             $wantsStudent = (bool) preg_match('/\b(?:alumno|estudiante)s?\b/', $value)
                 && (bool) preg_match('/\b(?:cre(?:a|ar|es|e|o)|creame|agrega|matricula)\b/', $value);
-            $wantsEnroll = $wantsStudent && (
-                (str_contains($value, 'curso') && (bool) preg_match('/\b(?:asigna(?:lo|le|r|les)?|inscribe(?:lo|le|r|les)?|matricula(?:lo|le|r|les)?|agregalo|añade|anade)\b/', $value))
-                || ($this->extractKnownSubject($clause) && $this->extractTargetGrade($clause))
-            );
+            $wantsEnroll = $wantsStudent && str_contains($value, 'curso')
+                && (bool) preg_match('/\b(?:asigna(?:lo|le|r|les)?|inscribe(?:lo|le|r|les)?|matricula(?:lo|le|r|les)?|agregalo|añade|anade)\b/', $value);
 
             if ($wantsTeacher) {
                 $names = $this->extractTeacherNames($clause);
@@ -1640,12 +1638,16 @@ class AICommandController extends Controller
         }
 
         $section = $this->extractSection($text);
+        $subject = $this->extractKnownSubject($text)
+            ?? $this->extractSubjectFromCoursePrompt($text)
+            ?? $this->extractSubject($text);
         $missingGrades = $this->missingGradesFor($director, [$grade]);
 
         return [[
             'names' => $names,
             'grade' => $grade,
             'section' => $section,
+            'subject_name' => $subject,
             'missing_grades' => $missingGrades,
         ], null];
     }
@@ -2380,26 +2382,23 @@ class AICommandController extends Controller
                     $data['teacher_name'] = $teacher;
                 }
             }
-            if (in_array($intent, ['create_students_batch', 'enroll_students_course', 'unenroll_students_course', 'delete_student'], true)) {
+                if (in_array($intent, ['create_students_batch', 'enroll_students_course', 'unenroll_students_course', 'delete_student'], true)) {
                 if (empty($data['grade']) && ($grades[0] ?? null) && $intent !== 'delete_student') {
                     $data['grade'] = $grades[0];
                 }
                 if (empty($data['subject_name']) && $subject && $intent !== 'delete_student') {
                     $data['subject_name'] = $subject;
                 }
-                if (empty($data['names'])) {
-                    $names = $this->extractStudentNames($text);
-                    if ($names !== []) {
-                        $data['names'] = $names;
-                    }
-                }
-                if (! empty($data['names']) && is_array($data['names'])) {
-                    $data['names'] = collect($data['names'])
-                        ->map(fn ($name) => $this->sanitizePersonName((string) $name))
-                        ->filter()
-                        ->unique()
-                        ->values()
-                        ->all();
+                $parsedNames = $intent === 'delete_student' ? [] : $this->extractStudentNames($text);
+                $existingNames = collect($data['names'] ?? [])
+                    ->map(fn ($name) => $this->sanitizePersonName((string) $name))
+                    ->filter()
+                    ->unique()
+                    ->values();
+                if ($parsedNames !== [] && (count($parsedNames) > $existingNames->count() || $existingNames->isEmpty())) {
+                    $data['names'] = $parsedNames;
+                } elseif ($existingNames->isNotEmpty()) {
+                    $data['names'] = $existingNames->all();
                 }
                 if (! empty($data['student_name'])) {
                     $data['student_name'] = $this->sanitizePersonName((string) $data['student_name']) ?? $data['student_name'];
@@ -2458,7 +2457,7 @@ class AICommandController extends Controller
             'biologia' => 'Biología',
             'educacion fisica' => 'Educación Física',
             'robotica' => 'Robótica',
-            'robotica' => 'Robótica',
+            'computacion' => 'Computación',
         ];
         foreach ($aliases as $alias => $canonical) {
             if (preg_match('/\b'.preg_quote($alias, '/').'\b/u', $normalized)) {
@@ -2687,52 +2686,59 @@ class AICommandController extends Controller
      */
     private function extractStudentNames(string $text): array
     {
-        // 1. Try colon-separated list after "alumnos:" or "estudiantes:"
-        if (preg_match('/(?:alumnos?|estudiantes?)\s*[:\-]\s*(.+)$/iu', $text, $m)) {
-            $raw = trim((string) $m[1]);
-            $names = $this->splitAndSanitizeNames($raw);
-            if (count($names) > 0) {
-                return $names;
-            }
-        }
-
-        // 2. Try pattern: "crea/agrega... alumnos/estudiantes [context junk] : names"
-        if (preg_match('/(?:agrega|agregar|matricula|matricular|inscribe|inscribir|crea|crear)\s+(?:a\s+|al\s+)?(?:los\s+|las\s+)?(?:siguientes\s+)?(?:alumnos?|estudiantes?)\b[^:]*[:\-]\s*(.+)$/iu', $text, $m)) {
+        // Lista después de "alumnos/estudiantes ... :" aunque haya contexto de grado/sección/materia.
+        if (preg_match('/(?:alumnos?|estudiantes?)\b[^:]{0,180}[:\-]\s*(.+)$/ius', $text, $m)) {
             $names = $this->splitAndSanitizeNames(trim((string) $m[1]));
-            if (count($names) > 0) {
+            if ($names !== []) {
                 return $names;
             }
         }
 
-        // 3. Try pattern: "crea a los alumnos [junk] nombre1, nombre2 y nombre3 [para/en/al] ..."
-        if (preg_match('/(?:agrega|agregar|matricula|matricular|inscribe|inscribir|crea|crear)\s+(?:a\s+|al\s+)?(?:los\s+|las\s+)?(?:siguientes\s+)?(?:alumnos?|estudiantes?)\s+(.+?)(?:\s+(?:para(?:\s+(?:el|la|[1-6]))?|al\s+(?:curso|grado)|en\s+(?:el|la)|a\s+la|del\s+(?:curso|grado)))\b/iu', $text, $m)) {
+        // Último ":" del mensaje si lo que sigue parece una lista (comas o "y").
+        if (preg_match('/:\s*([A-Za-zÁÉÍÓÚáéíóúÑñ][^:]{2,})$/u', $text, $m)) {
+            $chunk = trim((string) $m[1]);
+            if (preg_match('/,|\s+y\s+/u', $chunk)) {
+                $names = $this->splitAndSanitizeNames($chunk);
+                if (count($names) >= 2) {
+                    return $names;
+                }
+            }
+        }
+
+        $verb = '(?:agrega|agregar|matricula|matricular|inscribe|inscribir|crea|crear|crees|cree|creo|creame)';
+
+        if (preg_match('/'.$verb.'\s+(?:a\s+|al\s+)?(?:los\s+|las\s+)?(?:siguientes\s+)?(?:alumnos?|estudiantes?)\b[^:]*[:\-]\s*(.+)$/iu', $text, $m)) {
             $names = $this->splitAndSanitizeNames(trim((string) $m[1]));
-            if (count($names) > 0) {
+            if ($names !== []) {
                 return $names;
             }
         }
 
-        // 4. Single name after role
+        if (preg_match('/'.$verb.'\s+(?:a\s+|al\s+)?(?:los\s+|las\s+)?(?:siguientes\s+)?(?:alumnos?|estudiantes?)\s+(.+?)(?:\s+(?:para(?:\s+(?:el|la|[1-6]))?|al\s+(?:curso|grado)|en\s+(?:el|la|la\s+secci)|a\s+la|del\s+(?:curso|grado)))\b/iu', $text, $m)) {
+            $names = $this->splitAndSanitizeNames(trim((string) $m[1]));
+            if ($names !== []) {
+                return $names;
+            }
+        }
+
         $single = $this->sanitizePersonName($this->extractNamedPersonAfterRole($text, 'alumno'))
             ?? $this->sanitizePersonName($this->extractNamedPersonAfterRole($text, 'estudiante'));
         if ($single) {
             return [$single];
         }
 
-        // 5. Legacy pattern: names between verb and preposition
-        if (preg_match('/(?:agrega|agregar|matricula|matricular|inscribe|inscribir|crea|crear)\s+(?:a|al)\s+(?:alumno|estudiante)\s+(.+?)\s+(?:y\s+)?(?:al|a la|en|asigna|inscribe|matricula)\s+/iu', $text, $m)) {
+        if (preg_match('/'.$verb.'\s+(?:a|al)\s+(?:alumno|estudiante)\s+(.+?)\s+(?:y\s+)?(?:al|a la|en|asigna|inscribe|matricula)\s+/iu', $text, $m)) {
             $single = $this->sanitizePersonName(trim($m[1]));
             if ($single) {
                 return [$single];
             }
         }
 
-        if (! preg_match('/(?:agrega|agregar|matricula|matricular|inscribe|inscribir|crea|crear)\s+a?\s+(.+?)\s+(?:al|a la|en)\s+/iu', $text, $m)) {
+        if (! preg_match('/'.$verb.'\s+a?\s+(.+?)\s+(?:al|a la|en)\s+/iu', $text, $m)) {
             return [];
         }
-        $raw = trim($m[1]);
 
-        return $this->splitAndSanitizeNames($raw);
+        return $this->splitAndSanitizeNames(trim((string) $m[1]));
     }
 
     /**
@@ -2740,9 +2746,8 @@ class AICommandController extends Controller
      */
     private function splitAndSanitizeNames(string $raw): array
     {
-        $raw = preg_replace('/^(?:alumno|estudiante|a\s+|al\s+|el\s+|la\s+|los\s+|las\s+)\s*/iu', '', $raw) ?? $raw;
+        $raw = preg_replace('/^(?:alumno|estudiante|a\s+|al\s+|el\s+|la\s+|los\s+|las\s+|siguientes\s+|para\s+(?:el|la)\s+)\s*/iu', '', $raw) ?? $raw;
         $raw = preg_replace('/^(?:para\s+(?:el|la)\s+(?:curso|grado|materia|asignatura)\s+(?:de\s+)?)\s*/iu', '', $raw) ?? $raw;
-        $raw = preg_replace('/^(?:siguientes\s+|mismos\s+)\s*/iu', '', $raw) ?? $raw;
         $raw = preg_replace('/\s+y\s+/iu', ',', $raw) ?? $raw;
 
         return collect(explode(',', $raw))
@@ -2756,7 +2761,12 @@ class AICommandController extends Controller
     private function extractSection(string $text): ?string
     {
         if (preg_match('/secci[oó]n\s+([A-Za-z0-9]+)/iu', $text, $m)) {
-            return strtoupper(trim($m[1]));
+            $raw = mb_strtolower(trim((string) $m[1]));
+            if (preg_match('/^(?:de|del|el|la|los|las|grado|curso)$/u', $raw)) {
+                return null;
+            }
+
+            return strtoupper(trim((string) $m[1]));
         }
 
         return null;

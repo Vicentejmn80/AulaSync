@@ -315,6 +315,88 @@ class DirectorAICommandTest extends TestCase
         }
     }
 
+    public function test_batch_create_students_from_seccion_prompt_with_crees(): void
+    {
+        [$director, $colegio] = $this->directorContext();
+
+        $draft = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'quiero que crees a los siguientes alumnos en la seccion de 2do grado de computacion: carlos duarte, fermin lopez, enrique quesada',
+        ]);
+
+        $draft->assertOk(json_encode($draft->json(), JSON_UNESCAPED_UNICODE))
+            ->assertJsonPath('requires_confirmation', true);
+
+        $pending = $draft->json('pending_actions');
+        $this->assertSame('create_students_batch', $pending[0]['intent']);
+        $this->assertSame(['Carlos Duarte', 'Fermin Lopez', 'Enrique Quesada'], $pending[0]['data']['names']);
+        $this->assertSame('2do', $pending[0]['data']['grade']);
+        $this->assertNull($pending[0]['data']['section'] ?? null);
+        $this->assertSame('Computación', $pending[0]['data']['subject_name']);
+
+        $message = (string) $draft->json('message');
+        $this->assertStringContainsString('Carlos Duarte', $message);
+        $this->assertStringContainsString('Fermin Lopez', $message);
+        $this->assertStringContainsString('Enrique Quesada', $message);
+        $this->assertStringNotContainsStringIgnoringCase('En La Seccion', $message);
+        $this->assertStringNotContainsStringIgnoringCase('para el', $message);
+
+        $execute = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'sí',
+        ]);
+        $execute->assertOk();
+        foreach (['Carlos Duarte', 'Fermin Lopez', 'Enrique Quesada'] as $name) {
+            $this->assertDatabaseHas('students', [
+                'colegio_id' => $colegio->id,
+                'name' => $name,
+                'grade' => '2do',
+            ]);
+        }
+        $this->assertDatabaseMissing('students', [
+            'colegio_id' => $colegio->id,
+            'name' => 'En La Seccion',
+        ]);
+    }
+
+    public function test_batch_create_overrides_llm_context_phrase_as_student_name(): void
+    {
+        config([
+            'services.openai.key' => 'test-key',
+            'services.openai.director_enabled' => true,
+            'services.openai.director_test_enabled' => true,
+        ]);
+        \Illuminate\Support\Facades\Http::fake([
+            'api.openai.com/*' => \Illuminate\Support\Facades\Http::response([
+                'choices' => [[
+                    'message' => [
+                        'role' => 'assistant',
+                        'tool_calls' => [[
+                            'type' => 'function',
+                            'function' => [
+                                'name' => 'create_students_batch',
+                                'arguments' => json_encode([
+                                    'names' => ['En La Seccion'],
+                                    'grade' => '2do',
+                                ]),
+                            ],
+                        ]],
+                    ],
+                ]],
+            ]),
+        ]);
+
+        [$director, $colegio] = $this->directorContext();
+
+        $draft = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'quiero que crees a los siguientes alumnos en la seccion de 2do grado de computacion: carlos duarte, fermin lopez, enrique quesada',
+        ]);
+
+        $draft->assertOk(json_encode($draft->json(), JSON_UNESCAPED_UNICODE));
+        $this->assertSame(
+            ['Carlos Duarte', 'Fermin Lopez', 'Enrique Quesada'],
+            $draft->json('pending_actions.0.data.names')
+        );
+    }
+
     public function test_batch_create_students_with_y_connector_and_no_colon(): void
     {
         [$director, $colegio] = $this->directorContext();
