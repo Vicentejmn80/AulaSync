@@ -32,6 +32,7 @@ use App\Http\Controllers\Teacher\CoursesController;
 use App\Http\Controllers\Teacher\EvaluationController;
 use App\Http\Controllers\Teacher\GradesController;
 use App\Http\Controllers\Teacher\HubController;
+use App\Http\Controllers\Teacher\IntelligenceController;
 use App\Http\Controllers\Teacher\ManualPlanningController;
 use App\Http\Controllers\Teacher\ReportCardController;
 use App\Http\Controllers\Teacher\StudentController as TeacherStudentController;
@@ -256,6 +257,20 @@ Route::middleware(['auth'])->group(function () {
 
             // Asistente de IA
             Route::post('/ai/command', [AICommandHandlerController::class, 'handle'])->name('ai.command');
+
+            // Inteligencia AulaSync — importación de documentos y análisis
+            Route::prefix('intelligence')->name('intelligence.')->group(function () {
+                Route::get('/', [IntelligenceController::class, 'index'])->name('index');
+                Route::get('/api/documents', [IntelligenceController::class, 'documents'])->name('documents');
+                Route::post('/documents', [IntelligenceController::class, 'store'])->name('documents.store');
+                Route::get('/documents/{document}', [IntelligenceController::class, 'show'])->name('documents.show');
+                Route::post('/documents/{document}/apply', [IntelligenceController::class, 'apply'])->name('documents.apply');
+                Route::delete('/documents/{document}', [IntelligenceController::class, 'destroy'])->name('documents.destroy');
+                Route::get('/api/dashboard', [IntelligenceController::class, 'dashboard'])->name('dashboard');
+                Route::post('/query', [IntelligenceController::class, 'query'])->name('query');
+                Route::post('/actions', [IntelligenceController::class, 'runAction'])->name('actions.run');
+                Route::post('/actions/apply', [IntelligenceController::class, 'applyAction'])->name('actions.apply');
+            });
 
             // Gestión Académica — Cursos
             Route::prefix('teacher/courses')->name('teacher.courses.')->group(function () {

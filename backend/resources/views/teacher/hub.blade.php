@@ -3864,6 +3864,11 @@
                 <span>Planificaciones</span>
                 <i class="fa-solid fa-arrow-up-right-from-square" style="margin-left: auto; font-size: 10px; opacity: 0.4;"></i>
             </a>
+            <a href="{{ route('intelligence.index') }}" class="nav-item">
+                <i class="fa-solid fa-brain"></i>
+                <span>Inteligencia</span>
+                <i class="fa-solid fa-arrow-up-right-from-square" style="margin-left: auto; font-size: 10px; opacity: 0.4;"></i>
+            </a>
             <a href="{{ route('teacher.activities.index') }}" class="nav-item">
                 <i class="fa-solid fa-clipboard-list"></i>
                 <span>Actividades</span>
