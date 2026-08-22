@@ -36,6 +36,10 @@ class AuthenticatedSessionController extends Controller
             return redirect()->route('login');
         }
 
+        if ($user->isSuperAdmin()) {
+            return redirect()->route('super-admin');
+        }
+
         if (! $user->onboarding_completed) {
             return redirect()->route('onboarding');
         }

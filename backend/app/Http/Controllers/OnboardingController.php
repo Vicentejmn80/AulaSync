@@ -21,6 +21,10 @@ class OnboardingController extends Controller
 {
     public function show()
     {
+        if (Auth::check() && Auth::user()->isSuperAdmin()) {
+            return redirect()->route('super-admin');
+        }
+
         if (Auth::check() && Auth::user()->onboarding_completed) {
             return redirect()->route('dashboard');
         }

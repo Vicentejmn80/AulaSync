@@ -17,6 +17,10 @@ class DashboardController extends Controller
 
         $user = Auth::user();
 
+        if ($user->isSuperAdmin()) {
+            return redirect()->route('super-admin');
+        }
+
         if (! $user->onboarding_completed) {
             return redirect()->route('onboarding');
         }

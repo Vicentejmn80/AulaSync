@@ -66,6 +66,8 @@ Route::middleware('auth')->group(function () {
     Route::post('/onboarding/demo', [OnboardingController::class, 'joinAsDemo'])->name('onboarding.demo');
     Route::get('/onboarding/director-success', [OnboardingController::class, 'directorSuccess'])->name('onboarding.director_success');
     Route::post('/onboarding/validate-school-code', [OnboardingController::class, 'validateSchoolCode'])->name('onboarding.validate_school_code');
+    Route::post('/api/validate-school-code', [OnboardingController::class, 'validateSchoolCode'])->name('api.validate-school-code');
+    Route::post('/api/validate-family-code', [FamilyCodeController::class, 'validateFamilyCode'])->name('api.validate-family-code');
 });
 
 // B. RUTAS BLOQUEADAS HASTA COMPLETAR ONBOARDING
