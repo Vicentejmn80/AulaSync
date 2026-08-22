@@ -299,6 +299,20 @@ class AICommandController extends Controller
             'timestamp' => now()->toIso8601String(),
         ]);
 
+        app(\App\Services\ProductTelemetry::class)->record([
+            'user' => $director,
+            'source' => 'director_ai',
+            'event' => 'ai_action',
+            'action' => $intent,
+            'status' => match ($status) {
+                'failed' => 'failed',
+                'verified', 'confirmed' => 'success',
+                'pending_confirmation', 'received' => 'unresolved',
+                default => $status,
+            },
+            'error_code' => $status === 'failed' ? $intent.'_failed' : null,
+        ]);
+
         return DirectorAiOperationLog::create([
             'director_user_id' => $director->id,
             'colegio_id' => $director->colegio_id,

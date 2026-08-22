@@ -32,6 +32,7 @@ class User extends Authenticatable
         'asignatura_principal',
         'horario_clases',
         'onboarding_completed',
+        'last_login_at',
         'family_code',
     ];
 
@@ -57,6 +58,7 @@ class User extends Authenticatable
             'password' => 'hashed',
             'horario_clases' => 'array',
             'onboarding_completed' => 'boolean',
+            'last_login_at' => 'datetime',
         ];
     }
 

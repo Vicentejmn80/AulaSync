@@ -14,6 +14,7 @@ use App\Models\User;
 use App\Services\DirectorAlertService;
 use App\Services\EvaluationPlanService;
 use App\Services\EvaluationSyncService;
+use App\Services\ProductTelemetry;
 use App\Services\StudentGradeAccumulationService;
 use App\Support\GradingScale;
 use App\Support\LessonTemplate;
@@ -1157,14 +1158,29 @@ class AICommandHandlerController extends Controller
                 };
             };
 
+            $started = microtime(true);
             $result = in_array($fn, $writes, true) ? DB::transaction($run) : $run();
+            $ok = (bool) ($result['success'] ?? false);
+
+            app(ProductTelemetry::class)->record([
+                'user_id' => $teacherId,
+                'colegio_id' => User::where('id', $teacherId)->value('colegio_id'),
+                'role' => 'profesor',
+                'source' => 'teacher_ai',
+                'event' => 'ai_action',
+                'action' => $fn,
+                'status' => $ok ? 'success' : 'failed',
+                'duration_ms' => (int) round((microtime(true) - $started) * 1000),
+                'error_code' => $ok ? null : $fn.'_failed',
+                'meta' => ['write' => in_array($fn, $writes, true)],
+            ]);
 
             if (in_array($fn, $writes, true)) {
                 Log::info('nova_ai_write', [
                     'user_id' => $teacherId,
                     'school_id' => User::where('id', $teacherId)->value('colegio_id'),
                     'action' => $fn,
-                    'status' => ($result['success'] ?? false) ? 'success' : 'error',
+                    'status' => $ok ? 'success' : 'error',
                     'timestamp' => now()->toIso8601String(),
                     'resource_ids' => collect($result['data'] ?? [])
                         ->only(['activity_id', 'course_id', 'evaluation_id', 'plan_id', 'deleted', 'deleted_activity_id'])
@@ -1175,6 +1191,16 @@ class AICommandHandlerController extends Controller
 
             return $result;
         } catch (\Throwable $e) {
+            app(ProductTelemetry::class)->record([
+                'user_id' => $teacherId,
+                'colegio_id' => User::where('id', $teacherId)->value('colegio_id'),
+                'role' => 'profesor',
+                'source' => 'teacher_ai',
+                'event' => 'ai_action',
+                'action' => $fn,
+                'status' => 'failed',
+                'error_code' => 'execute_exception',
+            ]);
             Log::error('AICommandHandler executeAction failed', [
                 'function' => $fn,
                 'teacher_id' => $teacherId,

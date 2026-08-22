@@ -78,7 +78,10 @@ class SuperAdminAccessTest extends TestCase
 
         $this->actingAs($admin)->get('/super-admin')
             ->assertOk()
-            ->assertSee('Gestión de Usuarios')
+            ->assertSee('Overview');
+
+        $this->actingAs($admin)->get('/super-admin/schools')
+            ->assertOk()
             ->assertSee('Colegio Central');
 
         $this->actingAs($admin)->get('/super-admin/users')

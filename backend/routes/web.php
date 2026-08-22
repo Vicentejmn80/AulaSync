@@ -454,6 +454,12 @@ Route::middleware('auth')->group(function () {
 
     Route::middleware(['auth', 'role.super_admin'])->prefix('super-admin')->name('super-admin.')->group(function () {
         Route::get('/', [SuperAdminController::class, 'index'])->name('index');
+        Route::get('/usage', [SuperAdminController::class, 'usage'])->name('usage');
+        Route::get('/intelligence', [SuperAdminController::class, 'intelligence'])->name('intelligence');
+        Route::get('/schools', [SuperAdminController::class, 'schools'])->name('schools');
+        Route::get('/colegios/{colegio}', [SuperAdminController::class, 'school'])->name('colegios.show');
+        Route::get('/health', [SuperAdminController::class, 'health'])->name('health');
+        Route::get('/insights', [SuperAdminController::class, 'insights'])->name('insights');
         Route::get('/users', [SuperAdminController::class, 'users'])->name('users');
         Route::patch('/users/{user}', [SuperAdminController::class, 'updateUser'])->name('users.update');
         Route::post('/colegios/{colegio}/enter', [SuperAdminController::class, 'enterSchool'])->name('colegios.enter');

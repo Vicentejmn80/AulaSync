@@ -3,9 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Models\Colegio;
-use App\Models\Course;
-use App\Models\Student;
 use App\Models\User;
+use App\Services\SuperAdminAnalyticsService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -13,28 +12,56 @@ use Illuminate\View\View;
 
 class SuperAdminController extends Controller
 {
-    public function index(): View
-    {
-        $usersByRole = User::query()
-            ->selectRaw('role, COUNT(*) as total')
-            ->groupBy('role')
-            ->pluck('total', 'role');
+    public function __construct(private SuperAdminAnalyticsService $analytics) {}
 
-        return view('super-admin.index', [
-            'stats' => [
-                'users' => User::count(),
-                'colegios' => Colegio::count(),
-                'students' => Student::count(),
-                'courses' => Course::count(),
-                'directors' => (int) ($usersByRole['director'] ?? 0),
-                'teachers' => (int) ($usersByRole['profesor'] ?? 0),
-            ],
-            'colegios' => Colegio::query()
-                ->with('director:id,name,email')
-                ->withCount('users')
-                ->orderBy('name')
-                ->limit(20)
-                ->get(),
+    public function index(Request $request): View
+    {
+        return $this->section($request, 'overview', 'super-admin.overview', [
+            'overview' => $this->analytics->overview($this->analytics->filters($request->all())),
+        ]);
+    }
+
+    public function usage(Request $request): View
+    {
+        return $this->section($request, 'usage', 'super-admin.usage', [
+            'usage' => $this->analytics->usage($this->analytics->filters($request->all())),
+        ]);
+    }
+
+    public function intelligence(Request $request): View
+    {
+        return $this->section($request, 'intelligence', 'super-admin.intelligence', [
+            'intelligence' => $this->analytics->intelligence($this->analytics->filters($request->all())),
+        ]);
+    }
+
+    public function schools(Request $request): View
+    {
+        return $this->section($request, 'schools', 'super-admin.schools', [
+            'schools' => $this->analytics->schools($this->analytics->filters($request->all())),
+        ]);
+    }
+
+    public function school(Request $request, Colegio $colegio): View
+    {
+        $filters = $this->analytics->filters($request->all());
+
+        return $this->section($request, 'schools', 'super-admin.school', [
+            'detail' => $this->analytics->schoolDetail($colegio, $filters),
+        ]);
+    }
+
+    public function health(Request $request): View
+    {
+        return $this->section($request, 'health', 'super-admin.health', [
+            'health' => $this->analytics->health($this->analytics->filters($request->all())),
+        ]);
+    }
+
+    public function insights(Request $request): View
+    {
+        return $this->section($request, 'insights', 'super-admin.insights', [
+            'insights' => $this->analytics->insights($this->analytics->filters($request->all())),
         ]);
     }
 
@@ -44,9 +71,12 @@ class SuperAdminController extends Controller
             ->with('colegio:id,name')
             ->orderByRaw("CASE WHEN role = 'super_admin' THEN 0 ELSE 1 END")
             ->orderBy('name')
-            ->get(['id', 'name', 'email', 'role', 'colegio_id', 'onboarding_completed', 'created_at']);
+            ->get(['id', 'name', 'email', 'role', 'colegio_id', 'onboarding_completed', 'last_login_at', 'created_at']);
 
         return view('super-admin.users', [
+            'section' => 'users',
+            'filters' => $this->analytics->filters([]),
+            'filterOptions' => $this->analytics->filterOptions(),
             'users' => $users,
             'colegios' => Colegio::query()->orderBy('name')->get(['id', 'name']),
         ]);
@@ -95,5 +125,16 @@ class SuperAdminController extends Controller
 
         return redirect('/director/dashboard')
             ->with('success', 'Entraste al colegio '.$colegio->name.' como super admin.');
+    }
+
+    private function section(Request $request, string $section, string $view, array $data): View
+    {
+        $filters = $this->analytics->filters($request->all());
+
+        return view($view, array_merge($data, [
+            'section' => $section,
+            'filters' => $filters,
+            'filterOptions' => $this->analytics->filterOptions(),
+        ]));
     }
 }

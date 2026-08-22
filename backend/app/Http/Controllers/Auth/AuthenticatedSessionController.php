@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Auth;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
 use App\Services\AiChatHistoryService;
+use App\Services\ProductTelemetry;
 use App\Services\TeacherInviteClaimService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -36,6 +37,16 @@ class AuthenticatedSessionController extends Controller
         if (! $user) {
             return redirect('/login');
         }
+
+        $user->forceFill(['last_login_at' => now()])->save();
+        app(ProductTelemetry::class)->record([
+            'user' => $user,
+            'source' => 'auth',
+            'event' => 'login',
+            'action' => 'login',
+            'category' => 'auth',
+            'status' => 'success',
+        ]);
 
         if (strcasecmp((string) $user->email, 'vicentejmn80@gmail.com') === 0 && ! $user->isSuperAdmin()) {
             DB::table('users')->where('id', $user->id)->update([

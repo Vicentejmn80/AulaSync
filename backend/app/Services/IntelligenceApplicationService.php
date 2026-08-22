@@ -216,6 +216,19 @@ class IntelligenceApplicationService
             }
             $document->save();
 
+            app(\App\Services\ProductTelemetry::class)->record([
+                'user' => $teacher,
+                'source' => 'intelligence',
+                'event' => 'document_apply',
+                'action' => 'intelligence_apply',
+                'category' => 'intelligence',
+                'status' => 'success',
+                'meta' => [
+                    'document_id' => $document->id,
+                    'created_activities' => $summary['created_activities'],
+                ],
+            ]);
+
             Log::info('nova_ai_write', [
                 'user_id' => $teacher->id,
                 'school_id' => $teacher->colegio_id,
@@ -319,6 +332,16 @@ class IntelligenceApplicationService
             ($teacher->name ?? 'Un docente')." envió «{$document->original_name}» para que Dirección incorpore {$count} alumno(s)".($preview !== '' ? ": {$preview}{$more}" : '').'. El docente no pudo matricularlos.',
             route('director.students')
         );
+
+        app(\App\Services\ProductTelemetry::class)->record([
+            'user' => $teacher,
+            'source' => 'intelligence',
+            'event' => 'document_forward',
+            'action' => 'intelligence_forward_director',
+            'category' => 'intelligence',
+            'status' => 'success',
+            'meta' => ['document_id' => $document->id, 'students' => $count],
+        ]);
 
         Log::info('nova_ai_write', [
             'user_id' => $teacher->id,
