@@ -16,13 +16,18 @@ class EnsureOnboardingCompleted
             return $next($request);
         }
 
-        if ($request->routeIs('onboarding') || $request->routeIs('onboarding.save')) {
+        if ($user->role === 'super_admin' || $user->isSuperAdmin()) {
+            return $next($request);
+        }
+
+        if ($request->routeIs('onboarding', 'onboarding.save', 'onboarding.demo', 'onboarding.director_success')
+            || $request->is('onboarding', 'onboarding/*')) {
             return $next($request);
         }
 
         // Avoid extra DB roundtrip on every request.
         if (! $user->onboarding_completed) {
-            return redirect()->route('onboarding');
+            return redirect('/onboarding');
         }
 
         return $next($request);

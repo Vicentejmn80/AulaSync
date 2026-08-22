@@ -60,6 +60,14 @@ Route::view('/terminos', 'legal.terminos')->name('legal.terminos');
 // Rutas de autenticación (Breeze)
 require __DIR__.'/auth.php';
 
+Route::middleware('auth')->group(function () {
+    Route::get('/onboarding', [OnboardingController::class, 'show'])->name('onboarding');
+    Route::post('/onboarding', [OnboardingController::class, 'save'])->name('onboarding.save');
+    Route::post('/onboarding/demo', [OnboardingController::class, 'joinAsDemo'])->name('onboarding.demo');
+    Route::get('/onboarding/director-success', [OnboardingController::class, 'directorSuccess'])->name('onboarding.director_success');
+    Route::post('/onboarding/validate-school-code', [OnboardingController::class, 'validateSchoolCode'])->name('onboarding.validate_school_code');
+});
+
 // B. RUTAS BLOQUEADAS HASTA COMPLETAR ONBOARDING
     Route::middleware(['onboarding.completed'])->group(function () {
 
