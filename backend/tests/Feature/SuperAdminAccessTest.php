@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Colegio;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -55,5 +56,49 @@ class SuperAdminAccessTest extends TestCase
         $this->actingAs($user)->get('/super-admin')->assertOk();
         $this->actingAs($user)->get('/onboarding')->assertRedirect('/super-admin');
         $this->actingAs($user)->get('/dashboard')->assertRedirect('/super-admin');
+    }
+
+    public function test_super_admin_dashboard_lists_users_and_can_enter_a_school(): void
+    {
+        $admin = User::factory()->create([
+            'role' => 'super_admin',
+            'onboarding_completed' => true,
+        ]);
+        $director = User::factory()->create([
+            'role' => 'director',
+            'onboarding_completed' => true,
+        ]);
+        $colegio = Colegio::create([
+            'name' => 'Colegio Central',
+            'invite_code' => 'CEN-SA01',
+            'codes_pin' => Colegio::hashPinFromInvite('CEN-SA01'),
+            'director_user_id' => $director->id,
+        ]);
+        $director->update(['colegio_id' => $colegio->id]);
+
+        $this->actingAs($admin)->get('/super-admin')
+            ->assertOk()
+            ->assertSee('Gestión de Usuarios')
+            ->assertSee('Colegio Central');
+
+        $this->actingAs($admin)->get('/super-admin/users')
+            ->assertOk()
+            ->assertSee($director->email);
+
+        $this->actingAs($admin)
+            ->post('/super-admin/colegios/'.$colegio->id.'/enter')
+            ->assertRedirect('/director/dashboard');
+
+        $this->assertSame($colegio->id, (int) $admin->fresh()->colegio_id);
+    }
+
+    public function test_teacher_cannot_open_super_admin_users(): void
+    {
+        $teacher = User::factory()->create([
+            'role' => 'profesor',
+            'onboarding_completed' => true,
+        ]);
+
+        $this->actingAs($teacher)->get('/super-admin/users')->assertRedirect();
     }
 }

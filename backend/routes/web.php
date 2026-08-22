@@ -24,6 +24,7 @@ use App\Http\Controllers\PlanningController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\RepresentanteController;
 use App\Http\Controllers\SmartPlannerController;
+use App\Http\Controllers\SuperAdminController;
 use App\Http\Controllers\Teacher\ActivitiesController;
 use App\Http\Controllers\Teacher\AssessmentStrategyController;
 use App\Http\Controllers\Teacher\AttendanceController;
@@ -451,9 +452,9 @@ Route::middleware('auth')->group(function () {
         return redirect('/');
 });
 
-// RUTA EXCLUSIVA SUPER_ADMIN
-    Route::middleware(['role.super_admin'])->group(function () {
-        Route::get('/super-admin', function () {
-            return view('super-admin.index');
-        })->name('super-admin');
+    Route::middleware(['auth', 'role.super_admin'])->prefix('super-admin')->name('super-admin.')->group(function () {
+        Route::get('/', [SuperAdminController::class, 'index'])->name('index');
+        Route::get('/users', [SuperAdminController::class, 'users'])->name('users');
+        Route::patch('/users/{user}', [SuperAdminController::class, 'updateUser'])->name('users.update');
+        Route::post('/colegios/{colegio}/enter', [SuperAdminController::class, 'enterSchool'])->name('colegios.enter');
     });
