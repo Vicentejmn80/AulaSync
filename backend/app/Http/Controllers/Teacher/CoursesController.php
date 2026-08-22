@@ -38,67 +38,19 @@ class CoursesController extends Controller
     }
 
     /**
-     * Inscribe alumnos ya matriculados en el colegio. Nunca crea registros nuevos.
+     * El docente no puede importar ni matricular alumnos. Eso lo hace el director.
      */
     public function importStudents(Request $request, Course $course): JsonResponse
     {
         abort_unless($course->teacher_id === auth()->id(), 403);
-        abort_unless((int) $course->colegio_id === (int) auth()->user()->colegio_id, 403);
-
-        $request->validate([
-            'names' => ['required', 'string'],
-        ]);
-
-        $lines = preg_split('/\r\n|\r|\n/', trim($request->input('names')));
-        $lines = array_filter(array_map('trim', $lines));
-
-        if (empty($lines)) {
-            return response()->json(['error' => 'La lista de nombres está vacía.'], 422);
-        }
-
-        $enrolled = 0;
-        $missing = [];
-        $colegioId = (int) auth()->user()->colegio_id;
-
-        foreach ($lines as $name) {
-            if (mb_strlen($name) < 2) {
-                continue;
-            }
-
-            $student = Student::where('colegio_id', $colegioId)
-                ->whereRaw('LOWER(name) = ?', [mb_strtolower($name)])
-                ->first();
-
-            if (! $student) {
-                $student = Student::where('colegio_id', $colegioId)
-                    ->where('name', 'like', $name.'%')
-                    ->orderBy('name')
-                    ->first();
-            }
-
-            if (! $student) {
-                $missing[] = $name;
-                continue;
-            }
-
-            if (! $course->students()->where('student_id', $student->id)->exists()) {
-                $course->students()->attach($student->id, ['enrolled_at' => now()]);
-                $enrolled++;
-            }
-        }
-
-        $message = "{$enrolled} alumno(s) inscritos desde la nómina del colegio.";
-        if ($missing) {
-            $message .= ' No encontrados (pide al director que los matricule): '.implode(', ', $missing).'.';
-        }
+        abort_unless((int) $course->colegio_id === (int) $request->user()->colegio_id, 403);
 
         return response()->json([
             'created' => 0,
-            'enrolled' => $enrolled,
-            'missing' => $missing,
-            'total' => count($lines),
-            'message' => $message,
-        ]);
+            'enrolled' => 0,
+            'missing' => [],
+            'error' => 'Solo el director puede importar o matricular alumnos. Revisa la lista y envíasela a dirección.',
+        ], 403);
     }
 
     /**

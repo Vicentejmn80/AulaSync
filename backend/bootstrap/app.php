@@ -22,6 +22,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'role.director'        => \App\Http\Middleware\EnsureDirectorRole::class,
             'role.teacher'         => \App\Http\Middleware\EnsureTeacherRole::class,
             'role.representante'   => \App\Http\Middleware\EnsureRepresentanteRole::class,
+            'role.super_admin'     => \App\Http\Middleware\EnsureSuperAdminRole::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

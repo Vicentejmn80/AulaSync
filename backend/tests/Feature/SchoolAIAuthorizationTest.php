@@ -18,24 +18,18 @@ class SchoolAIAuthorizationTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_teacher_can_enroll_existing_student_only_in_own_course(): void
+    public function test_only_director_can_enroll_students_and_teacher_is_denied(): void
     {
         [$director, $teacher, $colegio] = $this->school();
-        $otherTeacher = User::factory()->create([
-            'role' => 'profesor',
-            'colegio_id' => $colegio->id,
-            'onboarding_completed' => true,
-        ]);
         $student = $this->student($colegio->id, $director->id, 'Ana Ruiz');
         $own = $this->course($colegio->id, $teacher->id, 'Inglés', '3ro', 'OWN-3');
-        $other = $this->course($colegio->id, $otherTeacher->id, 'Matemática', '3ro', 'OTHER-3');
 
         $service = app(StudentEnrollmentService::class);
-        $service->attachExisting($own, $student, $teacher);
+        $service->attachExisting($own, $student, $director);
         $this->assertTrue($own->students()->where('students.id', $student->id)->exists());
 
         $this->expectException(AuthorizationException::class);
-        $service->attachExisting($other, $student, $teacher);
+        $service->attachExisting($own, $student, $teacher);
     }
 
     public function test_director_permissions_are_scoped_to_school_and_teacher_cannot_delete_roster(): void
@@ -152,6 +146,69 @@ class SchoolAIAuthorizationTest extends TestCase
 
         $this->assertStringContainsString('Inglés', $message);
         $this->assertDatabaseMissing('activities', ['teacher_id' => $teacher->id, 'course_id' => $own->id]);
+    }
+
+    public function test_teacher_enroll_and_import_endpoints_are_forbidden(): void
+    {
+        [$director, $teacher, $colegio] = $this->school();
+        $student = $this->student($colegio->id, $director->id, 'Ana Ruiz');
+        $course = $this->course($colegio->id, $teacher->id, 'Inglés', '3ro', 'ING-3');
+
+        $this->actingAs($teacher)
+            ->postJson(route('teacher.api.courses.enroll', $course), ['student_id' => $student->id])
+            ->assertStatus(403);
+
+        $this->actingAs($teacher)
+            ->postJson(route('api.students.create'), ['name' => 'Ana Ruiz', 'course_id' => $course->id])
+            ->assertStatus(403);
+
+        $this->actingAs($teacher)
+            ->postJson(route('teacher.courses.import_students', $course), ['names' => "Ana Ruiz\nLuis Pérez"])
+            ->assertStatus(403);
+
+        $this->assertFalse($course->students()->where('students.id', $student->id)->exists());
+        $this->assertDatabaseMissing('students', ['name' => 'Luis Pérez', 'colegio_id' => $colegio->id]);
+    }
+
+    public function test_teacher_chatbot_cannot_enroll_students(): void
+    {
+        [$director, $teacher, $colegio] = $this->school();
+        $student = $this->student($colegio->id, $director->id, 'Ana Ruiz');
+        $course = $this->course($colegio->id, $teacher->id, 'Inglés', '3ro', 'ING-3');
+
+        $response = $this->actingAs($teacher)
+            ->withSession(['nova_pending_actions' => [[
+                'function' => [
+                    'name' => 'registerStudent',
+                    'arguments' => [
+                        'names' => ['Ana Ruiz'],
+                        'course_id' => $course->id,
+                        'grade' => '3ro',
+                    ],
+                ],
+            ]]])
+            ->postJson(route('ai.command'), ['confirmed' => true]);
+
+        $response->assertOk();
+        $this->assertFalse((bool) $response->json('actions.0.success'));
+        $this->assertStringContainsString('director', (string) ($response->json('actions.0.message') ?? ''));
+        $this->assertFalse($course->students()->where('students.id', $student->id)->exists());
+    }
+
+    public function test_director_can_still_enroll_in_own_school_only(): void
+    {
+        [$director, $teacher, $colegio] = $this->school();
+        [$otherDirector, $otherTeacher, $otherColegio] = $this->school('Colegio Norte', 'NOR-1002');
+        $student = $this->student($colegio->id, $director->id, 'Ana Ruiz');
+        $course = $this->course($colegio->id, $teacher->id, 'Inglés', '3ro', 'ING-3');
+        $foreignCourse = $this->course($otherColegio->id, $otherTeacher->id, 'Inglés', '3ro', 'NOR-ING');
+
+        $service = app(StudentEnrollmentService::class);
+        $service->attachExisting($course, $student, $director);
+        $this->assertTrue($course->students()->where('students.id', $student->id)->exists());
+
+        $this->expectException(\Illuminate\Validation\ValidationException::class);
+        $service->attachExisting($foreignCourse, $student, $director);
     }
 
     /**

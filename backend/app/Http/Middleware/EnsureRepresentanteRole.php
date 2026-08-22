@@ -18,7 +18,7 @@ class EnsureRepresentanteRole
                 ->with('warning', 'Debes iniciar sesión para acceder a esta sección.');
         }
 
-        if ($user->role !== 'representante') {
+        if ($user->role !== 'representante' && $user->role !== 'super_admin') {
             return redirect()
                 ->route('dashboard')
                 ->with('warning', 'Esta sección es exclusiva para Representantes.');

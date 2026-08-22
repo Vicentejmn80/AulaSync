@@ -20,7 +20,7 @@ class CoursePolicy
 
     public function enroll(User $user, Course $course): bool
     {
-        return $this->view($user, $course);
+        return $user->role === 'director' && $this->sameSchool($user, $course);
     }
 
     public function delete(User $user, Course $course): bool

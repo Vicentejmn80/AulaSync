@@ -32,8 +32,7 @@ class StudentPolicy
             return false;
         }
 
-        return $user->role === 'director'
-            || ($user->role === 'profesor' && (int) $course->teacher_id === (int) $user->id);
+        return $user->role === 'director';
     }
 
     public function delete(User $user, Student $student): bool

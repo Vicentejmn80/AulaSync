@@ -18,7 +18,7 @@ class EnsureTeacherRole
                 ->with('warning', 'Debes iniciar sesión como docente para acceder a esta sección.');
         }
 
-        if ($user->role !== 'profesor') {
+        if ($user->role !== 'profesor' && $user->role !== 'super_admin') {
             return redirect()
                 ->to('/director/dashboard')
                 ->with('warning', 'Esta sección es exclusiva para Docentes. Los Directores tienen acceso en su panel institucional.');

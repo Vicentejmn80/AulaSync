@@ -60,28 +60,7 @@ Route::view('/terminos', 'legal.terminos')->name('legal.terminos');
 // Rutas de autenticación (Breeze)
 require __DIR__.'/auth.php';
 
-// --- RUTAS PROTEGIDAS (Solo usuarios logueados) ---
-Route::middleware(['auth'])->group(function () {
-
-    // A. EXCEPCIÓN: Rutas de Onboarding
-    Route::get('/onboarding', [OnboardingController::class, 'show'])->name('onboarding');
-    // RUTA TEMPORAL: Para ver el diseño sin loguearse
-    Route::get('/debug-onboarding', function () {
-        $preselectedRole = '';
-
-        return view('onboarding.wizard', compact('preselectedRole'));
-    })->name('debug.onboarding');
-    Route::post('/api/validate-school-code', [OnboardingController::class, 'validateSchoolCode'])
-        ->name('api.validate-school-code');
-    Route::post('/api/validate-family-code', [FamilyCodeController::class, 'validateFamilyCode'])
-        ->name('api.validate-family-code');
-    Route::post('/onboarding/save', [OnboardingController::class, 'save'])->name('onboarding.save');
-    Route::get('/onboarding/director-success', [OnboardingController::class, 'directorSuccess'])
-        ->name('onboarding.director_success');
-    Route::post('/onboarding/demo', [OnboardingController::class, 'joinAsDemo'])
-        ->name('onboarding.demo');
-
-    // B. RUTAS BLOQUEADAS HASTA COMPLETAR ONBOARDING
+// B. RUTAS BLOQUEADAS HASTA COMPLETAR ONBOARDING
     Route::middleware(['onboarding.completed'])->group(function () {
 
         // Dashboard Principal
@@ -265,6 +244,7 @@ Route::middleware(['auth'])->group(function () {
                 Route::post('/documents', [IntelligenceController::class, 'store'])->name('documents.store');
                 Route::get('/documents/{document}', [IntelligenceController::class, 'show'])->name('documents.show');
                 Route::post('/documents/{document}/apply', [IntelligenceController::class, 'apply'])->name('documents.apply');
+                Route::post('/documents/{document}/forward', [IntelligenceController::class, 'forwardToDirector'])->name('documents.forward');
                 Route::delete('/documents/{document}', [IntelligenceController::class, 'destroy'])->name('documents.destroy');
                 Route::get('/api/dashboard', [IntelligenceController::class, 'dashboard'])->name('dashboard');
                 Route::post('/query', [IntelligenceController::class, 'query'])->name('query');
@@ -459,5 +439,11 @@ Route::middleware(['auth'])->group(function () {
         request()->session()->regenerateToken();
 
         return redirect('/');
-    });
 });
+
+// RUTA EXCLUSIVA SUPER_ADMIN
+    Route::middleware(['role.super_admin'])->group(function () {
+        Route::get('/super-admin', function () {
+            return view('super-admin.index');
+        })->name('super-admin');
+    });

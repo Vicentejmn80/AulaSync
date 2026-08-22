@@ -15,6 +15,8 @@ class IntelligenceDocument extends Model
 
     public const STATUS_APPLIED = 'applied';
 
+    public const STATUS_FORWARDED = 'forwarded_to_director';
+
     public const STATUS_FAILED = 'failed';
 
     public const KIND_PLANIFICACION = 'planificacion';

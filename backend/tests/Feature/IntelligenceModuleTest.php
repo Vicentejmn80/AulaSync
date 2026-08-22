@@ -186,7 +186,9 @@ class IntelligenceModuleTest extends TestCase
 
         $response->assertOk()->assertJsonPath('success', true);
         $this->assertStringContainsString('2 actividad(es)', (string) $response->json('message'));
-        $this->assertStringContainsString('2 alumno(s) vinculados', (string) $response->json('message'));
+        $this->assertStringNotContainsString('vinculados', (string) $response->json('message'));
+        $this->assertSame(0, (int) $response->json('data.linked_students'));
+        $this->assertSame(2, $course->students()->count());
 
         $this->assertDatabaseHas('activities', [
             'teacher_id' => $teacher->id,
@@ -439,7 +441,8 @@ $this->assertDatabaseHas('attendances', [
         $math->students()->attach($ana->id);
         $this->grade($colegio, $activityMath, $ana, 20);
 
-$summary = $response->json('summary');
+        $response = $this->actingAs($teacher)->getJson(route('intelligence.dashboard', ['course_id' => $english->id]));
+        $summary = $response->json('summary');
         $hasData = $summary['has_data'] ?? false;
         $this->assertFalse($hasData);
         $message = $summary['message'] ?? '';
@@ -505,6 +508,102 @@ $summary = $response->json('summary');
             ->json('answer');
         // Con menos de 3 notas no afirma dificultades.
         $this->assertSame('no_data', $difficulty['query_type']);
+    }
+
+    public function test_apply_does_not_enroll_existing_or_new_students(): void
+    {
+        [$director, $teacher, $colegio] = $this->school();
+        $course = $this->course($colegio->id, $teacher->id, 'Matemáticas', '4to', 'A');
+        $ana = Student::create([
+            'colegio_id' => $colegio->id,
+            'teacher_id' => $director->id,
+            'name' => 'Ana Ruiz',
+            'grade' => '4to',
+            'section' => 'A',
+            'family_code' => 'NV-ANA1',
+        ]);
+
+        $document = $this->extractedDocument($teacher, $colegio, $course, [
+            'document_type' => 'lista_alumnos',
+            'students' => [
+                ['name' => 'Ana Ruiz', 'status' => 'existing', 'student_id' => $ana->id],
+                ['name' => 'María Nueva', 'status' => 'new', 'student_id' => null],
+            ],
+        ]);
+
+        $response = $this->actingAs($teacher)->postJson(route('intelligence.documents.apply', $document), [
+            'course_id' => $course->id,
+            'students' => [0, 1],
+        ]);
+
+        $response->assertOk()->assertJsonPath('success', true);
+        $this->assertSame(0, (int) $response->json('data.linked_students'));
+        $this->assertContains('Ana Ruiz', $response->json('data.requires_director'));
+        $this->assertContains('María Nueva', $response->json('data.requires_director'));
+        $this->assertFalse($course->students()->where('students.id', $ana->id)->exists());
+        $this->assertDatabaseMissing('students', ['name' => 'María Nueva', 'colegio_id' => $colegio->id]);
+        $this->assertSame(IntelligenceDocument::STATUS_EXTRACTED, $document->fresh()->status);
+    }
+
+    public function test_teacher_can_forward_institutional_review_to_director_without_persisting(): void
+    {
+        [$director, $teacher, $colegio] = $this->school();
+        [$otherDirector] = $this->school('Colegio Norte', 'NOR-2002');
+        $course = $this->course($colegio->id, $teacher->id, 'Matemáticas', '4to', 'A');
+        $document = $this->extractedDocument($teacher, $colegio, $course, [
+            'document_type' => 'lista_alumnos',
+            'students' => [
+                ['name' => 'María Nueva', 'status' => 'new', 'student_id' => null, 'grade' => '4to'],
+            ],
+        ]);
+
+        $response = $this->actingAs($teacher)->postJson(route('intelligence.documents.forward', $document));
+
+        $response->assertOk()->assertJsonPath('success', true);
+        $this->assertSame(IntelligenceDocument::STATUS_FORWARDED, $document->fresh()->status);
+        $this->assertDatabaseMissing('students', ['name' => 'María Nueva', 'colegio_id' => $colegio->id]);
+        $this->assertDatabaseHas('notifications', [
+            'user_id' => $director->id,
+            'colegio_id' => $colegio->id,
+            'title' => 'Revisión institucional enviada por un docente',
+        ]);
+        $this->assertDatabaseMissing('notifications', ['user_id' => $otherDirector->id]);
+    }
+
+    public function test_other_teacher_cannot_forward_document(): void
+    {
+        [$director, $teacher, $colegio] = $this->school();
+        $otherTeacher = User::factory()->create([
+            'role' => 'profesor',
+            'colegio_id' => $colegio->id,
+            'onboarding_completed' => true,
+        ]);
+        $course = $this->course($colegio->id, $teacher->id, 'Arte', '1ro', 'A');
+        $document = $this->extractedDocument($teacher, $colegio, $course, [
+            'document_type' => 'lista_alumnos',
+            'students' => [['name' => 'Ana Ruiz', 'status' => 'new', 'student_id' => null]],
+        ]);
+
+        $this->actingAs($otherTeacher)
+            ->postJson(route('intelligence.documents.forward', $document))
+            ->assertStatus(403);
+
+        $this->assertSame(IntelligenceDocument::STATUS_EXTRACTED, $document->fresh()->status);
+        $this->assertDatabaseMissing('notifications', [
+            'title' => 'Revisión institucional enviada por un docente',
+        ]);
+    }
+
+    public function test_query_refuses_institutional_school_questions(): void
+    {
+        [$director, $teacher, $colegio] = $this->school();
+
+        $answer = $this->actingAs($teacher)
+            ->postJson(route('intelligence.query'), ['text' => '¿Cuántos profesores hay y cuál es el ranking institucional?'])
+            ->json('answer');
+
+        $this->assertSame('institutional_refusal', $answer['query_type']);
+        $this->assertStringContainsString('director', $answer['message']);
     }
 
     public function test_query_refuses_out_of_scope_questions(): void
@@ -726,13 +825,13 @@ $answer = $this->actingAs($teacher)
     /**
      * @return array{0:User,1:User,2:Colegio}
      */
-    private function school(): array
+    private function school(string $name = 'Colegio Central', string $code = 'CEN-1001'): array
     {
         $director = User::factory()->create(['role' => 'director', 'onboarding_completed' => true]);
         $colegio = Colegio::create([
-            'name' => 'Colegio Central',
-            'invite_code' => 'CEN-1001',
-            'codes_pin' => Colegio::hashPinFromInvite('CEN-1001'),
+            'name' => $name,
+            'invite_code' => $code,
+            'codes_pin' => Colegio::hashPinFromInvite($code),
             'director_user_id' => $director->id,
         ]);
         $director->update(['colegio_id' => $colegio->id]);

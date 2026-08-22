@@ -17,7 +17,6 @@ return new class extends Migration
         }
 
         DB::statement('ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check');
-        DB::statement("ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role::text = ANY (ARRAY['profesor'::text, 'director'::text, 'representante'::text]))");
     }
 
     public function down(): void
@@ -27,6 +26,5 @@ return new class extends Migration
         }
 
         DB::statement('ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check');
-        DB::statement("ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role::text = ANY (ARRAY['profesor'::text, 'director'::text]))");
     }
 };

@@ -161,6 +161,30 @@ class IntelligenceController extends Controller
         return response()->json($result);
     }
 
+    public function forwardToDirector(Request $request, IntelligenceDocument $document): JsonResponse
+    {
+        if ($document->teacher_id !== (int) $request->user()->id
+            || (int) $document->colegio_id !== (int) $request->user()->colegio_id) {
+            return response()->json(['success' => false, 'message' => self::ACCESS_DENIED], 403);
+        }
+
+        try {
+            $result = $this->application->forwardToDirector($document, $request->user());
+        } catch (\Throwable $e) {
+            Log::error('Intelligence forward failed', [
+                'document_id' => $document->id,
+                'teacher_id' => $request->user()->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json(['success' => false, 'message' => self::ACCESS_DENIED], 403);
+        }
+
+        $status = ($result['success'] ?? false) ? 200 : 422;
+
+        return response()->json($result, $status);
+    }
+
     public function destroy(Request $request, IntelligenceDocument $document): JsonResponse
     {
         if ($document->teacher_id !== (int) $request->user()->id) {

@@ -30,6 +30,10 @@ class IntelligenceQueryService
             return $this->refusal();
         }
 
+        if ($this->isInstitutionalQuestion($text)) {
+            return $this->institutionalRefusal();
+        }
+
         $parsed = $this->interpretWithModel($teacher, $text);
 
         if ($parsed === null) {
@@ -113,6 +117,8 @@ class IntelligenceQueryService
         return <<<'PROMPT'
 Eres el consultor de datos de "Inteligencia AulaSync" para profesores.
 NUNCA respondes con conocimiento propio ni generalidades educativas.
+NO consultes nómina institucional, profesores, rankings del colegio ni rendimiento global.
+Solo usas datos pedagógicos de los cursos del docente autenticado.
 Para cada pregunta eliges EXACTAMENTE una herramienta de consulta:
 
 - group_status: estado general del grupo (¿cómo está la clase?, ¿cómo van?)
@@ -160,6 +166,16 @@ PROMPT;
         }
 
         return ['query_type' => 'unknown'];
+    }
+
+    private function isInstitutionalQuestion(string $text): bool
+    {
+        $value = $this->fold($text);
+
+        return (bool) preg_match(
+            '/todos los (alumnos|estudiantes) del colegio|nomina (completa|del colegio)|cuantos profesores|listado de profesores|ranking institucional|rendimiento (del colegio|institucional)|estadisticas del colegio|todos los cursos del colegio/u',
+            $value
+        );
     }
 
     /**
@@ -423,6 +439,18 @@ PROMPT;
             'message' => "Solo respondo con los datos reales de tus cursos en AulaSync. Puedo decirte, por ejemplo:\n\n- «¿Cómo está 4to A?» — estado general del grupo\n- «¿Qué estudiantes necesitan atención?»\n- «¿Quién tiene mejor rendimiento?»\n- «¿Qué área presenta más dificultades?»\n- «¿Cómo va Ana Ruiz?» — detalle de un alumno",
             'data' => [],
             'query_type' => 'refusal',
+        ];
+    }
+
+    /**
+     * @return array{message: string, data: array<string, mixed>, query_type: string}
+     */
+    private function institutionalRefusal(): array
+    {
+        return [
+            'message' => 'Esa consulta es institucional. Solo el director puede ver la nómina completa, profesores o el rendimiento del colegio. Puedo ayudarte con la planificación, actividades y el grupo de tus propios cursos.',
+            'data' => [],
+            'query_type' => 'institutional_refusal',
         ];
     }
 

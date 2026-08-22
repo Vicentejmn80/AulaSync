@@ -15,16 +15,18 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 
 /**
- * Aplica al sistema los datos confirmados por el profesor tras revisar la
- * extracción de un documento: actividades al calendario, vinculación de
- * alumnos existentes al curso, calificaciones y asistencia. Todo dentro del
- * scope del profesor y su colegio, con auditoría de escritura.
+ * Aplica al sistema los datos pedagógicos confirmados por el profesor:
+ * actividades al calendario, calificaciones y asistencia de alumnos ya
+ * inscritos en su curso. Nunca crea, matricula ni incorpora información
+ * institucional. Eso se envía al director para revisión.
  */
 class IntelligenceApplicationService
 {
     private const ACCESS_DENIED = 'No tienes permisos para acceder a esta información o realizar esta acción.';
 
-    public function __construct(private StudentEnrollmentService $enrollment) {}
+    public const TEACHER_INSTITUTIONAL_DENIED = 'Solo el director puede matricular alumnos o incorporar información institucional. Revisa el documento y envíaselo a dirección.';
+
+    public function __construct(private DirectorAlertService $alerts) {}
 
     /**
      * @param  array{course_id?: int, students?: array<int, int>, student_choices?: array<string, int>, activities?: array<int, int>, grades?: array<int, int>, attendance?: array<int, int>}  $selection
@@ -35,7 +37,11 @@ class IntelligenceApplicationService
         $review = $document->review ?? [];
         $extraction = $document->extraction ?? [];
 
-        if (! in_array($document->status, [IntelligenceDocument::STATUS_EXTRACTED, IntelligenceDocument::STATUS_APPLIED], true)) {
+        if (! in_array($document->status, [
+            IntelligenceDocument::STATUS_EXTRACTED,
+            IntelligenceDocument::STATUS_APPLIED,
+            IntelligenceDocument::STATUS_FORWARDED,
+        ], true)) {
             return [
                 'success' => false,
                 'message' => 'Este documento no tiene datos listos para aplicar.',
@@ -67,42 +73,23 @@ class IntelligenceApplicationService
                 'skipped_grades' => [],
             ];
 
-            $studentIdByName = [];
-
-            // 1. Vincular alumnos existentes al curso.
             foreach ((array) ($selection['students'] ?? []) as $index) {
                 $item = $review['students'][(int) $index] ?? null;
-                if (! $item) {
+                if (! $item || empty($item['name'])) {
                     continue;
                 }
-
-                $studentId = (int) ($item['student_id'] ?? 0);
-                if ($studentId === 0 && isset($selection['student_choices'][(string) $index])) {
-                    $studentId = (int) $selection['student_choices'][(string) $index];
-                }
-
-                $student = $studentId > 0
-                    ? Student::where('id', $studentId)->where('colegio_id', $teacher->colegio_id)->first()
-                    : null;
-
-                if (! $student) {
-                    $summary['requires_director'][] = $item['name'];
-                    continue;
-                }
-
-                $this->enrollment->attachExisting($course, $student, $teacher);
-                $studentIdByName[$this->key($item['name'])] = (int) $student->id;
-                $summary['linked_students']++;
+                $summary['requires_director'][] = $item['name'];
+                $summary['skipped_students'][] = $item['name'];
             }
 
             foreach ((array) ($review['students'] ?? []) as $item) {
-                if (($item['status'] ?? '') === 'new') {
+                if (! empty($item['name'])) {
                     $summary['requires_director'][] = $item['name'];
                 }
             }
             $summary['requires_director'] = array_values(array_unique($summary['requires_director']));
+            $summary['skipped_students'] = array_values(array_unique($summary['skipped_students']));
 
-            // 2. Actividades (planificación → calendario).
             foreach ((array) ($selection['activities'] ?? []) as $index) {
                 $item = $review['activities'][(int) $index] ?? null;
                 if (! $item || empty($item['title'])) {
@@ -133,24 +120,26 @@ class IntelligenceApplicationService
                 $summary['created_activities']++;
             }
 
-            // 3. Calificaciones.
             $activityIdByTitle = [];
+
             foreach ((array) ($selection['grades'] ?? []) as $index) {
                 $item = $review['grades'][(int) $index] ?? null;
                 if (! $item) {
                     continue;
                 }
 
-                $studentId = (int) ($item['student_id'] ?? 0);
-                if ($studentId === 0) {
-                    $studentId = (int) ($studentIdByName[$this->key((string) $item['student'])] ?? 0);
-                }
-                $student = $studentId > 0
-                    ? Student::where('id', $studentId)->where('colegio_id', $teacher->colegio_id)->first()
-                    : null;
+                $student = $this->resolveEnrolledStudent(
+                    $course,
+                    $teacher,
+                    (int) ($item['student_id'] ?? 0),
+                    (string) ($item['student'] ?? '')
+                );
 
                 if (! $student) {
-                    $summary['skipped_grades'][] = $item['student'].' — '.$item['activity_title'];
+                    $summary['skipped_grades'][] = ($item['student'] ?? 'Alumno').' — '.($item['activity_title'] ?? '');
+                    if (! empty($item['student'])) {
+                        $summary['requires_director'][] = $item['student'];
+                    }
                     continue;
                 }
 
@@ -183,22 +172,23 @@ class IntelligenceApplicationService
                 $summary['created_grades']++;
             }
 
-            // 4. Asistencia.
             foreach ((array) ($selection['attendance'] ?? []) as $index) {
                 $item = $review['attendance'][(int) $index] ?? null;
                 if (! $item || empty($item['date'])) {
                     continue;
                 }
 
-                $studentId = (int) ($item['student_id'] ?? 0);
-                if ($studentId === 0) {
-                    $studentId = (int) ($studentIdByName[$this->key((string) $item['student'])] ?? 0);
-                }
-                $student = $studentId > 0
-                    ? Student::where('id', $studentId)->where('colegio_id', $teacher->colegio_id)->first()
-                    : null;
+                $student = $this->resolveEnrolledStudent(
+                    $course,
+                    $teacher,
+                    (int) ($item['student_id'] ?? 0),
+                    (string) ($item['student'] ?? '')
+                );
 
                 if (! $student) {
+                    if (! empty($item['student'])) {
+                        $summary['requires_director'][] = $item['student'];
+                    }
                     continue;
                 }
 
@@ -216,9 +206,14 @@ class IntelligenceApplicationService
                 $summary['created_attendance']++;
             }
 
+            $summary['requires_director'] = array_values(array_unique($summary['requires_director']));
+
+            $didPedagogical = $summary['created_activities'] + $summary['created_grades'] + $summary['created_attendance'] > 0;
             $document->course_id = $course->id;
-            $document->status = IntelligenceDocument::STATUS_APPLIED;
-            $document->applied_at = now();
+            if ($didPedagogical && $document->status !== IntelligenceDocument::STATUS_FORWARDED) {
+                $document->status = IntelligenceDocument::STATUS_APPLIED;
+                $document->applied_at = now();
+            }
             $document->save();
 
             Log::info('nova_ai_write', [
@@ -229,7 +224,7 @@ class IntelligenceApplicationService
                 'course_id' => $course->id,
                 'timestamp' => now()->toIso8601String(),
                 'created_activities' => $summary['created_activities'],
-                'linked_students' => $summary['linked_students'],
+                'linked_students' => 0,
                 'created_grades' => $summary['created_grades'],
                 'created_attendance' => $summary['created_attendance'],
             ]);
@@ -240,6 +235,105 @@ class IntelligenceApplicationService
                 'data' => $summary,
             ];
         });
+    }
+
+    /**
+     * Envía la revisión institucional al director sin persistir alumnos,
+     * cursos ni datos del colegio.
+     *
+     * @return array{success: bool, message: string, data: array<string, mixed>}
+     */
+    public function forwardToDirector(IntelligenceDocument $document, User $teacher): array
+    {
+        if ((int) $document->teacher_id !== (int) $teacher->id
+            || (int) $document->colegio_id !== (int) $teacher->colegio_id
+            || $teacher->role !== 'profesor') {
+            return ['success' => false, 'message' => self::ACCESS_DENIED, 'data' => []];
+        }
+
+        if (! in_array($document->status, [
+            IntelligenceDocument::STATUS_EXTRACTED,
+            IntelligenceDocument::STATUS_APPLIED,
+            IntelligenceDocument::STATUS_FORWARDED,
+        ], true)) {
+            return [
+                'success' => false,
+                'message' => 'Este documento no tiene una revisión lista para enviar al director.',
+                'data' => [],
+            ];
+        }
+
+        $review = $document->review ?? [];
+        $students = collect($review['students'] ?? [])
+            ->map(fn ($item) => trim((string) ($item['name'] ?? '')))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        $hasInstitutional = $students !== []
+            || $document->kind === IntelligenceDocument::KIND_LISTA_ALUMNOS;
+
+        if (! $hasInstitutional) {
+            return [
+                'success' => false,
+                'message' => 'Este documento no tiene alumnos ni información institucional para enviar al director.',
+                'data' => [],
+            ];
+        }
+
+        if ($document->status === IntelligenceDocument::STATUS_FORWARDED) {
+            return [
+                'success' => true,
+                'message' => 'Esta revisión ya fue enviada al director. No se incorporó nada a la nómina.',
+                'data' => ['already_forwarded' => true, 'students' => $students],
+            ];
+        }
+
+        $payload = [
+            'students' => array_values(array_map(fn ($item) => [
+                'name' => $item['name'] ?? '',
+                'grade' => $item['grade'] ?? null,
+                'section' => $item['section'] ?? null,
+                'status' => $item['status'] ?? 'new',
+            ], $review['students'] ?? [])),
+            'context' => $review['context'] ?? [],
+            'kind' => $document->kind,
+            'original_name' => $document->original_name,
+            'forwarded_at' => now()->toIso8601String(),
+            'forwarded_by' => $teacher->id,
+        ];
+
+        $review['director_handoff'] = $payload;
+        $document->review = $review;
+        $document->status = IntelligenceDocument::STATUS_FORWARDED;
+        $document->save();
+
+        $preview = implode(', ', array_slice($students, 0, 8));
+        $more = count($students) > 8 ? '…' : '';
+        $count = count($students);
+
+        $this->alerts->notifyDirectors(
+            (int) $teacher->colegio_id,
+            'Revisión institucional enviada por un docente',
+            ($teacher->name ?? 'Un docente')." envió «{$document->original_name}» para que Dirección incorpore {$count} alumno(s)".($preview !== '' ? ": {$preview}{$more}" : '').'. El docente no pudo matricularlos.',
+            route('director.students')
+        );
+
+        Log::info('nova_ai_write', [
+            'user_id' => $teacher->id,
+            'school_id' => $teacher->colegio_id,
+            'action' => 'intelligence_forward_director',
+            'document_id' => $document->id,
+            'timestamp' => now()->toIso8601String(),
+            'students' => $count,
+        ]);
+
+        return [
+            'success' => true,
+            'message' => 'Envié la revisión al director. No incorporé alumnos ni datos institucionales a la nómina.',
+            'data' => ['students' => $students, 'forwarded' => true],
+        ];
     }
 
     /**
@@ -315,6 +409,31 @@ class IntelligenceApplicationService
         });
     }
 
+    private function resolveEnrolledStudent(Course $course, User $teacher, int $studentId, string $name): ?Student
+    {
+        $student = null;
+        if ($studentId > 0) {
+            $student = Student::where('id', $studentId)
+                ->where('colegio_id', $teacher->colegio_id)
+                ->first();
+        }
+
+        if (! $student && trim($name) !== '') {
+            $student = $course->students()
+                ->where('students.colegio_id', $teacher->colegio_id)
+                ->whereRaw('LOWER(students.name) = ?', [mb_strtolower(trim($name))])
+                ->first();
+        }
+
+        if (! $student) {
+            return null;
+        }
+
+        $enrolled = $course->students()->where('students.id', $student->id)->exists();
+
+        return $enrolled ? $student : null;
+    }
+
     private function resolveOrCreateActivity(Course $course, User $teacher, string $title, int $scaleMax, ?float $importMax, array &$summary): ?int
     {
         $existing = $course->activities()
@@ -361,13 +480,10 @@ class IntelligenceApplicationService
     private function buildMessage(array $summary, array $extraction): string
     {
         $parts = [];
-        $kindLabel = \App\Models\IntelligenceDocument::kindLabels()[$extraction['document_type'] ?? 'otro'] ?? 'documento';
+        $kindLabel = IntelligenceDocument::kindLabels()[$extraction['document_type'] ?? 'otro'] ?? 'documento';
 
         if ($summary['created_activities'] > 0) {
             $parts[] = "📝 {$summary['created_activities']} actividad(es) agregadas al calendario";
-        }
-        if ($summary['linked_students'] > 0) {
-            $parts[] = "👩‍🎓 {$summary['linked_students']} alumno(s) vinculados al curso";
         }
         if ($summary['created_grades'] > 0) {
             $parts[] = "📊 {$summary['created_grades']} calificación(es) registradas";
@@ -377,7 +493,7 @@ class IntelligenceApplicationService
         }
 
         if ($parts === []) {
-            $message = "No apliqué ningún dato del {$kindLabel}. Revisa la selección e inténtalo de nuevo.";
+            $message = "No apliqué datos pedagógicos del {$kindLabel}.";
         } else {
             $message = "✅ {$kindLabel} aplicado: ".implode(' · ', $parts).'.';
         }
@@ -386,7 +502,7 @@ class IntelligenceApplicationService
             $message .= " ({$summary['skipped_duplicates']} duplicados omitidos)";
         }
         if (count($summary['requires_director']) > 0) {
-            $message .= ' ⚠️ '.count($summary['requires_director']).' alumno(s) aún no existen en AulaSync: pide al director que los matricule ('.implode(', ', array_slice($summary['requires_director'], 0, 3)).').';
+            $message .= ' ⚠️ '.count($summary['requires_director']).' alumno(s) no se incorporaron a la nómina. Revisa la lista y envíala al director ('.implode(', ', array_slice($summary['requires_director'], 0, 3)).').';
         }
 
         return $message;

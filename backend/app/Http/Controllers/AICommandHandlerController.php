@@ -14,7 +14,6 @@ use App\Models\User;
 use App\Services\DirectorAlertService;
 use App\Services\EvaluationPlanService;
 use App\Services\EvaluationSyncService;
-use App\Services\StudentEnrollmentService;
 use App\Services\StudentGradeAccumulationService;
 use App\Support\GradingScale;
 use App\Support\LessonTemplate;
@@ -39,7 +38,6 @@ class AICommandHandlerController extends Controller
     public function __construct(
         private StudentGradeAccumulationService $accumulation,
         private EvaluationPlanService $planService,
-        private StudentEnrollmentService $enrollmentService,
     ) {}
 
     private function jsonOut(array $payload, int $status = 200): JsonResponse
@@ -145,7 +143,7 @@ class AICommandHandlerController extends Controller
                 'type' => 'function',
                 'function' => [
                     'name' => 'registerStudent',
-                    'description' => 'Inscribe en el curso SOLO alumnos que ya existen en la nómina del colegio. Nunca crea estudiantes nuevos. Si no hay coincidencia, indica que el director debe matricularlos.',
+                    'description' => 'NO matricula alumnos. Solo el director puede crear o inscribir estudiantes. Si el docente pide matricular, responde que debe enviar la lista a dirección.',
                     'parameters' => [
                         'type' => 'object',
                         'properties' => [
@@ -793,10 +791,10 @@ class AICommandHandlerController extends Controller
                 '- Compara subject_name y grade sin exigir coincidencia literal: normaliza mentalmente números ordinales, abreviaturas y mayúsculas.',
                 '- Solo pregunta si hay dos o más cursos igualmente plausibles.',
                 '',
-                'OPERACIONES MULTI-ENTIDAD (inscribir alumnos existentes):',
+                'OPERACIONES INSTITUCIONALES (solo director):',
                 '- PROHIBIDO crear cursos, grados o secciones. Eso lo hace solo el director. Si el usuario pide crear un curso, NO llames createCourse: explícale que debe pedir a dirección que le asigne la materia o usar su código DOC-.',
-                '- Para inscribir alumnos, emite registerStudent. El backend SOLO busca en la nómina del colegio (nunca crea alumnos). Si no existen, informa que el director debe matricularlos primero.',
-                '- Reparte los alumnos exactamente como los asignó el usuario: cada registerStudent va a su grado. No mezcles alumnos de un grado en otro.',
+                '- PROHIBIDO matricular, inscribir o importar alumnos. Si el usuario lo pide, NO llames registerStudent para persistir: indica que debe revisar el documento en Inteligencia y enviarlo al director.',
+                '- PROHIBIDO consultas globales del colegio (todos los alumnos, profesores, rendimiento institucional). Solo puedes consultar el calendario, actividades y alumnos ya inscritos en los cursos del docente.',
                 '- PROHIBIDO duplicar alumnos. Nunca inventes un registro nuevo.',
                 '- PROHIBIDO el bucle de confirmación: no respondas «¿sigo con el siguiente paso?» por cada curso. Ejecuta TODAS las herramientas necesarias de una sola vez y luego da UN resumen final breve.',
                 '',
@@ -826,7 +824,7 @@ class AICommandHandlerController extends Controller
                 '- agregar evaluación existente al plan de evaluación → attachEvaluationToPlan',
                 '- adaptación NEE / TDAH / TEA / dislexia / discalculia → createActivity con nee_type relleno',
                 '- modificar / cambiar / editar actividad existente → modifyActivity',
-                '- inscribir / agregar alumnos → registerStudent (solo nómina existente del colegio, sin duplicar)',
+                '- inscribir / agregar alumnos → NO. Indica que solo el director matricula; el docente puede revisar y enviar la lista a dirección.',
                 '- planificar mes / cronograma / calendario → bulkPlan',
                 '- borrar / eliminar / quitar actividades en un rango de fechas → deleteActivities',
                 '- borrar / eliminar / quitar una actividad, curso o alumno específico → deleteResource',
@@ -851,7 +849,7 @@ class AICommandHandlerController extends Controller
                 "1. IDENTIFICACIÓN DE ID: Cada línea del calendario inyectado incluye 'actividad_id XXXX'. Cuando el usuario pida borrar una actividad específica (ej: 'borra la clase del jueves' o 'elimina la actividad de números'), primero localiza su activity_id en el calendario inyectado.",
                 "2. BORRADO POR ID (preferido para actividades específicas): Si identificaste un activity_id único, usa deleteResource con resource_type='activity' y resource_id=<el_id>. Ejemplo: usuario dice 'borra la clase de matemáticas del 15 de abril' → busca en calendario inyectado esa fecha → encuentra 'actividad_id 42' → llama deleteResource(resource_type='activity', resource_id=42).",
                 "3. BORRADO POR RANGO (para múltiples actividades): Si el usuario pide borrar varias actividades (ej: 'borra todas las clases de marzo', 'elimina la semana completa'), usa deleteActivities con course_id, start_date y end_date.",
-                '4. LÍMITE DE PERMISOS: El profesor NO puede eliminar cursos ni alumnos de la nómina. Puede matricular alumnos existentes solo en sus cursos; para eliminar nómina o cursos debe pedirlo al director.',
+                '4. LÍMITE DE PERMISOS: El profesor NO puede crear, matricular ni eliminar alumnos, ni modificar cursos o datos institucionales. Solo el director incorpora información del colegio.',
                 '5. EJECUCIÓN DIRECTA: Si el calendario inyectado muestra claramente qué actividades se borrarán, ejecuta la herramienta de borrado de inmediato (sin pedir confirmación).',
                 '6. SOLO SI EL USUARIO LO PIDIÓ: deleteResource o deleteActivities ÚNICAMENTE si el usuario explícitamente pidió borrar/eliminar/limpiar/vaciar.',
                 '',
@@ -2061,108 +2059,17 @@ class AICommandHandlerController extends Controller
 
     private function doRegisterStudent($args, $teacherId)
     {
-        $colegioId = User::where('id', $teacherId)->value('colegio_id');
-        $course = Course::where('id', (int) ($args['course_id'] ?? 0))
-            ->where('teacher_id', $teacherId)
-            ->where('colegio_id', $colegioId)
-            ->first();
-        if (! $course) {
-            $hint = trim((string) ($args['course_name_hint'] ?? $args['grade'] ?? ''));
-
-            return [
-                'success' => false,
-                'message' => $hint !== ''
-                    ? "No encontré un curso que coincida con «{$hint}». Créalo primero o dime su nombre exacto."
-                    : 'No se pudo identificar el curso. Indica el curso completo o su ID.',
-                'action_type' => 'student',
-                'icon' => '⚠️',
-            ];
-        }
-
-        $grade = $args['grade'] ?? $course->grade;
-        if (empty($grade)) {
-            return [
-                'success' => false,
-                'message' => '¿A qué grado quieres inscribir a ese estudiante? Por ejemplo: Primera sección.',
-                'action_type' => 'student',
-                'icon' => '⚠️',
-            ];
-        }
-
-        if (empty($args['names']) || ! is_array($args['names'])) {
-            return [
-                'success' => false,
-                'message' => 'Dime el nombre del alumno o una lista de nombres para inscribirlos en ese curso.',
-                'action_type' => 'student',
-                'icon' => '⚠️',
-            ];
-        }
-
-        $results = [];
-        $missing = [];
-        foreach ($args['names'] as $name) {
-            $name = trim((string) $name);
-            if ($name === '') {
-                continue;
-            }
-
-            $studentQuery = Student::where('colegio_id', $colegioId)
-                ->where(function ($q) use ($name) {
-                    $q->whereRaw('LOWER(name) = ?', [mb_strtolower($name)])
-                        ->orWhere('name', 'like', $name.'%');
-                });
-
-            if (! empty($grade)) {
-                $studentQuery->where(function ($q) use ($grade) {
-                    $q->whereRaw('LOWER(COALESCE(grade, ?)) = ?', ['', mb_strtolower((string) $grade)])
-                        ->orWhereNull('grade');
-                });
-            }
-
-            $student = $studentQuery->orderByRaw('LOWER(name) = ? DESC', [mb_strtolower($name)])->first();
-
-            if (! $student) {
-                $student = Student::where('colegio_id', $colegioId)
-                    ->whereRaw('LOWER(name) LIKE ?', ['%'.mb_strtolower($name).'%'])
-                    ->orderBy('name')
-                    ->first();
-            }
-
-            if (! $student) {
-                $missing[] = $name;
-
-                continue;
-            }
-
-            $this->enrollmentService->attachExisting($course, $student, User::findOrFail($teacherId));
-            $results[] = $student->name;
-        }
-
-        if ($results && ! $missing) {
-            return [
-                'success' => true,
-                'message' => 'Alumnos vinculados desde la nómina: '.implode(', ', $results),
-                'action_type' => 'student',
-                'icon' => '👩‍🎓',
-                'data' => ['names' => $results, 'course_id' => $course->id, 'grade' => $grade],
-            ];
-        }
-
-        if ($results && $missing) {
-            return [
-                'success' => true,
-                'message' => 'Vinculados: '.implode(', ', $results).'. No están en la nómina del colegio (el director debe matricularlos): '.implode(', ', $missing).'.',
-                'action_type' => 'student',
-                'icon' => '👩‍🎓',
-                'data' => ['names' => $results, 'missing' => $missing, 'course_id' => $course->id],
-            ];
-        }
-
         return [
             'success' => false,
-            'message' => 'No encontré a '.implode(', ', $missing).' en la nómina del colegio. El director debe matricularlos primero; no creo alumnos duplicados.',
+            'message' => 'No puedo matricular alumnos. Solo el director incorpora estudiantes a la nómina. Revisa la lista en Inteligencia y envíasela a dirección.',
             'action_type' => 'student',
-            'icon' => '⚠️',
+            'icon' => '🔒',
+            'data' => [
+                'names' => array_values(array_filter(array_map(
+                    static fn ($name) => trim((string) $name),
+                    is_array($args['names'] ?? null) ? $args['names'] : []
+                ))),
+            ],
         ];
     }
 
@@ -2959,7 +2866,7 @@ class AICommandHandlerController extends Controller
             } elseif ($resourceType === 'student') {
                 return [
                     'success' => false,
-                    'message' => 'Los profesores no pueden eliminar alumnos de la nómina. Solo pueden matricular o desmatricular alumnos en sus propios cursos.',
+                    'message' => 'Los profesores no pueden eliminar ni matricular alumnos de la nómina. Solicita este cambio al director.',
                     'action_type' => 'delete',
                     'icon' => '⚠️',
                 ];
@@ -3400,11 +3307,18 @@ class AICommandHandlerController extends Controller
             $limit = 8;
         }
 
-        $results = Student::where('teacher_id', $teacherId)
-            ->where('colegio_id', User::where('id', $teacherId)->value('colegio_id'))
-            ->where('name', 'like', '%'.$query.'%')
+        $colegioId = User::where('id', $teacherId)->value('colegio_id');
+        $courseIds = Course::where('teacher_id', $teacherId)
+            ->when($colegioId, fn ($q) => $q->where('colegio_id', $colegioId))
+            ->pluck('id');
+
+        $results = Student::query()
+            ->where('colegio_id', $colegioId)
+            ->whereHas('courses', fn ($q) => $q->whereIn('courses.id', $courseIds)->where('courses.teacher_id', $teacherId))
+            ->when($query !== '', fn ($q) => $q->where('name', 'like', '%'.$query.'%'))
+            ->orderBy('name')
             ->limit($limit)
-            ->get()
+            ->get(['id', 'name', 'grade', 'section'])
             ->map(fn ($s) => [
                 'id' => $s->id,
                 'name' => $s->name,

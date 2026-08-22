@@ -18,7 +18,7 @@ class EnsureDirectorRole
                 ->with('warning', 'Debes iniciar sesión como director para acceder a esta sección.');
         }
 
-        if ($user->role !== 'director') {
+        if ($user->role !== 'director' && $user->role !== 'super_admin') {
             return redirect()
                 ->route('dashboard')
                 ->with('warning', 'Esta sección es exclusiva para Directores Institucionales.');

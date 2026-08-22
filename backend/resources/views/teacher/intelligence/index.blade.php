@@ -205,15 +205,16 @@
                     {{-- ALUMNOS --}}
                     <div class="review-section" x-show="review.students.length">
                         <h4>👩‍🎓 Alumnos detectados <span class="pill dim" x-text="review.students.length"></span></h4>
+                        <p class="warn-text" style="font-size:12.5px;margin:0 0 8px;">No se incorporan a la nómina. Revísalos y envíalos al director.</p>
                         <table class="table">
                             <thead><tr><th style="width:30px;"></th><th>Nombre</th><th>Estado</th><th style="width:170px;">Coincidencia</th></tr></thead>
                             <tbody>
                                 <template x-for="(s, i) in review.students" :key="'s' + i">
                                     <tr>
-                                        <td><input type="checkbox" :value="i" x-model="reviewForm.students" :disabled="s.status === 'new'"></td>
+                                        <td><input type="checkbox" disabled></td>
                                         <td><strong x-text="s.name"></strong></td>
                                         <td>
-                                            <span class="pill ok" x-show="s.status === 'existing'">Existe</span>
+                                            <span class="pill ok" x-show="s.status === 'existing'">Existe · no se matricula</span>
                                             <span class="pill warn" x-show="s.status === 'ambiguous'">Ambiguo</span>
                                             <span class="pill dim" x-show="s.status === 'new'">Nuevo · requiere director</span>
                                         </td>
@@ -310,9 +311,13 @@
                     </div>
 
                     <div class="stack" style="margin-top:16px;">
-                        <button class="btn btn-main" @click="applyDocument()" :disabled="applying">
+                        <button class="btn btn-main" @click="applyDocument()" :disabled="applying || forwarding">
                             <span x-show="!applying"><i class="fa-solid fa-check-double"></i> Aplicar a mi curso</span>
                             <span x-show="applying"><span class="spinner"></span> Aplicando…</span>
+                        </button>
+                        <button class="btn btn-soft" x-show="review.students.length" @click="forwardDocument()" :disabled="applying || forwarding">
+                            <span x-show="!forwarding"><i class="fa-solid fa-paper-plane"></i> Enviar al director</span>
+                            <span x-show="forwarding"><span class="spinner"></span> Enviando…</span>
                         </button>
                         <button class="btn btn-ghost" @click="review = null"><i class="fa-solid fa-xmark"></i> Cerrar</button>
                     </div>
@@ -602,7 +607,7 @@ function inteligenciaApp() {
         documents: [], loadingDocs: false, deleting: null,
         review: null,
         reviewForm: { course_id: '', students: [], student_choices: {}, activities: [], grades: [], attendance: [] },
-        applying: false, applyMessage: '', applySuccess: false,
+        applying: false, forwarding: false, applyMessage: '', applySuccess: false,
 
         // Panel
         panelCourseId: '', summary: null, loadingDashboard: false,
@@ -685,7 +690,7 @@ function inteligenciaApp() {
             this.applyMessage = '';
             this.reviewForm = {
                 course_id: review.suggested_course_id ? String(review.suggested_course_id) : '',
-                students: review.students.map((s, i) => s.status === 'existing' ? i : -1).filter(i => i >= 0),
+                students: [],
                 student_choices: {},
                 activities: review.activities.map((a, i) => a.duplicate_of ? -1 : i).filter(i => i >= 0),
                 grades: review.grades.map((g, i) => g.student_status === 'existing' ? i : -1).filter(i => i >= 0),
@@ -728,6 +733,25 @@ function inteligenciaApp() {
                 this.applyMessage = e.message || 'No se pudo aplicar el documento.';
             }
             this.applying = false;
+        },
+
+        async forwardDocument() {
+            if (!this.review) return;
+            this.forwarding = true;
+            this.applyMessage = '';
+            try {
+                const data = await this.fetchJson('{{ url('intelligence/documents') }}/' + this.review.document_id + '/forward', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                });
+                this.applySuccess = !!data.success;
+                this.applyMessage = data.message || '';
+                if (data.success) await this.loadDocuments();
+            } catch (e) {
+                this.applySuccess = false;
+                this.applyMessage = e.message || 'No se pudo enviar la revisión al director.';
+            }
+            this.forwarding = false;
         },
 
         async deleteDocument(doc) {
