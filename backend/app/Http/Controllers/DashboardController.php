@@ -18,11 +18,11 @@ class DashboardController extends Controller
         $user = Auth::user();
 
         if ($user->isSuperAdmin()) {
-            return redirect()->route('super-admin');
+            return redirect('/super-admin');
         }
 
         if (! $user->onboarding_completed) {
-            return redirect()->route('onboarding');
+            return redirect('/onboarding');
         }
 
         $role = $user->role ?? 'profesor';

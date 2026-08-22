@@ -16,7 +16,7 @@
                     <div class="onboarding-progress-bar" :style="{ width: progress + '%' }"></div>
                 </div>
 
-                <form x-ref="wizardForm" method="POST" action="{{ route('onboarding.save') }}">
+                <form x-ref="wizardForm" method="POST" action="{{ url('/onboarding') }}">
                     @csrf
                     <input type="hidden" name="role" x-model="role">
                     <input type="hidden" name="school_code" x-model="schoolCode">
@@ -889,7 +889,7 @@
 
                 async joinAsIndependent() {
                     try {
-                        const response = await fetch('{{ route('onboarding.demo') }}', {
+                        const response = await fetch('{{ url('/onboarding/demo') }}', {
                             method: 'POST',
                             headers: {
                                 'Content-Type': 'application/json',
@@ -947,7 +947,7 @@
                     this.schoolValidationStatus = 'idle';
                     this.schoolValidationMessage = '';
                     try {
-                        const response = await fetch('{{ route('api.validate-school-code') }}', {
+                        const response = await fetch('{{ url('/api/validate-school-code') }}', {
                             method: 'POST',
                             headers: {
                                 'Content-Type': 'application/json',
@@ -1002,7 +1002,7 @@
                     this.schoolValidationStatus = 'idle';
                     this.schoolValidationMessage = '';
                     try {
-                        const response = await fetch('{{ route('api.validate-school-code') }}', {
+                        const response = await fetch('{{ url('/api/validate-school-code') }}', {
                             method: 'POST',
                             headers: {
                                 'Content-Type': 'application/json',
@@ -1167,7 +1167,7 @@
                     this.familyValidationMessage = '';
 
                     try {
-                        const response = await fetch('{{ route('api.validate-family-code') }}', {
+                        const response = await fetch('{{ url('/api/validate-family-code') }}', {
                             method: 'POST',
                             headers: {
                                 'Content-Type': 'application/json',
