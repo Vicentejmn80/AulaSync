@@ -202,8 +202,10 @@ class IntelligenceApplicationService
                     continue;
                 }
 
+                $attendedOn = $item['date'] ? \Carbon\Carbon::parse($item['date'])->format('Y-m-d') : now()->format('Y-m-d');
+
                 Attendance::updateOrCreate(
-                    ['student_id' => $student->id, 'course_id' => $course->id, 'attended_on' => $item['date']],
+                    ['student_id' => $student->id, 'course_id' => $course->id, 'attended_on' => $attendedOn],
                     [
                         'teacher_id' => $teacher->id,
                         'colegio_id' => $teacher->colegio_id,

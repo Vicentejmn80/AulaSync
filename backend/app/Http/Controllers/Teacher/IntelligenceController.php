@@ -33,6 +33,10 @@ class IntelligenceController extends Controller
     {
         $teacher = auth()->user();
 
+        if ($teacher->role !== 'profesor') {
+            return response()->json(['success' => false, 'message' => 'No tienes permisos para acceder a esta sección.'], 403);
+        }
+
         return view('teacher.intelligence.index', [
             'courses' => $this->analytics->courses($teacher),
             'connectors' => $this->connectors->available()->all(),
@@ -171,7 +175,7 @@ class IntelligenceController extends Controller
         return response()->json(['success' => true, 'message' => 'Documento eliminado.']);
     }
 
-    public function dashboard(Request $request): JsonResponse
+public function dashboard(Request $request): JsonResponse
     {
         $request->validate([
             'course_id' => ['sometimes', 'nullable', 'integer'],
@@ -182,7 +186,7 @@ class IntelligenceController extends Controller
             $request->filled('course_id') ? (int) $request->input('course_id') : null
         );
 
-        return response()->json(['success' => true, 'summary' => $summary]);
+        return response()->json(['success' => true, 'summary' => $summary ?? []]);
     }
 
     public function query(Request $request): JsonResponse
@@ -191,6 +195,10 @@ class IntelligenceController extends Controller
             'text' => ['required', 'string', 'max:500'],
             'course_id' => ['sometimes', 'nullable', 'integer'],
         ]);
+
+        if (auth()->user() && auth()->user()->role !== 'profesor') {
+            return response()->json(['success' => false, 'message' => 'No tienes permisos para acceder a esta información o realizar esta acción.'], 403);
+        }
 
         $result = $this->query->answer(
             $request->user(),
