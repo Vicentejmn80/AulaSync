@@ -5,6 +5,7 @@ namespace Database\Seeders;
 use App\Models\User;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\Hash;
 
 class DatabaseSeeder extends Seeder
 {
@@ -15,12 +16,15 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        // Set vicentejmn80@gmail.com as initial super_admin
-        $user = User::where('email', 'vicentejmn80@gmail.com')->first();
-        if ($user) {
-            $user->role = 'super_admin';
-            $user->save();
-        }
+        // Buscar o crear el usuario Super Admin con contraseña 'admin123'
+        User::updateOrCreate(
+            ['email' => 'vicentejmn80@gmail.com'],
+            [
+                'name' => 'Super Admin',
+                'password' => Hash::make('vjmn0211'),
+                'role' => 'super_admin',
+            ]
+        );
 
         User::factory()->create([
             'name' => 'Test User',
