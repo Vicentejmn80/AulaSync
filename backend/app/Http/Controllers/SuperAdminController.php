@@ -102,12 +102,32 @@ class SuperAdminController extends Controller
             'colegio_id' => $data['colegio_id'] ?: null,
         ])->save();
 
+        $boolOnboarding = ! empty($data['onboarding_completed']) ?? false;
+        $user->forceFill([
+            'onboarding_completed' => $boolOnboarding,
+        ])->save();
+
         DB::table('users')->where('id', $user->id)->update([
-            'onboarding_completed' => DB::raw(! empty($data['onboarding_completed']) ? 'true' : 'false'),
+            'onboarding_completed' => $boolOnboarding ? true : false,
             'updated_at' => now(),
         ]);
 
         return back()->with('success', "Actualicé a {$user->name}.");
+    }
+
+    public function impersonateUser(User $user): RedirectResponse
+    {
+        if ($user->role === 'super_admin') {
+            return back()->with('warning', 'No puede impersonarse a sí mismo ni a otro super admin.');
+        }
+
+        $currentUser = auth()->user();
+        $currentUser->forceFill([
+            'role' => $user->role,
+            'colegio_id' => $user->colegio_id,
+        ])->save();
+
+        return back()->with('success', 'Sesión iniciada como ' . $user->name . '. <a href="' . url('/super-admin/impersonate-exit') . '">Volver a SuperAdmin</a>.');
     }
 
     public function enterSchool(Colegio $colegio): RedirectResponse
@@ -118,8 +138,12 @@ class SuperAdminController extends Controller
             'colegio_id' => $colegio->id,
         ])->save();
 
+        $user->forceFill([
+            'onboarding_completed' => true,
+        ])->save();
+
         DB::table('users')->where('id', $user->id)->update([
-            'onboarding_completed' => DB::raw('true'),
+            'onboarding_completed' => true,
             'updated_at' => now(),
         ]);
 

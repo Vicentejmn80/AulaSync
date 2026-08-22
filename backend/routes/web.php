@@ -463,4 +463,5 @@ Route::middleware('auth')->group(function () {
         Route::get('/users', [SuperAdminController::class, 'users'])->name('users');
         Route::patch('/users/{user}', [SuperAdminController::class, 'updateUser'])->name('users.update');
         Route::post('/colegios/{colegio}/enter', [SuperAdminController::class, 'enterSchool'])->name('colegios.enter');
+        Route::post('/users/impersonate/{user}', [SuperAdminController::class, 'impersonateUser'])->name('users.impersonate');
     });

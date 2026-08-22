@@ -41,9 +41,18 @@
                                 <label style="font-size:13px;color:#6B4D87;">
                                     <input type="checkbox" name="onboarding_completed" value="1" @checked($user->onboarding_completed)> Completado
                                 </label>
+                                
+                                @if ($user->role !== 'super_admin')
+                                <form method="POST" action="{{ url('/super-admin/impersonate/'.$user->id) }}" style="display:inline;margin-left:12px;">
+                                    @csrf
+                                    @method('POST')
+                                    <button class="btn btn-sm btn-link text-primary" type="submit">Impersonar</button>
+                                </form>
+                                @endif
                                 <button class="btn" type="submit">Guardar</button>
                             </form>
                         </td>
+                        <td></td>
                     </tr>
                 @endforeach
             </tbody>
