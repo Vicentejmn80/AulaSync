@@ -11,7 +11,7 @@ return new class extends Migration
             ->where('email', 'vicentejmn80@gmail.com')
             ->update([
                 'role' => 'super_admin',
-                'onboarding_completed' => true,
+                'onboarding_completed' => DB::raw('true'),
                 'updated_at' => now(),
             ]);
     }

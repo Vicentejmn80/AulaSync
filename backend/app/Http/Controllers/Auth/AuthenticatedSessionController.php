@@ -9,6 +9,7 @@ use App\Services\TeacherInviteClaimService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
 
 class AuthenticatedSessionController extends Controller
@@ -37,10 +38,11 @@ class AuthenticatedSessionController extends Controller
         }
 
         if (strcasecmp((string) $user->email, 'vicentejmn80@gmail.com') === 0 && ! $user->isSuperAdmin()) {
-            $user->forceFill([
+            DB::table('users')->where('id', $user->id)->update([
                 'role' => 'super_admin',
-                'onboarding_completed' => true,
-            ])->save();
+                'onboarding_completed' => DB::raw('true'),
+                'updated_at' => now(),
+            ]);
             $user->refresh();
         }
 
