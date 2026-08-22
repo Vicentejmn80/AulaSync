@@ -324,6 +324,23 @@ class EvaluationController extends Controller
             ], 200);
         }
 
+        // Register telemetry for Super Admin dashboard
+        app(ProductTelemetry::class)->record([
+            'user_id' => $teacher->id,
+            'colegio_id' => $teacher->colegio_id,
+            'role' => 'profesor',
+            'source' => 'evaluation_controller',
+            'event' => 'evaluation_created',
+            'action' => 'store',
+            'category' => 'academic',
+            'status' => 'success',
+            'meta' => [
+                'evaluation_id' => $evaluation->id,
+                'title' => $evaluation->title,
+                'generated_by_ai' => $evaluation->generated_by_ai,
+            ],
+        ]);
+
         $payload = $this->serializeEvaluation($evaluation);
 
         return response()->json([

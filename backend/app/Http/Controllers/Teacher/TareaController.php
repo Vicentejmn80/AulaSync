@@ -93,6 +93,22 @@ class TareaController extends Controller
             'puntos' => $data['puntos'],
         ]);
 
+        app(ProductTelemetry::class)->record([
+            'user_id' => auth()->id(),
+            'colegio_id' => auth()->user()->colegio_id,
+            'role' => 'profesor',
+            'source' => 'teacher',
+            'event' => 'task_created',
+            'action' => 'store',
+            'category' => 'planning',
+            'status' => 'success',
+            'meta' => [
+                'tarea_id' => $tarea->id,
+                'titulo' => $data['titulo'],
+                'actividad_id' => $activity->id,
+            ],
+        ]);
+
         $mirroredActivity = null;
         if ($request->boolean('mirror_activity')) {
             $typeMeta = Activity::normalizeType('tarea', true);

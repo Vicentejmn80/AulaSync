@@ -214,6 +214,22 @@ class ActivitiesController extends Controller
 
         Activity::create($activityData);
 
+        app(ProductTelemetry::class)->record([
+            'user_id' => auth()->id(),
+            'colegio_id' => $course->colegio_id,
+            'role' => 'profesor',
+            'source' => 'teacher',
+            'event' => 'activity_created',
+            'action' => 'store',
+            'category' => $this->telemetryCategoryFor('activity'),
+            'status' => 'success',
+            'meta' => [
+                'activity_id' => $activity->id,
+                'type' => $resolvedType,
+                'is_homework' => $isHomework,
+            ],
+        ]);
+
         return redirect()->route('teacher.activities.index')->with('success', 'Actividad creada correctamente.');
     }
 

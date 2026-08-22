@@ -372,6 +372,21 @@ class AIController extends Controller
             '🤖 Aulasync · Planificación IA'
         );
 
+        app(ProductTelemetry::class)->record([
+            'user_id' => $user->id,
+            'colegio_id' => $user->colegio_id,
+            'role' => 'profesor',
+            'source' => 'ai_controller',
+            'event' => 'plan_created',
+            'action' => 'save',
+            'category' => 'planning',
+            'status' => 'success',
+            'meta' => [
+                'planificacion_id' => $planificacion->id,
+                'tema' => $tema,
+            ],
+        ]);
+
         Log::debug('PLAN_CREATED', [
             'teacher_id' => Auth::id(),
             'colegio_id' => $user->colegio_id,
