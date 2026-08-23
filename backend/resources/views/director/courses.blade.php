@@ -136,7 +136,8 @@
                 </label>
             @endif
             @forelse($courses as $course)
-                <article class="director-card">
+                <article class="director-card cursor-pointer"
+                         onclick="window.novaContext={type:'director_course',id:{{ $course->id }},grade:@js($course->grade),section:@js($course->section),subject:@js($course->subject_name),name:@js($course->subject_name.' '.$course->grade.($course->section ? ' '.$course->section : ''))};window.AI_PAGE_CONTEXT=window.novaContext;window.dispatchEvent(new CustomEvent('ai-context-changed',{detail:window.novaContext}));">
                     <div class="flex flex-wrap items-start justify-between gap-3">
                         <div class="flex items-start gap-3">
                             <input type="checkbox"
@@ -198,5 +199,6 @@
             @endforelse
         </section>
     </main>
+    @include('components.ai-assistant-bubble')
 </body>
 </html>

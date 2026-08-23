@@ -19,6 +19,13 @@ class EnsureDirectorRole
         }
 
         if ($user->role !== 'director' && $user->role !== 'super_admin') {
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Esta consulta es exclusiva del director.',
+                ], 403);
+            }
+
             return redirect()
                 ->route('dashboard')
                 ->with('warning', 'Esta sección es exclusiva para Directores Institucionales.');

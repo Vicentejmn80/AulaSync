@@ -183,8 +183,9 @@ Route::middleware('auth')->group(function () {
                 Route::put('/planificaciones/{id}/sessions', [ActivityFeedbackController::class, 'updatePlanificacionSession'])
                     ->name('planificaciones.sessions.update');
 
-                // Asistente de IA operativo para directores
+                // Asistente de IA operativo para directores (rate limited: 30 req/min por usuario)
                 Route::post('/ai/command', [DirectorAICommandController::class, 'handle'])
+                    ->middleware('throttle:30,1')
                     ->name('ai.command');
             });
 

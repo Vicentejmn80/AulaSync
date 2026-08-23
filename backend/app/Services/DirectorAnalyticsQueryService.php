@@ -2,13 +2,16 @@
 
 namespace App\Services;
 
+use App\Models\Activity;
 use App\Models\Attendance;
 use App\Models\Course;
+use App\Models\Evaluation;
 use App\Models\Grade;
 use App\Models\Student;
 use App\Models\User;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 /**
  * Motor de consultas analíticas seguras para el chatbot del director (Nova).
@@ -64,6 +67,7 @@ class DirectorAnalyticsQueryService
             ->where('colegio_id', $colegioId)
             ->where('role', 'profesor')
             ->withCount(['courses' => fn ($q) => $q->where('colegio_id', $colegioId)])
+            ->with(['courses' => fn ($q) => $q->where('colegio_id', $colegioId)->orderBy('grade')->orderBy('subject_name')->select('id', 'teacher_id', 'subject_name', 'grade', 'section')])
             ->orderBy('name')
             ->limit(80)
             ->get(['id', 'name']);
@@ -75,11 +79,47 @@ class DirectorAnalyticsQueryService
             ];
         }
 
-        $lines = $teachers->map(fn ($t) => '- '.$t->name." ({$t->courses_count} curso(s))");
+        $teachers->each(function ($teacher) {
+            $teacher->course_names = $teacher->courses
+                ->map(fn ($c) => trim($c->subject_name.' '.$c->grade.($c->section ? ' '.$c->section : '')))
+                ->filter()
+                ->unique()
+                ->values()
+                ->implode('; ') ?: 'sin cursos asignados';
+        });
+
+        $lines = $teachers->map(fn ($t) => '- '.$t->name.': '.$t->course_names);
+
+        $count = $teachers->count();
 
         return [
-            'message' => "Hay {$teachers->count()} profesor(es):\n".$lines->implode("\n"),
-            'data' => ['teachers' => $teachers, 'count' => $teachers->count()],
+            'message' => "Hay {$count} profesor(es):\n".$lines->implode("\n"),
+            'data' => [
+                'teachers' => $teachers,
+                'count' => $count,
+                'teachers_count' => $count,
+            ],
+        ];
+    }
+
+    public function getStudent(int $colegioId, string $studentName): array
+    {
+        $match = $this->matcher->resolveStudent($colegioId, $studentName);
+        if (! $match->isUnique()) {
+            return [
+                'message' => $match->message ?? "No encontré al alumno {$studentName} en este colegio.",
+                'data' => ['student' => null],
+            ];
+        }
+
+        /** @var Student $student */
+        $student = $match->model;
+
+        return [
+            'message' => "{$student->name} está en {$student->grade}".($student->section ? ' / '.$student->section : '').'.',
+            'data' => [
+                'student' => $student->only(['id', 'name', 'grade', 'section']),
+            ],
         ];
     }
 
@@ -158,7 +198,7 @@ class DirectorAnalyticsQueryService
         if ($students->isEmpty()) {
             return [
                 'message' => "No hay alumnos registrados en {$label}.",
-                'data' => ['students' => []],
+                'data' => ['students' => [], 'grade' => $grade, 'section' => $section, 'students_count' => 0],
             ];
         }
 
@@ -166,7 +206,7 @@ class DirectorAnalyticsQueryService
         if ($courseIds !== null && $courseIds->isEmpty()) {
             return [
                 'message' => "No hay cursos que coincidan con {$label}; no puedo calcular rendimiento sin inventar datos.",
-                'data' => ['students' => [], 'course_matches' => false],
+                'data' => ['students' => [], 'course_matches' => false, 'grade' => $grade, 'section' => $section, 'students_count' => $students->count()],
             ];
         }
 
@@ -185,7 +225,13 @@ class DirectorAnalyticsQueryService
         if ($rows->isEmpty()) {
             return [
                 'message' => "Hay {$students->count()} alumno(s) en {$label}, pero todavía no hay calificaciones registradas para calcular el rendimiento. Puedo crear una evaluación cuando quieras.",
-                'data' => ['students' => [], 'students_without_grades' => $students->pluck('name')],
+                'data' => [
+                    'students' => [],
+                    'students_without_grades' => $students->pluck('name'),
+                    'grade' => $grade,
+                    'section' => $section,
+                    'students_count' => $students->count(),
+                ],
             ];
         }
 
@@ -202,13 +248,19 @@ class DirectorAnalyticsQueryService
 
         return [
             'message' => "Rendimiento de {$label} ({$rows->count()} alumno(s) con notas, promedio general {$classAvg}%):\n".$table,
-            'data' => ['students' => $rows, 'class_avg_pct' => $classAvg],
+            'data' => [
+                'students' => $rows,
+                'class_avg_pct' => $classAvg,
+                'grade' => $grade,
+                'section' => $section,
+                'students_count' => $students->count(),
+            ],
         ];
     }
 
     // ─── Rendimiento de un alumno (get_student_performance) ─────────────────
 
-    public function getStudentPerformance(int $colegioId, string $studentName): array
+    public function getStudentPerformance(int $colegioId, string $studentName, ?string $subject = null): array
     {
         $match = $this->matcher->resolveStudent($colegioId, $studentName);
         if (! $match->isUnique()) {
@@ -232,14 +284,47 @@ class DirectorAnalyticsQueryService
             ->orderByDesc('avg_pct')
             ->get();
 
+        if ($subject) {
+            $needle = $this->key($subject);
+            $rows = $rows->filter(fn ($row) => str_contains($this->key((string) $row->subject_name), $needle))->values();
+        }
+
         if ($rows->isEmpty()) {
             return [
-                'message' => "{$student->name} está registrado en {$student->grade}, pero todavía no tiene calificaciones publicadas. No puedo inventar su rendimiento; puedo ayudarte a registrar evaluaciones.",
+                'message' => $subject
+                    ? "{$student->name} está registrado en {$student->grade}, pero no tiene calificaciones publicadas en {$subject}."
+                    : "{$student->name} está registrado en {$student->grade}, pero todavía no tiene calificaciones publicadas. No puedo inventar su rendimiento; puedo ayudarte a registrar evaluaciones.",
                 'data' => ['student' => $student->name, 'subjects' => []],
             ];
         }
 
         $overall = round($rows->avg('avg_pct'), 1);
+        $teachers = Course::query()
+            ->where('colegio_id', $colegioId)
+            ->with('teacher')
+            ->get(['id', 'teacher_id', 'subject_name', 'grade', 'section']);
+        $gradeKey = $this->key((string) $student->grade);
+        $sectionKey = $this->key((string) ($student->section ?? ''));
+        $teacherBySubject = [];
+        foreach ($teachers as $course) {
+            if ($this->key((string) $course->grade) !== $gradeKey) {
+                continue;
+            }
+            if ($sectionKey !== '' && $this->key((string) ($course->section ?? '')) !== $sectionKey) {
+                continue;
+            }
+            $key = $this->key((string) $course->subject_name);
+            if (! isset($teacherBySubject[$key]) && $course->teacher) {
+                $teacherBySubject[$key] = $course->teacher->name;
+            }
+        }
+        $rows->each(function ($row) use ($teacherBySubject) {
+            $row->teacher_name = $teacherBySubject[$this->key((string) $row->subject_name)] ?? null;
+        });
+        $worst = $rows->sortBy('avg_pct')->first();
+        $fallbackTeacher = $student->teacher_id
+            ? User::query()->whereKey($student->teacher_id)->value('name')
+            : ($teachers->first()?->teacher?->name);
         $table = $this->markdownTable(
             ['Materia', 'Promedio', 'Evaluaciones'],
             $rows->map(fn ($r) => [
@@ -248,10 +333,19 @@ class DirectorAnalyticsQueryService
                 (string) $r->grade_count,
             ])->all()
         );
+        $scope = $subject ? " en {$subject}" : '';
 
         return [
-            'message' => "Rendimiento de {$student->name} ({$student->grade}) — promedio general {$overall}%:\n".$table,
-            'data' => ['student' => $student->name, 'subjects' => $rows, 'overall_avg_pct' => $overall],
+            'message' => "Rendimiento de {$student->name} ({$student->grade}){$scope} — promedio general {$overall}%:\n".$table,
+            'data' => [
+                'student' => $student->name,
+                'grade' => $student->grade,
+                'section' => $student->section,
+                'subjects' => $rows,
+                'overall_avg_pct' => $overall,
+                'worst_subject' => $worst->subject_name ?? null,
+                'worst_teacher' => $worst->teacher_name ?? $fallbackTeacher,
+            ],
         ];
     }
 
@@ -470,23 +564,326 @@ class DirectorAnalyticsQueryService
         ];
     }
 
+    public function getCoursePerformance(int $colegioId, string $grade, ?string $section = null, ?string $subject = null): array
+    {
+        return $this->getClassPerformance($colegioId, $grade, $section, $subject);
+    }
+
+    public function getAcademicTrends(int $colegioId, string $metric = 'average', int $weeks = 4): array
+    {
+        return $this->getTrends($colegioId, $metric, $weeks);
+    }
+
+    public function getGrades(int $colegioId, ?string $grade = null, ?string $section = null, ?string $studentName = null, ?string $subject = null, int $limit = 30): array
+    {
+        $limit = max(1, min($limit, 80));
+        $courseIds = $this->courseIdsFor($colegioId, $grade, $section, $subject);
+
+        $query = Grade::query()
+            ->join('activities', 'grades.activity_id', '=', 'activities.id')
+            ->join('students', 'grades.student_id', '=', 'students.id')
+            ->join('courses', 'activities.course_id', '=', 'courses.id')
+            ->where('grades.colegio_id', $colegioId)
+            ->whereNotNull('grades.score')
+            ->when($courseIds !== null, fn ($q) => $q->whereIn('activities.course_id', $courseIds->all()))
+            ->when($grade, fn ($q) => $q->whereRaw('LOWER(students.grade) = ?', [$this->key($grade)]))
+            ->when($section, fn ($q) => $q->whereRaw('LOWER(COALESCE(students.section, ?)) = ?', ['', $this->key($section)]));
+
+        if ($studentName !== null && trim($studentName) !== '') {
+            $match = $this->matcher->resolveStudent($colegioId, $studentName);
+            if (! $match->isUnique()) {
+                return [
+                    'message' => $match->message ?? "No encontré al alumno {$studentName} en este colegio.",
+                    'data' => ['grades' => []],
+                ];
+            }
+            $query->where('grades.student_id', $match->model->id);
+        }
+
+        $rows = $query
+            ->orderByDesc('grades.created_at')
+            ->limit($limit)
+            ->get([
+                'students.name as student_name',
+                'courses.subject_name',
+                'courses.grade',
+                'activities.title as activity_title',
+                'grades.score',
+                'activities.max_score',
+            ]);
+
+        $scope = $this->gradeLabel($grade, $section, $subject);
+        if ($rows->isEmpty()) {
+            return [
+                'message' => "No hay calificaciones registradas en {$scope}.",
+                'data' => ['grades' => []],
+            ];
+        }
+
+        $table = $this->markdownTable(
+            ['Alumno', 'Materia', 'Actividad', 'Nota'],
+            $rows->map(fn ($r) => [
+                $r->student_name,
+                $r->subject_name,
+                $r->activity_title ?: 'Sin título',
+                $this->scoreLabel($r->score, $r->max_score),
+            ])->all()
+        );
+
+        return [
+            'message' => "Calificaciones recientes en {$scope}:\n".$table,
+            'data' => ['grades' => $rows, 'count' => $rows->count()],
+        ];
+    }
+
+    public function getEvaluations(int $colegioId, ?string $grade = null, ?string $section = null, ?string $subject = null): array
+    {
+        if (! Schema::hasTable('evaluations')) {
+            return [
+                'message' => 'Todavía no hay un módulo de evaluaciones disponible para consultar.',
+                'data' => ['evaluations' => []],
+            ];
+        }
+
+        $courseIds = $this->courseIdsFor($colegioId, $grade, $section, $subject);
+        $rows = Evaluation::query()
+            ->leftJoin('courses', 'evaluations.course_id', '=', 'courses.id')
+            ->where('evaluations.colegio_id', $colegioId)
+            ->when($courseIds !== null, fn ($q) => $q->whereIn('evaluations.course_id', $courseIds->all()))
+            ->orderByDesc('evaluations.scheduled_at')
+            ->orderByDesc('evaluations.id')
+            ->limit(40)
+            ->get([
+                'evaluations.title',
+                'evaluations.status',
+                'evaluations.scheduled_at',
+                'courses.subject_name',
+                'courses.grade',
+                'courses.section',
+            ]);
+
+        $scope = $this->gradeLabel($grade, $section, $subject);
+        if ($rows->isEmpty()) {
+            return [
+                'message' => "No hay evaluaciones registradas en {$scope}.",
+                'data' => ['evaluations' => []],
+            ];
+        }
+
+        $table = $this->markdownTable(
+            ['Evaluación', 'Curso', 'Estado'],
+            $rows->map(fn ($r) => [
+                $r->title,
+                trim(($r->subject_name ?? '').' '.($r->grade ?? '').($r->section ? ' / '.$r->section : '')) ?: 'sin curso',
+                $r->status ?: 'sin estado',
+            ])->all()
+        );
+
+        return [
+            'message' => "Evaluaciones en {$scope}:\n".$table,
+            'data' => ['evaluations' => $rows, 'count' => $rows->count()],
+        ];
+    }
+
+    public function getAssignments(int $colegioId, ?string $grade = null, ?string $section = null, ?string $subject = null, bool $pendingOnly = false): array
+    {
+        $courseIds = $this->courseIdsFor($colegioId, $grade, $section, $subject);
+        $rows = Activity::query()
+            ->join('courses', 'activities.course_id', '=', 'courses.id')
+            ->where('courses.colegio_id', $colegioId)
+            ->where(function ($q) {
+                $q->where('activities.type', Activity::TYPE_TAREA)
+                    ->orWhere('activities.is_homework', 1);
+            })
+            ->when($courseIds !== null, fn ($q) => $q->whereIn('activities.course_id', $courseIds->all()))
+            ->when($pendingOnly, fn ($q) => $q->where(function ($pending) {
+                $pending->whereNull('activities.due_date')
+                    ->orWhereDate('activities.due_date', '>=', now()->toDateString());
+            }))
+            ->orderByDesc('activities.due_date')
+            ->orderByDesc('activities.id')
+            ->limit(40)
+            ->get([
+                'activities.title',
+                'activities.due_date',
+                'courses.subject_name',
+                'courses.grade',
+                'courses.section',
+            ]);
+
+        $scope = $this->gradeLabel($grade, $section, $subject);
+        if ($rows->isEmpty()) {
+            return [
+                'message' => "No hay tareas registradas en {$scope}.",
+                'data' => ['assignments' => []],
+            ];
+        }
+
+        $table = $this->markdownTable(
+            ['Tarea', 'Curso', 'Entrega'],
+            $rows->map(fn ($r) => [
+                $r->title,
+                trim($r->subject_name.' '.$r->grade.($r->section ? ' / '.$r->section : '')),
+                $r->due_date ? (string) $r->due_date : 'sin fecha',
+            ])->all()
+        );
+
+        return [
+            'message' => "Tareas en {$scope}:\n".$table,
+            'data' => ['assignments' => $rows, 'count' => $rows->count()],
+        ];
+    }
+
+    public function getAtRiskStudents(int $colegioId, ?string $grade = null, ?string $section = null, ?string $subject = null, float $threshold = 60): array
+    {
+        $threshold = max(1, min(100, $threshold));
+        $courseIds = $this->courseIdsFor($colegioId, $grade, $section, $subject);
+        $rows = Grade::query()
+            ->join('activities', 'grades.activity_id', '=', 'activities.id')
+            ->join('students', 'grades.student_id', '=', 'students.id')
+            ->join('courses', 'activities.course_id', '=', 'courses.id')
+            ->where('grades.colegio_id', $colegioId)
+            ->whereNotNull('grades.score')
+            ->when($courseIds !== null, fn ($q) => $q->whereIn('activities.course_id', $courseIds->all()))
+            ->when($grade, fn ($q) => $q->whereRaw('LOWER(students.grade) = ?', [$this->key($grade)]))
+            ->when($section, fn ($q) => $q->whereRaw('LOWER(COALESCE(students.section, ?)) = ?', ['', $this->key($section)]))
+            ->groupBy('students.id', 'students.name', 'students.grade', 'courses.subject_name')
+            ->selectRaw('students.name, students.grade, courses.subject_name, '.self::AVG_PCT.' as avg_pct, COUNT(grades.id) as grade_count')
+            ->having('avg_pct', '<', $threshold)
+            ->orderBy('avg_pct')
+            ->limit(12)
+            ->get()
+            ->filter(fn ($row) => (float) $row->avg_pct < $threshold)
+            ->values();
+
+        $scope = $this->gradeLabel($grade, $section, $subject);
+        if ($rows->isEmpty()) {
+            return [
+                'message' => "Ningún alumno de {$scope} está por debajo de {$threshold}% con las calificaciones registradas.",
+                'data' => ['students' => [], 'threshold' => $threshold],
+            ];
+        }
+
+        $table = $this->markdownTable(
+            ['Alumno', 'Grado', 'Materia', 'Promedio'],
+            $rows->map(fn ($r) => [
+                $r->name,
+                $r->grade,
+                $r->subject_name,
+                round($r->avg_pct, 1).'%',
+            ])->all()
+        );
+
+        return [
+            'message' => "Alumnos con menor rendimiento registrado en {$scope} (por debajo de {$threshold}%):\n".$table,
+            'data' => ['students' => $rows, 'threshold' => $threshold],
+        ];
+    }
+
+    public function getDecliningStudents(int $colegioId, ?string $grade = null, ?string $section = null): array
+    {
+        $rows = Grade::query()
+            ->join('activities', 'grades.activity_id', '=', 'activities.id')
+            ->join('students', 'grades.student_id', '=', 'students.id')
+            ->where('grades.colegio_id', $colegioId)
+            ->whereNotNull('grades.score')
+            ->when($grade, fn ($q) => $q->whereRaw('LOWER(students.grade) = ?', [$this->key($grade)]))
+            ->when($section, fn ($q) => $q->whereRaw('LOWER(COALESCE(students.section, ?)) = ?', ['', $this->key($section)]))
+            ->orderBy('grades.student_id')
+            ->orderBy('grades.created_at')
+            ->get([
+                'students.id as student_id',
+                'students.name',
+                'students.grade',
+                'grades.score',
+                'activities.max_score',
+                'grades.created_at',
+            ]);
+
+        $declines = [];
+        foreach ($rows->groupBy('student_id') as $group) {
+            if ($group->count() < 2) {
+                continue;
+            }
+            $mid = (int) floor($group->count() / 2);
+            $older = $group->take($mid);
+            $newer = $group->slice($mid);
+            $oldAvg = $this->avgPercent($older);
+            $newAvg = $this->avgPercent($newer);
+            if ($oldAvg === null || $newAvg === null) {
+                continue;
+            }
+            $drop = round($oldAvg - $newAvg, 1);
+            if ($drop < 5) {
+                continue;
+            }
+            $first = $group->first();
+            $declines[] = [
+                'name' => $first->name,
+                'grade' => $first->grade,
+                'previous_avg' => $oldAvg,
+                'recent_avg' => $newAvg,
+                'drop' => $drop,
+            ];
+        }
+
+        usort($declines, fn ($a, $b) => $b['drop'] <=> $a['drop']);
+        $declines = array_slice($declines, 0, 12);
+        $scope = $this->gradeLabel($grade, $section, null);
+
+        if ($declines === []) {
+            return [
+                'message' => "No hay suficientes calificaciones sucesivas para detectar bajadas de promedio en {$scope}.",
+                'data' => ['students' => []],
+            ];
+        }
+
+        $table = $this->markdownTable(
+            ['Alumno', 'Antes', 'Ahora', 'Bajó'],
+            collect($declines)->map(fn ($r) => [
+                $r['name'],
+                $r['previous_avg'].'%',
+                $r['recent_avg'].'%',
+                $r['drop'].' pts',
+            ])->all()
+        );
+
+        return [
+            'message' => "Alumnos que bajaron su promedio en {$scope}:\n".$table,
+            'data' => ['students' => $declines],
+        ];
+    }
+
     // ─── Comparación de grados (compare_grades) ─────────────────────────────
 
     public function compareGrades(int $colegioId, string $gradeA, string $gradeB, ?string $subject = null): array
     {
-        $statsA = $this->gradeStats($colegioId, $gradeA, $subject);
-        $statsB = $this->gradeStats($colegioId, $gradeB, $subject);
+        return $this->compareCourses($colegioId, $gradeA, $gradeB, null, null, $subject);
+    }
+
+    public function compareCourses(
+        int $colegioId,
+        string $gradeA,
+        string $gradeB,
+        ?string $sectionA = null,
+        ?string $sectionB = null,
+        ?string $subject = null,
+    ): array {
+        $statsA = $this->gradeStats($colegioId, $gradeA, $subject, $sectionA);
+        $statsB = $this->gradeStats($colegioId, $gradeB, $subject, $sectionB);
+        $labelA = trim($gradeA.($sectionA ? ' '.$sectionA : ''));
+        $labelB = trim($gradeB.($sectionB ? ' '.$sectionB : ''));
         $scope = $subject ? " en {$subject}" : '';
 
         if ($statsA['avg_pct'] === null && $statsB['avg_pct'] === null) {
             return [
-                'message' => "No hay calificaciones registradas ni en {$gradeA} ni en {$gradeB}{$scope}, así que no puedo compararlos sin inventar datos.",
+                'message' => "No hay calificaciones registradas ni en {$labelA} ni en {$labelB}{$scope}, así que no puedo compararlos sin inventar datos.",
                 'data' => ['comparison' => []],
             ];
         }
 
         $table = $this->markdownTable(
-            ['Indicador', $gradeA, $gradeB],
+            ['Indicador', $labelA, $labelB],
             [
                 ['Alumnos', (string) $statsA['students'], (string) $statsB['students']],
                 ['Cursos', (string) $statsA['courses'], (string) $statsB['courses']],
@@ -497,15 +894,117 @@ class DirectorAnalyticsQueryService
 
         $verdict = null;
         if ($statsA['avg_pct'] !== null && $statsB['avg_pct'] !== null) {
-            $leader = $statsA['avg_pct'] >= $statsB['avg_pct'] ? $gradeA : $gradeB;
+            $leader = $statsA['avg_pct'] >= $statsB['avg_pct'] ? $labelA : $labelB;
             $diff = round(abs($statsA['avg_pct'] - $statsB['avg_pct']), 1);
             $verdict = "Lidera {$leader} por {$diff} puntos porcentuales.";
         }
 
         return [
-            'message' => "Comparación {$gradeA} vs {$gradeB}{$scope}:\n".$table.($verdict ? "\n".$verdict : ''),
+            'message' => "Comparación {$labelA} vs {$labelB}{$scope}:\n".$table.($verdict ? "\n".$verdict : ''),
             'data' => ['comparison' => ['a' => $statsA, 'b' => $statsB], 'verdict' => $verdict],
         ];
+    }
+
+    public function generateSchoolReport(int $colegioId, ?string $grade = null, ?string $section = null): array
+    {
+        $studentCount = Student::query()
+            ->where('colegio_id', $colegioId)
+            ->when($grade, fn ($q) => $q->whereRaw('LOWER(grade) = ?', [$this->key($grade)]))
+            ->when($section, fn ($q) => $q->whereRaw('LOWER(COALESCE(section, ?)) = ?', ['', $this->key($section)]))
+            ->count();
+        $courseCount = Course::query()
+            ->where('colegio_id', $colegioId)
+            ->when($grade, fn ($q) => $q->whereRaw('LOWER(grade) = ?', [$this->key($grade)]))
+            ->when($section, fn ($q) => $q->whereRaw('LOWER(COALESCE(section, ?)) = ?', ['', $this->key($section)]))
+            ->count();
+        $teacherCount = $grade ? 0 : User::query()
+            ->where('colegio_id', $colegioId)
+            ->where('role', 'profesor')
+            ->count();
+
+        $atRisk = $this->getAtRiskStudents($colegioId, $grade, $section);
+        $attendance = $this->getAttendance($colegioId, $grade, $section);
+        $performance = $grade
+            ? $this->getClassPerformance($colegioId, $grade, $section)
+            : $this->getRankings($colegioId, 'average', null, null, null, 5);
+        $trends = $grade
+            ? ['message' => null, 'data' => ['trend' => []]]
+            : $this->getTrends($colegioId, 'average', 4);
+
+        $scope = $this->gradeLabel($grade, $section, null);
+        $riskRows = collect($atRisk['data']['students'] ?? []);
+        $riskCount = $riskRows->map(fn ($row) => is_array($row) ? ($row['name'] ?? '') : ($row->name ?? ''))->filter()->unique()->count();
+        $absenceRows = collect($attendance['data']['students'] ?? []);
+        $absenceTotal = (int) $absenceRows->sum(fn ($row) => (int) (is_array($row) ? ($row['absences'] ?? 0) : ($row->absences ?? 0)));
+        $criticalSubject = $riskRows
+            ->map(fn ($row) => is_array($row) ? ($row['subject_name'] ?? null) : ($row->subject_name ?? null))
+            ->filter()
+            ->countBy()
+            ->sortDesc()
+            ->keys()
+            ->first();
+        $priorityScope = $riskRows
+            ->map(function ($row) {
+                $g = is_array($row) ? ($row['grade'] ?? '') : ($row->grade ?? '');
+                $s = is_array($row) ? ($row['section'] ?? '') : ($row->section ?? '');
+
+                return trim($g.' '.$s);
+            })
+            ->filter()
+            ->countBy()
+            ->sortDesc()
+            ->keys()
+            ->first();
+
+        $courseIds = $this->courseIdsFor($colegioId, $grade, $section, null);
+        $schoolAvg = Grade::query()
+            ->join('activities', 'grades.activity_id', '=', 'activities.id')
+            ->where('grades.colegio_id', $colegioId)
+            ->whereNotNull('grades.score')
+            ->when($courseIds !== null, fn ($q) => $q->whereIn('activities.course_id', $courseIds->all()))
+            ->selectRaw(self::AVG_PCT.' as avg_pct')
+            ->value('avg_pct');
+        $schoolAvg = $schoolAvg !== null ? round((float) $schoolAvg, 1) : ($performance['data']['class_avg_pct'] ?? null);
+
+        $parts = [
+            $studentCount === 0
+                ? "No hay alumnos registrados en {$scope}."
+                : "{$studentCount} alumno(s) y {$courseCount} curso(s) en {$scope}.",
+            $grade ? null : ($teacherCount === 0 ? 'No hay profesores registrados.' : "{$teacherCount} profesor(es) activos."),
+            $schoolAvg !== null ? "Promedio general {$schoolAvg}%." : null,
+            $this->withoutReportTable((string) ($performance['message'] ?? '')),
+            $riskCount === 0
+                ? 'Ningún alumno figura por debajo de 60%.'
+                : "{$riskCount} alumno(s) por debajo de 60%.",
+            $absenceRows->isEmpty()
+                ? 'Sin registros de asistencia en los últimos 30 días.'
+                : "{$absenceTotal} falta(s) registradas en los últimos 30 días.",
+            $trends['message'] ? $this->withoutReportTable((string) $trends['message']) : null,
+        ];
+
+        return [
+            'message' => "Informe académico de {$scope}:\n\n".collect($parts)->filter()->implode("\n"),
+            'data' => [
+                'students' => ['count' => $studentCount],
+                'teachers' => $grade ? [] : ['count' => $teacherCount],
+                'courses' => ['count' => $courseCount],
+                'performance' => $performance['data'] ?? [],
+                'at_risk' => $atRisk['data'] ?? [],
+                'attendance' => $attendance['data'] ?? [],
+                'trends' => $trends['data'] ?? [],
+                'school_avg_pct' => $schoolAvg,
+                'critical_subject' => $criticalSubject,
+                'priority_scope' => $priorityScope ?: $scope,
+                'risk_count' => $riskCount,
+            ],
+        ];
+    }
+
+    private function withoutReportTable(string $text): string
+    {
+        $cut = preg_split('/\n(?=\|)/', $text, 2);
+
+        return trim((string) ($cut[0] ?? $text));
     }
 
     // ─── Helpers internos ───────────────────────────────────────────────────
@@ -519,25 +1018,28 @@ class DirectorAnalyticsQueryService
             return null;
         }
 
-        return Course::query()
+        $ids = Course::query()
             ->where('colegio_id', $colegioId)
             ->when($grade, fn ($q) => $q->whereRaw('LOWER(grade) = ?', [$this->key($grade)]))
             ->when($section, fn ($q) => $q->whereRaw('LOWER(COALESCE(section, ?)) = ?', ['', $this->key($section)]))
-            ->when($subject, fn ($q) => $q->whereRaw('LOWER(subject_name) like ?', ['%'.$this->key($subject).'%']))
-            ->pluck('id');
+            ->get(['id', 'subject_name']);
+
+        if ($subject) {
+            $needle = $this->key($subject);
+            $ids = $ids->filter(fn ($course) => str_contains($this->key((string) $course->subject_name), $needle));
+        }
+
+        return $ids->pluck('id');
     }
 
-    private function gradeStats(int $colegioId, string $grade, ?string $subject): array
+    private function gradeStats(int $colegioId, string $grade, ?string $subject, ?string $section = null): array
     {
-        $courseIds = Course::query()
-            ->where('colegio_id', $colegioId)
-            ->whereRaw('LOWER(grade) = ?', [$this->key($grade)])
-            ->when($subject, fn ($q) => $q->whereRaw('LOWER(subject_name) like ?', ['%'.$this->key($subject).'%']))
-            ->pluck('id');
+        $courseIds = $this->courseIdsFor($colegioId, $grade, $section, $subject) ?? collect();
 
         $students = Student::query()
             ->where('colegio_id', $colegioId)
             ->whereRaw('LOWER(grade) = ?', [$this->key($grade)])
+            ->when($section, fn ($q) => $q->whereRaw('LOWER(COALESCE(section, ?)) = ?', ['', $this->key($section)]))
             ->count();
 
         $avg = $courseIds->isEmpty()
@@ -556,15 +1058,41 @@ class DirectorAnalyticsQueryService
             ->where('attendances.status', Attendance::STATUS_ABSENT)
             ->where('attendances.attended_on', '>=', now()->subDays(30)->toDateString())
             ->whereRaw('LOWER(students.grade) = ?', [$this->key($grade)])
+            ->when($section, fn ($q) => $q->whereRaw('LOWER(COALESCE(students.section, ?)) = ?', ['', $this->key($section)]))
             ->count();
 
         return [
             'grade' => $grade,
+            'section' => $section,
             'students' => $students,
             'courses' => $courseIds->count(),
-            'avg_pct' => $avg !== null ? round($avg, 1) : null,
+            'avg_pct' => $avg !== null ? round((float) $avg, 1) : null,
             'absences' => $absences,
         ];
+    }
+
+    private function avgPercent(Collection $rows): ?float
+    {
+        $values = $rows->map(function ($row) {
+            $max = (float) ($row->max_score ?? 0);
+            if ($max <= 0) {
+                return null;
+            }
+
+            return ((float) $row->score) * 100 / $max;
+        })->filter(fn ($v) => $v !== null);
+
+        return $values->isEmpty() ? null : round((float) $values->avg(), 1);
+    }
+
+    private function scoreLabel(mixed $score, mixed $maxScore): string
+    {
+        $max = (float) $maxScore;
+        if ($max <= 0) {
+            return (string) $score;
+        }
+
+        return round(((float) $score) * 100 / $max, 1).'%';
     }
 
     private function key(?string $value): string

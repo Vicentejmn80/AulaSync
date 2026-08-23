@@ -2172,15 +2172,10 @@ class DirectorAICommandTest extends TestCase
             'student_id' => $student->id,
         ]);
 
-        $response->assertOk()
-            ->assertJsonPath('success', true)
-            ->assertJsonPath('students_count', 1);
-        $this->assertTrue($course->fresh()->students()->where('students.id', $student->id)->exists());
-
-        $hub = $this->actingAs($teacher)->getJson(route('teacher.api.courses'));
-        $hub->assertOk();
-        $row = collect($hub->json())->firstWhere('id', $course->id);
-        $this->assertSame(1, $row['students_count'] ?? null);
+        $response->assertForbidden()
+            ->assertJsonPath('success', false);
+        $this->assertStringContainsString('director', mb_strtolower((string) $response->json('error')));
+        $this->assertFalse($course->fresh()->students()->where('students.id', $student->id)->exists());
     }
 
     private function makeTeacher(Colegio $colegio): User

@@ -143,18 +143,23 @@ PROHIBIDO (tono robótico): "no se obtuvo información", "consulte con el área 
 
 Consultas de roster (códigos DOC-/NV-, conteos del resumen de abajo, quién es, qué cursos tiene): responde SOLO con texto, sin tools.
 Mutaciones (crear, asignar, matricular, actualizar, eliminar): OBLIGATORIO llamar herramientas. Laravel ejecuta.
-Notas, promedios, faltas, rankings, comparaciones y tendencias: NUNCA las inventes ni las leas del roster; usa query_academic.
+Notas, promedios, faltas, rankings, comparaciones y tendencias: NUNCA las inventes ni las leas del roster.
+Usa las herramientas de datos (get_course_performance, get_attendance, compare_courses, get_at_risk_students,
+get_academic_trends, generate_school_report, get_students, get_teachers, get_grades, etc.).
+El backend inyecta el colegio_id del director. PROHIBIDO enviar colegio_id.
 
-ANALÍTICA EN TIEMPO REAL (OBLIGATORIO usar query_academic):
-- "¿Cómo van los de 4to A?", "¿Quién tiene mejor promedio?", "¿Quién tiene más faltas?", "Compara 2do con 4to",
-  "tendencia de notas", "¿cómo va Carlos?" (sin materia), "cuántos alumnos hay en cada sección",
-  "quién es el más destacado" → llama query_academic con el query_type adecuado
-  (class_performance, student_performance, rankings, trends, compare_grades, attendance, section_counts, students_list).
-- Los datos de notas, promedios y faltas NO están en el roster de abajo: la única forma de saberlos es query_academic.
-- El resultado viene en Markdown con tablas y rankings (1º, 2º, 3º). Preséntalo tal cual, con el sándwich.
-- CERO ALUCINACIONES: si el resultado no menciona un alumno, grado, curso o nota, NO lo inventes ni lo des por sentado.
-  Di con claridad qué no encontraste ("todavía no veo datos de 4to A") y ofrece el siguiente paso (crear el curso,
-  cargar notas, revisar la asistencia).
+DIRECTOR DATA AGENT (obligatorio para analítica):
+- "¿Cómo va 4to A?" → get_course_performance
+- "¿Quiénes necesitan atención?" → get_at_risk_students + get_attendance
+- "¿Quién tiene mejor rendimiento?" → get_rankings
+- "¿Quién ha bajado su promedio?" → get_declining_students
+- "¿Cómo está la asistencia de 2do A?" → get_attendance
+- "Compara 2do A y 4to A" → compare_courses
+- "Dame un informe de 4to A" / "Resume el estado académico" → generate_school_report
+- "¿Qué tendencias hay este mes?" → get_academic_trends
+- Puedes llamar VARIAS herramientas en el mismo turno. Laravel las ejecuta y NO inventa datos.
+- Separa HECHOS (números reales) de ANÁLISIS (lectura tuya). Si no hay datos, dilo.
+- Si el director dice "mi curso" y hay un curso en contexto de pantalla, úsalo. Si no, pide el grado/sección.
 
 Reglas operativas:
 1. MULTI-INTENT: si el mensaje trae VARIAS órdenes, llama TODAS las tools en paralelo. Nunca te quedes solo con la primera.
@@ -327,7 +332,7 @@ PROMPT;
                 'required' => [],
             ],
             'query_academic' => [
-                'description' => 'Consultar profesores, alumnos, cursos, notas, faltas o rendimiento. Para analítica en tiempo real (rendimiento por grado/sección, ranking de promedios o faltas, comparar grados, tendencias) usa los query_type class_performance, student_performance, attendance, rankings, trends o compare_grades.',
+                'description' => 'Consulta académica heredada. Prefiere las herramientas get_* (get_course_performance, get_attendance, compare_courses, get_at_risk_students, generate_school_report). Usa query_academic solo para vistas de un profesor o un alumno en una materia.',
                 'properties' => [
                     'query_type' => [
                         'type' => 'string',
@@ -356,7 +361,7 @@ PROMPT;
             ],
         ];
 
-        return collect($defs)->map(function ($definition, $name) {
+        $mapped = collect($defs)->map(function ($definition, $name) {
             return [
                 'type' => 'function',
                 'function' => [
@@ -372,17 +377,19 @@ PROMPT;
                 ],
             ];
         })->values()->all();
+
+        return array_merge($mapped, app(DirectorDataAgentService::class)->toolDefinitions());
     }
 
     private function allowedIntents(): array
     {
-        return [
+        return array_values(array_unique(array_merge([
             'create_teacher', 'create_course', 'assign_teacher',
             'create_students_batch', 'enroll_students_course', 'unenroll_students_course',
             'unassign_teacher', 'update_course', 'update_student',
             'delete_teacher', 'delete_teacher_invite', 'delete_all_teachers', 'delete_course',
             'delete_all_courses', 'delete_student', 'query_academic',
-        ];
+        ], DirectorDataAgentService::TOOLS)));
     }
 
     private function normalizeArguments(string $intent, array $arguments): array

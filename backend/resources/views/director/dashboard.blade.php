@@ -688,6 +688,11 @@
                 },
             };
         }
+        window.novaContext = window.novaContext || {
+            type: 'director_school',
+            screen: 'dashboard',
+        };
+        window.AI_PAGE_CONTEXT = window.novaContext;
     </script>
 
     @include('components.ai-assistant-bubble')

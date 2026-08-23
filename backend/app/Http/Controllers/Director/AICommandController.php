@@ -16,6 +16,7 @@ use App\Services\DirectorActionService;
 use App\Services\DirectorAIInterpreterService;
 use App\Services\DirectorAnalyticsQueryService;
 use App\Services\DirectorConversationContextService;
+use App\Services\DirectorDataAgentService;
 use App\Services\PersonNameMatcher;
 use App\Services\PersonNameSanitizer;
 use Illuminate\Http\JsonResponse;
@@ -34,6 +35,7 @@ class AICommandController extends Controller
         private DirectorAIInterpreterService $interpreter,
         private DirectorConversationContextService $conversationContext,
         private DirectorAnalyticsQueryService $analytics,
+        private DirectorDataAgentService $dataAgent,
     ) {}
 
     public function handle(Request $request): JsonResponse
@@ -58,7 +60,15 @@ class AICommandController extends Controller
             'conversation' => ['sometimes', 'array', 'max:40'],
             'conversation.*.role' => ['required_with:conversation', 'in:user,assistant'],
             'conversation.*.content' => ['required_with:conversation', 'string', 'max:12000'],
+            'screen_context' => ['sometimes', 'nullable', 'array'],
+            'payload' => ['sometimes', 'nullable', 'array'],
         ]);
+        unset($payload['colegio_id'], $payload['school_id']);
+        $screenContext = $this->dataAgent->sanitizeContext((array) (
+            $payload['screen_context']
+            ?? data_get($payload, 'payload.contexto')
+            ?? []
+        ));
 
         if ($request->boolean('confirmed')) {
             return $this->executePending($request, $director);
@@ -87,6 +97,38 @@ class AICommandController extends Controller
                 'cancelled' => true,
                 'message' => 'Operación cancelada. No hice cambios.',
             ]);
+        }
+
+        if ($this->dataAgent->looksLikeDataQuery($text) || $this->dataAgent->isOutOfScope($text) || $this->dataAgent->looksLikeFollowUp($text)) {
+            $memory = $this->conversationContext->current();
+            $localPlan = $this->dataAgent->plan($text, $screenContext, null, $memory);
+            if ($this->dataAgent->localPlanIsReady($localPlan)) {
+                return $this->respondWithDataAgent($director, $text, $screenContext, null);
+            }
+
+            $preplanned = null;
+            try {
+                $interpreted = $this->interpreter->interpret(
+                    $director,
+                    $text,
+                    (array) ($payload['conversation'] ?? []),
+                    $this->conversationContext->current(),
+                );
+                $llmActions = $this->enrichActionsFromText((array) ($interpreted['actions'] ?? []), $text);
+                if ($this->dataAgent->areExclusiveDataActions($llmActions)) {
+                    $preplanned = $llmActions;
+                }
+            } catch (\Throwable $e) {
+                Log::error('Director AI interpreter failed on data query', [
+                    'director_id' => $director->id,
+                    'colegio_id' => $director->colegio_id,
+                    'error' => $e->getMessage(),
+                ]);
+
+                return $this->respondWithDataAgent($director, $text, $screenContext, null);
+            }
+
+            return $this->respondWithDataAgent($director, $text, $screenContext, $preplanned);
         }
 
         try {
@@ -168,6 +210,10 @@ class AICommandController extends Controller
                 ]);
             }
 
+            if ($this->dataAgent->areExclusiveDataActions($actions)) {
+                return $this->respondWithDataAgent($director, $text, $screenContext, $actions);
+            }
+
             return $this->prepareActions($director, $actions, $text);
         } catch (ValidationException $e) {
             $msg = collect($e->errors())->flatten()->first() ?: 'No se pudo procesar la instrucción.';
@@ -189,6 +235,85 @@ class AICommandController extends Controller
                 'message' => 'Ocurrió un error al preparar la operación.',
             ], 500);
         }
+    }
+
+    /**
+     * @param  array<int,array{intent:string,data:array}>|null  $preplanned
+     */
+    private function respondWithDataAgent(User $director, string $text, array $screenContext, ?array $preplanned = null): JsonResponse
+    {
+        try {
+            $plan = $this->dataAgent->plan($text, $screenContext, $preplanned, $this->conversationContext->current());
+            $result = $this->dataAgent->answer(
+                $director,
+                $text,
+                $plan,
+                fn (array $data) => $this->queryAcademic($director, $data),
+            );
+        } catch (\Throwable $e) {
+            Log::error('Director data agent failed', [
+                'director_id' => $director->id,
+                'colegio_id' => $director->colegio_id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'any_success' => true,
+                'actions' => [],
+                'message' => $this->friendlyDataAgentFailure($e),
+                'agent' => 'director_data',
+                'tools' => [],
+            ]);
+        }
+
+        if (! empty($result['needs_clarification'])) {
+            $this->conversationContext->rememberError((string) $result['message']);
+
+            return response()->json([
+                'success' => false,
+                'needs_clarification' => true,
+                'message' => $result['message'],
+                'duration_ms' => $result['duration_ms'] ?? null,
+            ]);
+        }
+
+        $this->conversationContext->rememberPlan(
+            collect($result['actions'])->map(fn ($action) => [
+                'intent' => $action['action_type'] ?? 'query_academic',
+                'data' => $action['data'] ?? [],
+            ])->all(),
+            $text,
+        );
+        foreach ($result['actions'] as $action) {
+            $this->conversationContext->rememberResult(
+                (string) ($action['action_type'] ?? 'query_academic'),
+                (array) ($action['data'] ?? []),
+                $action,
+            );
+        }
+        $this->conversationContext->rememberFocus((array) ($result['focus'] ?? []));
+
+        return response()->json([
+            'success' => true,
+            'any_success' => true,
+            'actions' => $result['actions'],
+            'message' => $result['message'],
+            'agent' => 'director_data',
+            'tools' => $result['tools'],
+            'duration_ms' => $result['duration_ms'] ?? null,
+            'report_ready' => $result['report_ready'] ?? false,
+        ]);
+    }
+
+    private function friendlyDataAgentFailure(\Throwable $e): string
+    {
+        $raw = mb_strtolower($e->getMessage());
+        if (str_contains($raw, 'timeout') || str_contains($raw, 'timed out') || str_contains($raw, 'curl error 28')) {
+            return 'La consulta tardó más de lo esperado. Inténtalo de nuevo en un momento.';
+        }
+
+        return 'No pude completar esa consulta ahora. Inténtalo de nuevo o formula la pregunta con un curso o un alumno concreto.';
     }
 
     /**
@@ -1306,6 +1431,15 @@ class AICommandController extends Controller
             || str_contains($value, 'ranking')
             || preg_match('/\btop\s+\d/', $value)
             || preg_match('/\bquien(?:es)?\s+tiene(?:n)?\b/', $value)
+            || str_contains($value, 'informe')
+            || str_contains($value, 'resumen')
+            || str_contains($value, 'resume')
+            || str_contains($value, 'estado academico')
+            || str_contains($value, 'preocup')
+            || str_contains($value, 'necesitan atencion')
+            || str_contains($value, 'bajado')
+            || str_contains($value, 'asistencia')
+            || str_contains($value, 'mejor rendimiento')
             || ((str_contains($value, 'consulta') || str_contains($value, 'muestrame') || str_contains($value, 'mostrar') || str_contains($value, 'estado') || str_contains($value, 'dame'))
                 && (str_contains($value, 'profesor') || str_contains($value, 'estudiante') || str_contains($value, 'alumno') || str_contains($value, 'curso')))
         ) {
@@ -2203,6 +2337,24 @@ class AICommandController extends Controller
                 isset($data['section']) ? (string) $data['section'] : null,
             ),
             'section_counts' => $this->analytics->getSectionCounts($colegioId),
+            'declining_students' => $this->analytics->getDecliningStudents(
+                $colegioId,
+                isset($data['grade']) ? (string) $data['grade'] : null,
+                isset($data['section']) ? (string) $data['section'] : null,
+            ),
+            'school_report' => $this->analytics->generateSchoolReport(
+                $colegioId,
+                isset($data['grade']) ? (string) $data['grade'] : null,
+                isset($data['section']) ? (string) $data['section'] : null,
+            ),
+            'compare_courses' => $this->analytics->compareCourses(
+                $colegioId,
+                (string) ($data['grade'] ?? $data['grade_a'] ?? ''),
+                (string) ($data['grade_b'] ?? ''),
+                isset($data['section']) ? (string) $data['section'] : ($data['section_a'] ?? null),
+                isset($data['section_b']) ? (string) $data['section_b'] : null,
+                isset($data['subject_name']) ? (string) $data['subject_name'] : null,
+            ),
             default => throw ValidationException::withMessages([
                 'query' => 'No pude interpretar el tipo de consulta académica.',
             ]),
@@ -3123,7 +3275,11 @@ class AICommandController extends Controller
             return strtoupper(trim((string) $m[1]));
         }
 
-        return null;
+        if (preg_match('/[1-6](?:ro|ero|do|to|er|°|º)?(?:\s*grado)?\s+([A-Ca-c])\b/u', $text, $m)) {
+            return strtoupper($m[1]);
+        }
+
+        return $this->dataAgent->extractSection($text);
     }
 
     /**

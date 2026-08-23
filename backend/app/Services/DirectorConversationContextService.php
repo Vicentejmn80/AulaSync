@@ -93,5 +93,37 @@ class DirectorConversationContextService
         if (! empty($data['invite_code'])) {
             $context['invite_code'] = (string) $data['invite_code'];
         }
+
+        if (is_string($data['student'] ?? null) && trim($data['student']) !== '') {
+            $context['student_names'] = [trim($data['student'])];
+            $context['student_name'] = trim($data['student']);
+        }
+    }
+
+    /**
+     * @param  array<string,mixed>  $focus
+     */
+    public function rememberFocus(array $focus): void
+    {
+        if ($focus === []) {
+            return;
+        }
+
+        $context = $this->current();
+        $context['focus'] = array_filter($focus, fn ($value) => $value !== null && $value !== '' && $value !== []);
+        if (! empty($focus['student_name'])) {
+            $context['student_name'] = $focus['student_name'];
+            $context['student_names'] = array_values(array_unique(array_merge(
+                (array) ($context['student_names'] ?? []),
+                [$focus['student_name']],
+            )));
+        }
+        if (! empty($focus['grade'])) {
+            $context['grades'] = [(string) $focus['grade']];
+        }
+        if (! empty($focus['section'])) {
+            $context['section'] = (string) $focus['section'];
+        }
+        session([self::SESSION_KEY => $context]);
     }
 }
