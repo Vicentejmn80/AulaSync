@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Activity;
 use App\Models\Attendance;
+use App\Models\Colegio;
 use App\Models\Course;
 use App\Models\Evaluation;
 use App\Models\Grade;
@@ -149,6 +150,60 @@ class DirectorAnalyticsQueryService
         return [
             'message' => "Cursos en {$scope}:\n".$lines->implode("\n"),
             'data' => ['courses' => $courses, 'count' => $courses->count()],
+        ];
+    }
+
+    public function getSchoolInfo(int $colegioId): array
+    {
+        $colegio = Colegio::query()->find($colegioId);
+        if (! $colegio) {
+            return [
+                'message' => 'Tu usuario de director no está vinculado a un colegio registrado.',
+                'data' => [],
+            ];
+        }
+
+        return [
+            'message' => "Tu colegio se llama {$colegio->name}.",
+            'data' => ['school_name' => $colegio->name],
+        ];
+    }
+
+    public function getMostAdvancedCourse(int $colegioId): array
+    {
+        $courses = Course::query()
+            ->where('colegio_id', $colegioId)
+            ->orderBy('grade')
+            ->orderBy('subject_name')
+            ->get(['subject_name', 'grade', 'section']);
+
+        if ($courses->isEmpty()) {
+            return [
+                'message' => 'Todavía no hay cursos registrados en el colegio.',
+                'data' => ['courses' => []],
+            ];
+        }
+
+        $topGrade = $courses->sortByDesc(fn ($course) => $this->gradeNumber((string) $course->grade))->first()?->grade;
+        if (! is_string($topGrade) || $topGrade === '') {
+            return [
+                'message' => 'Hay cursos registrados, pero no pude determinar el grado más avanzado.',
+                'data' => ['courses' => $courses],
+            ];
+        }
+
+        $topCourses = $courses->filter(fn ($course) => $this->key((string) $course->grade) === $this->key($topGrade))->values();
+        $labels = $topCourses
+            ->map(fn ($course) => trim($course->subject_name.' '.$course->grade.($course->section ? ' '.$course->section : '')))
+            ->unique()
+            ->implode(', ');
+
+        return [
+            'message' => "El grado más avanzado registrado es {$topGrade}. Cursos: {$labels}.",
+            'data' => [
+                'top_grade' => $topGrade,
+                'courses' => $topCourses,
+            ],
         ];
     }
 
@@ -1102,6 +1157,28 @@ class DirectorAnalyticsQueryService
         return strtr($value, [
             'á' => 'a', 'é' => 'e', 'í' => 'i', 'ó' => 'o', 'ú' => 'u', 'ñ' => 'n',
         ]);
+    }
+
+    private function gradeNumber(?string $grade): int
+    {
+        if ($grade === null || trim($grade) === '') {
+            return 0;
+        }
+
+        $value = $this->key($grade);
+        if (preg_match('/^(\d)/', $value, $match)) {
+            return (int) $match[1];
+        }
+
+        return match (true) {
+            str_contains($value, 'sexto') || str_contains($value, '6to') => 6,
+            str_contains($value, 'quinto') || str_contains($value, '5to') => 5,
+            str_contains($value, 'cuarto') || str_contains($value, '4to') => 4,
+            str_contains($value, 'tercer') || str_contains($value, '3ro') => 3,
+            str_contains($value, 'segundo') || str_contains($value, '2do') => 2,
+            str_contains($value, 'primer') || str_contains($value, '1ro') => 1,
+            default => 0,
+        };
     }
 
     private function gradeLabel(?string $grade, ?string $section, ?string $subject): string

@@ -79,10 +79,13 @@ class DirectorDataAgentService
         $value = $this->normalized($text);
 
         return (bool) preg_match(
-            '/(?:como va|como van|como le va|como esta|como estan|quien|quienes|cuantos|cuantas|que alumnos|que cursos|que profesores|que evaluaciones|que tareas|compara|tendencia|tendencias|evolucion|ranking|informe|resumen|resume|estado academico|asistencia|faltas|promedio|rendimiento|preocup|problemas|atencion|destacado|bajo rendimiento|este mes|mi curso|mi colegio|dame|le va a|evaluaciones|tareas|diagnostico|investiga|empeor|impresion|por que|que tienen en comun|preocupante|en que materia|quien es su profesor|prepara(?:me)?)/u',
+            '/(?:como va|como van|como le va|como esta|como estan|quien|quienes|cuantos|cuantas|que alumnos|que cursos|que profesores|que evaluaciones|que tareas|compara|tendencia|tendencias|evolucion|ranking|informe|resumen|resume|estado academico|asistencia|faltas|promedio|rendimiento|preocup|problemas|atencion|destacado|bajo rendimiento|este mes|mi curso|mi colegio|dame|le va a|evaluaciones|tareas|diagnostico|investiga|empeor|impresion|por que|que tienen en comun|preocupante|en que materia|quien es su profesor|prepara(?:me)?|nombr|listame|listado|nomina|como se llama|nombre del colegio|curso mas avanzado|grado mas alto|grado mas avanzado|ultimo grado|todos los alumnos|todos los estudiantes|nombre de todos|nombres de los)/u',
             $value
         ) || (bool) preg_match('/\btop\s+\d/u', $value)
-        || $this->looksLikeFollowUp($value);
+        || $this->looksLikeFollowUp($text)
+        || $this->looksLikeRosterListQuery($text)
+        || $this->looksLikeSchoolNameQuery($text)
+        || $this->looksLikeMostAdvancedCourseQuery($text);
     }
 
     public function looksLikeFollowUp(string $text): bool
@@ -90,9 +93,63 @@ class DirectorDataAgentService
         $value = $this->normalized($text);
 
         return (bool) preg_match(
-            '/^(?:por que|y (?:eso|ahora|el|la)|cual(?: es)?|en que materia|quien es su profesor|que tienen en comun|el mas preocupante|explica|profundiza|y su profesor)\b/u',
+            '/^(?:por que|y (?:eso|ahora|el|la)|cual(?: es)?|en que materia|quien es su profesor|que tienen en comun|el mas preocupante|explica|profundiza|y su profesor|nombr|listame|cuales son|quienes son|dime (?:los )?nombres)\b/u',
+            $value
+        ) || (bool) preg_match('/\b(?:nombr|cuales son|quienes son|dime (?:los )?nombres)\b/u', $value);
+    }
+
+    public function looksLikeSchoolNameQuery(string $text): bool
+    {
+        $value = $this->normalized($text);
+
+        return (bool) preg_match(
+            '/como se llama (?:mi |el )?colegio|nombre del colegio|cual es (?:mi |el )?colegio|como se llama mi institucion/u',
             $value
         );
+    }
+
+    public function looksLikeMostAdvancedCourseQuery(string $text): bool
+    {
+        $value = $this->normalized($text);
+
+        return (bool) preg_match(
+            '/curso mas avanzado|grado mas (?:alto|avanzado)|curso mas alto|ultimo grado|nivel mas alto|grado mayor/u',
+            $value
+        );
+    }
+
+    public function looksLikeRosterListQuery(string $text): bool
+    {
+        $value = $this->normalized($text);
+        if (preg_match('/\bcuantos\b/u', $value) && ! preg_match('/\b(?:nombr|nombre|list|cuales|quienes)\b/u', $value)) {
+            return false;
+        }
+
+        return (bool) preg_match(
+            '/(?:nombre|nombres|nombr|listame|listado|dame (?:el |los )?nombre|muestrame|dime (?:el |los )?nombre).*(?:alumnos|estudiantes)|(?:todos|toda)s? (?:los )?(?:alumnos|estudiantes).*(?:colegio|grados|general|nomina)|(?:alumnos|estudiantes).*(?:todos los grados|del colegio|en general|en la nomina)|quienes son (?:los )?(?:alumnos|estudiantes)/u',
+            $value
+        );
+    }
+
+    /**
+     * @param  array<string,mixed>  $memory
+     */
+    public function looksLikeRosterFollowUp(string $text, array $memory = []): bool
+    {
+        $value = $this->normalized($text);
+        if ($this->looksLikeRosterListQuery($text)) {
+            return false;
+        }
+        if (! preg_match('/\b(?:nombr|listame|cuales son|quienes son|dime (?:los )?nombres|los nombres)\b/u', $value)) {
+            return false;
+        }
+
+        $focus = (array) ($memory['focus'] ?? []);
+
+        return ($focus['kind'] ?? '') === 'student_count'
+            || isset($focus['students_count'])
+            || ($memory['last_intent'] ?? '') === 'query_academic'
+            || preg_match('/\b(?:alumnos|estudiantes|nomina)\b/u', $value);
     }
 
     public function isOutOfScope(string $text): bool
@@ -510,6 +567,20 @@ class DirectorDataAgentService
                         : "{$name} encabeza el ranking de promedios.";
                 }
             }
+            if (isset($data['school_name']) && is_string($data['school_name'])) {
+                return "Tu colegio se llama {$data['school_name']}.";
+            }
+            if (isset($data['top_grade']) && is_string($data['top_grade'])) {
+                return "El grado más avanzado registrado es {$data['top_grade']}.";
+            }
+            if ($tool === 'get_students' && isset($data['students']) && is_countable($data['students'])) {
+                $count = count($data['students']);
+
+                return $count === 1 ? 'Hay 1 alumno en la lista.' : "Hay {$count} alumnos en la lista.";
+            }
+            if (isset($data['students_count'])) {
+                return "Hay {$data['students_count']} alumno(s) en la nómina del colegio.";
+            }
         }
 
         return $this->firstSentence($fallback);
@@ -602,6 +673,21 @@ class DirectorDataAgentService
             return $lines->isEmpty()
                 ? $this->stripTechnical($this->withoutTable($message))
                 : $lines->map(fn ($line) => '- '.$line)->implode("\n");
+        }
+
+        if ($tool === 'get_students' && isset($data['students']) && is_countable($data['students'])) {
+            $lines = collect($data['students'])->map(function ($row) {
+                $name = is_array($row) ? ($row['name'] ?? '') : ($row->name ?? '');
+                $grade = is_array($row) ? ($row['grade'] ?? '') : ($row->grade ?? '');
+                $section = is_array($row) ? ($row['section'] ?? '') : ($row->section ?? '');
+                $scope = trim($grade.($section ? ' / '.$section : ''));
+
+                return $name !== '' ? ($scope !== '' ? "{$name} ({$scope})" : $name) : null;
+            })->filter()->values();
+
+            return $lines->isEmpty()
+                ? $this->stripTechnical($this->withoutTable($message))
+                : 'Alumnos: '.$lines->implode('; ').'.';
         }
 
         if (isset($data['students_count']) && $this->looksEmpty($data) && ! isset($data['class_avg_pct'])) {
@@ -832,6 +918,21 @@ class DirectorDataAgentService
         $followUp = $this->planFollowUp($text, $memory);
         if ($followUp !== null) {
             return $followUp;
+        }
+
+        if ($this->looksLikeSchoolNameQuery($text)) {
+            return $this->pack('query_academic', ['query_type' => 'school_info']);
+        }
+
+        if ($this->looksLikeMostAdvancedCourseQuery($text)) {
+            return $this->pack('query_academic', ['query_type' => 'most_advanced_course']);
+        }
+
+        if ($this->looksLikeRosterListQuery($text)) {
+            return $this->pack('get_students', array_filter([
+                'grade' => $grade,
+                'section' => $section,
+            ]));
         }
 
         if ($this->wantsDiagnosis($text)) {
@@ -1176,6 +1277,15 @@ class DirectorDataAgentService
     private function planFollowUp(string $text, array $memory): ?array
     {
         $focus = (array) ($memory['focus'] ?? []);
+        if ($this->looksLikeRosterFollowUp($text, $memory)) {
+            $focus = (array) ($memory['focus'] ?? []);
+
+            return $this->pack('get_students', array_filter([
+                'grade' => $focus['grade'] ?? null,
+                'section' => $focus['section'] ?? null,
+            ]));
+        }
+
         if ($focus === [] && empty($memory['student_name']) && empty($memory['student_names']) && empty($memory['last_intent'])) {
             return null;
         }
@@ -1305,6 +1415,18 @@ class DirectorDataAgentService
                 $rows = $this->rowsOf($data['at_risk']['students']);
                 $focus['at_risk'] = $rows;
                 $focus['kind'] = $focus['kind'] ?? 'school';
+            }
+            if ($tool === 'get_students' && isset($data['students'])) {
+                $focus['kind'] = 'student_roster';
+                $focus['student_names'] = collect($this->rowsOf($data['students']))->pluck('name')->filter()->values()->all();
+            }
+            if ($tool === 'query_academic' && isset($data['students_count'])) {
+                $focus['kind'] = 'student_count';
+                $focus['students_count'] = (int) $data['students_count'];
+            }
+            if (isset($data['school_name'])) {
+                $focus['kind'] = 'school_info';
+                $focus['school_name'] = $data['school_name'];
             }
         }
 

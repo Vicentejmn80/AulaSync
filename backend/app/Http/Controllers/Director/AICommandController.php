@@ -2291,6 +2291,8 @@ class AICommandController extends Controller
             'student_absences' => $this->queryStudentAbsences($colegioId, (string) $data['student_name']),
             'student_evaluations' => $this->queryStudentEvaluations($colegioId, (string) $data['student_name']),
             'school_stats' => $this->querySchoolStats($colegioId, (string) ($data['stat'] ?? 'teachers')),
+            'school_info' => $this->analytics->getSchoolInfo($colegioId),
+            'most_advanced_course' => $this->analytics->getMostAdvancedCourse($colegioId),
             'school_courses' => $this->querySchoolCourses($colegioId),
             'school_teachers' => $this->querySchoolTeachers($colegioId),
             'grade_overview' => $this->queryGradeOverview($colegioId, (string) $data['grade']),

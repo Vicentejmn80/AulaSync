@@ -379,6 +379,64 @@ class DirectorDataAgentTest extends TestCase
         $this->assertFalse((bool) $response->json('needs_clarification'));
     }
 
+    public function test_student_count_follow_up_lists_names(): void
+    {
+        [$director, $colegio] = $this->directorContext();
+        $this->seedClass($colegio, '4to', 'A', [['Ana Ruiz', 18], ['Luis Mora', 14]]);
+
+        $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => '¿Cuántos alumnos hay en mi colegio?',
+        ])->assertOk();
+
+        $response = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'Nombralos y dime cuáles son',
+        ]);
+
+        $response->assertOk();
+        $this->assertContains('get_students', $response->json('tools'));
+        $payload = json_encode($response->json(), JSON_UNESCAPED_UNICODE);
+        $this->assertStringContainsString('Ana Ruiz', $payload);
+        $this->assertStringContainsString('Luis Mora', $payload);
+    }
+
+    public function test_list_all_students_by_name_across_grades(): void
+    {
+        [$director, $colegio] = $this->directorContext();
+        $this->seedClass($colegio, '4to', 'A', [['Ana Ruiz', 18]]);
+        $this->seedClass($colegio, '2do', 'A', [['Pepe Sol', 16]]);
+
+        $response = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'Dame el nombre de todos los alumnos del colegio, de todos los grados',
+        ]);
+
+        $response->assertOk();
+        $this->assertContains('get_students', $response->json('tools'));
+        $payload = json_encode($response->json(), JSON_UNESCAPED_UNICODE);
+        $this->assertStringContainsString('Ana Ruiz', $payload);
+        $this->assertStringContainsString('Pepe Sol', $payload);
+        $this->assertStringNotContainsString('Puedo crear y eliminar profesores', $payload);
+    }
+
+    public function test_director_can_ask_school_name_and_most_advanced_course(): void
+    {
+        [$director, $colegio] = $this->directorContext('Colegio Horizonte', 'COC-H001');
+        $this->seedClass($colegio, '4to', 'A', [['Ana Ruiz', 18]]);
+        $this->seedClass($colegio, '2do', 'A', [['Pepe Sol', 16]]);
+
+        $nameResponse = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => '¿Cómo se llama mi colegio?',
+        ]);
+        $nameResponse->assertOk();
+        $this->assertStringContainsString('Colegio Horizonte', (string) $nameResponse->json('message'));
+        $this->assertStringNotContainsString('Puedo consultar notas', (string) $nameResponse->json('message'));
+
+        $courseResponse = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => '¿Cuál es el curso más avanzado?',
+        ]);
+        $courseResponse->assertOk();
+        $this->assertStringContainsString('4to', (string) $courseResponse->json('message'));
+    }
+
     /**
      * @param  array<int,array{0:string,1:int}>  $students
      * @return array{0:User,1:Course,2:Student}
