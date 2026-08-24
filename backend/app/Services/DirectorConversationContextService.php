@@ -116,8 +116,23 @@ class DirectorConversationContextService
         }
 
         $fromList = $this->namesFromRows($data['students'] ?? $data['ranking'] ?? null);
+        $roster = array_values(array_filter(array_map(
+            'strval',
+            array_merge(
+                (array) ($data['roster_names'] ?? []),
+                is_array($data['students_without_grades'] ?? null)
+                    ? $data['students_without_grades']
+                    : collect($data['students_without_grades'] ?? [])->all(),
+            )
+        )));
         $studentNames = $data['names'] ?? $data['student_names'] ?? null;
-        if (is_array($studentNames) && $studentNames !== []) {
+        if ($roster !== []) {
+            $context['student_names'] = array_values(array_unique(array_merge(
+                (array) ($context['student_names'] ?? []),
+                $roster,
+                $fromList,
+            )));
+        } elseif (is_array($studentNames) && $studentNames !== []) {
             $context['student_names'] = array_values(array_filter(array_map('strval', $studentNames)));
         } elseif ($fromList !== []) {
             $context['student_names'] = $fromList;

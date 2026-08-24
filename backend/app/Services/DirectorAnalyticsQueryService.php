@@ -324,6 +324,7 @@ class DirectorAnalyticsQueryService
         }
 
         $classAvg = round($rows->avg('avg_pct'), 1);
+        $missing = $students->whereNotIn('id', $rows->pluck('id'))->values();
         $table = $this->markdownTable(
             ['#', 'Alumno', 'Promedio', 'Evaluaciones'],
             $rows->values()->map(fn ($r, $i) => [
@@ -333,11 +334,16 @@ class DirectorAnalyticsQueryService
                 (string) $r->grade_count,
             ])->all()
         );
+        $missingLine = $missing->isEmpty()
+            ? ''
+            : "\n".$missing->count().' alumno(s) todavía sin calificaciones: '.$missing->pluck('name')->implode(', ').'.';
 
         return [
-            'message' => "Rendimiento de {$label} ({$rows->count()} alumno(s) con notas, promedio general {$classAvg}%):\n".$table,
+            'message' => "Hay {$students->count()} alumno(s) en {$label}. Rendimiento de {$label} ({$rows->count()} con notas, promedio general {$classAvg}%):\n".$table.$missingLine,
             'data' => [
                 'students' => $rows,
+                'students_without_grades' => $missing->pluck('name')->all(),
+                'roster_names' => $students->pluck('name')->all(),
                 'class_avg_pct' => $classAvg,
                 'grade' => $grade,
                 'section' => $section,

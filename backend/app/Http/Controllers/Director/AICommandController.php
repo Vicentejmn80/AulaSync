@@ -82,6 +82,22 @@ class AICommandController extends Controller
             ], 422);
         }
 
+        $routeDecision = $this->dataAgent->routeDecision($text);
+        Log::info('director.ai.routing', [
+            'path' => $request->path(),
+            'method' => $request->method(),
+            'route_name' => $request->route()?->getName(),
+            'director_id' => $director->id,
+            'colegio_id' => $director->colegio_id,
+            'prompt' => mb_substr($text, 0, 240),
+            'intention' => $routeDecision['reason'],
+            'agent' => $routeDecision['agent'],
+            'use_data_agent' => $routeDecision['use_data_agent'],
+            'mutation' => $routeDecision['mutation'],
+            'extracted_grade' => $routeDecision['extracted_grade'],
+            'extracted_section' => $routeDecision['extracted_section'],
+        ]);
+
         // Respuestas cortas de confirmación ("sí", "sí, créalos", "confirmo")
         // completan la acción pendiente guardada en sesión, sin bucle sin contexto.
         if ($this->isAffirmativeText($text) && session()->has(self::PENDING_SESSION_KEY)) {
@@ -99,9 +115,7 @@ class AICommandController extends Controller
             ]);
         }
 
-        // Consultas y follow-ups van SIEMPRE al data agent. El intérprete de
-        // mutaciones no debe interceptar "¿con qué profesor...?", "¿cómo estamos?"
-        // ni pronombres ("ellos", "los de 1ro").
+        // Consultas y follow-ups van SIEMPRE al data agent.
         if ($this->dataAgent->shouldUseDataAgent($text) || $this->dataAgent->isOutOfScope($text)) {
             return $this->respondWithDataAgent($director, $text, $screenContext, null);
         }
@@ -177,11 +191,28 @@ class AICommandController extends Controller
             }
 
             if ($actions === []) {
+                // Red de seguridad: si el intérprete no armó mutación pero la
+                // frase es una consulta académica, no devolver el menú CRUD.
+                if ($this->dataAgent->looksLikeAcademicInquiry($text)) {
+                    Log::warning('director.ai.routing_fallback_to_data_agent', [
+                        'prompt' => mb_substr($text, 0, 240),
+                        'decision' => $this->dataAgent->routeDecision($text),
+                    ]);
+
+                    return $this->respondWithDataAgent($director, $text, $screenContext, null);
+                }
+
+                Log::warning('director.ai.crud_menu_fallback', [
+                    'prompt' => mb_substr($text, 0, 240),
+                    'decision' => $this->dataAgent->routeDecision($text),
+                ]);
+
                 return response()->json([
                     'success' => false,
                     'needs_clarification' => true,
                     'message' => (is_array($interpreted) ? ($interpreted['clarification'] ?? null) : null)
                         ?: 'Puedo crear y eliminar profesores, cursos y alumnos, matricular alumnos en cursos y consultar notas o faltas. Ejemplos: "Crea al alumno Andrés Pérez y asígnalo al curso de Inglés de 1ro" o "Crea al profesor Yovanny Andrade y asígnale Inglés de 1ro a 6to".',
+                    'routing' => $this->dataAgent->routeDecision($text),
                 ]);
             }
 
@@ -219,6 +250,15 @@ class AICommandController extends Controller
     {
         try {
             $plan = $this->dataAgent->plan($text, $screenContext, $preplanned, $this->conversationContext->current());
+            Log::info('director.ai.routing_executed', [
+                'path' => request()->path(),
+                'method' => request()->method(),
+                'prompt' => mb_substr($text, 0, 240),
+                'agent' => 'director_data',
+                'intention' => $plan['intent'] ?? null,
+                'tools' => array_column($plan['tools'] ?? [], 'tool'),
+                'decision' => $this->dataAgent->routeDecision($text),
+            ]);
             $result = $this->dataAgent->answer(
                 $director,
                 $text,
@@ -252,6 +292,8 @@ class AICommandController extends Controller
                 'duration_ms' => $result['duration_ms'] ?? null,
                 'trace' => $result['trace'] ?? [],
                 'timeline' => $result['timeline'] ?? [],
+                'routing' => $this->dataAgent->routeDecision($text),
+                'agent' => 'director_data',
             ]);
         }
 
@@ -282,6 +324,7 @@ class AICommandController extends Controller
             'report_ready' => $result['report_ready'] ?? false,
             'trace' => $result['trace'] ?? [],
             'timeline' => $result['timeline'] ?? [],
+            'routing' => $this->dataAgent->routeDecision($text),
         ]);
     }
 
