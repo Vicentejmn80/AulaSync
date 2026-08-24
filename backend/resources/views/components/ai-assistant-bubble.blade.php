@@ -1220,17 +1220,28 @@ function novaAIAssistant() {
             });
         },
 
+        getCsrfToken() {
+            const el = document.querySelector('meta[name="csrf-token"]');
+            return el ? el.getAttribute('content') : '';
+        },
         async executeConfirmed() {
             const liveContext = window.novaContext || this.pageContext || null;
             const conversation = this.messages
                 .filter(m => m.role === 'user' || m.role === 'assistant')
                 .map(m => ({ role: m.role, content: m.text }));
+            const token = this.getCsrfToken();
+            if (!token) {
+                this.addMessage('assistant', 'No pude verificar tu sesión. Recarga la página e intenta de nuevo.');
+                return { success: false };
+            }
             const res = await fetch(this.commandEndpoint, {
                 method: 'POST',
+                credentials: 'same-origin',
                 headers: {
                     'Content-Type': 'application/json',
                     'Accept': 'application/json',
-                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+                    'X-CSRF-TOKEN': token,
+                    'X-Requested-With': 'XMLHttpRequest',
                 },
                     body: JSON.stringify({
                     prompt: '',
@@ -1284,6 +1295,12 @@ function novaAIAssistant() {
             this.loading = true;
             this.scrollToBottom();
 
+            const token2 = this.getCsrfToken();
+            if (!token2) {
+                this.addMessage('assistant', 'No pude verificar tu sesión. Recarga la página e intenta de nuevo.');
+                this.loading = false;
+                return;
+            }
             try {
                 const liveContext = window.novaContext || this.pageContext || null;
                 const conversation = this.messages
@@ -1291,10 +1308,12 @@ function novaAIAssistant() {
                     .map(m => ({ role: m.role, content: m.text }));
                 const res = await fetch(this.commandEndpoint, {
                     method: 'POST',
+                    credentials: 'same-origin',
                     headers: {
                         'Content-Type': 'application/json',
                         'Accept': 'application/json',
-                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+                        'X-CSRF-TOKEN': token2,
+                        'X-Requested-With': 'XMLHttpRequest',
                     },
                     body: JSON.stringify({
                     prompt: text,
@@ -1306,6 +1325,11 @@ function novaAIAssistant() {
                 }),
                 });
 
+                if (res.status === 419) {
+                    this.addMessage('assistant', 'Tu sesión expiró. Recarga la página e intenta de nuevo.');
+                    this.showToast('Sesión expirada', 'error', 'fa-exclamation-triangle');
+                    return;
+                }
                 const raw = await res.text();
                 let json;
                 try {

@@ -275,6 +275,8 @@ class AICommandController extends Controller
                 'needs_clarification' => true,
                 'message' => $result['message'],
                 'duration_ms' => $result['duration_ms'] ?? null,
+                'trace' => $result['trace'] ?? [],
+                'timeline' => $result['timeline'] ?? [],
             ]);
         }
 
@@ -303,6 +305,8 @@ class AICommandController extends Controller
             'tools' => $result['tools'],
             'duration_ms' => $result['duration_ms'] ?? null,
             'report_ready' => $result['report_ready'] ?? false,
+            'trace' => $result['trace'] ?? [],
+            'timeline' => $result['timeline'] ?? [],
         ]);
     }
 

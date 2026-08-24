@@ -115,11 +115,26 @@ class DirectorAnalyticsQueryService
 
         /** @var Student $student */
         $student = $match->model;
+        $teacherNames = $student->courses()->with('teacher:id,name')->limit(3)->get()->pluck('teacher.name')->filter()->unique()->values();
+        // Fallback: si no está matriculado, buscar profesor del curso de su grado/sección
+        if ($teacherNames->isEmpty() && $student->grade) {
+            $teacherNames = Course::where('colegio_id', $colegioId)
+                ->whereRaw('LOWER(grade) = ?', [mb_strtolower($student->grade)])
+                ->when($student->section, fn($q) => $q->whereRaw('LOWER(COALESCE(section, ?)) = ?', ['', mb_strtolower($student->section)]))
+                ->with('teacher:id,name')
+                ->get()
+                ->pluck('teacher.name')
+                ->filter()
+                ->unique()
+                ->values();
+        }
+        $teacherText = $teacherNames->isNotEmpty() ? ' Su profesor es '.$teacherNames->implode(', ').'.' : '';
 
         return [
-            'message' => "{$student->name} está en {$student->grade}".($student->section ? ' / '.$student->section : '').'.',
+            'message' => "{$student->name} está en {$student->grade}".($student->section ? ' / '.$student->section : '').'.'.$teacherText,
             'data' => [
                 'student' => $student->only(['id', 'name', 'grade', 'section']),
+                'teachers' => $teacherNames->all(),
             ],
         ];
     }

@@ -41,6 +41,7 @@ class DirectorDataAgentService
     public function __construct(
         private DirectorAnalyticsQueryService $analytics,
         private ProductTelemetry $telemetry,
+        private DirectorConversationContextService $conversationContext,
     ) {}
 
     public static function isDataTool(string $name): bool
@@ -170,6 +171,50 @@ class DirectorDataAgentService
     public function plan(string $text, array $screenContext = [], ?array $preplanned = null, array $memory = []): array
     {
         $context = $this->sanitizeContext($screenContext);
+        // Fase 3: memoria conversacional para follow-ups como "¿Quiénes?" o "¿Cuál tiene peor?"
+        $last = $this->conversationContext->current();
+        $lastGrade = $last['grades'][0] ?? $last['grade'] ?? null;
+        $lastSection = $last['section'] ?? null;
+        $lastStudent = $last['student_name'] ?? $last['student_names'][0] ?? null;
+        $valueNorm = $this->normalized($text);
+        $trimNorm = trim($valueNorm, " \t\n\r\0\x0B¿?¡!.");
+        // Solo follow-up puro "¿Quiénes?" / "¿Quiénes son?" sin más contexto -> usar último grado
+        $isPureQuienes = in_array($trimNorm, ['quienes', 'quienes son', 'cuales son', 'quienes somos'], true);
+        if ($isPureQuienes || $trimNorm === 'quienes') {
+            if ($lastGrade) {
+                return $this->pack('get_students', ['grade' => $lastGrade, 'section' => $lastSection]);
+            }
+            return [
+                'tools' => [],
+                'intent' => 'needs_course',
+                'clarification' => '¿Sobre qué curso quieres saber? Por ejemplo dime 4to A.',
+                'wants_opinion' => false,
+            ];
+        }
+        if (preg_match('/cual.*peor.*promedio|peor promedio|peor rendimiento|cual tiene peor/iu', $valueNorm) && $lastGrade) {
+            return $this->pack('get_rankings', ['metric' => 'average', 'grade' => $lastGrade, 'section' => $lastSection, 'limit' => 5]);
+        }
+        if (preg_match('/^por que$/u', $trimNorm)) {
+            if ($lastStudent) {
+                return $this->pack('get_student_performance', ['student_name' => $lastStudent]);
+            }
+            // Sin estudiante previo, explicar at-risk general
+            if ($lastGrade) {
+                return $this->pack('get_at_risk_students', ['grade' => $lastGrade, 'section' => $lastSection]);
+            }
+        }
+        if (preg_match('/en que materia.*peor/u', $valueNorm)) {
+            if ($lastStudent) {
+                return $this->pack('get_student_performance', ['student_name' => $lastStudent]);
+            }
+            if ($lastGrade) {
+                return $this->pack('get_at_risk_students', ['grade' => $lastGrade, 'section' => $lastSection]);
+            }
+        }
+        if (preg_match('/quien es su profesor/u', $valueNorm)) {
+            return $this->pack('get_teachers', []);
+        }
+
         $wantsOpinion = $this->wantsOpinion($text);
 
         if (is_array($preplanned) && $preplanned !== []) {
@@ -225,6 +270,60 @@ class DirectorDataAgentService
         return ($plan['tools'] ?? []) !== [] || filled($plan['clarification'] ?? null);
     }
 
+    private function tryLlmPlan(User $director, string $text, array $plan): ?array
+    {
+        $key = trim((string) config('services.openai.key'));
+        if ($key === '' || str_contains($key, 'your_openai')) {
+            return null;
+        }
+        try {
+            $response = \Illuminate\Support\Facades\Http::timeout(12)
+                ->withToken($key)
+                ->post('https://api.openai.com/v1/chat/completions', [
+                    'model' => (string) config('services.openai.director_model', 'gpt-4o-mini'),
+                    'temperature' => 0.2,
+                    'top_p' => 0.95,
+                    'tool_choice' => 'auto',
+                    'parallel_tool_calls' => true,
+                    'tools' => $this->toolDefinitions(),
+                    'messages' => [
+                        ['role' => 'system', 'content' => 'Eres el orquestador del Director Data Agent de AulaSync. Solo decides qué herramientas usar para responder preguntas de directores sobre su colegio. Nunca inventes datos. Elige 1-3 herramientas según la pregunta.'],
+                        ['role' => 'user', 'content' => $text],
+                    ],
+                ]);
+            if ($response->failed()) {
+                return null;
+            }
+            $msg = $response->json('choices.0.message', []);
+            $calls = $msg['tool_calls'] ?? [];
+            if (empty($calls)) {
+                return null;
+            }
+            $tools = [];
+            foreach ($calls as $call) {
+                $name = $call['function']['name'] ?? data_get($call, 'function.name', '');
+                $argsRaw = $call['function']['arguments'] ?? data_get($call, 'function.arguments', '{}');
+                $args = is_string($argsRaw) ? json_decode($argsRaw, true) : (is_array($argsRaw) ? $argsRaw : []);
+                if (! is_array($args) || ! self::isDataTool((string) $name)) {
+                    continue;
+                }
+                $tools[] = ['tool' => (string) $name, 'args' => $this->sanitizeArgs($args)];
+            }
+            if ($tools === []) {
+                return null;
+            }
+            return [
+                'tools' => $tools,
+                'intent' => $tools[0]['tool'],
+                'clarification' => null,
+                'wants_opinion' => false,
+            ];
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('DirectorDataAgent LLM fallback failed', ['error' => $e->getMessage()]);
+            return null;
+        }
+    }
+
     /**
      * @param  array{tools:array<int,array{tool:string,args:array}>,intent:string,clarification:?string,wants_opinion:bool}  $plan
      * @param  callable(array):array|null  $legacyQuery
@@ -234,11 +333,17 @@ class DirectorDataAgentService
     {
         $started = hrtime(true);
         $sessionId = $this->sessionId();
+        $trace = [];
+        $trace[] = ['event' => 'query_received', 'at' => now()->toIso8601String(), 'duration_ms' => 0];
+        $trace[] = ['event' => 'context_resolved', 'at' => now()->toIso8601String(), 'colegio_id' => $director->colegio_id, 'role' => $director->role];
+        $planner = isset($plan['planner']) ? $plan['planner'] : 'deterministic';
+        $trace[] = ['event' => 'planner_used', 'at' => now()->toIso8601String(), 'planner' => $planner, 'intent' => $plan['intent'] ?? 'unknown', 'tools' => array_column($plan['tools'] ?? [], 'tool')];
 
         // ── Cost control por colegio (100 consultas/día, 30/min ya via throttle) ──
         $costKey = 'director_data_cost:'.(int) $director->colegio_id.':'.now()->format('Y-m-d');
         $dailyCount = (int) Cache::get($costKey, 0);
         if ($dailyCount >= 100) {
+            $trace[] = ['event' => 'rate_limited', 'at' => now()->toIso8601String()];
             $this->record($director, $plan['intent'] ?? 'rate_limited', [], 'failed', $started, $sessionId, 'daily_limit_exceeded', $text);
             return [
                 'success' => false,
@@ -248,12 +353,16 @@ class DirectorDataAgentService
                 'intent' => 'rate_limited',
                 'tools' => [],
                 'duration_ms' => $this->elapsedMs($started),
+                'trace' => $trace,
+                'timeline' => $this->timelineFromTools([]),
             ];
         }
         Cache::put($costKey, $dailyCount + 1, now()->endOfDay());
 
         if (($plan['intent'] ?? '') === 'explain_from_memory') {
+            $trace[] = ['event' => 'synthesis_started', 'at' => now()->toIso8601String()];
             $composed = $this->composeFollowUp($text, (array) ($plan['focus'] ?? []));
+            $trace[] = ['event' => 'response_generated', 'at' => now()->toIso8601String(), 'duration_ms' => $this->elapsedMs($started)];
             $this->record($director, 'explain_from_memory', [], 'success', $started, $sessionId, null, $text);
 
             return [
@@ -264,11 +373,22 @@ class DirectorDataAgentService
                 'intent' => 'explain_from_memory',
                 'tools' => [],
                 'duration_ms' => $this->elapsedMs($started),
+                'trace' => $trace,
+                'timeline' => $this->timelineFromTools([]),
                 'focus' => $plan['focus'] ?? [],
             ];
         }
 
+        // Fase 3: Fallback LLM si plan local no es confiable (baja confianza)
+        if (! $this->localPlanIsReady($plan)) {
+            $llmPlan = $this->tryLlmPlan($director, $text, $plan);
+            if ($llmPlan !== null && ! empty($llmPlan['tools'])) {
+                $plan = $llmPlan;
+            }
+        }
+
         if (($plan['clarification'] ?? null) && ($plan['tools'] ?? []) === []) {
+            $trace[] = ['event' => 'needs_clarification', 'at' => now()->toIso8601String(), 'clarification' => $plan['clarification']];
             $this->record($director, $plan['intent'] ?? 'clarify', [], 'unresolved', $started, $sessionId, 'needs_clarification', $text);
 
             return [
@@ -279,6 +399,8 @@ class DirectorDataAgentService
                 'intent' => (string) ($plan['intent'] ?? 'clarify'),
                 'tools' => [],
                 'duration_ms' => $this->elapsedMs($started),
+                'trace' => $trace,
+                'timeline' => $this->timelineFromTools([]),
             ];
         }
 
@@ -286,6 +408,7 @@ class DirectorDataAgentService
         $used = [];
         $knownStudent = null;
         $ranAtRisk = false;
+        $trace[] = ['event' => 'planner_used', 'at' => now()->toIso8601String(), 'tools' => array_column($plan['tools'] ?? [], 'tool')];
         foreach ($plan['tools'] as $call) {
             $tool = (string) $call['tool'];
             $args = $this->sanitizeArgs((array) ($call['args'] ?? []));
@@ -296,8 +419,10 @@ class DirectorDataAgentService
                 $args['student_name'] = $knownStudent;
             }
             $used[] = $tool;
+            $trace[] = ['event' => 'tool_started', 'at' => now()->toIso8601String(), 'tool' => $tool];
             try {
                 $result = $this->execute($director, $tool, $args, $legacyQuery);
+                $trace[] = ['event' => 'tool_completed', 'at' => now()->toIso8601String(), 'tool' => $tool];
                 $actions[] = [
                     'success' => true,
                     'action_type' => $tool,
@@ -311,6 +436,7 @@ class DirectorDataAgentService
                     $ranAtRisk = true;
                 }
             } catch (\Throwable $e) {
+                $trace[] = ['event' => 'tool_failed', 'at' => now()->toIso8601String(), 'tool' => $tool, 'error' => $this->errorCode($e)];
                 Log::error('Director data agent tool failed', [
                     'director_id' => $director->id,
                     'colegio_id' => $director->colegio_id,
@@ -319,6 +445,8 @@ class DirectorDataAgentService
                 ]);
                 $this->record($director, $plan['intent'] ?? $tool, $used, 'failed', $started, $sessionId, $this->errorCode($e), $text);
 
+                $trace[] = ['event' => 'synthesis_started', 'at' => now()->toIso8601String()];
+                $trace[] = ['event' => 'response_generated', 'at' => now()->toIso8601String(), 'duration_ms' => $this->elapsedMs($started)];
                 return [
                     'success' => true,
                     'needs_clarification' => false,
@@ -332,12 +460,16 @@ class DirectorDataAgentService
                     'intent' => (string) ($plan['intent'] ?? $tool),
                     'tools' => $used,
                     'duration_ms' => $this->elapsedMs($started),
+                    'trace' => $trace,
+                    'timeline' => $this->timelineFromTools($used),
                 ];
             }
         }
 
+        $trace[] = ['event' => 'synthesis_started', 'at' => now()->toIso8601String()];
         $intent = (string) ($plan['intent'] ?? ($used[0] ?? 'query'));
         $composed = $this->compose($text, $actions, (bool) ($plan['wants_opinion'] ?? false), $intent);
+        $trace[] = ['event' => 'response_generated', 'at' => now()->toIso8601String(), 'duration_ms' => $this->elapsedMs($started)];
         $this->record($director, $intent, $used, 'success', $started, $sessionId, null, $text);
 
         return [
@@ -350,6 +482,8 @@ class DirectorDataAgentService
             'duration_ms' => $this->elapsedMs($started),
             'focus' => $this->extractFocus($actions, $intent, $text, (array) ($plan['focus'] ?? [])),
             'report_ready' => $intent === 'executive_report' || $this->wantsExecutiveReport($text),
+            'trace' => $trace,
+            'timeline' => $this->timelineFromTools($used),
         ];
     }
 
@@ -492,6 +626,22 @@ class DirectorDataAgentService
             return "**Hechos**\nNo hay datos suficientes en tu colegio para responder esa consulta.\n\n**Análisis**\nNo hay base suficiente para un análisis. Cuando existan notas o asistencia podré señalar riesgos.";
         }
 
+        // Fase 3: preguntas simples → respuesta natural corta sin forzar Hechos/Análisis
+        if ($this->isSimpleCountQuery($text, $actions)) {
+            $msg = trim((string) $facts->first());
+            if (preg_match('/Hay\s+\d+\s+alumnos?\b[^.]*\./iu', $msg, $m)) {
+                return trim($m[0]) . "\n\nSi quieres, dime el grado y te detallo quiénes son.";
+            }
+            if (preg_match('/Hay\s+\d+\s+profesores?\b[^.]*\./iu', $msg, $m)) {
+                return trim($m[0]);
+            }
+            if (preg_match('/Hay\s+\d+\s+curso\b[^.]*\./iu', $msg, $m)) {
+                return trim($m[0]);
+            }
+            // Fallback natural sin forzar estructura
+            return trim($msg);
+        }
+
         if ($intent === 'diagnose_school' || $this->wantsDiagnosis($text)) {
             return $this->composeDiagnosis($actions);
         }
@@ -523,6 +673,19 @@ class DirectorDataAgentService
         }
 
         return $out;
+    }
+
+    private function isSimpleCountQuery(string $text, array $actions): bool
+    {
+        $value = $this->normalized($text);
+        if (! preg_match('/\bcuantos\s+(?:alumnos|estudiantes|profesores|cursos)\b/u', $value)) {
+            return false;
+        }
+        // Solo si es pregunta simple sin filtros complejos y con un solo hecho
+        if (preg_match('/\b(?:tenemos|hay|tiene el colegio|hay en)\b/u', $value) && count($actions) === 1) {
+            return true;
+        }
+        return false;
     }
 
     /**
@@ -1763,7 +1926,7 @@ class DirectorDataAgentService
             if (isset($data['overall_avg_pct'])) {
                 $avg = (float) $data['overall_avg_pct'];
                 $note = $note ?? ($avg < 70
-                    ? 'El rendimiento individual está por debajo de lo esperado.'
+                    ? 'El alumno presenta bajo rendimiento, por debajo de lo esperado.'
                     : 'El rendimiento individual está en un rango estable.');
                 if ($avg < 70) {
                     $recommendation = $recommendation ?? 'Pedile al docente un seguimiento puntual de este alumno.';
@@ -2047,6 +2210,39 @@ class DirectorDataAgentService
         $value = $args[$key] ?? null;
 
         return is_string($value) && trim($value) !== '' ? $value : null;
+    }
+
+    private function timelineFromTools(array $tools): array
+    {
+        $map = [
+            'get_students' => 'Revisando lista de alumnos',
+            'get_student' => 'Consultando ficha del alumno',
+            'get_courses' => 'Revisando cursos',
+            'get_teachers' => 'Consultando plantel docente',
+            'get_grades' => 'Analizando calificaciones',
+            'get_attendance' => 'Revisando asistencia',
+            'get_evaluations' => 'Consultando evaluaciones',
+            'get_assignments' => 'Revisando tareas',
+            'get_student_performance' => 'Analizando rendimiento del alumno',
+            'get_course_performance' => 'Evaluando rendimiento del curso',
+            'compare_courses' => 'Comparando cursos',
+            'get_at_risk_students' => 'Detectando alumnos en riesgo',
+            'get_declining_students' => 'Analizando tendencias de notas',
+            'get_academic_trends' => 'Revisando tendencias',
+            'generate_school_report' => 'Generando informe ejecutivo',
+            'get_rankings' => 'Calculando ranking',
+            'get_section_counts' => 'Contando alumnos por sección',
+            'query_academic' => 'Consultando datos académicos',
+        ];
+        $steps = [];
+        foreach ($tools as $tool) {
+            $steps[] = $map[$tool] ?? 'Procesando '.str_replace('_',' ',$tool);
+        }
+        if ($steps === []) {
+            $steps[] = 'Analizando tu pregunta';
+        }
+        $steps[] = 'Preparando análisis';
+        return $steps;
     }
 
     private function sessionId(): string
