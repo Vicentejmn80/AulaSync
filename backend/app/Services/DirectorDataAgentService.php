@@ -22,6 +22,8 @@ class DirectorDataAgentService
         'get_student',
         'get_courses',
         'get_teachers',
+        'verify_teacher',
+        'verify_student',
         'get_grades',
         'get_attendance',
         'get_evaluations',
@@ -72,10 +74,77 @@ class DirectorDataAgentService
     }
 
     /**
+     * Routing por intención (profesores, alumnos, notas, verificación), no por una frase exacta.
+     *
+     * @return array{intent:string,agent:string,subject?:string}
+     */
+    public function detectIntent(string $text): array
+    {
+        $value = $this->normalized($text);
+
+        if ($this->looksLikeMutation($text)) {
+            return ['intent' => 'mutation', 'agent' => 'crud'];
+        }
+
+        if ($this->looksLikeTeacherOfStudentQuery($text)) {
+            return ['intent' => 'teacher_of_student', 'agent' => 'data_agent'];
+        }
+
+        if ($this->looksLikeExistenceVerification($text)) {
+            $subject = preg_match('/\b(?:alumno|estudiante)s?\b/u', $value)
+                && ! preg_match('/\b(?:profesor|docente|maestro)s?\b/u', $value)
+                ? 'student'
+                : 'teacher';
+
+            return ['intent' => 'verification', 'agent' => 'data_agent', 'subject' => $subject];
+        }
+
+        if ($this->looksLikeTeacherRosterQuery($text)) {
+            return ['intent' => 'professors', 'agent' => 'data_agent'];
+        }
+
+        if (preg_match('/\b(?:alumnos?|estudiantes?)\b/u', $value)
+            && ! preg_match('/\b(?:profesores?|docentes?|maestros?)\b/u', $value)
+            && (
+                preg_match('/\b(?:listado|qui[eé]nes?|cu[aá]ntos|nombres?|como se llama|hay|tenemos|dime|dame)\b/u', $value)
+                || $this->looksLikeRosterListQuery($text)
+            )) {
+            return ['intent' => 'students', 'agent' => 'data_agent'];
+        }
+
+        if (preg_match('/\b(?:notas?|calificaciones?|rendimiento|promedio|como va|como van)\b/u', $value)
+            && ! $this->looksLikeSchoolNameQuery($text)) {
+            return ['intent' => 'grades', 'agent' => 'data_agent'];
+        }
+
+        if (preg_match('/\b(?:revisa|verifica|confirm[ae])\b/u', $value)
+            && preg_match('/\b(?:profesor|alumno|estudiante|docente)\b/u', $value)) {
+            return ['intent' => 'verification', 'agent' => 'data_agent'];
+        }
+
+        if (preg_match('/\b(?:informe|reporte|resumen|panorama|como estamos)\b/u', $value)) {
+            return ['intent' => 'report', 'agent' => 'data_agent'];
+        }
+
+        if ($this->looksLikeSchoolNameQuery($text)
+            || $this->looksLikeMostAdvancedCourseQuery($text)
+            || $this->looksLikeFollowUp($text)
+            || $this->looksLikeConversationalQuery($text)
+            || $this->looksLikeAcademicInquiry($text)
+            || $this->looksLikeDataQuery($text)
+            || $this->isOutOfScope($text)) {
+            return ['intent' => 'query', 'agent' => 'data_agent'];
+        }
+
+        return ['intent' => 'unknown', 'agent' => 'llm_fallback'];
+    }
+
+    /**
      * Decisión de routing (para logs de producción y tests).
      *
      * @return array{
      *   prompt:string,
+     *   intent:string,
      *   mutation:bool,
      *   data_query:bool,
      *   follow_up:bool,
@@ -90,30 +159,19 @@ class DirectorDataAgentService
      */
     public function routeDecision(string $text): array
     {
-        $mutation = $this->looksLikeMutation($text);
+        $detected = $this->detectIntent($text);
+        $mutation = ($detected['intent'] ?? '') === 'mutation';
         $data = $this->looksLikeDataQuery($text);
         $follow = $this->looksLikeFollowUp($text);
         $conv = $this->looksLikeConversationalQuery($text);
         $academic = $this->looksLikeAcademicInquiry($text);
         $grade = $this->extractGrade($text);
         $section = $this->extractSection($text);
-        $useData = ! $mutation && ($data || $follow || $conv || $academic);
-
-        $reason = 'fallback_mutation_menu';
-        if ($mutation) {
-            $reason = 'mutation_verbs';
-        } elseif ($academic) {
-            $reason = 'academic_inquiry';
-        } elseif ($data) {
-            $reason = 'data_query_regex';
-        } elseif ($follow) {
-            $reason = 'follow_up';
-        } elseif ($conv) {
-            $reason = 'conversational';
-        }
+        $useData = ($detected['agent'] ?? '') === 'data_agent';
 
         return [
             'prompt' => $text,
+            'intent' => $detected['intent'] ?? 'unknown',
             'mutation' => $mutation,
             'data_query' => $data,
             'follow_up' => $follow,
@@ -123,7 +181,7 @@ class DirectorDataAgentService
             'extracted_section' => $section,
             'use_data_agent' => $useData,
             'agent' => $useData ? 'director_data' : 'mutation_interpreter',
-            'reason' => $reason,
+            'reason' => $detected['intent'] ?? 'unknown',
         ];
     }
 
@@ -149,14 +207,7 @@ class DirectorDataAgentService
      */
     public function shouldUseDataAgent(string $text): bool
     {
-        if ($this->looksLikeMutation($text)) {
-            return false;
-        }
-
-        return $this->looksLikeDataQuery($text)
-            || $this->looksLikeFollowUp($text)
-            || $this->looksLikeConversationalQuery($text)
-            || $this->looksLikeAcademicInquiry($text);
+        return ($this->detectIntent($text)['agent'] ?? '') === 'data_agent';
     }
 
     public function looksLikeDataQuery(string $text): bool
@@ -859,6 +910,8 @@ PROMPT;
                 $this->str($args, 'subject_name') ?? $this->str($args, 'subject'),
             ),
             'get_teachers' => $this->analytics->getTeachers($colegioId),
+            'verify_teacher' => $this->analytics->verifyTeacher($colegioId, (string) ($args['teacher_name'] ?? $args['name'] ?? '')),
+            'verify_student' => $this->analytics->verifyStudent($colegioId, (string) ($args['student_name'] ?? $args['name'] ?? '')),
             'get_grades' => $this->analytics->getGrades(
                 $colegioId,
                 $this->str($args, 'grade'),
@@ -1036,7 +1089,7 @@ PROMPT;
             return false;
         }
 
-        return in_array($tool, ['query_academic', 'get_student', 'get_students', 'get_teachers', 'get_courses'], true)
+        return in_array($tool, ['query_academic', 'get_student', 'get_students', 'get_teachers', 'get_courses', 'verify_teacher', 'verify_student'], true)
             || $this->looksLikeSchoolNameQuery($text);
     }
 
@@ -1055,6 +1108,72 @@ PROMPT;
             '/(?:con que profesor|que profesor (?:le |lo )?da|quien (?:le )?da|profesor de|esta(?:n)? con (?:el )?profesor)/u',
             $value
         );
+    }
+
+    public function looksLikeTeacherRosterQuery(string $text): bool
+    {
+        $value = $this->normalized($text);
+        if ($this->looksLikeMutation($text) || $this->looksLikeTeacherOfStudentQuery($text)) {
+            return false;
+        }
+
+        return (bool) preg_match(
+            '/(?:como se llama(?:n)?|nombres? de|listado de|listame|quienes(?: son)?|cuales son|que|dime|dame|muestrame)\s+(?:los )?(?:profesores|docentes|maestros)\b/u',
+            $value
+        ) || (bool) preg_match(
+            '/\b(?:profesores|docentes|maestros)\s+(?:hay|tenemos|tengo|estan|del colegio|de mi colegio)\b/u',
+            $value
+        ) || (bool) preg_match(
+            '/\bquien (?:enseña|imparte)\b/u',
+            $value
+        );
+    }
+
+    public function looksLikeExistenceVerification(string $text): bool
+    {
+        $value = trim($this->normalized($text), " \t\n\r\0\x0B¿?¡!.");
+        if ($this->looksLikeMutation($text) || $this->looksLikeTeacherOfStudentQuery($text)) {
+            return false;
+        }
+        if (preg_match('/^(?:quien|quienes|cual|cuales|como|cuantos|cuantas)\b/u', $value)) {
+            return false;
+        }
+
+        $mentionsRole = (bool) preg_match('/\b(?:profesor|docente|maestro|alumno|estudiante)s?\b/u', $value);
+        if (! $mentionsRole) {
+            return false;
+        }
+
+        if (preg_match('/\b(?:revisa|verifica|confirm[ae]|chequea|comprueba|revisame|verificame)\b/u', $value)) {
+            return true;
+        }
+
+        return (bool) preg_match('/\bes (?:un |una )?(?:profesor|docente|maestro|alumno|estudiante)\b/u', $value);
+    }
+
+    public function extractPersonToVerify(string $text): ?string
+    {
+        $value = trim($this->normalized($text), " \t\n\r\0\x0B¿?¡!.");
+        if (preg_match('/(?:revisa|verifica|confirm[ae]|chequea|comprueba|revisame|verificame)(?:\s+si)?\s+(.+?)\s+es (?:un |el |una |la )?(?:profesor|docente|maestro|alumno|estudiante)/u', $value, $m)) {
+            return $this->titlePersonName((string) $m[1]);
+        }
+        if (preg_match('/^(.+?)\s+es (?:un |el |una |la )?(?:profesor|docente|maestro|alumno|estudiante)\b/u', $value, $m)) {
+            return $this->titlePersonName((string) $m[1]);
+        }
+
+        return null;
+    }
+
+    private function titlePersonName(string $raw): ?string
+    {
+        $raw = trim(preg_replace('/\b(?:si|que|el|la|los|las|al|a|un|una|me)\b/u', ' ', $this->normalized($raw)) ?? $raw);
+        $raw = trim(preg_replace('/\s+/u', ' ', $raw) ?? $raw);
+        if ($raw === '' || preg_match('/^(?:profesor|docente|maestro|alumno|estudiante)s?$/u', $raw)) {
+            return null;
+        }
+        $parts = array_map(fn ($p) => mb_convert_case($p, MB_CASE_TITLE, 'UTF-8'), explode(' ', $raw));
+
+        return implode(' ', $parts);
     }
 
     private function looksLikeGradeRosterFollowUp(string $text): bool
@@ -1443,6 +1562,8 @@ PROMPT;
             'get_student' => ['Obtener un alumno por nombre.', ['student_name']],
             'get_courses' => ['Listar cursos del colegio.', ['grade', 'section', 'subject_name']],
             'get_teachers' => ['Listar profesores del colegio.', []],
+            'verify_teacher' => ['Verificar si una persona está registrada como profesor.', ['teacher_name']],
+            'verify_student' => ['Verificar si una persona está registrada como alumno.', ['student_name']],
             'get_grades' => ['Listar calificaciones reales.', ['grade', 'section', 'subject_name', 'student_name']],
             'get_attendance' => ['Consultar asistencia y faltas.', ['grade', 'section', 'student_name', 'days']],
             'get_evaluations' => ['Listar evaluaciones registradas.', ['grade', 'section', 'subject_name']],
@@ -1507,6 +1628,27 @@ PROMPT;
         $followUp = $this->planFollowUp($text, $memory);
         if ($followUp !== null) {
             return $followUp;
+        }
+
+        $detected = $this->detectIntent($text);
+        if (($detected['intent'] ?? '') === 'professors') {
+            return $this->pack('get_teachers', []);
+        }
+        if (($detected['intent'] ?? '') === 'verification') {
+            $person = $this->extractPersonToVerify($text);
+            if ($person === null || $person === '') {
+                return [
+                    'tools' => [],
+                    'intent' => 'needs_name',
+                    'clarification' => '¿A quién quieres verificar? Dime el nombre completo.',
+                    'wants_opinion' => false,
+                ];
+            }
+            if (($detected['subject'] ?? 'teacher') === 'student') {
+                return $this->pack('verify_student', ['student_name' => $person]);
+            }
+
+            return $this->pack('verify_teacher', ['teacher_name' => $person]);
         }
 
         $sort = $this->extractSort($text);
@@ -2848,6 +2990,8 @@ PROMPT;
             'get_student' => 'Consultando ficha del alumno',
             'get_courses' => 'Revisando cursos',
             'get_teachers' => 'Consultando plantel docente',
+            'verify_teacher' => 'Verificando si es profesor',
+            'verify_student' => 'Verificando si es alumno',
             'get_grades' => 'Analizando calificaciones',
             'get_attendance' => 'Revisando asistencia',
             'get_evaluations' => 'Consultando evaluaciones',

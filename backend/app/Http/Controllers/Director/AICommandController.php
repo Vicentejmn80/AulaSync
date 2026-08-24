@@ -91,6 +91,7 @@ class AICommandController extends Controller
             'colegio_id' => $director->colegio_id,
             'prompt' => mb_substr($text, 0, 240),
             'intention' => $routeDecision['reason'],
+            'intent' => $routeDecision['intent'] ?? $routeDecision['reason'],
             'agent' => $routeDecision['agent'],
             'use_data_agent' => $routeDecision['use_data_agent'],
             'mutation' => $routeDecision['mutation'],

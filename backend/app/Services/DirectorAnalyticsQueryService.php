@@ -116,6 +116,110 @@ class DirectorAnalyticsQueryService
         ];
     }
 
+    public function verifyTeacher(int $colegioId, string $name): array
+    {
+        $name = trim($name);
+        if ($name === '') {
+            return [
+                'message' => 'Dime el nombre de la persona que quieres verificar como profesor.',
+                'data' => ['exists' => false, 'teachers' => []],
+            ];
+        }
+
+        $match = $this->matcher->resolveTeacher($colegioId, $name);
+        if ($match->isUnique()) {
+            $label = $match->label ?: ($match->model->name ?? $name);
+
+            return [
+                'message' => "Sí. {$label} está registrado como profesor en este colegio.",
+                'data' => [
+                    'exists' => true,
+                    'teacher_name' => $label,
+                    'role' => 'profesor',
+                    'teachers' => [['name' => $label]],
+                ],
+            ];
+        }
+        if ($match->isAmbiguous()) {
+            return [
+                'message' => $match->message ?? "Hay más de un profesor que coincide con {$name}.",
+                'data' => ['exists' => null, 'ambiguous' => true, 'teachers' => []],
+            ];
+        }
+
+        $student = $this->matcher->resolveStudent($colegioId, $name);
+        if ($student->isUnique()) {
+            $label = $student->label ?: ($student->model->name ?? $name);
+
+            return [
+                'message' => "No. {$label} figura como alumno, no como profesor.",
+                'data' => [
+                    'exists' => false,
+                    'as' => 'student',
+                    'student_name' => $label,
+                    'teachers' => [],
+                ],
+            ];
+        }
+
+        return [
+            'message' => "No encontré a {$name} como profesor en este colegio.",
+            'data' => ['exists' => false, 'teacher_name' => $name, 'teachers' => []],
+        ];
+    }
+
+    public function verifyStudent(int $colegioId, string $name): array
+    {
+        $name = trim($name);
+        if ($name === '') {
+            return [
+                'message' => 'Dime el nombre de la persona que quieres verificar como alumno.',
+                'data' => ['exists' => false, 'students' => []],
+            ];
+        }
+
+        $match = $this->matcher->resolveStudent($colegioId, $name);
+        if ($match->isUnique()) {
+            $label = $match->label ?: ($match->model->name ?? $name);
+
+            return [
+                'message' => "Sí. {$label} está registrado como alumno en este colegio.",
+                'data' => [
+                    'exists' => true,
+                    'student_name' => $label,
+                    'role' => 'alumno',
+                    'students' => [['name' => $label]],
+                ],
+            ];
+        }
+        if ($match->isAmbiguous()) {
+            return [
+                'message' => $match->message ?? "Hay más de un alumno que coincide con {$name}.",
+                'data' => ['exists' => null, 'ambiguous' => true, 'students' => []],
+            ];
+        }
+
+        $teacher = $this->matcher->resolveTeacher($colegioId, $name);
+        if ($teacher->isUnique()) {
+            $label = $teacher->label ?: ($teacher->model->name ?? $name);
+
+            return [
+                'message' => "No. {$label} figura como profesor, no como alumno.",
+                'data' => [
+                    'exists' => false,
+                    'as' => 'teacher',
+                    'teacher_name' => $label,
+                    'students' => [],
+                ],
+            ];
+        }
+
+        return [
+            'message' => "No encontré a {$name} como alumno en este colegio.",
+            'data' => ['exists' => false, 'student_name' => $name, 'students' => []],
+        ];
+    }
+
     public function getStudent(int $colegioId, string $studentName): array
     {
         $match = $this->matcher->resolveStudent($colegioId, $studentName);
