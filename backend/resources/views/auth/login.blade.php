@@ -217,9 +217,9 @@
                             </form>
 
         <p class="card-footer-link">
-                                ¿No tienes una cuenta?
-            <a href="{{ route('register') }}">Regístrate aquí</a>
-                            </p>
+            El acceso es por invitación tras una demo.
+            <a href="{{ url('/#solicitar-demo') }}">Solicitar Demo</a>
+        </p>
     </div>
 
     {{-- Limpia SW/cache en auth para evitar login con CSRF caducado (419) --}}

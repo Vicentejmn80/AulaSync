@@ -4,11 +4,13 @@ namespace App\Services;
 
 use App\Models\Activity;
 use App\Models\Colegio;
+use App\Models\Course;
 use App\Models\DirectorAiOperationLog;
 use App\Models\Evaluation;
 use App\Models\IntelligenceDocument;
 use App\Models\Planificacion;
 use App\Models\ProductEvent;
+use App\Models\Student;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
@@ -335,6 +337,21 @@ class SuperAdminAnalyticsService
                 ->orderByDesc('id')
                 ->limit(15)
                 ->get(['id', 'original_name', 'kind', 'status', 'created_at']),
+            'courses' => Course::query()
+                ->where('colegio_id', $colegio->id)
+                ->orderBy('grade')
+                ->orderBy('subject_name')
+                ->get(['id', 'subject_name', 'grade', 'section', 'teacher_id']),
+            'teachers' => User::query()
+                ->where('colegio_id', $colegio->id)
+                ->where('role', 'profesor')
+                ->orderBy('name')
+                ->get(['id', 'name', 'email', 'role']),
+            'students' => Student::query()
+                ->where('colegio_id', $colegio->id)
+                ->orderBy('grade')
+                ->orderBy('name')
+                ->get(['id', 'name', 'grade', 'section']),
         ];
     }
 

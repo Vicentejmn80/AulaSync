@@ -41,6 +41,92 @@
     </div>
 
     <div class="card">
+        <h3>Cursos</h3>
+        @if (($detail['courses'] ?? collect())->isEmpty())
+            <p class="empty">Este colegio no tiene cursos.</p>
+        @else
+            <table>
+                <thead><tr><th>Materia</th><th>Grado</th><th>Sección</th><th></th></tr></thead>
+                <tbody>
+                    @foreach ($detail['courses'] as $course)
+                        <tr>
+                            <td>{{ $course->subject_name }}</td>
+                            <td>{{ $course->grade }}</td>
+                            <td>{{ $course->section ?: '—' }}</td>
+                            <td>
+                                <form method="POST"
+                                      action="{{ route('super-admin.colegios.cursos.destroy', [$detail['colegio'], $course]) }}"
+                                      @submit="ask($event, '¿Eliminar el curso {{ $course->subject_name }} {{ $course->grade }}? Esta acción no se puede deshacer.')">
+                                    @csrf
+                                    @method('DELETE')
+                                    <button class="btn btn-danger" type="submit">Eliminar</button>
+                                </form>
+                            </td>
+                        </tr>
+                    @endforeach
+                </tbody>
+            </table>
+        @endif
+    </div>
+
+    <div class="card">
+        <h3>Profesores</h3>
+        @if (($detail['teachers'] ?? collect())->isEmpty())
+            <p class="empty">Este colegio no tiene docentes registrados.</p>
+        @else
+            <table>
+                <thead><tr><th>Nombre</th><th>Correo</th><th></th></tr></thead>
+                <tbody>
+                    @foreach ($detail['teachers'] as $teacher)
+                        <tr>
+                            <td>{{ $teacher->name }}</td>
+                            <td>{{ $teacher->email }}</td>
+                            <td>
+                                <form method="POST"
+                                      action="{{ route('super-admin.colegios.profesores.destroy', [$detail['colegio'], $teacher]) }}"
+                                      @submit="ask($event, '¿Eliminar al docente {{ $teacher->name }}? Se desvinculará de sus cursos.')">
+                                    @csrf
+                                    @method('DELETE')
+                                    <button class="btn btn-danger" type="submit">Eliminar</button>
+                                </form>
+                            </td>
+                        </tr>
+                    @endforeach
+                </tbody>
+            </table>
+        @endif
+    </div>
+
+    <div class="card">
+        <h3>Alumnos</h3>
+        @if (($detail['students'] ?? collect())->isEmpty())
+            <p class="empty">Este colegio no tiene alumnos.</p>
+        @else
+            <table>
+                <thead><tr><th>Nombre</th><th>Grado</th><th>Sección</th><th></th></tr></thead>
+                <tbody>
+                    @foreach ($detail['students'] as $student)
+                        <tr>
+                            <td>{{ $student->name }}</td>
+                            <td>{{ $student->grade }}</td>
+                            <td>{{ $student->section ?: '—' }}</td>
+                            <td>
+                                <form method="POST"
+                                      action="{{ route('super-admin.colegios.alumnos.destroy', [$detail['colegio'], $student]) }}"
+                                      @submit="ask($event, '¿Eliminar al alumno {{ $student->name }}? Se limpiarán matrículas y registros asociados.')">
+                                    @csrf
+                                    @method('DELETE')
+                                    <button class="btn btn-danger" type="submit">Eliminar</button>
+                                </form>
+                            </td>
+                        </tr>
+                    @endforeach
+                </tbody>
+            </table>
+        @endif
+    </div>
+
+    <div class="card">
         <h3>IA de dirección (sin texto de conversación)</h3>
         @if ($detail['director_intents']->isEmpty())
             <p class="empty">Sin operaciones de IA de dirección.</p>

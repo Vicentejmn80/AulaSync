@@ -55,17 +55,17 @@
                     <li>
                         <a class="block px-4 py-2 mr-2 font-normal transition-all lg-max:opacity-0 duration-250 ease-soft-in-out text-size-sm lg:px-2
                         {{ Request::is('static-sign-up') || Request::is('register') ? 'text-white' : 'text-slate-700' }}"
-                            href="{{ auth()->user() ? url('static-sign-up') : url('register') }}">
-                            <i class="mr-1 fas fa-user-circle opacity-60"></i>
-                            Sign Up
+                            href="{{ url('/#solicitar-demo') }}">
+                            <i class="mr-1 fas fa-calendar-check opacity-60"></i>
+                            Solicitar Demo
                         </a>
                     </li>
                     <li>
                         <a class="block px-4 py-2 mr-2 font-normal transition-all lg-max:opacity-0 duration-250 ease-soft-in-out text-size-sm lg:px-2
                         {{ Request::is('static-sign-up') || Request::is('register') ? 'text-white' : 'text-slate-700' }}"
-                            href="{{ auth()->user() ? url('static-sign-in') : url('login') }}">
+                            href="{{ url('login') }}">
                             <i class="mr-1 fas fa-key opacity-60"></i>
-                            Sign In
+                            Iniciar Sesión
                         </a>
                     </li>
 

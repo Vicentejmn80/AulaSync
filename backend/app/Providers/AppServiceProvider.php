@@ -31,5 +31,6 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(Course::class, CoursePolicy::class);
         Gate::policy(Student::class, StudentPolicy::class);
         Gate::policy(TeacherInvite::class, TeacherInvitePolicy::class);
+        Gate::define('manage-system', fn ($user) => $user instanceof \App\Models\User && $user->isSuperAdmin());
     }
 }

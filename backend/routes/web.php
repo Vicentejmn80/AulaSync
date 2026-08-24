@@ -465,4 +465,13 @@ Route::middleware('auth')->group(function () {
         Route::patch('/users/{user}', [SuperAdminController::class, 'updateUser'])->name('users.update');
         Route::post('/colegios/{colegio}/enter', [SuperAdminController::class, 'enterSchool'])->name('colegios.enter');
         Route::post('/users/impersonate/{user}', [SuperAdminController::class, 'impersonateUser'])->name('users.impersonate');
+        Route::delete('/colegios/{colegio}/cursos/{course}', [SuperAdminController::class, 'destroyCourse'])
+            ->middleware('can:manage-system')
+            ->name('colegios.cursos.destroy');
+        Route::delete('/colegios/{colegio}/profesores/{teacher}', [SuperAdminController::class, 'destroyTeacher'])
+            ->middleware('can:manage-system')
+            ->name('colegios.profesores.destroy');
+        Route::delete('/colegios/{colegio}/alumnos/{student}', [SuperAdminController::class, 'destroyStudent'])
+            ->middleware('can:manage-system')
+            ->name('colegios.alumnos.destroy');
     });

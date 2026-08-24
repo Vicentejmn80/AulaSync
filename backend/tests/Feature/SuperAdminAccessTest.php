@@ -104,4 +104,93 @@ class SuperAdminAccessTest extends TestCase
 
         $this->actingAs($teacher)->get('/super-admin/users')->assertRedirect();
     }
+
+    public function test_super_admin_can_delete_course_teacher_and_student(): void
+    {
+        $admin = User::factory()->create([
+            'role' => 'super_admin',
+            'onboarding_completed' => true,
+        ]);
+        $director = User::factory()->create([
+            'role' => 'director',
+            'onboarding_completed' => true,
+        ]);
+        $teacher = User::factory()->create([
+            'role' => 'profesor',
+            'onboarding_completed' => true,
+            'name' => 'Prof. Delete',
+        ]);
+        $colegio = Colegio::create([
+            'name' => 'Colegio Borrar',
+            'invite_code' => 'DEL-SA01',
+            'codes_pin' => Colegio::hashPinFromInvite('DEL-SA01'),
+            'director_user_id' => $director->id,
+        ]);
+        $director->update(['colegio_id' => $colegio->id]);
+        $teacher->update(['colegio_id' => $colegio->id]);
+
+        $course = \App\Models\Course::create([
+            'colegio_id' => $colegio->id,
+            'teacher_id' => $teacher->id,
+            'subject_name' => 'Historia',
+            'grade' => '3ro',
+            'section' => 'A',
+            'school_year' => '2026-2027',
+            'invite_code' => 'DEL-HIS',
+        ]);
+        $student = \App\Models\Student::create([
+            'colegio_id' => $colegio->id,
+            'teacher_id' => $teacher->id,
+            'name' => 'Ana Borrar',
+            'grade' => '3ro',
+            'section' => 'A',
+            'family_code' => 'FAM-DEL1',
+        ]);
+        $course->students()->attach($student->id);
+
+        $this->actingAs($admin)
+            ->delete(route('super-admin.colegios.cursos.destroy', [$colegio, $course]))
+            ->assertRedirect();
+        $this->assertDatabaseMissing('courses', ['id' => $course->id]);
+        $this->assertDatabaseMissing('course_student', ['student_id' => $student->id]);
+
+        $this->actingAs($admin)
+            ->delete(route('super-admin.colegios.alumnos.destroy', [$colegio, $student]))
+            ->assertRedirect();
+        $this->assertDatabaseMissing('students', ['id' => $student->id]);
+
+        $this->actingAs($admin)
+            ->delete(route('super-admin.colegios.profesores.destroy', [$colegio, $teacher]))
+            ->assertRedirect();
+        $this->assertDatabaseMissing('users', ['id' => $teacher->id]);
+    }
+
+    public function test_teacher_cannot_delete_school_entities(): void
+    {
+        $teacher = User::factory()->create([
+            'role' => 'profesor',
+            'onboarding_completed' => true,
+        ]);
+        $director = User::factory()->create(['role' => 'director', 'onboarding_completed' => true]);
+        $colegio = Colegio::create([
+            'name' => 'Colegio Cerrado',
+            'invite_code' => 'DEL-NO01',
+            'codes_pin' => Colegio::hashPinFromInvite('DEL-NO01'),
+            'director_user_id' => $director->id,
+        ]);
+        $course = \App\Models\Course::create([
+            'colegio_id' => $colegio->id,
+            'teacher_id' => $teacher->id,
+            'subject_name' => 'Arte',
+            'grade' => '1ro',
+            'section' => 'A',
+            'school_year' => '2026-2027',
+            'invite_code' => 'DEL-ART',
+        ]);
+
+        $this->actingAs($teacher)
+            ->delete(route('super-admin.colegios.cursos.destroy', [$colegio, $course]))
+            ->assertRedirect();
+        $this->assertDatabaseHas('courses', ['id' => $course->id]);
+    }
 }

@@ -23,6 +23,13 @@
         .stat span { color:var(--text-secondary); font-size:12px; font-weight:700; }
         .btn { display:inline-flex; align-items:center; gap:8px; border:0; border-radius:12px; padding:9px 13px; font-weight:800; cursor:pointer; text-decoration:none; color:#fff; background:var(--nova-gradient); font-size:13px; }
         .btn-ghost { background:color-mix(in srgb, var(--nova-violet) 12%, transparent); color:var(--nova-violet); }
+        .btn-danger { background:#b91c1c; color:#fff; padding:6px 10px; font-size:12px; }
+        [x-cloak] { display:none !important; }
+        .sa-overlay { position:fixed; inset:0; background:rgba(15,23,42,.55); display:flex; align-items:center; justify-content:center; z-index:50; padding:18px; }
+        .sa-dialog { background:var(--bg-card); border-radius:16px; padding:22px; max-width:420px; width:100%; box-shadow:var(--nova-shadow); }
+        .sa-dialog h3 { margin:0 0 8px; font-size:18px; }
+        .sa-dialog p { margin:0 0 16px; color:var(--text-secondary); }
+        .sa-actions { display:flex; gap:8px; justify-content:flex-end; }
         table { width:100%; border-collapse:collapse; font-size:13px; }
         th, td { text-align:left; padding:9px 7px; border-bottom:1px solid var(--nova-glass-border); vertical-align:middle; }
         select, input { border:1px solid var(--nova-glass-border); border-radius:8px; padding:6px 8px; font:inherit; background:var(--bg-secondary); color:var(--text-primary); }
@@ -47,8 +54,9 @@
             table { display:block; overflow-x:auto; }
         }
     </style>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
 </head>
-<body>
+<body x-data="superAdminConfirm()">
     <div class="wrap">
         <div class="top">
             <div class="brand">AulaSync <span>Founder Center</span></div>
@@ -97,9 +105,40 @@
                 <button class="btn" type="submit">Filtrar</button>
             </form>
         @endisset
-        @if (session('success')) <p class="ok">{{ session('success') }}</p> @endif
+        @if (session('success')) <p class="ok">{!! session('success') !!}</p> @endif
         @if (session('error')) <p class="err">{{ session('error') }}</p> @endif
         @yield('content')
     </div>
+    <div class="sa-overlay" x-cloak x-show="open" x-transition @click.self="open = false" role="dialog" aria-modal="true">
+        <div class="sa-dialog">
+            <h3>Confirmar eliminación</h3>
+            <p x-text="message"></p>
+            <div class="sa-actions">
+                <button type="button" class="btn btn-ghost" @click="open = false">Cancelar</button>
+                <button type="button" class="btn btn-danger" @click="confirm()">Eliminar</button>
+            </div>
+        </div>
+    </div>
+    <script>
+        function superAdminConfirm() {
+            return {
+                open: false,
+                message: '',
+                form: null,
+                ask(event, message) {
+                    event.preventDefault();
+                    this.form = event.target;
+                    this.message = message;
+                    this.open = true;
+                },
+                confirm() {
+                    if (this.form) {
+                        this.form.submit();
+                    }
+                    this.open = false;
+                }
+            };
+        }
+    </script>
 </body>
 </html>

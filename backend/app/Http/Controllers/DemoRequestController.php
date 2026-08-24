@@ -9,26 +9,32 @@ use Illuminate\Http\Request;
 class DemoRequestController extends Controller
 {
     /**
-     * Guarda una solicitud de demo desde la landing pública.
-     * No requiere autenticación. No envía correos (aún no configurado);
-     * las solicitudes quedan registradas para seguimiento manual del equipo.
+     * Guarda una solicitud de demo desde la landing (espejo local de Formspree).
      */
     public function store(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'name' => ['required', 'string', 'max:150'],
-            'school_name' => ['required', 'string', 'max:150'],
-            'role' => ['required', 'string', 'max:100'],
+            'nombre' => ['required', 'string', 'max:150'],
+            'apellido' => ['required', 'string', 'max:150'],
             'email' => ['required', 'email', 'max:150'],
-            'phone' => ['nullable', 'string', 'max:40'],
-            'school_size' => ['nullable', 'string', 'max:60'],
+            'telefono' => ['required', 'string', 'max:40'],
+            'nombre_colegio' => ['required', 'string', 'max:150'],
+            'estado_region' => ['required', 'string', 'max:100'],
         ]);
 
-        DemoRequest::create($data);
+        DemoRequest::create([
+            'name' => $data['nombre'],
+            'last_name' => $data['apellido'],
+            'email' => $data['email'],
+            'phone' => $data['telefono'],
+            'school_name' => $data['nombre_colegio'],
+            'estado_region' => $data['estado_region'],
+            'role' => 'Solicitud demo',
+        ]);
 
         return response()->json([
             'success' => true,
-            'message' => 'Recibimos tu solicitud. Nuestro equipo te contactará pronto.',
+            'message' => '¡Gracias! Tu solicitud ha sido enviada. Te contactaremos pronto.',
         ]);
     }
 }

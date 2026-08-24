@@ -8,11 +8,13 @@ class DemoRequest extends Model
 {
     protected $fillable = [
         'name',
+        'last_name',
         'school_name',
         'role',
         'email',
         'phone',
         'school_size',
+        'estado_region',
         'status',
     ];
 }

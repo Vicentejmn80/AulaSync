@@ -1411,8 +1411,8 @@
                 </ul>
 
                 <div class="az-nav-actions">
-                    <a href="{{ route('login') }}" class="az-btn az-btn-secondary az-btn-sm">Iniciar sesión</a>
-                    <button type="button" class="az-btn az-btn-primary az-btn-sm" data-open-demo>Agendar demo</button>
+                    <a href="{{ route('login') }}" class="az-btn az-btn-secondary az-btn-sm">Iniciar Sesión</a>
+                    <button type="button" class="az-btn az-btn-primary az-btn-sm" data-open-demo>Solicitar Demo</button>
                 </div>
 
                 <button type="button" class="az-burger" id="az-burger" aria-expanded="false" aria-controls="az-mobile-menu" aria-label="Abrir menú de navegación">
@@ -1426,8 +1426,8 @@
                 <a href="#implementacion">Recursos</a>
                 <a href="#faq">Preguntas frecuentes</a>
                 <div class="az-nav-actions">
-                    <a href="{{ route('login') }}" class="az-btn az-btn-secondary">Iniciar sesión</a>
-                    <button type="button" class="az-btn az-btn-primary" data-open-demo>Agendar demo</button>
+                    <a href="{{ route('login') }}" class="az-btn az-btn-secondary">Iniciar Sesión</a>
+                    <button type="button" class="az-btn az-btn-primary" data-open-demo>Solicitar Demo</button>
                 </div>
             </div>
         </nav>
@@ -1449,7 +1449,7 @@
                     </p>
                     <div class="az-hero-actions">
                         <button type="button" class="az-btn az-btn-primary" data-open-demo>
-                            <i class="fa-regular fa-calendar-check"></i> Solicitar una demo
+                            <i class="fa-regular fa-calendar-check"></i> Solicitar Demo
                         </button>
                         <a href="#funciones" class="az-btn az-btn-secondary">
                             <i class="fa-regular fa-compass"></i> Explorar funciones
@@ -1996,39 +1996,15 @@
             <div class="az-form-status" id="az-demo-status" role="status"></div>
 
             <form id="az-demo-form" novalidate>
-                @csrf
                 <div class="az-form-grid">
-                    <div class="az-form-field full" data-field="name">
-                        <label for="demo-name">Nombre completo</label>
-                        <input type="text" id="demo-name" name="name" autocomplete="name" required>
+                    <div class="az-form-field" data-field="nombre">
+                        <label for="demo-nombre">Nombre</label>
+                        <input type="text" id="demo-nombre" name="nombre" autocomplete="given-name" required>
                         <span class="az-form-error"></span>
                     </div>
-                    <div class="az-form-field full" data-field="school_name">
-                        <label for="demo-school">Nombre del colegio</label>
-                        <input type="text" id="demo-school" name="school_name" autocomplete="organization" required>
-                        <span class="az-form-error"></span>
-                    </div>
-                    <div class="az-form-field" data-field="role">
-                        <label for="demo-role">Cargo</label>
-                        <select id="demo-role" name="role" required>
-                            <option value="">Selecciona…</option>
-                            <option value="Director/a">Director/a</option>
-                            <option value="Coordinador/a académico">Coordinador/a académico</option>
-                            <option value="Docente">Docente</option>
-                            <option value="Representante">Representante</option>
-                            <option value="Otro">Otro</option>
-                        </select>
-                        <span class="az-form-error"></span>
-                    </div>
-                    <div class="az-form-field" data-field="school_size">
-                        <label for="demo-size">Tamaño aproximado del colegio</label>
-                        <select id="demo-size" name="school_size">
-                            <option value="">Selecciona…</option>
-                            <option value="Menos de 100 estudiantes">Menos de 100 estudiantes</option>
-                            <option value="100 - 300 estudiantes">100 - 300 estudiantes</option>
-                            <option value="300 - 600 estudiantes">300 - 600 estudiantes</option>
-                            <option value="Más de 600 estudiantes">Más de 600 estudiantes</option>
-                        </select>
+                    <div class="az-form-field" data-field="apellido">
+                        <label for="demo-apellido">Apellido</label>
+                        <input type="text" id="demo-apellido" name="apellido" autocomplete="family-name" required>
                         <span class="az-form-error"></span>
                     </div>
                     <div class="az-form-field" data-field="email">
@@ -2036,9 +2012,24 @@
                         <input type="email" id="demo-email" name="email" autocomplete="email" required>
                         <span class="az-form-error"></span>
                     </div>
-                    <div class="az-form-field" data-field="phone">
-                        <label for="demo-phone">Teléfono / WhatsApp (opcional)</label>
-                        <input type="tel" id="demo-phone" name="phone" autocomplete="tel">
+                    <div class="az-form-field" data-field="telefono">
+                        <label for="demo-telefono">Teléfono</label>
+                        <input type="tel" id="demo-telefono" name="telefono" autocomplete="tel" required>
+                        <span class="az-form-error"></span>
+                    </div>
+                    <div class="az-form-field full" data-field="nombre_colegio">
+                        <label for="demo-colegio">Nombre del colegio</label>
+                        <input type="text" id="demo-colegio" name="nombre_colegio" autocomplete="organization" required>
+                        <span class="az-form-error"></span>
+                    </div>
+                    <div class="az-form-field full" data-field="estado_region">
+                        <label for="demo-estado">Estado / región</label>
+                        <select id="demo-estado" name="estado_region" required>
+                            <option value="">Selecciona…</option>
+                            @foreach (['Amazonas','Anzoátegui','Apure','Aragua','Barinas','Bolívar','Carabobo','Cojedes','Delta Amacuro','Distrito Capital','Falcón','Guárico','La Guaira','Lara','Mérida','Miranda','Monagas','Nueva Esparta','Portuguesa','Sucre','Táchira','Trujillo','Yaracuy','Zulia'] as $estado)
+                                <option value="{{ $estado }}">{{ $estado }}</option>
+                            @endforeach
+                        </select>
                         <span class="az-form-error"></span>
                     </div>
                 </div>
@@ -2186,9 +2177,11 @@
 
             function validate(data) {
                 var valid = true;
-                if (!data.name.trim()) { setFieldError('name', 'Ingresa tu nombre completo.'); valid = false; }
-                if (!data.school_name.trim()) { setFieldError('school_name', 'Ingresa el nombre del colegio.'); valid = false; }
-                if (!data.role) { setFieldError('role', 'Selecciona tu cargo.'); valid = false; }
+                if (!data.nombre.trim()) { setFieldError('nombre', 'Ingresa tu nombre.'); valid = false; }
+                if (!data.apellido.trim()) { setFieldError('apellido', 'Ingresa tu apellido.'); valid = false; }
+                if (!data.nombre_colegio.trim()) { setFieldError('nombre_colegio', 'Ingresa el nombre del colegio.'); valid = false; }
+                if (!data.estado_region) { setFieldError('estado_region', 'Selecciona el estado o región.'); valid = false; }
+                if (!data.telefono.trim()) { setFieldError('telefono', 'Ingresa un teléfono de contacto.'); valid = false; }
                 var emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
                 if (!data.email.trim() || !emailPattern.test(data.email)) {
                     setFieldError('email', 'Ingresa un correo electrónico válido.');
@@ -2202,6 +2195,10 @@
                 statusBox.className = 'az-form-status is-visible ' + type;
             }
 
+            if (window.location.hash === '#solicitar-demo' || window.location.hash === '#demo') {
+                openModal();
+            }
+
             form.addEventListener('submit', function (e) {
                 e.preventDefault();
                 clearErrors();
@@ -2209,12 +2206,12 @@
 
                 var formData = new FormData(form);
                 var data = {
-                    name: formData.get('name') || '',
-                    school_name: formData.get('school_name') || '',
-                    role: formData.get('role') || '',
-                    email: formData.get('email') || '',
-                    phone: formData.get('phone') || '',
-                    school_size: formData.get('school_size') || '',
+                    nombre: String(formData.get('nombre') || ''),
+                    apellido: String(formData.get('apellido') || ''),
+                    email: String(formData.get('email') || ''),
+                    telefono: String(formData.get('telefono') || ''),
+                    nombre_colegio: String(formData.get('nombre_colegio') || ''),
+                    estado_region: String(formData.get('estado_region') || ''),
                 };
 
                 if (!validate(data)) return;
@@ -2222,12 +2219,11 @@
                 submitBtn.disabled = true;
                 submitBtn.textContent = 'Enviando…';
 
-                fetch('{{ route('demo.request') }}', {
+                fetch('https://formspree.io/f/mjybqkok', {
                     method: 'POST',
                     headers: {
-                        'Content-Type': 'application/json',
                         'Accept': 'application/json',
-                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+                        'Content-Type': 'application/json',
                     },
                     body: JSON.stringify(data),
                 })
@@ -2236,16 +2232,20 @@
                     })
                     .then(function (result) {
                         if (!result.ok) {
-                            if (result.json.errors) {
-                                Object.keys(result.json.errors).forEach(function (key) {
-                                    setFieldError(key, result.json.errors[key][0]);
-                                });
-                            }
-                            showStatus('error', result.json.message || 'Revisa los datos e intenta de nuevo.');
+                            showStatus('error', 'No pudimos enviar tu solicitud. Intenta de nuevo en unos minutos.');
                             return;
                         }
-                        showStatus('success', result.json.message || 'Recibimos tu solicitud. Te contactaremos pronto.');
+                        showStatus('success', '¡Gracias! Tu solicitud ha sido enviada. Te contactaremos pronto.');
                         form.reset();
+                        fetch('{{ url('/solicitar-demo') }}', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Accept': 'application/json',
+                                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+                            },
+                            body: JSON.stringify(data),
+                        }).catch(function () {});
                     })
                     .catch(function () {
                         showStatus('error', 'No pudimos enviar tu solicitud. Intenta de nuevo en unos minutos.');

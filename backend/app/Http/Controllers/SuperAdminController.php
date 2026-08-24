@@ -3,11 +3,14 @@
 namespace App\Http\Controllers;
 
 use App\Models\Colegio;
+use App\Models\Course;
+use App\Models\Student;
 use App\Models\User;
 use App\Services\SuperAdminAnalyticsService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\View\View;
 
 class SuperAdminController extends Controller
@@ -149,6 +152,65 @@ class SuperAdminController extends Controller
 
         return redirect('/director/dashboard')
             ->with('success', 'Entraste al colegio '.$colegio->name.' como super admin.');
+    }
+
+    public function destroyCourse(Request $request, Colegio $colegio, Course $course): RedirectResponse
+    {
+        $this->assertCanManage();
+        abort_unless((int) $course->colegio_id === (int) $colegio->id, 404);
+
+        DB::transaction(function () use ($course) {
+            $course->students()->detach();
+            $course->delete();
+        });
+
+        return back()->with('success', "Eliminé el curso {$course->subject_name} {$course->grade}.");
+    }
+
+    public function destroyTeacher(Request $request, Colegio $colegio, User $teacher): RedirectResponse
+    {
+        $this->assertCanManage();
+        abort_unless($teacher->role === 'profesor' && (int) $teacher->colegio_id === (int) $colegio->id, 404);
+
+        $fallbackId = $colegio->director_user_id ?: $request->user()->id;
+
+        DB::transaction(function () use ($colegio, $teacher, $fallbackId) {
+            Course::query()
+                ->where('colegio_id', $colegio->id)
+                ->where('teacher_id', $teacher->id)
+                ->update([
+                    'teacher_id' => null,
+                    'teacher_invite_id' => null,
+                ]);
+
+            Student::query()
+                ->where('colegio_id', $colegio->id)
+                ->where('teacher_id', $teacher->id)
+                ->update(['teacher_id' => $fallbackId]);
+
+            $teacher->delete();
+        });
+
+        return back()->with('success', "Eliminé al docente {$teacher->name} y lo desvinculé de sus cursos.");
+    }
+
+    public function destroyStudent(Request $request, Colegio $colegio, Student $student): RedirectResponse
+    {
+        $this->assertCanManage();
+        abort_unless((int) $student->colegio_id === (int) $colegio->id, 404);
+
+        DB::transaction(function () use ($student) {
+            $student->courses()->detach();
+            $student->guardians()->detach();
+            $student->delete();
+        });
+
+        return back()->with('success', "Eliminé al alumno {$student->name}.");
+    }
+
+    private function assertCanManage(): void
+    {
+        Gate::authorize('manage-system');
     }
 
     private function section(Request $request, string $section, string $view, array $data): View
