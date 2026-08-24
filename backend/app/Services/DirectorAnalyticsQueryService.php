@@ -35,14 +35,23 @@ class DirectorAnalyticsQueryService
 
     // ─── Listas base (get_students / get_teachers / get_courses) ────────────
 
-    public function getStudents(int $colegioId, ?string $grade = null, ?string $section = null): array
+    public function getStudents(int $colegioId, ?string $grade = null, ?string $section = null, ?string $sort = null): array
     {
         $students = Student::query()
             ->where('colegio_id', $colegioId)
             ->when($grade, fn ($q) => $q->whereRaw('LOWER(grade) = ?', [$this->key($grade)]))
-            ->when($section, fn ($q) => $q->whereRaw('LOWER(COALESCE(section, ?)) = ?', ['', $this->key($section)]))
-            ->orderBy('grade')
-            ->orderBy('name')
+            ->when($section, fn ($q) => $q->whereRaw('LOWER(COALESCE(section, ?)) = ?', ['', $this->key($section)]));
+
+        $sortKey = $this->normalizeListSort($sort);
+        if ($sortKey === 'name_desc') {
+            $students->orderByDesc('name');
+        } elseif ($sortKey === 'name_asc') {
+            $students->orderBy('name');
+        } else {
+            $students->orderBy('grade')->orderBy('name');
+        }
+
+        $students = $students
             ->limit(80)
             ->get(['name', 'grade', 'section']);
 
@@ -58,7 +67,11 @@ class DirectorAnalyticsQueryService
 
         return [
             'message' => "Hay {$students->count()} alumno(s) en {$scope}:\n".$lines->implode("\n"),
-            'data' => ['students' => $students, 'count' => $students->count()],
+            'data' => [
+                'students' => $students,
+                'count' => $students->count(),
+                'sort' => $sortKey,
+            ],
         ];
     }
 
@@ -114,7 +127,7 @@ class DirectorAnalyticsQueryService
         }
 
         /** @var Student $student */
-        $student = $match->model;
+        $student = $match->model->fresh() ?? $match->model;
         $teacherNames = $student->courses()->with('teacher:id,name')->limit(3)->get()->pluck('teacher.name')->filter()->unique()->values();
         // Fallback: si no está matriculado, buscar profesor del curso de su grado/sección
         if ($teacherNames->isEmpty() && $student->grade) {
@@ -146,6 +159,7 @@ class DirectorAnalyticsQueryService
             ->when($grade, fn ($q) => $q->whereRaw('LOWER(grade) = ?', [$this->key($grade)]))
             ->when($section, fn ($q) => $q->whereRaw('LOWER(COALESCE(section, ?)) = ?', ['', $this->key($section)]))
             ->when($subject, fn ($q) => $q->whereRaw('LOWER(subject_name) like ?', ['%'.$this->key($subject).'%']))
+            ->with(['teacher:id,name'])
             ->withCount('students')
             ->orderBy('grade')
             ->orderBy('subject_name')
@@ -160,7 +174,11 @@ class DirectorAnalyticsQueryService
             ];
         }
 
-        $lines = $courses->map(fn ($c) => '- '.$c->subject_name.' '.trim($c->grade.($c->section ? ' / '.$c->section : ''))." ({$c->students_count} alumno(s))");
+        $lines = $courses->map(function ($c) {
+            $teacher = $c->teacher?->name ? ' · '.$c->teacher->name : '';
+
+            return '- '.$c->subject_name.' '.trim($c->grade.($c->section ? ' / '.$c->section : ''))." ({$c->students_count} alumno(s))".$teacher;
+        });
 
         return [
             'message' => "Cursos en {$scope}:\n".$lines->implode("\n"),
@@ -341,7 +359,7 @@ class DirectorAnalyticsQueryService
         }
 
         /** @var Student $student */
-        $student = $match->model;
+        $student = $match->model->fresh() ?? $match->model;
 
         $rows = Grade::query()
             ->join('activities', 'grades.activity_id', '=', 'activities.id')
@@ -475,17 +493,19 @@ class DirectorAnalyticsQueryService
 
     // ─── Rankings (get_rankings) ────────────────────────────────────────────
 
-    public function getRankings(int $colegioId, string $metric = 'average', ?string $grade = null, ?string $section = null, ?string $subject = null, int $limit = 5): array
+    public function getRankings(int $colegioId, string $metric = 'average', ?string $grade = null, ?string $section = null, ?string $subject = null, int $limit = 5, ?string $sort = null): array
     {
         $limit = max(1, min($limit, 20));
         $metric = in_array($metric, ['average', 'absences'], true) ? $metric : 'average';
+        $sortKey = $this->normalizeListSort($sort) ?? $this->key($sort);
+        $ascending = in_array($sortKey, ['avg_asc', 'absences_asc', 'asc', 'worst', 'peor'], true);
 
         return $metric === 'absences'
-            ? $this->rankingByAbsences($colegioId, $grade, $section, $subject, $limit)
-            : $this->rankingByAverage($colegioId, $grade, $section, $subject, $limit);
+            ? $this->rankingByAbsences($colegioId, $grade, $section, $subject, $limit, $ascending)
+            : $this->rankingByAverage($colegioId, $grade, $section, $subject, $limit, $ascending);
     }
 
-    private function rankingByAverage(int $colegioId, ?string $grade, ?string $section, ?string $subject, int $limit): array
+    private function rankingByAverage(int $colegioId, ?string $grade, ?string $section, ?string $subject, int $limit, bool $ascending = false): array
     {
         $courseIds = $this->courseIdsFor($colegioId, $grade, $section, $subject);
         $scope = $this->gradeLabel($grade, $section, $subject);
@@ -500,7 +520,7 @@ class DirectorAnalyticsQueryService
             ->whereNotNull('grades.score')
             ->groupBy('students.id', 'students.name', 'students.grade')
             ->selectRaw('students.name, students.grade, '.self::AVG_PCT.' as avg_pct, COUNT(grades.id) as grade_count')
-            ->orderByDesc('avg_pct')
+            ->when($ascending, fn ($q) => $q->orderBy('avg_pct'), fn ($q) => $q->orderByDesc('avg_pct'))
             ->limit($limit)
             ->get();
 
@@ -527,7 +547,7 @@ class DirectorAnalyticsQueryService
         ];
     }
 
-    private function rankingByAbsences(int $colegioId, ?string $grade, ?string $section, ?string $subject, int $limit): array
+    private function rankingByAbsences(int $colegioId, ?string $grade, ?string $section, ?string $subject, int $limit, bool $ascending = false): array
     {
         $courseIds = $this->courseIdsFor($colegioId, $grade, $section, $subject);
         $scope = $this->gradeLabel($grade, $section, $subject);
@@ -541,7 +561,7 @@ class DirectorAnalyticsQueryService
             ->when($section, fn ($q) => $q->whereRaw('LOWER(COALESCE(students.section, ?)) = ?', ['', $this->key($section)]))
             ->groupBy('students.id', 'students.name', 'students.grade')
             ->selectRaw('students.name, students.grade, COUNT(attendances.id) as absences')
-            ->orderByDesc('absences')
+            ->when($ascending, fn ($q) => $q->orderBy('absences'), fn ($q) => $q->orderByDesc('absences'))
             ->limit($limit)
             ->get();
 
@@ -1163,6 +1183,24 @@ class DirectorAnalyticsQueryService
         }
 
         return round(((float) $score) * 100 / $max, 1).'%';
+    }
+
+    private function normalizeListSort(?string $sort): ?string
+    {
+        $value = $this->key($sort);
+        if ($value === '') {
+            return null;
+        }
+
+        return match (true) {
+            in_array($value, ['name_asc', 'az', 'a-z', 'alpha', 'alphabetic', 'asc'], true) => 'name_asc',
+            in_array($value, ['name_desc', 'za', 'z-a', 'desc'], true) => 'name_desc',
+            in_array($value, ['avg_asc', 'average_asc', 'worst'], true) => 'avg_asc',
+            in_array($value, ['avg_desc', 'average_desc', 'best'], true) => 'avg_desc',
+            in_array($value, ['absences_asc', 'faltas_asc'], true) => 'absences_asc',
+            in_array($value, ['absences_desc', 'faltas_desc'], true) => 'absences_desc',
+            default => null,
+        };
     }
 
     private function key(?string $value): string

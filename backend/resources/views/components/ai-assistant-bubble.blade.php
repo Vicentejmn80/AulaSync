@@ -1222,7 +1222,11 @@ function novaAIAssistant() {
 
         getCsrfToken() {
             const el = document.querySelector('meta[name="csrf-token"]');
-            return el ? el.getAttribute('content') : '';
+            if (el && el.getAttribute('content')) {
+                return el.getAttribute('content');
+            }
+            const input = document.querySelector('input[name="_token"]');
+            return input ? input.value : '';
         },
         async executeConfirmed() {
             const liveContext = window.novaContext || this.pageContext || null;
@@ -1254,6 +1258,10 @@ function novaAIAssistant() {
                     payload: { mensaje_usuario: '[confirmación]', contexto: liveContext },
                 }),
             });
+            if (res.status === 419) {
+                this.addMessage('assistant', 'Tu sesión expiró. Recarga la página e intenta de nuevo.');
+                return { success: false, status: 419 };
+            }
             return res.json();
         },
 
@@ -1449,10 +1457,12 @@ function novaAIAssistant() {
                 }));
                 fetch(this.historyEndpoint, {
                     method: 'POST',
+                    credentials: 'same-origin',
                     headers: {
                         'Content-Type': 'application/json',
                         'Accept': 'application/json',
-                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '',
+                        'X-CSRF-TOKEN': this.getCsrfToken(),
+                        'X-Requested-With': 'XMLHttpRequest',
                     },
                     body: JSON.stringify({ messages: payload }),
                 }).catch(() => {});

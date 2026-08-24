@@ -99,36 +99,11 @@ class AICommandController extends Controller
             ]);
         }
 
-        if ($this->dataAgent->looksLikeDataQuery($text) || $this->dataAgent->isOutOfScope($text) || $this->dataAgent->looksLikeFollowUp($text)) {
-            $memory = $this->conversationContext->current();
-            $localPlan = $this->dataAgent->plan($text, $screenContext, null, $memory);
-            if ($this->dataAgent->localPlanIsReady($localPlan)) {
-                return $this->respondWithDataAgent($director, $text, $screenContext, null);
-            }
-
-            $preplanned = null;
-            try {
-                $interpreted = $this->interpreter->interpret(
-                    $director,
-                    $text,
-                    (array) ($payload['conversation'] ?? []),
-                    $this->conversationContext->current(),
-                );
-                $llmActions = $this->enrichActionsFromText((array) ($interpreted['actions'] ?? []), $text);
-                if ($this->dataAgent->areExclusiveDataActions($llmActions)) {
-                    $preplanned = $llmActions;
-                }
-            } catch (\Throwable $e) {
-                Log::error('Director AI interpreter failed on data query', [
-                    'director_id' => $director->id,
-                    'colegio_id' => $director->colegio_id,
-                    'error' => $e->getMessage(),
-                ]);
-
-                return $this->respondWithDataAgent($director, $text, $screenContext, null);
-            }
-
-            return $this->respondWithDataAgent($director, $text, $screenContext, $preplanned);
+        // Consultas y follow-ups van SIEMPRE al data agent. El intérprete de
+        // mutaciones no debe interceptar "¿con qué profesor...?", "¿cómo estamos?"
+        // ni pronombres ("ellos", "los de 1ro").
+        if ($this->dataAgent->shouldUseDataAgent($text) || $this->dataAgent->isOutOfScope($text)) {
+            return $this->respondWithDataAgent($director, $text, $screenContext, null);
         }
 
         try {
@@ -2584,7 +2559,7 @@ class AICommandController extends Controller
                 'data' => ['teachers_count' => User::where('role', 'profesor')->where('colegio_id', $colegioId)->count()],
             ],
             'students' => [
-                'message' => 'Hay '.Student::where('colegio_id', $colegioId)->count().' alumno(s) en la nómina del colegio.',
+                'message' => 'Hay '.Student::where('colegio_id', $colegioId)->count().' alumnos registrados.',
                 'data' => ['students_count' => Student::where('colegio_id', $colegioId)->count()],
             ],
             default => [

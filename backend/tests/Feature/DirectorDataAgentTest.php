@@ -34,8 +34,8 @@ class DirectorDataAgentTest extends TestCase
         $message = (string) $response->json('actions.0.message');
         $this->assertStringContainsString('Ana Ruiz', $message);
         $this->assertStringContainsString('Luis Mora', $message);
-        $this->assertStringContainsString('**Hechos**', (string) $response->json('message'));
-        $this->assertStringContainsString('**Análisis**', (string) $response->json('message'));
+        $this->assertStringNotContainsString('**Hechos**', (string) $response->json('message'));
+        $this->assertStringNotContainsString('**Análisis**', (string) $response->json('message'));
         $this->assertStringNotContainsString('| Alumno |', (string) $response->json('message'));
         $this->assertContains('get_course_performance', $response->json('tools'));
         $this->assertNotNull($response->json('duration_ms'));
@@ -92,7 +92,7 @@ class DirectorDataAgentTest extends TestCase
         $response->assertOk()->assertJsonPath('actions.0.success', true);
         $this->assertSame([], $response->json('actions.0.data.students'));
         $this->assertStringContainsString('No hay alumnos registrados', (string) $response->json('actions.0.message'));
-        $this->assertStringContainsString('No hay base suficiente', (string) $response->json('message'));
+        $this->assertDoesNotMatchRegularExpression('/\*\*(Hechos|Análisis)\*\*/u', (string) $response->json('message'));
     }
 
     public function test_concern_query_combines_students_grades_and_attendance(): void
@@ -119,7 +119,7 @@ class DirectorDataAgentTest extends TestCase
         $this->assertGreaterThanOrEqual(2, count($tools));
         $payload = json_encode($response->json(), JSON_UNESCAPED_UNICODE);
         $this->assertStringContainsString('Ana Ruiz', $payload);
-        $this->assertStringContainsString('**Hechos**', (string) $response->json('message'));
+        $this->assertStringNotContainsString('Puedo crear y eliminar profesores', (string) $response->json('message'));
     }
 
     public function test_compare_two_courses_uses_compare_courses_tool(): void
@@ -305,9 +305,9 @@ class DirectorDataAgentTest extends TestCase
 
         $response->assertOk();
         $message = (string) $response->json('message');
-        $this->assertStringContainsString('Estado general', $message);
-        $this->assertStringContainsString('Prioridad', $message);
-        $this->assertStringContainsString('Promedio general', $message);
+        $this->assertStringContainsString('alumnos registrados', mb_strtolower($message));
+        $this->assertStringContainsString('promedio general', mb_strtolower($message));
+        $this->assertStringNotContainsString('**Hechos**', $message);
         $this->assertContains('generate_school_report', $response->json('tools'));
         $this->assertStringNotContainsString('Eva Inventada', $message);
     }

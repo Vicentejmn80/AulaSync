@@ -66,9 +66,23 @@ class DirectorDataAgentService
         $value = $this->normalized($text);
 
         return (bool) preg_match(
-            '/\b(?:crea(?:r|me|lo|los)?|invita|elimina|borra|quitar|remover|matricula|inscribe|asigna(?:le|lo)?|desmatricula|actualiza|edita|mueve|cambia)\b/u',
+            '/\b(?:crea(?:r|me|lo|los|s)?|cree(?:s)?|agrega(?:r)?|invita|elimina|borrar|borra|quita(?:r)?|remover|matricula|inscribe|asigna(?:le|lo)?|desmatricula|actualiza|edita|mueve|cambia|cancel[ae]|anula)\b/u',
             $value
         ) && ! preg_match('/\b(?:informe|resumen|compara|tendencia|asistencia|rendimiento|promedio)\b/u', $value);
+    }
+
+    /**
+     * Consulta de datos o follow-up: nunca debe caer al menú CRUD.
+     */
+    public function shouldUseDataAgent(string $text): bool
+    {
+        if ($this->looksLikeMutation($text)) {
+            return false;
+        }
+
+        return $this->looksLikeDataQuery($text)
+            || $this->looksLikeFollowUp($text)
+            || $this->looksLikeConversationalQuery($text);
     }
 
     public function looksLikeDataQuery(string $text): bool
@@ -80,23 +94,41 @@ class DirectorDataAgentService
         $value = $this->normalized($text);
 
         return (bool) preg_match(
-            '/(?:como va|como van|como le va|como esta|como estan|quien|quienes|cuantos|cuantas|que alumnos|que cursos|que profesores|que evaluaciones|que tareas|compara|tendencia|tendencias|evolucion|ranking|informe|resumen|resume|estado academico|asistencia|faltas|promedio|rendimiento|preocup|problemas|atencion|destacado|bajo rendimiento|este mes|mi curso|mi colegio|dame|le va a|evaluaciones|tareas|diagnostico|investiga|empeor|impresion|por que|que tienen en comun|preocupante|en que materia|quien es su profesor|prepara(?:me)?|nombr|listame|listado|nomina|como se llama|nombre del colegio|curso mas avanzado|grado mas alto|grado mas avanzado|ultimo grado|todos los alumnos|todos los estudiantes|nombre de todos|nombres de los)/u',
+            '/(?:como va|como van|como le va|como esta|como estan|como estamos|quien|quienes|cuantos|cuantas|que alumnos|que cursos|que profesores|que evaluaciones|que tareas|compara|tendencia|tendencias|evolucion|ranking|informe|resumen|resume|estado academico|asistencia|faltas|promedio|rendimiento|preocup|problemas|atencion|destacado|bajo rendimiento|este mes|mi curso|mi colegio|dame|dime|le va a|evaluaciones|tareas|diagnostico|investiga|empeor|impresion|por que|que tienen en comun|preocupante|en que materia|quien es su profesor|con que profesor|quien (?:le )?da|quien tiene|prepara(?:me)?|nombr|listame|listado|nomina|como se llama|nombre del colegio|curso mas avanzado|grado mas alto|grado mas avanzado|ultimo grado|todos los alumnos|todos los estudiantes|nombre de todos|nombres de los|abecedario|alfabet|a\s*-\s*z)/u',
             $value
         ) || (bool) preg_match('/\btop\s+\d/u', $value)
         || $this->looksLikeFollowUp($text)
         || $this->looksLikeRosterListQuery($text)
         || $this->looksLikeSchoolNameQuery($text)
-        || $this->looksLikeMostAdvancedCourseQuery($text);
+        || $this->looksLikeMostAdvancedCourseQuery($text)
+        || $this->looksLikeConversationalQuery($text);
+    }
+
+    public function looksLikeConversationalQuery(string $text): bool
+    {
+        $value = $this->normalized($text);
+        if ($this->looksLikeMutation($text)) {
+            return false;
+        }
+
+        if (preg_match('/\b(?:ellos|ellas|ese alumno|esa alumna|esos alumnos|esas alumnas|ese curso|esa materia|los de|las de|y los|y las)\b/u', $value)) {
+            return true;
+        }
+
+        return (bool) preg_match(
+            '/como estamos|que esta pasando|con que profesor|quien (?:le )?da\b|como se llama(?:n)?/u',
+            $value
+        );
     }
 
     public function looksLikeFollowUp(string $text): bool
     {
-        $value = $this->normalized($text);
+        $value = trim($this->normalized($text), " \t\n\r\0\x0B¿?¡!.");
 
         return (bool) preg_match(
-            '/^(?:por que|y (?:eso|ahora|el|la)|cual(?: es)?|en que materia|quien es su profesor|que tienen en comun|el mas preocupante|explica|profundiza|y su profesor|nombr|listame|cuales son|quienes son|dime (?:los )?nombres)\b/u',
+            '/^(?:por que|y (?:eso|ahora|el|la|los|las|ellos|ellas|su|le)|cual(?: es| de ellos| de ellas)?|en que materia|quien (?:es su profesor|le da|da)|que tienen en comun|el mas preocupante|explica|profundiza|y su profesor|nombr|listame|cuales son|quienes son|dime (?:los|las)|ese alumno|esa alumna|ese curso|ellos|ellas)\b/u',
             $value
-        ) || (bool) preg_match('/\b(?:nombr|cuales son|quienes son|dime (?:los )?nombres)\b/u', $value);
+        ) || (bool) preg_match('/\b(?:nombr|cuales son|quienes son|dime (?:los )?nombres|ese alumno|esos alumnos|ese curso|ellos|ellas)\b/u', $value);
     }
 
     public function looksLikeSchoolNameQuery(string $text): bool
@@ -127,7 +159,10 @@ class DirectorDataAgentService
         }
 
         return (bool) preg_match(
-            '/(?:nombre|nombres|nombr|listame|listado|dame (?:el |los )?nombre|muestrame|dime (?:el |los )?nombre).*(?:alumnos|estudiantes)|(?:todos|toda)s? (?:los )?(?:alumnos|estudiantes).*(?:colegio|grados|general|nomina)|(?:alumnos|estudiantes).*(?:todos los grados|del colegio|en general|en la nomina)|quienes son (?:los )?(?:alumnos|estudiantes)/u',
+            '/(?:como se llama(?:n)?|nombre|nombres|nombr|listame|listado|dame (?:el |los )?nombre|muestrame|dime (?:el |los )?(?:nombre|alumnos|estudiantes)).*(?:alumnos|estudiantes|colegio|grado)|(?:todos|toda)s? (?:los )?(?:alumnos|estudiantes)(?:\s|$|\?|del|de todos|en)/u',
+            $value
+        ) || (bool) preg_match(
+            '/(?:alumnos|estudiantes).*(?:todos los grados|del colegio|en general|en la nomina)|quienes son (?:los )?(?:alumnos|estudiantes)|(?:alumnos|estudiantes) (?:de|del)|dime los de|los alumnos de/u',
             $value
         );
     }
@@ -171,19 +206,22 @@ class DirectorDataAgentService
     public function plan(string $text, array $screenContext = [], ?array $preplanned = null, array $memory = []): array
     {
         $context = $this->sanitizeContext($screenContext);
-        // Fase 3: memoria conversacional para follow-ups como "¿Quiénes?" o "¿Cuál tiene peor?"
-        $last = $this->conversationContext->current();
-        $lastGrade = $last['grades'][0] ?? $last['grade'] ?? null;
-        $lastSection = $last['section'] ?? null;
-        $lastStudent = $last['student_name'] ?? $last['student_names'][0] ?? null;
+        $last = $this->conversationContext->snapshot($memory !== [] ? $memory : null);
+        $lastGrade = $last['last_grade'] ?? null;
+        $lastSection = $last['last_section'] ?? null;
+        $lastStudent = $last['last_student'] ?? null;
+        $lastSubject = $last['last_subject'] ?? null;
         $valueNorm = $this->normalized($text);
         $trimNorm = trim($valueNorm, " \t\n\r\0\x0B¿?¡!.");
-        // Solo follow-up puro "¿Quiénes?" / "¿Quiénes son?" sin más contexto -> usar último grado
-        $isPureQuienes = in_array($trimNorm, ['quienes', 'quienes son', 'cuales son', 'quienes somos'], true);
+        $isPureQuienes = in_array($trimNorm, ['quienes', 'quienes son', 'cuales son', 'quienes somos', 'y quienes'], true);
         if ($isPureQuienes || $trimNorm === 'quienes') {
             if ($lastGrade) {
                 return $this->pack('get_students', ['grade' => $lastGrade, 'section' => $lastSection]);
             }
+            if (($last['last_students'] ?? []) !== []) {
+                return $this->pack('get_students', []);
+            }
+
             return [
                 'tools' => [],
                 'intent' => 'needs_course',
@@ -191,14 +229,32 @@ class DirectorDataAgentService
                 'wants_opinion' => false,
             ];
         }
-        if (preg_match('/cual.*peor.*promedio|peor promedio|peor rendimiento|cual tiene peor/iu', $valueNorm) && $lastGrade) {
-            return $this->pack('get_rankings', ['metric' => 'average', 'grade' => $lastGrade, 'section' => $lastSection, 'limit' => 5]);
+        if (preg_match('/cual.*peor.*(?:promedio|rendimiento|asistencia)|peor promedio|peor rendimiento|cual (?:de ellos )?tiene peor/iu', $valueNorm)) {
+            $metric = preg_match('/asistencia|faltas/u', $valueNorm) ? 'absences' : 'average';
+            if ($lastGrade || $lastStudent || ($last['last_students'] ?? []) !== []) {
+                return $this->pack('get_rankings', [
+                    'metric' => $metric,
+                    'grade' => $lastGrade,
+                    'section' => $lastSection,
+                    'limit' => 5,
+                    'sort' => $metric === 'average' ? 'avg_asc' : 'absences_desc',
+                ]);
+            }
         }
         if (preg_match('/^por que$/u', $trimNorm)) {
+            $atRisk = (array) (($last['focus']['at_risk'] ?? []));
+            if ($atRisk !== [] || ($last['focus']['kind'] ?? '') === 'at_risk') {
+                return [
+                    'tools' => [],
+                    'intent' => 'explain_from_memory',
+                    'clarification' => null,
+                    'wants_opinion' => true,
+                    'focus' => (array) ($last['focus'] ?? []) + ['follow_up' => 'why', 'student_name' => $lastStudent],
+                ];
+            }
             if ($lastStudent) {
                 return $this->pack('get_student_performance', ['student_name' => $lastStudent]);
             }
-            // Sin estudiante previo, explicar at-risk general
             if ($lastGrade) {
                 return $this->pack('get_at_risk_students', ['grade' => $lastGrade, 'section' => $lastSection]);
             }
@@ -211,8 +267,16 @@ class DirectorDataAgentService
                 return $this->pack('get_at_risk_students', ['grade' => $lastGrade, 'section' => $lastSection]);
             }
         }
-        if (preg_match('/quien es su profesor/u', $valueNorm)) {
-            return $this->pack('get_teachers', []);
+        if (preg_match('/quien (?:es su profesor|le da)|quien da esa materia|su profesor/u', $valueNorm)) {
+            if ($lastStudent) {
+                return $this->pack('get_student_performance', array_filter([
+                    'student_name' => $lastStudent,
+                    'subject_name' => $this->extractSubject($text) ?? $lastSubject,
+                ]));
+            }
+            if ($this->extractSubject($text) ?? $lastSubject) {
+                return $this->pack('get_courses', ['subject_name' => $this->extractSubject($text) ?? $lastSubject]);
+            }
         }
 
         $wantsOpinion = $this->wantsOpinion($text);
@@ -248,7 +312,7 @@ class DirectorDataAgentService
             ];
         }
 
-        $planned = $this->planFromText($text, $context, $memory);
+        $planned = $this->planFromText($text, $context, $last);
         $planned['tools'] = $this->applyContext($planned['tools'], $text, $context);
         $planned['wants_opinion'] = $wantsOpinion || in_array($planned['intent'] ?? '', ['diagnose_school', 'school_concerns', 'executive_report', 'investigate'], true);
 
@@ -272,11 +336,25 @@ class DirectorDataAgentService
 
     private function tryLlmPlan(User $director, string $text, array $plan): ?array
     {
+        if (app()->runningUnitTests()) {
+            return null;
+        }
         $key = trim((string) config('services.openai.key'));
         if ($key === '' || str_contains($key, 'your_openai')) {
             return null;
         }
         try {
+            $memory = $this->conversationContext->snapshot();
+            $memoryBrief = json_encode([
+                'last_student' => $memory['last_student'] ?? null,
+                'last_students' => array_slice((array) ($memory['last_students'] ?? []), 0, 12),
+                'last_grade' => $memory['last_grade'] ?? null,
+                'last_section' => $memory['last_section'] ?? null,
+                'last_subject' => $memory['last_subject'] ?? null,
+                'last_teacher' => $memory['last_teacher'] ?? null,
+                'last_intent' => $memory['last_intent'] ?? null,
+                'sort' => $memory['sort'] ?? null,
+            ], JSON_UNESCAPED_UNICODE);
             $response = \Illuminate\Support\Facades\Http::timeout(12)
                 ->withToken($key)
                 ->post('https://api.openai.com/v1/chat/completions', [
@@ -287,8 +365,8 @@ class DirectorDataAgentService
                     'parallel_tool_calls' => true,
                     'tools' => $this->toolDefinitions(),
                     'messages' => [
-                        ['role' => 'system', 'content' => 'Eres el orquestador del Director Data Agent de AulaSync. Solo decides qué herramientas usar para responder preguntas de directores sobre su colegio. Nunca inventes datos. Elige 1-3 herramientas según la pregunta.'],
-                        ['role' => 'user', 'content' => $text],
+                        ['role' => 'system', 'content' => 'Eres el orquestador del Director Data Agent de AulaSync. Solo decides qué herramientas usar para responder preguntas de directores sobre su colegio. Nunca inventes datos. Resuelve pronombres (él, ellos, ese alumno, los de 1ro) con el contexto. Elige 1-3 herramientas. colegio_id lo pone el backend.'],
+                        ['role' => 'user', 'content' => "Pregunta: {$text}\nContexto conversacional: {$memoryBrief}"],
                     ],
                 ]);
             if ($response->failed()) {
@@ -322,6 +400,169 @@ class DirectorDataAgentService
             \Illuminate\Support\Facades\Log::warning('DirectorDataAgent LLM fallback failed', ['error' => $e->getMessage()]);
             return null;
         }
+    }
+
+    /**
+     * Redacción final con LLM. Nunca inventa: solo usa resultados de tools.
+     * En tests unitarios se omite para no hacer las pruebas no deterministas.
+     *
+     * @param  array<int,array{action_type?:string,message?:string,data?:array}>  $actions
+     */
+    private function tryLlmCompose(User $director, string $text, array $actions, string $intent): ?string
+    {
+        if (app()->runningUnitTests()) {
+            return null;
+        }
+        $key = trim((string) config('services.openai.key'));
+        if ($key === '' || str_contains($key, 'your_openai')) {
+            return null;
+        }
+
+        $memory = $this->conversationContext->snapshot();
+        $facts = $this->factsForLlm($actions);
+        $style = $this->wantsExecutiveReport($text) || $this->wantsStructuredFormat($text)
+            ? 'informe'
+            : ($this->wantsDiagnosis($text) || $intent === 'diagnose_school' ? 'panorama' : 'natural');
+
+        try {
+            $response = \Illuminate\Support\Facades\Http::timeout(12)
+                ->withToken($key)
+                ->post('https://api.openai.com/v1/chat/completions', [
+                    'model' => (string) config('services.openai.director_model', 'gpt-4o-mini'),
+                    'temperature' => 0.3,
+                    'max_tokens' => $style === 'informe' ? 700 : 350,
+                    'messages' => [
+                        ['role' => 'system', 'content' => $this->synthesisSystemPrompt($style)],
+                        ['role' => 'user', 'content' => json_encode([
+                            'pregunta' => $text,
+                            'contexto' => [
+                                'last_student' => $memory['last_student'] ?? null,
+                                'last_students' => array_slice((array) ($memory['last_students'] ?? []), 0, 12),
+                                'last_grade' => $memory['last_grade'] ?? null,
+                                'last_section' => $memory['last_section'] ?? null,
+                                'last_subject' => $memory['last_subject'] ?? null,
+                                'last_teacher' => $memory['last_teacher'] ?? null,
+                            ],
+                            'resultados' => $facts,
+                        ], JSON_UNESCAPED_UNICODE)],
+                    ],
+                ]);
+            if ($response->failed()) {
+                return null;
+            }
+            $content = trim((string) $response->json('choices.0.message.content', ''));
+            if ($content === '' || $this->llmMentionsUnknownEntities($content, $actions)) {
+                return null;
+            }
+
+            return $content;
+        } catch (\Throwable $e) {
+            Log::warning('DirectorDataAgent LLM compose failed', ['error' => $e->getMessage()]);
+
+            return null;
+        }
+    }
+
+    private function synthesisSystemPrompt(string $style): string
+    {
+        $format = match ($style) {
+            'informe' => 'Usa subtítulos, métricas, hallazgos, riesgos y recomendaciones. Estructura de informe ejecutivo.',
+            'panorama' => 'Responde en un párrafo natural de panorama. Sin plantilla de Hechos/Análisis/Estado.',
+            default => 'Responde de forma breve y natural, como un asistente conversacional. Sin Hechos/Análisis/Estado.',
+        };
+
+        return <<<PROMPT
+Eres un asistente para directores escolares. Redactas la respuesta final en español.
+
+Reglas:
+1. Nunca inventes alumnos, notas, profesores, cursos, asistencia ni ningún dato.
+2. Usa únicamente los resultados de herramientas que se te entregan.
+3. Si un dato no existe, di que no está disponible.
+4. No menciones tools, SQL, backend, agentes ni arquitectura interna.
+5. No digas que los números son registros reales ni menciones verificaciones internas.
+6. No uses "Hechos / Análisis / Estado" salvo que el director pida un informe.
+7. Habla como un asistente inteligente, profesional y humano.
+8. Sé conciso en preguntas simples y más detallado en informes o explicaciones.
+9. Evita frases repetitivas y no conviertas cada respuesta en la misma plantilla.
+10. Si piden opinión, diferencia el dato observado de la interpretación.
+11. {$format}
+PROMPT;
+    }
+
+    /**
+     * @param  array<int,array{action_type?:string,message?:string,data?:array}>  $actions
+     * @return array<int,array{tool:string,message:string,data:array}>
+     */
+    private function factsForLlm(array $actions): array
+    {
+        return collect($actions)->map(function ($action) {
+            return [
+                'tool' => (string) ($action['action_type'] ?? ''),
+                'message' => $this->stripTechnical($this->withoutTable((string) ($action['message'] ?? ''))),
+                'data' => $this->publicFactData((array) ($action['data'] ?? [])),
+            ];
+        })->all();
+    }
+
+    /**
+     * @param  array<string,mixed>  $data
+     * @return array<string,mixed>
+     */
+    private function publicFactData(array $data): array
+    {
+        unset($data['colegio_id'], $data['school_id'], $data['tenant_id'], $data['id'], $data['email'], $data['family_code'], $data['teacher_id'], $data['student_id'], $data['course_id']);
+        foreach ($data as $key => $value) {
+            if (is_array($value)) {
+                $data[$key] = $this->publicFactData($value);
+            }
+        }
+
+        return $data;
+    }
+
+    /**
+     * @param  array<int,array{data?:array,message?:string}>  $actions
+     */
+    private function llmMentionsUnknownEntities(string $reply, array $actions): bool
+    {
+        $known = collect($actions)->flatMap(function ($action) {
+            $data = (array) ($action['data'] ?? []);
+            $names = [];
+            foreach (['student', 'school_name', 'worst_subject', 'worst_teacher', 'teacher_name'] as $key) {
+                if (is_string($data[$key] ?? null)) {
+                    $names[] = $data[$key];
+                }
+            }
+            foreach (['students', 'ranking', 'teachers', 'courses'] as $listKey) {
+                foreach ((array) ($data[$listKey] ?? []) as $row) {
+                    if (is_array($row) && isset($row['name'])) {
+                        $names[] = $row['name'];
+                    } elseif (is_object($row) && isset($row->name)) {
+                        $names[] = $row->name;
+                    } elseif (is_string($row)) {
+                        $names[] = $row;
+                    }
+                }
+            }
+
+            return $names;
+        })->filter()->map(fn ($name) => mb_strtolower((string) $name))->unique()->values();
+
+        if ($known->isEmpty()) {
+            return false;
+        }
+
+        preg_match_all('/\b[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)+\b/u', $reply, $matches);
+        foreach ($matches[0] as $candidate) {
+            $needle = mb_strtolower($candidate);
+            if (! $known->contains(fn ($name) => str_contains($name, $needle) || str_contains($needle, $name))) {
+                if (! preg_match('/\b(?:colegio|matematica|ingles|lenguaje|ciencias)\b/u', $this->normalized($candidate))) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -468,7 +709,8 @@ class DirectorDataAgentService
 
         $trace[] = ['event' => 'synthesis_started', 'at' => now()->toIso8601String()];
         $intent = (string) ($plan['intent'] ?? ($used[0] ?? 'query'));
-        $composed = $this->compose($text, $actions, (bool) ($plan['wants_opinion'] ?? false), $intent);
+        $composed = $this->tryLlmCompose($director, $text, $actions, $intent)
+            ?? $this->compose($text, $actions, (bool) ($plan['wants_opinion'] ?? false), $intent);
         $trace[] = ['event' => 'response_generated', 'at' => now()->toIso8601String(), 'duration_ms' => $this->elapsedMs($started)];
         $this->record($director, $intent, $used, 'success', $started, $sessionId, null, $text);
 
@@ -519,6 +761,7 @@ class DirectorDataAgentService
                 $colegioId,
                 $this->str($args, 'grade'),
                 $this->str($args, 'section'),
+                $this->str($args, 'sort'),
             ),
             'get_student' => $this->analytics->getStudent($colegioId, (string) ($args['student_name'] ?? '')),
             'get_courses' => $this->analytics->getCourses(
@@ -603,6 +846,7 @@ class DirectorDataAgentService
                 $this->str($args, 'section'),
                 $this->str($args, 'subject_name') ?? $this->str($args, 'subject'),
                 (int) ($args['limit'] ?? 5),
+                $this->str($args, 'sort'),
             ),
             'get_section_counts' => $this->analytics->getSectionCounts($colegioId),
             default => [
@@ -623,30 +867,31 @@ class DirectorDataAgentService
             ->values();
 
         if ($facts->isEmpty()) {
-            return "**Hechos**\nNo hay datos suficientes en tu colegio para responder esa consulta.\n\n**Análisis**\nNo hay base suficiente para un análisis. Cuando existan notas o asistencia podré señalar riesgos.";
+            return 'No hay datos suficientes en tu colegio para responder esa consulta. Cuando existan notas o asistencia podré señalar riesgos.';
         }
 
-        // Fase 3: preguntas simples → respuesta natural corta sin forzar Hechos/Análisis
-        if ($this->isSimpleCountQuery($text, $actions)) {
+        if ($this->isSimpleCountQuery($text, $actions) || $this->isSimpleLookup($text, $actions)) {
             $msg = trim((string) $facts->first());
-            if (preg_match('/Hay\s+\d+\s+alumnos?\b[^.]*\./iu', $msg, $m)) {
-                return trim($m[0]) . "\n\nSi quieres, dime el grado y te detallo quiénes son.";
+            if (preg_match('/Hay\s+\d+\s+alumnos?\b[^.()]*\.?/iu', $msg, $m)) {
+                $countLine = rtrim(trim($m[0]), '.').'.';
+                if ($this->extractSort($text)) {
+                    return $this->withoutTable($msg);
+                }
+
+                return $countLine;
             }
-            if (preg_match('/Hay\s+\d+\s+profesores?\b[^.]*\./iu', $msg, $m)) {
-                return trim($m[0]);
+            if (preg_match('/Tu colegio se llama\b.+/iu', $msg, $m)) {
+                return rtrim(trim($m[0]), '.').'.';
             }
-            if (preg_match('/Hay\s+\d+\s+curso\b[^.]*\./iu', $msg, $m)) {
-                return trim($m[0]);
-            }
-            // Fallback natural sin forzar estructura
-            return trim($msg);
+
+            return $this->withoutTable($msg);
         }
 
+        if ($intent === 'executive_report' || $this->wantsExecutiveReport($text) || $this->wantsStructuredFormat($text)) {
+            return $this->composeExecutiveReport($text, $actions);
+        }
         if ($intent === 'diagnose_school' || $this->wantsDiagnosis($text)) {
             return $this->composeDiagnosis($actions);
-        }
-        if ($intent === 'executive_report' || $this->wantsExecutiveReport($text)) {
-            return $this->composeExecutiveReport($text, $actions);
         }
         $insight = $this->composeStudentInsight($text, $actions);
         if ($insight !== null) {
@@ -661,15 +906,14 @@ class DirectorDataAgentService
 
         $conclusion = $this->executiveConclusion($actions, (string) $facts->first());
         $body = $this->compactFacts($actions);
-        $classification = $this->classify($actions, $hasEmpty);
-        $analysis = $this->analysisFromFacts($text, $actions, $wantsOpinion, $hasEmpty);
+        $analysis = $wantsOpinion ? $this->analysisFromFacts($text, $actions, true, $hasEmpty) : null;
 
-        $out = $conclusion."\n\n**Hechos**\n".$body;
-        if ($classification) {
-            $out .= "\n\n**Estado:** ".$classification;
+        $out = trim($conclusion);
+        if ($body !== '' && ! str_contains($out, $body)) {
+            $out .= ($out !== '' ? "\n\n" : '').$body;
         }
-        if ($analysis !== null && $analysis !== '') {
-            $out .= "\n\n**Análisis**\n".$analysis;
+        if ($analysis !== null && $analysis !== '' && $this->wantsOpinion($text)) {
+            $out .= "\n\n".$analysis;
         }
 
         return $out;
@@ -678,14 +922,88 @@ class DirectorDataAgentService
     private function isSimpleCountQuery(string $text, array $actions): bool
     {
         $value = $this->normalized($text);
+        if ($this->extractSort($text)) {
+            return false;
+        }
         if (! preg_match('/\bcuantos\s+(?:alumnos|estudiantes|profesores|cursos)\b/u', $value)) {
             return false;
         }
-        // Solo si es pregunta simple sin filtros complejos y con un solo hecho
         if (preg_match('/\b(?:tenemos|hay|tiene el colegio|hay en)\b/u', $value) && count($actions) === 1) {
             return true;
         }
+
         return false;
+    }
+
+    /**
+     * @param  array<int,array{action_type?:string,data?:array}>  $actions
+     */
+    private function isSimpleLookup(string $text, array $actions): bool
+    {
+        if (count($actions) !== 1) {
+            return false;
+        }
+        $tool = (string) ($actions[0]['action_type'] ?? '');
+        if ($this->wantsStructuredFormat($text) || $this->wantsDiagnosis($text) || $this->wantsExecutiveReport($text)) {
+            return false;
+        }
+
+        return in_array($tool, ['query_academic', 'get_student', 'get_students', 'get_teachers', 'get_courses'], true)
+            || $this->looksLikeSchoolNameQuery($text);
+    }
+
+    private function wantsStructuredFormat(string $text): bool
+    {
+        $value = $this->normalized($text);
+
+        return (bool) preg_match('/\b(?:informe|reporte|resumen ejecutivo|analisis detallado|para la reunion)\b/u', $value);
+    }
+
+    private function looksLikeTeacherOfStudentQuery(string $text): bool
+    {
+        $value = $this->normalized($text);
+
+        return (bool) preg_match(
+            '/(?:con que profesor|que profesor (?:le |lo )?da|quien (?:le )?da|profesor de|esta(?:n)? con (?:el )?profesor)/u',
+            $value
+        );
+    }
+
+    private function looksLikeGradeRosterFollowUp(string $text): bool
+    {
+        $value = $this->normalized($text);
+
+        $value = trim($this->normalized($text), " \t\n\r\0\x0B¿?¡!.");
+
+        return (bool) preg_match(
+            '/^(?:y |entonces )?(?:dime )?(?:los|las|alumnos|estudiantes) de\b/u',
+            $value
+        );
+    }
+
+    public function extractSort(string $text): ?string
+    {
+        $value = $this->normalized($text);
+        if (preg_match('/z\s*-\s*a|de la z|al reves|descendente/u', $value)) {
+            return 'name_desc';
+        }
+        if (preg_match('/abecedario|alfabet|a\s*-\s*z|de la a|inicio del abecedario|orden(?:ados?)? (?:alfabet|por nombre)/u', $value)) {
+            return 'name_asc';
+        }
+        if (preg_match('/menor promedio|peor promedio|peor rendimiento/u', $value) && preg_match('/\b(?:orden|primero|empieza)\b/u', $value)) {
+            return 'avg_asc';
+        }
+        if (preg_match('/mayor promedio|mejor promedio/u', $value) && preg_match('/\b(?:orden|primero|empieza)\b/u', $value)) {
+            return 'avg_desc';
+        }
+        if (preg_match('/mas faltas/u', $value) && preg_match('/\b(?:orden|primero|empieza)\b/u', $value)) {
+            return 'absences_desc';
+        }
+        if (preg_match('/menos faltas/u', $value) && preg_match('/\b(?:orden|primero|empieza)\b/u', $value)) {
+            return 'absences_asc';
+        }
+
+        return null;
     }
 
     /**
@@ -1019,7 +1337,7 @@ class DirectorDataAgentService
         ];
 
         $defs = [
-            'get_students' => ['Listar alumnos del colegio del director.', ['grade', 'section']],
+            'get_students' => ['Listar alumnos del colegio del director.', ['grade', 'section', 'sort']],
             'get_student' => ['Obtener un alumno por nombre.', ['student_name']],
             'get_courses' => ['Listar cursos del colegio.', ['grade', 'section', 'subject_name']],
             'get_teachers' => ['Listar profesores del colegio.', []],
@@ -1034,7 +1352,7 @@ class DirectorDataAgentService
             'get_declining_students' => ['Alumnos que bajaron su promedio.', ['grade', 'section']],
             'get_academic_trends' => ['Tendencias de notas o faltas.', ['metric', 'weeks']],
             'generate_school_report' => ['Informe académico del colegio o un curso.', ['grade', 'section']],
-            'get_rankings' => ['Ranking por promedio o faltas.', ['metric', 'grade', 'section', 'limit']],
+            'get_rankings' => ['Ranking por promedio o faltas.', ['metric', 'grade', 'section', 'limit', 'sort']],
         ];
 
         return collect($defs)->map(function ($definition, $name) use ($commonFilters) {
@@ -1044,6 +1362,7 @@ class DirectorDataAgentService
                 $properties[$key] = $commonFilters[$key] ?? match ($key) {
                     'days', 'weeks', 'limit' => ['type' => ['integer', 'null']],
                     'metric' => ['type' => ['string', 'null'], 'enum' => ['average', 'absences', null]],
+                    'sort' => ['type' => ['string', 'null'], 'enum' => ['name_asc', 'name_desc', 'avg_asc', 'avg_desc', 'absences_asc', 'absences_desc', null]],
                     'grade_b', 'section_b' => ['type' => ['string', 'null']],
                     default => ['type' => ['string', 'null']],
                 };
@@ -1083,6 +1402,27 @@ class DirectorDataAgentService
             return $followUp;
         }
 
+        $sort = $this->extractSort($text);
+        $teacherQuestion = $this->looksLikeTeacherOfStudentQuery($text);
+        if ($teacherQuestion) {
+            $name = $this->extractStudentName($text)
+                ?: ($memory['last_student'] ?? $memory['student_name'] ?? null);
+            if (is_string($name) && $name !== '') {
+                return $this->pack('get_student', ['student_name' => $name]);
+            }
+            if ($subject) {
+                return $this->pack('get_courses', ['subject_name' => $subject, 'grade' => $grade, 'section' => $section]);
+            }
+        }
+
+        if ($this->looksLikeGradeRosterFollowUp($text) && $grade) {
+            return $this->pack('get_students', array_filter([
+                'grade' => $grade,
+                'section' => $section,
+                'sort' => $sort,
+            ]));
+        }
+
         if ($this->looksLikeSchoolNameQuery($text)) {
             return $this->pack('query_academic', ['query_type' => 'school_info']);
         }
@@ -1095,6 +1435,7 @@ class DirectorDataAgentService
             return $this->pack('get_students', array_filter([
                 'grade' => $grade,
                 'section' => $section,
+                'sort' => $sort,
             ]));
         }
 
@@ -1287,6 +1628,13 @@ class DirectorDataAgentService
         if (preg_match('/cuantos (?:alumnos|estudiantes)/u', $value) && preg_match('/cada seccion|por seccion/u', $value)) {
             return $this->pack('get_section_counts', []);
         }
+        if (preg_match('/cuantos (?:alumnos|estudiantes)/u', $value) && $sort) {
+            return $this->pack('get_students', array_filter([
+                'grade' => $grade,
+                'section' => $section,
+                'sort' => $sort,
+            ]));
+        }
         if (preg_match('/cuantos (?:alumnos|estudiantes)/u', $value) && $grade) {
             return $this->pack('query_academic', ['query_type' => 'grade_overview', 'grade' => $grade]);
         }
@@ -1307,7 +1655,15 @@ class DirectorDataAgentService
             return $this->pack('get_students', ['grade' => $grade, 'section' => $section]);
         }
 
-        if (preg_match('/como va(?:n)?|como esta(?:n)?|rendimiento|como van los/u', $value)) {
+        if (preg_match('/como va(?:n)?|como esta(?:n)?|rendimiento|como van los/u', $value)
+            && ! $this->wantsDiagnosis($text)) {
+            $student = $this->extractStudentName($text);
+            if ($student) {
+                return $this->pack('get_student_performance', array_filter([
+                    'student_name' => $student,
+                    'subject_name' => $subject,
+                ]));
+            }
             if ($grade) {
                 return $this->pack('get_course_performance', [
                     'grade' => $grade,
@@ -1330,7 +1686,7 @@ class DirectorDataAgentService
                     'wants_opinion' => false,
                 ];
             }
-            if (preg_match('/como va\s+(.+?)\s*[?¿.!]*$/u', $value, $m)) {
+            if (preg_match('/como (?:va|esta)\s+(.+?)\s*[?¿.!]*$/u', $value, $m)) {
                 $target = trim((string) $m[1], " \t¿?!.¡");
                 if ($this->extractGrade($target)) {
                     return $this->pack('get_course_performance', [
@@ -1338,8 +1694,9 @@ class DirectorDataAgentService
                         'section' => $this->extractSection($text),
                     ]);
                 }
-
-                return $this->pack('get_student_performance', ['student_name' => $target]);
+                if (! preg_match('/\b(?:mi curso|el curso|el colegio|la asistencia)\b/u', $target)) {
+                    return $this->pack('get_student_performance', ['student_name' => $target]);
+                }
             }
         }
 
@@ -1420,9 +1777,9 @@ class DirectorDataAgentService
         $value = $this->normalized($text);
 
         return (bool) preg_match(
-            '/como esta(?:n)?\s+(?:mi |el )?colegio|diagnostico(?: del colegio)?|estado general del colegio|que esta pasando en (?:mi |el )?colegio/u',
+            '/como esta(?:n)?\s+(?:mi |el )?colegio|como estamos|diagnostico(?: del colegio)?|estado general del colegio|que esta pasando(?: en (?:mi |el )?colegio)?|que pasa en (?:mi |el )?colegio|panorama (?:del |de (?:mi |el ))?colegio/u',
             $value
-        );
+        ) && ! preg_match('/\bmi curso\b/u', $value);
     }
 
     public function wantsExecutiveReport(string $text): bool
@@ -1441,24 +1798,34 @@ class DirectorDataAgentService
     {
         $focus = (array) ($memory['focus'] ?? []);
         if ($this->looksLikeRosterFollowUp($text, $memory)) {
-            $focus = (array) ($memory['focus'] ?? []);
-
             return $this->pack('get_students', array_filter([
-                'grade' => $focus['grade'] ?? null,
-                'section' => $focus['section'] ?? null,
+                'grade' => $focus['grade'] ?? $memory['last_grade'] ?? null,
+                'section' => $focus['section'] ?? $memory['last_section'] ?? null,
+                'sort' => $this->extractSort($text) ?: ($memory['sort'] ?? null),
             ]));
         }
 
-        if ($focus === [] && empty($memory['student_name']) && empty($memory['student_names']) && empty($memory['last_intent'])) {
+        if ($this->looksLikeGradeRosterFollowUp($text)) {
+            $grade = $this->extractGrade($text) ?: ($memory['last_grade'] ?? $focus['grade'] ?? null);
+            if ($grade) {
+                return $this->pack('get_students', array_filter([
+                    'grade' => $grade,
+                    'section' => $this->extractSection($text) ?: ($memory['last_section'] ?? $focus['section'] ?? null),
+                    'sort' => $this->extractSort($text) ?: ($memory['sort'] ?? null),
+                ]));
+            }
+        }
+
+        if ($focus === [] && empty($memory['last_student']) && empty($memory['student_name']) && empty($memory['student_names']) && empty($memory['last_students']) && empty($memory['last_intent'])) {
             return null;
         }
-        if (! $this->looksLikeFollowUp($text) && ! preg_match('/\b(?:por que|tienen en comun|mas preocupante|en que materia|su profesor|caso mas)\b/u', $this->normalized($text))) {
+        if (! $this->looksLikeFollowUp($text) && ! preg_match('/\b(?:por que|tienen en comun|mas preocupante|en que materia|su profesor|caso mas|ellos|ese alumno|ese curso|los de)\b/u', $this->normalized($text))) {
             return null;
         }
 
         $value = $this->normalized($text);
         $student = $this->extractStudentName($text)
-            ?: ($focus['student_name'] ?? $memory['student_name'] ?? ((array) ($memory['student_names'] ?? []))[0] ?? null);
+            ?: ($focus['student_name'] ?? $memory['last_student'] ?? $memory['student_name'] ?? ((array) ($memory['last_students'] ?? $memory['student_names'] ?? []))[0] ?? null);
         $atRisk = (array) ($focus['at_risk'] ?? []);
         if (! $student && $atRisk !== []) {
             $student = $this->worstRiskName($atRisk);
@@ -1515,18 +1882,71 @@ class DirectorDataAgentService
             ];
         }
 
-        if (preg_match('/quien es su profesor|su profesor/u', $value)) {
-            if (! is_string($student) || $student === '') {
-                return null;
+        if (preg_match('/quien (?:es su profesor|le da)|su profesor|quien da esa materia/u', $value)) {
+            $subject = $this->extractSubject($text) ?: ($memory['last_subject'] ?? $focus['worst_subject'] ?? $focus['subject'] ?? null);
+            if (is_string($student) && $student !== '') {
+                return [
+                    'tools' => [['tool' => 'get_student_performance', 'args' => array_filter([
+                        'student_name' => $student,
+                        'subject_name' => $subject,
+                    ])]],
+                    'intent' => 'get_student_performance',
+                    'clarification' => null,
+                    'wants_opinion' => true,
+                    'focus' => $focus + ['student_name' => $student, 'follow_up' => 'teacher', 'subject' => $subject],
+                ];
+            }
+            if (is_string($subject) && $subject !== '') {
+                return $this->pack('get_courses', ['subject_name' => $subject]);
+            }
+        }
+
+        if (preg_match('/ese alumno|esa alumna|como esta(?:n)?(?: el| ella)?$/u', $value) && is_string($student) && $student !== '') {
+            if (preg_match('/asistencia|faltas/u', $value)) {
+                return $this->pack('get_attendance', ['student_name' => $student]);
             }
 
-            return [
-                'tools' => [['tool' => 'get_student_performance', 'args' => ['student_name' => $student]]],
-                'intent' => 'get_student_performance',
-                'clarification' => null,
-                'wants_opinion' => true,
-                'focus' => $focus + ['student_name' => $student, 'follow_up' => 'teacher'],
-            ];
+            return $this->pack('get_student_performance', ['student_name' => $student]);
+        }
+
+        if (preg_match('/ese curso|ese grado/u', $value)) {
+            $grade = $memory['last_grade'] ?? $focus['grade'] ?? null;
+            if ($grade) {
+                if (preg_match('/quienes|alumnos|estudiantes|nombres/u', $value)) {
+                    return $this->pack('get_students', [
+                        'grade' => $grade,
+                        'section' => $memory['last_section'] ?? $focus['section'] ?? null,
+                    ]);
+                }
+
+                return $this->pack('get_course_performance', [
+                    'grade' => $grade,
+                    'section' => $memory['last_section'] ?? $focus['section'] ?? null,
+                ]);
+            }
+        }
+
+        if (preg_match('/\bellos\b|\bellas\b|esos alumnos|cual de ellos/u', $value)) {
+            $grade = $memory['last_grade'] ?? $focus['grade'] ?? null;
+            if (preg_match('/asistencia|faltas/u', $value)) {
+                return $this->pack('get_attendance', array_filter([
+                    'grade' => $grade,
+                    'section' => $memory['last_section'] ?? $focus['section'] ?? null,
+                ]));
+            }
+            if (preg_match('/peor|rendimiento|promedio/u', $value)) {
+                return $this->pack('get_rankings', array_filter([
+                    'metric' => 'average',
+                    'grade' => $grade,
+                    'section' => $memory['last_section'] ?? $focus['section'] ?? null,
+                    'limit' => 5,
+                    'sort' => 'avg_asc',
+                ]));
+            }
+            return $this->pack('get_students', array_filter([
+                'grade' => $grade,
+                'section' => $memory['last_section'] ?? $focus['section'] ?? null,
+            ]));
         }
 
         return null;
@@ -1543,6 +1963,8 @@ class DirectorDataAgentService
         $focus['intent'] = $intent;
         $focus['grade'] = $this->extractGrade($text) ?? ($previous['grade'] ?? null);
         $focus['section'] = $this->extractSection($text) ?? ($previous['section'] ?? null);
+        $focus['sort'] = $this->extractSort($text) ?? ($previous['sort'] ?? null);
+        $focus['subject'] = $this->extractSubject($text) ?? ($previous['subject'] ?? $previous['worst_subject'] ?? null);
 
         foreach ($actions as $action) {
             $data = (array) ($action['data'] ?? []);
@@ -1550,6 +1972,16 @@ class DirectorDataAgentService
             if (is_string($data['student'] ?? null)) {
                 $focus['student_name'] = $data['student'];
                 $focus['kind'] = 'student';
+            }
+            if (is_array($data['student'] ?? null) && ! empty($data['student']['name'])) {
+                $focus['student_name'] = (string) $data['student']['name'];
+                $focus['kind'] = 'student';
+                $focus['grade'] = $data['student']['grade'] ?? $focus['grade'];
+                $focus['section'] = $data['student']['section'] ?? $focus['section'];
+            }
+            if (! empty($data['teachers']) && is_array($data['teachers'])) {
+                $firstTeacher = $data['teachers'][0] ?? null;
+                $focus['teacher'] = is_string($firstTeacher) ? $firstTeacher : (is_array($firstTeacher) ? ($firstTeacher['name'] ?? null) : null);
             }
             if (isset($data['grade'])) {
                 $focus['grade'] = $data['grade'] ?: $focus['grade'];
@@ -1654,36 +2086,40 @@ class DirectorDataAgentService
             ->keys()
             ->first();
 
-        $hasEmpty = $avg === null && $riskNames->isEmpty() && (int) ($report['students']['count'] ?? 0) === 0;
+        $enrollment = (int) ($report['students']['count'] ?? 0);
+        $hasEmpty = $avg === null && $riskNames->isEmpty() && $enrollment === 0;
         if ($hasEmpty) {
-            return "Aún no hay suficientes datos para diagnosticar el colegio.\n\n**Hechos**\nCuando existan notas y asistencia podré señalar riesgos, materias críticas y una prioridad.";
+            return 'Todavía no hay suficientes datos para decirte cómo está el colegio. Cuando existan notas o asistencia podré señalar riesgos.';
         }
 
-        $label = $this->classifyDiagnosis($avg, $riskNames->count());
-        $lines = [];
-        $lines[] = $avg !== null ? "Promedio general: {$avg}%." : 'Promedio general: todavía no hay suficientes notas.';
-        $lines[] = $riskNames->isEmpty()
-            ? 'Ningún estudiante aparece por debajo del umbral de riesgo.'
-            : $riskNames->count().' estudiante(s) requieren atención.';
+        $parts = [];
+        $parts[] = $enrollment > 0
+            ? "En general, el colegio tiene {$enrollment} alumnos registrados."
+            : 'En general, todavía no hay alumnos registrados.';
+        $parts[] = $avg !== null
+            ? "El rendimiento disponible muestra un promedio general de {$avg}%."
+            : 'Aún no hay suficientes calificaciones para hablar de rendimiento.';
         if ($records > 0) {
             $presentRate = max(0, min(100, round((1 - ($absenceTotal / max(1, $records))) * 100, 1)));
-            $lines[] = "Asistencia reciente: {$presentRate}% de registros en los últimos 30 días ({$absenceTotal} falta(s)).";
+            $parts[] = "En asistencia, el {$presentRate}% de los registros recientes están presentes ({$absenceTotal} falta(s) en 30 días).";
         } else {
-            $lines[] = 'Asistencia: todavía no hay registros de los últimos 30 días.';
+            $parts[] = 'No hay registros de asistencia recientes.';
+        }
+        if ($riskNames->isNotEmpty()) {
+            $watch = $riskNames->take(3)->implode(', ');
+            $extra = $riskNames->count() > 3 ? ' y otros' : '';
+            $parts[] = "Lo que más vigilaría ahora es a {$watch}{$extra}.";
+        } else {
+            $parts[] = 'Con los datos actuales no aparece un grupo urgente en riesgo.';
         }
         if (is_string($criticalSubject) && $criticalSubject !== '' && $criticalSubject !== 'sin materia' && $riskNames->isNotEmpty()) {
-            $lines[] = "{$criticalSubject} concentra la mayor cantidad de estudiantes con bajo rendimiento.";
+            $parts[] = "{$criticalSubject} concentra varios de esos casos.";
         }
-        if (! empty($report['trends']['trend'])) {
-            $lines[] = 'Hay una tendencia de promedios en las últimas semanas; conviene contrastarla con los cursos en riesgo.';
-        }
-
-        $out = "**Estado general:** {$label}\n\n".implode("\n", $lines);
-        if (is_string($priority) && trim($priority) !== '') {
-            $out .= "\n\n**Prioridad:** revisar {$priority}.";
+        if (is_string($priority) && trim($priority) !== '' && $riskNames->isNotEmpty()) {
+            $parts[] = "Conviene revisar {$priority}.";
         }
 
-        return $out;
+        return implode(' ', $parts);
     }
 
     /**
@@ -1695,7 +2131,7 @@ class DirectorDataAgentService
         $scope = $this->extractGrade($text);
         $section = $this->extractSection($text);
         $title = trim(($scope ?? 'Colegio').($section ? ' '.$section : ''));
-        $avg = $report['school_avg_pct'] ?? ($report['performance']['class_avg_pct'] ?? null);
+        $avg = $report['performance']['class_avg_pct'] ?? ($report['school_avg_pct'] ?? null);
         $riskRows = $this->rowsOf($report['at_risk']['students'] ?? []);
         $top = collect($this->rowsOf($report['performance']['students'] ?? $report['performance']['ranking'] ?? []))
             ->sortByDesc(fn ($row) => (float) ($row['avg_pct'] ?? 0))
@@ -1869,7 +2305,10 @@ class DirectorDataAgentService
                 ? "{$student} está peor en {$worstSubject}."
                 : "{$student} no tiene una materia con notas suficientes para señalar la más débil.";
         }
-        if (preg_match('/quien es su profesor|su profesor/u', $value)) {
+        if (preg_match('/^por que$|por que\b/u', $value) && $overall !== null && (float) $overall < 60) {
+            return "{$student} presenta bajo rendimiento, por debajo de lo esperado (promedio {$overall}%).";
+        }
+        if (preg_match('/quien es su profesor|su profesor|quien le da|con que profesor/u', $value)) {
             return $worstTeacher
                 ? "El profesor de {$student} en ".($worstSubject ?: 'su materia más débil')." es {$worstTeacher}."
                 : "No tengo el profesor asignado a las materias de {$student} en los registros actuales.";
@@ -2028,6 +2467,7 @@ class DirectorDataAgentService
         $value = mb_strtolower($text);
         $value = strtr($value, [
             'primer grado' => '1ro grado',
+            '1er grado' => '1ro grado',
             'primero' => '1ro',
             'segundo grado' => '2do grado',
             'segundo' => '2do',
@@ -2121,24 +2561,27 @@ class DirectorDataAgentService
     public function extractStudentName(string $text): ?string
     {
         $norm = $this->normalized($text);
-        $markers = ['rendimiento de', 'le va a', 'como va', 'como le va', 'va a'];
+        $markers = [
+            'con que profesor esta', 'con que profesor estan', 'profesor de',
+            'rendimiento de', 'le va a', 'como le va a', 'como le va',
+            'como esta', 'como estan', 'como va', 'va a',
+        ];
         foreach ($markers as $marker) {
             $mNorm = $this->normalized($marker);
             if (preg_match('/'.preg_quote($mNorm, '/').'\s+([a-z]+(?:\s+[a-z]+){0,2})/u', $norm, $m)) {
-                $raw = trim($m[1]);
-                // Filtrar si es grado
-                if (preg_match('/^(?:1ro|2do|3ro|4to|5to|6to|grado|curso|seccion)/u', $raw)) {
+                $raw = trim((string) $m[1]);
+                if (preg_match('/^(?:1ro|2do|3ro|4to|5to|6to|grado|curso|seccion|mi|el|la|los|las|tu|su|colegio|asistencia|rendimiento)/u', $raw)) {
                     continue;
                 }
-                // Title case desde normalizado
                 $parts = explode(' ', $raw);
-                $parts = array_map(fn($p) => mb_convert_case($p, MB_CASE_TITLE, 'UTF-8'), $parts);
+                $parts = array_map(fn ($p) => mb_convert_case($p, MB_CASE_TITLE, 'UTF-8'), $parts);
                 $name = implode(' ', $parts);
-                // Eliminar palabras de cola
-                $name = preg_replace('/\s+(y|en|con|de|del|que).*$/iu', '', $name);
-                return trim($name);
+                $name = preg_replace('/\s+(y|en|con|de|del|que|en el|en la).*$/iu', '', $name);
+
+                return trim((string) $name) !== '' ? trim((string) $name) : null;
             }
         }
+
         return null;
     }
 
