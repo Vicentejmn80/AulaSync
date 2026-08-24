@@ -29,6 +29,9 @@ use Illuminate\Validation\ValidationException;
 class AICommandController extends Controller
 {
     private const PENDING_SESSION_KEY = 'director_ai_pending_actions';
+    private const CHAT_MODE_KEY = 'chat_mode';
+    private const CHAT_SUBJECT_KEY = 'chat_subject';
+    private const CHAT_HISTORY_KEY = 'chat_history';
 
     public function __construct(
         private DirectorActionService $actionService,
@@ -80,6 +83,75 @@ class AICommandController extends Controller
                 'success' => false,
                 'message' => 'Escribe una instrucción. Ejemplo: "Crea al profesor Vicente Maduro y asígnale Inglés de 1ro a 6to".',
             ], 422);
+        }
+
+        // ── FASE HÍBRIDA: estados de sesión ──
+        $buttonAction = $request->input('button_action');
+        // Compatibilidad: algunos clientes envían buttonAction
+        if (!$buttonAction && $request->has('buttonAction')) {
+            $buttonAction = $request->input('buttonAction');
+        }
+        $chatMode = session()->get(self::CHAT_MODE_KEY, 'main_menu');
+        $chatSubject = session()->get(self::CHAT_SUBJECT_KEY);
+        $hasPending = session()->has(self::PENDING_SESSION_KEY) || session()->has('chat_pending');
+
+        // PRIORIDAD 1: Mutación pendiente (confirmación)
+        if ($hasPending && $this->isAffirmativeText($text)) {
+            return $this->executePending($request, $director);
+        }
+        if ($hasPending && $this->isNegativeText($text)) {
+            session()->forget(self::PENDING_SESSION_KEY);
+            session()->forget('chat_pending');
+            $this->conversationContext->clearPendingReferences();
+            session()->put(self::CHAT_MODE_KEY, 'main_menu');
+            session()->forget(self::CHAT_SUBJECT_KEY);
+            return response()->json([
+                'success' => true,
+                'cancelled' => true,
+                'message' => 'Operación cancelada. No hice cambios.',
+                'buttons' => $this->mainMenuButtons(),
+                'mode' => 'main_menu',
+            ]);
+        }
+
+        // PRIORIDAD 2: Botón explícito
+        if ($buttonAction && is_string($buttonAction) && $buttonAction !== '') {
+            return $this->handleButton($buttonAction, $text, $director, $screenContext);
+        }
+
+        // PRIORIDAD 3: Texto libre + MODO específico (consulting/creating/etc.)
+        if ($chatMode !== 'main_menu' && $chatSubject !== null) {
+            $inModeResult = $this->handleInMode($text, $chatMode, $chatSubject, $director, $screenContext);
+            if ($inModeResult !== null) {
+                return $inModeResult;
+            }
+        }
+
+        // PRIORIDAD 4: Texto libre en menú principal (detectar intención)
+        $detected = $this->detectHybridIntent($text);
+        if ($detected !== 'unknown' && $chatMode === 'main_menu') {
+            session()->put(self::CHAT_MODE_KEY, $detected);
+            // Si el texto ya es una consulta completa con datos, ir directo al handler sin pedir subject
+            // Para consulting, cualquier pregunta específica con datos es completa
+            $isCompleteQuery = mb_strlen(trim($text)) > 8;
+            if ($detected === 'consulting' && $isCompleteQuery) {
+                // Dejar que caiga al flujo normal (data agent)
+            } elseif ($detected === 'reporting') {
+                $plan = $this->dataAgent->plan($text, $screenContext);
+                if (!empty($plan['tools'])) {
+                    return $this->respondWithDataAgent($director, $text, $screenContext, null);
+                }
+                return $this->askForSubject($detected);
+            } elseif ($detected !== 'unknown') {
+                // Para creating/deleting/modifying con texto corto, pedir subject
+                if (in_array($detected, ['creating', 'deleting', 'modifying'], true) && mb_strlen(trim($text)) < 20) {
+                    return $this->askForSubject($detected);
+                }
+                // Para consulting con texto muy corto y sin datos, pedir subject
+                if ($detected === 'consulting' && mb_strlen(trim($text)) < 15) {
+                    return $this->askForSubject($detected);
+                }
+            }
         }
 
         $routeDecision = $this->dataAgent->routeDecision($text);
@@ -3466,5 +3538,168 @@ class AICommandController extends Controller
         $value = preg_replace('/\b1(?:er|ero)?\s*grado\b/', '1er grado', $value) ?? $value;
 
         return $value;
+    }
+
+    // ── FASE HÍBRIDA: Menú + IA ───────────────────────────────────────
+    private function detectHybridIntent(string $text): string
+    {
+        $t = $this->normalizedText($text);
+        if (preg_match('/\b(?:crea|crear|nuevo|nueva|agregar|agrega|insertar)\b/u', $t) && !preg_match('/\b(?:cuantos|como|quien|quienes|dime|dame|listado|ver|mostrar)\b/u', $t)) {
+            return 'creating';
+        }
+        if (preg_match('/\b(?:elimina|eliminar|borrar|borra|quitar|sacar|remove|delete)\b/u', $t)) {
+            return 'deleting';
+        }
+        if (preg_match('/\b(?:modificar|cambiar|actualizar|editar|cambia|modifica|actualiza|mover|pasar|asignar)\b/u', $t)) {
+            return 'modifying';
+        }
+        if (preg_match('/\b(?:informe|reporte|resumen|panorama|como estamos|diagnostico)\b/u', $t)) {
+            return 'reporting';
+        }
+        if (preg_match('/\b(?:cuantos|quien|quienes|como va|como van|dime|dame|listado|ver|mostrar|consultar|buscar|nombre|nombres|lista|listame)\b/u', $t) || preg_match('/\b(?:alumnos?|estudiantes?|profesores?|docentes?|cursos?|notas?|calificaciones?|asistencia|faltas|promedio|rendimiento)\b/u', $t)) {
+            return 'consulting';
+        }
+        if (preg_match('/\b(?:revisa|verifica|confirma|es|son|esta|existe)\b/u', $t) && preg_match('/\b(?:profesor|alumno|estudiante|docente|curso)\b/u', $t)) {
+            return 'consulting';
+        }
+        return 'unknown';
+    }
+
+    private function handleButton(string $buttonAction, ?string $customText, $director, array $screenContext): JsonResponse
+    {
+        $textMap = [
+            'menu_consult' => 'quiero consultar información',
+            'menu_create' => 'quiero crear algo nuevo',
+            'menu_modify' => 'quiero modificar algo',
+            'menu_delete' => 'quiero eliminar algo',
+            'menu_report' => 'quiero un informe',
+            'consult_students' => 'quiero ver alumnos',
+            'consult_teachers' => 'quiero ver profesores',
+            'consult_courses' => 'quiero ver cursos',
+            'consult_grades' => 'quiero ver notas',
+            'consult_attendance' => 'quiero ver asistencia',
+            'create_student' => 'crear alumno',
+            'create_teacher' => 'crear profesor',
+            'create_course' => 'crear curso',
+            'create_activity' => 'crear actividad',
+            'modify_student' => 'modificar alumno',
+            'modify_teacher' => 'modificar profesor',
+            'modify_course' => 'modificar curso',
+            'modify_grade' => 'modificar notas',
+            'delete_student' => 'eliminar alumno',
+            'delete_teacher' => 'eliminar profesor',
+            'delete_course' => 'eliminar curso',
+            'confirm_yes' => 'sí, confirmo',
+            'confirm_no' => 'no, cancelar',
+            'back' => 'volver al menú principal',
+        ];
+        $textToSend = $customText && trim($customText) !== '' ? $customText : ($textMap[$buttonAction] ?? $buttonAction);
+        if ($buttonAction === 'back') {
+            session()->put(self::CHAT_MODE_KEY, 'main_menu');
+            session()->forget(self::CHAT_SUBJECT_KEY);
+            return $this->showMainMenu(null);
+        }
+        if ($buttonAction === 'confirm_yes' && session()->has(self::PENDING_SESSION_KEY)) {
+            return $this->executePending(request(), $director);
+        }
+        if ($buttonAction === 'confirm_no' && session()->has(self::PENDING_SESSION_KEY)) {
+            session()->forget(self::PENDING_SESSION_KEY);
+            session()->forget('chat_pending');
+            $this->conversationContext->clearPendingReferences();
+            session()->put(self::CHAT_MODE_KEY, 'main_menu');
+            session()->forget(self::CHAT_SUBJECT_KEY);
+            return response()->json(['success' => true, 'cancelled' => true, 'message' => 'Operación cancelada. No hice cambios.', 'buttons' => $this->mainMenuButtons(), 'mode' => 'main_menu']);
+        }
+        $modeMap = ['menu_consult' => 'consulting', 'menu_create' => 'creating', 'menu_modify' => 'modifying', 'menu_delete' => 'deleting', 'menu_report' => 'reporting', 'consult_' => 'consulting', 'create_' => 'creating', 'modify_' => 'modifying', 'delete_' => 'deleting'];
+        foreach ($modeMap as $prefix => $mode) {
+            if (str_starts_with($buttonAction, $prefix)) {
+                session()->put(self::CHAT_MODE_KEY, $mode);
+                break;
+            }
+        }
+        $subjectMap = ['student' => 'students', 'teacher' => 'teachers', 'course' => 'courses', 'grade' => 'grades', 'attendance' => 'attendance'];
+        foreach ($subjectMap as $key => $subject) {
+            if (str_contains($buttonAction, $key)) {
+                session()->put(self::CHAT_SUBJECT_KEY, $subject);
+                break;
+            }
+        }
+        // Si el botón ya trae toda la info, intentar ejecutar directo si es creación simple
+        return $this->handleInMode($textToSend, session()->get(self::CHAT_MODE_KEY, 'main_menu'), session()->get(self::CHAT_SUBJECT_KEY), $director, $screenContext) ?? $this->askForSubject(session()->get(self::CHAT_MODE_KEY, 'main_menu'));
+    }
+
+    private function handleInMode(string $text, string $mode, ?string $subject, $director, array $screenContext): ?JsonResponse
+    {
+        // Si el texto ya es una instrucción completa, intentar ejecutarla con el modo actual como contexto
+        // Para consulting, delegar al Data Agent con el subject como hint
+        if ($mode === 'consulting' && $subject) {
+            $hintMap = ['students' => 'alumnos', 'teachers' => 'profesores', 'courses' => 'cursos', 'grades' => 'notas', 'attendance' => 'asistencia'];
+            $hint = $hintMap[$subject] ?? $subject;
+            // Si el texto ya menciona el subject, usarlo directo
+            if (mb_stripos($this->normalizedText($text), $hint) === false && mb_strlen($text) < 30) {
+                // Texto corto sin subject, pedir detalle
+                return $this->askForSubject($mode);
+            }
+        }
+        // Para crear/modificar/eliminar, si el texto es solo el subject, pedir detalles
+        if (in_array($mode, ['creating', 'modifying', 'deleting'], true) && $subject && mb_strlen(trim($text)) < 20 && preg_match('/^(?:quiero|crear|modificar|eliminar).*'.preg_quote($subject, '/').'/iu', $this->normalizedText($text))) {
+            $labels = ['students' => 'alumno', 'teachers' => 'profesor', 'courses' => 'curso', 'grades' => 'nota', 'attendance' => 'asistencia'];
+            $label = $labels[$subject] ?? $subject;
+            return response()->json(['success' => false, 'needs_clarification' => true, 'message' => "Perfecto, dime los datos para {$label}. Por ejemplo: \"Crea al profesor Jose Marrero\" o \"Elimina al profesor Luis\".", 'buttons' => $this->subjectButtons($mode), 'mode' => $mode, 'subject' => $subject]);
+        }
+        return null;
+    }
+
+    public function showMainMenu(?string $message = null): JsonResponse
+    {
+        session()->put(self::CHAT_MODE_KEY, 'main_menu');
+        session()->forget(self::CHAT_SUBJECT_KEY);
+        return response()->json([
+            'success' => true,
+            'message' => $message ?? '¡Hola! Soy tu asistente. ¿Qué necesitas hacer?',
+            'buttons' => $this->mainMenuButtons(),
+            'mode' => 'main_menu',
+        ]);
+    }
+
+    public function askForSubject(string $mode): JsonResponse
+    {
+        $subjectButtons = match($mode) {
+            'consulting' => [['id' => 'consult_students', 'label' => '👨‍🎓 Alumnos', 'color' => 'blue'], ['id' => 'consult_teachers', 'label' => '👨‍🏫 Profesores', 'color' => 'blue'], ['id' => 'consult_courses', 'label' => '📚 Cursos', 'color' => 'blue'], ['id' => 'consult_grades', 'label' => '📝 Notas', 'color' => 'blue'], ['id' => 'consult_attendance', 'label' => '📅 Asistencia', 'color' => 'blue'], ['id' => 'back', 'label' => '◀️ Volver', 'color' => 'gray']],
+            'creating' => [['id' => 'create_student', 'label' => '👨‍🎓 Alumno', 'color' => 'green'], ['id' => 'create_teacher', 'label' => '👨‍🏫 Profesor', 'color' => 'green'], ['id' => 'create_course', 'label' => '📚 Curso', 'color' => 'green'], ['id' => 'create_activity', 'label' => '📝 Actividad', 'color' => 'green'], ['id' => 'back', 'label' => '◀️ Volver', 'color' => 'gray']],
+            'modifying' => [['id' => 'modify_student', 'label' => '👨‍🎓 Alumno', 'color' => 'orange'], ['id' => 'modify_teacher', 'label' => '👨‍🏫 Profesor', 'color' => 'orange'], ['id' => 'modify_course', 'label' => '📚 Curso', 'color' => 'orange'], ['id' => 'modify_grade', 'label' => '📝 Notas', 'color' => 'orange'], ['id' => 'back', 'label' => '◀️ Volver', 'color' => 'gray']],
+            'deleting' => [['id' => 'delete_student', 'label' => '👨‍🎓 Alumno', 'color' => 'red'], ['id' => 'delete_teacher', 'label' => '👨‍🏫 Profesor', 'color' => 'red'], ['id' => 'delete_course', 'label' => '📚 Curso', 'color' => 'red'], ['id' => 'back', 'label' => '◀️ Volver', 'color' => 'gray']],
+            'reporting' => [['id' => 'back', 'label' => '◀️ Volver', 'color' => 'gray']],
+            default => [],
+        };
+        $modeLabels = ['consulting' => 'consultar', 'creating' => 'crear', 'modifying' => 'modificar', 'deleting' => 'eliminar', 'reporting' => 'generar informe'];
+        return response()->json([
+            'success' => true,
+            'message' => "¿Qué quieres {$modeLabels[$mode]}? Puedes tocar un botón o escribir lo que necesitas.",
+            'buttons' => $subjectButtons,
+            'mode' => $mode,
+            'subject' => null,
+        ]);
+    }
+
+    private function mainMenuButtons(): array
+    {
+        return [
+            ['id' => 'menu_consult', 'label' => '📋 Consultar', 'color' => 'blue'],
+            ['id' => 'menu_create', 'label' => '➕ Crear', 'color' => 'green'],
+            ['id' => 'menu_modify', 'label' => '✏️ Modificar', 'color' => 'orange'],
+            ['id' => 'menu_delete', 'label' => '🗑️ Eliminar', 'color' => 'red'],
+            ['id' => 'menu_report', 'label' => '📊 Informes', 'color' => 'purple'],
+        ];
+    }
+
+    private function subjectButtons(string $mode): array
+    {
+        return match($mode) {
+            'consulting' => [['id' => 'consult_students', 'label' => '👨‍🎓 Alumnos'], ['id' => 'consult_teachers', 'label' => '👨‍🏫 Profesores'], ['id' => 'consult_courses', 'label' => '📚 Cursos']],
+            'creating' => [['id' => 'create_student', 'label' => '👨‍🎓 Alumno'], ['id' => 'create_teacher', 'label' => '👨‍🏫 Profesor'], ['id' => 'create_course', 'label' => '📚 Curso']],
+            'deleting' => [['id' => 'delete_student', 'label' => '👨‍🎓 Alumno'], ['id' => 'delete_teacher', 'label' => '👨‍🏫 Profesor'], ['id' => 'delete_course', 'label' => '📚 Curso']],
+            default => [],
+        };
     }
 }

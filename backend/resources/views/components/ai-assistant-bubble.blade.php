@@ -1031,6 +1031,17 @@
             </span>
         </div>
 
+        <!-- Botones híbridos del menú director (Fase Híbrida) -->
+        <div class="quick-suggestions" x-show="currentButtons.length > 0 && !loading" style="border-top: 1px solid rgba(124,58,237,0.2); background: rgba(124,58,237,0.06);">
+            <template x-for="btn in currentButtons" :key="btn.id">
+                <span class="suggestion-chip" 
+                      :style="btn.color === 'blue' ? 'background: rgba(59,130,246,0.15); border-color: rgba(59,130,246,0.3);' : btn.color === 'green' ? 'background: rgba(16,185,129,0.15); border-color: rgba(16,185,129,0.3);' : btn.color === 'red' ? 'background: rgba(239,68,68,0.15); border-color: rgba(239,68,68,0.3);' : btn.color === 'orange' ? 'background: rgba(249,115,22,0.15); border-color: rgba(249,115,22,0.3);' : btn.color === 'purple' ? 'background: rgba(147,51,234,0.15); border-color: rgba(147,51,234,0.3);' : ''"
+                      @click="handleButtonClick(btn.id, btn.label)">
+                    <span x-text="btn.label"></span>
+                </span>
+            </template>
+        </div>
+
         <!-- Acciones de notas (siempre visibles) -->
         <div class="quick-suggestions" x-show="isTeacher" style="border-top: 1px solid rgba(16,185,129,0.2);">
             <span class="suggestion-chip" style="background: rgba(16,185,129,0.15); border-color: rgba(16,185,129,0.3);" 
@@ -1096,6 +1107,8 @@ function novaAIAssistant() {
         panelAnimation: 'entering',
         pageContext: null,
         openingActivityId: null,
+        currentButtons: [],
+        currentMode: 'main_menu',
         historyEndpoint: @json(auth()->check() ? route('ai.chat.history.store') : null),
         isTeacher: {{ auth()->check() && auth()->user()->role === 'profesor' ? 'true' : 'false' }},
         isDirector: {{ auth()->check() && auth()->user()->role === 'director' ? 'true' : 'false' }},
@@ -1360,9 +1373,50 @@ function novaAIAssistant() {
             }
         },
 
+        handleButtonClick(buttonId, label) {
+            this.addMessage('user', label);
+            this.loading = true;
+            const liveContext = window.novaContext || this.pageContext || null;
+            const conversation = this.messages.filter(m => m.role === 'user' || m.role === 'assistant').map(m => ({ role: m.role, content: m.text }));
+            fetch(this.commandEndpoint, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'X-CSRF-TOKEN': this.getCsrfToken(),
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+                body: JSON.stringify({
+                    prompt: label,
+                    message: label,
+                    button_action: buttonId,
+                    buttonAction: buttonId,
+                    screen_context: liveContext,
+                    conversation: conversation.length ? conversation : undefined,
+                }),
+            }).then(r => r.text().then(t => { try { return JSON.parse(t); } catch(e) { return { message: 'Error' }; } })).then(json => {
+                this.handleResponse(json);
+            }).catch(() => {
+                this.addMessage('assistant', '❌ Error de conexión.');
+            }).finally(() => {
+                this.loading = false;
+                this.scrollToBottom();
+            });
+        },
         handleResponse(json) {
             if (!json || typeof json !== 'object') {
                 return;
+            }
+            // Guardar botones y modo para UI híbrida
+            if (Array.isArray(json.buttons)) {
+                this.currentButtons = json.buttons;
+                this.currentMode = json.mode || this.currentMode;
+            } else if (json.mode) {
+                this.currentMode = json.mode;
+                this.currentButtons = [];
+            } else {
+                this.currentButtons = [];
             }
 
             if (json.cancelled) {
