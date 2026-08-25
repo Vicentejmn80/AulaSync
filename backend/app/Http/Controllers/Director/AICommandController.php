@@ -31,6 +31,8 @@ use Illuminate\Validation\ValidationException;
 class AICommandController extends Controller
 {
     private const PENDING_SESSION_KEY = 'director_ai_pending_actions';
+    private const PENDING_BATCH_SESSION_KEY = 'chat_pending_batch';
+    private const BATCH_QUEUE_KEY = 'director_ai_batch_queue';
     private const CHAT_MODE_KEY = 'chat_mode';
     private const CHAT_SUBJECT_KEY = 'chat_subject';
     private const CHAT_HISTORY_KEY = 'chat_history';
@@ -120,15 +122,19 @@ class AICommandController extends Controller
         }
         $chatMode = session()->get(self::CHAT_MODE_KEY, 'main_menu');
         $chatSubject = session()->get(self::CHAT_SUBJECT_KEY);
-        $hasPending = session()->has(self::PENDING_SESSION_KEY) || session()->has('chat_pending');
+        $hasPending = session()->has(self::PENDING_SESSION_KEY)
+            || session()->has('chat_pending')
+            || session()->has(self::PENDING_BATCH_SESSION_KEY);
 
         // PRIORIDAD 1: Mutación pendiente (confirmación)
+        if ($hasPending && $this->wantsOneByOneReview($text) && count(session(self::PENDING_SESSION_KEY, [])) > 1) {
+            return $this->startOneByOneReview();
+        }
         if ($hasPending && $this->isAffirmativeText($text)) {
-            return $this->executePending($request, $director);
+            return $this->executePendingBatch($request, $director);
         }
         if ($hasPending && $this->isNegativeText($text)) {
-            session()->forget(self::PENDING_SESSION_KEY);
-            session()->forget('chat_pending');
+            $this->forgetPendingActions();
             $this->conversationContext->clearPendingReferences();
             session()->put(self::CHAT_MODE_KEY, 'main_menu');
             session()->forget(self::CHAT_SUBJECT_KEY);
@@ -201,11 +207,11 @@ class AICommandController extends Controller
         // Respuestas cortas de confirmación ("sí", "sí, créalos", "confirmo")
         // completan la acción pendiente guardada en sesión, sin bucle sin contexto.
         if ($this->isAffirmativeText($text) && session()->has(self::PENDING_SESSION_KEY)) {
-            return $this->executePending($request, $director);
+            return $this->executePendingBatch($request, $director);
         }
 
         if ($this->isNegativeText($text) && session()->has(self::PENDING_SESSION_KEY)) {
-            session()->forget(self::PENDING_SESSION_KEY);
+            $this->forgetPendingActions();
             $this->conversationContext->clearPendingReferences();
 
             return response()->json([
@@ -231,9 +237,9 @@ class AICommandController extends Controller
             $text = $focus['working'];
 
             $actions = $this->enrichActionsFromText((array) ($interpreted['actions'] ?? []), $text);
-            $roster = $this->parseTeacherRosterList($director, $text);
-            $actions = $this->preferParsedTeacherRoster($director, $actions, $roster);
-            if ($actions !== [] && count($roster) < 2) {
+            $localBatch = $this->extractMultipleActions($director, $text);
+            $actions = $this->preferLocalTeacherBatch($actions, $localBatch);
+            if ($actions !== [] && count($localBatch) < 2) {
                 $actions = $this->mergeMissingIntentsFromText($director, $actions, $text);
             }
 
@@ -546,20 +552,9 @@ class AICommandController extends Controller
             ];
         }
 
-        session([self::PENDING_SESSION_KEY => $pending]);
-        $confirmations = collect($pending)
-            ->map(fn ($action) => [
-                'success' => true,
-                'message' => $this->confirmationMessageFor($action['intent'], $action['data']),
-            ])
-            ->all();
+        $this->rememberPendingActions($pending);
 
-        return response()->json([
-            'success' => true,
-            'requires_confirmation' => true,
-            'message' => $this->interpreter->composeReply($confirmations, true),
-            'pending_actions' => $pending,
-        ]);
+        return $this->pendingConfirmationResponse($pending);
     }
 
     private function createAuditLog(
@@ -744,6 +739,11 @@ class AICommandController extends Controller
         return $data;
     }
 
+    private function executePendingBatch(Request $request, User $director): JsonResponse
+    {
+        return $this->executePending($request, $director);
+    }
+
     private function executePending(Request $request, User $director): JsonResponse
     {
         // The client copy is display-only. Execute only the canonical server-side plan.
@@ -845,10 +845,24 @@ class AICommandController extends Controller
         }
 
         if ($failedActions === []) {
-            session()->forget(self::PENDING_SESSION_KEY);
+            $queued = array_values(session(self::BATCH_QUEUE_KEY, []));
+            if ($queued !== []) {
+                $next = array_shift($queued);
+                session([self::BATCH_QUEUE_KEY => $queued]);
+                $this->rememberPendingActions([$next]);
+                $remaining = count($queued) + 1;
+
+                return $this->pendingConfirmationResponse(
+                    [$next],
+                    "Listo el paso anterior. Siguiente acción (queda {$remaining}):"
+                );
+            }
+            $this->forgetPendingActions();
         } else {
             session([self::PENDING_SESSION_KEY => $failedActions]);
         }
+
+        $batchMessage = $this->formatBatchResults($results);
 
         return response()->json([
             'success' => $anySuccess,
@@ -856,10 +870,11 @@ class AICommandController extends Controller
             'requires_clarification' => $failedActions !== [],
             'pending_actions' => $failedActions !== [] ? $failedActions : null,
             'actions' => $results,
-            'message' => $this->interpreter->narrate(
+            'message' => $batchMessage ?? $this->interpreter->narrate(
                 (string) ($this->conversationContext->current()['last_user_text'] ?? ''),
                 $results,
             ),
+            'buttons' => $failedActions === [] ? [['id' => 'menu_main', 'label' => '🏠 Menú principal']] : $this->confirmationButtons(count($failedActions)),
         ]);
     }
 
@@ -977,6 +992,8 @@ class AICommandController extends Controller
                 'teacher_name' => $invite->name,
                 'invite_id' => $invite->id,
                 'status' => 'invitado',
+                'subject_name' => $courses->first()?->subject_name,
+                'grades' => $courses->pluck('grade')->unique()->values()->all(),
                 'courses' => $courses->map(fn ($course) => [
                     'course_id' => $course->id,
                     'subject_name' => $course->subject_name,
@@ -1316,6 +1333,230 @@ class AICommandController extends Controller
     }
 
     /**
+     * @param  array<int,array{intent:string,data:array,audit_log_id?:int}>  $pending
+     */
+    private function pendingConfirmationResponse(array $pending, ?string $prefix = null): JsonResponse
+    {
+        $message = $this->formatPendingConfirmation($pending);
+        if ($prefix !== null && $prefix !== '') {
+            $message = $prefix."\n\n".$message;
+        }
+
+        $queued = count(session(self::BATCH_QUEUE_KEY, []));
+
+        return response()->json([
+            'success' => true,
+            'requires_confirmation' => true,
+            'message' => $message,
+            'pending_actions' => $pending,
+            'buttons' => $this->confirmationButtons(count($pending) + $queued),
+        ]);
+    }
+
+    /**
+     * @param  array<int,array{intent:string,data:array,audit_log_id?:int}>  $pending
+     */
+    private function formatPendingConfirmation(array $pending): string
+    {
+        $n = count($pending);
+        $allTeachers = $n > 0 && collect($pending)->every(
+            fn ($action) => ($action['intent'] ?? '') === 'create_teacher'
+        );
+
+        if ($allTeachers && $n >= 2) {
+            $lines = ["Perfecto. He identificado {$n} profesores para crear:", ''];
+            $i = 1;
+            foreach ($pending as $action) {
+                $data = (array) ($action['data'] ?? []);
+                $name = trim((string) ($data['teacher_name'] ?? 'Profesor'));
+                $subject = trim((string) ($data['subject_name'] ?? ''));
+                $span = $this->formatGradeSpan((array) ($data['grades'] ?? []));
+                $detail = '';
+                if ($subject !== '' && $span !== '') {
+                    $detail = " → {$subject} ({$span})";
+                } elseif ($subject !== '') {
+                    $detail = " → {$subject}";
+                }
+                $lines[] = "{$i}. 👨‍🏫 {$name}{$detail}";
+                $i++;
+            }
+            $lines[] = '';
+            $lines[] = "¿Confirmas que quieres crear estos {$n} profesores?";
+            if ($n > 5) {
+                $lines[] = "¿Quieres confirmar las {$n} acciones o quieres que las revise una por una?";
+            }
+            $lines[] = "Responde 'sí' para confirmar.";
+
+            return implode("\n", $lines);
+        }
+
+        if ($n >= 2) {
+            $lines = ["Perfecto. He identificado {$n} acciones:", ''];
+            $i = 1;
+            foreach ($pending as $action) {
+                $lines[] = $i.'. '.$this->confirmationMessageFor(
+                    (string) ($action['intent'] ?? ''),
+                    (array) ($action['data'] ?? [])
+                );
+                $i++;
+            }
+            $lines[] = '';
+            $lines[] = "¿Confirmas que quieres ejecutar estas {$n} acciones?";
+            if ($n > 5) {
+                $lines[] = "¿Quieres confirmar las {$n} acciones o quieres que las revise una por una?";
+            }
+            $lines[] = "Responde 'sí' para confirmar.";
+
+            return implode("\n", $lines);
+        }
+
+        $body = $n === 1
+            ? $this->confirmationMessageFor((string) ($pending[0]['intent'] ?? ''), (array) ($pending[0]['data'] ?? []))
+            : 'Confirmar la operación.';
+
+        return "✨ {$body}\nResponde 'sí' para confirmar.";
+    }
+
+    /**
+     * @param  array<int,array{success?:bool,action_type?:string,message?:string,data?:array}>  $results
+     */
+    private function formatBatchResults(array $results): ?string
+    {
+        $all = collect($results);
+        $teachers = $all->filter(fn ($row) => ($row['action_type'] ?? '') === 'create_teacher');
+        if ($teachers->count() < 2 || $teachers->count() !== $all->count()) {
+            return null;
+        }
+
+        $ok = $teachers->filter(fn ($row) => ($row['success'] ?? true) !== false)->values();
+        $fail = $teachers->filter(fn ($row) => ($row['success'] ?? true) === false)->values();
+        $lines = [];
+        if ($ok->isNotEmpty()) {
+            $lines[] = '✅ Profesores creados exitosamente:';
+            foreach ($ok as $i => $row) {
+                $data = (array) ($row['data'] ?? []);
+                $name = trim((string) ($data['teacher_name'] ?? 'Profesor'));
+                $code = trim((string) ($data['invite_code'] ?? ''));
+                $subject = trim((string) ($data['subject_name'] ?? ''));
+                if ($subject === '') {
+                    $subject = trim((string) ($data['courses'][0]['subject_name'] ?? ''));
+                }
+                $grades = (array) ($data['grades'] ?? []);
+                if ($grades === []) {
+                    $grades = collect($data['courses'] ?? [])->pluck('grade')->unique()->values()->all();
+                }
+                $span = $this->formatGradeSpan($grades);
+                $detail = '';
+                if ($subject !== '' && $span !== '') {
+                    $detail = " ({$subject}, {$span})";
+                } elseif ($subject !== '') {
+                    $detail = " ({$subject})";
+                }
+                $codePart = $code !== '' ? " - Código: {$code}" : '';
+                $lines[] = ($i + 1).". {$name}{$detail}{$codePart}";
+            }
+        }
+        if ($fail->isNotEmpty()) {
+            $lines[] = '';
+            $lines[] = 'Quedó pendiente:';
+            foreach ($fail as $row) {
+                $lines[] = '- '.trim((string) ($row['message'] ?? 'No se pudo crear.'));
+            }
+        }
+        if ($ok->isNotEmpty() && $fail->isEmpty()) {
+            $lines[] = '';
+            $lines[] = 'Todos han recibido sus códigos de invitación. ¿Necesitas algo más?';
+        }
+
+        return implode("\n", $lines);
+    }
+
+    /**
+     * @param  array<int,array{intent:string,data:array,audit_log_id?:int}>  $pending
+     */
+    private function rememberPendingActions(array $pending): void
+    {
+        $items = collect($pending)->map(function ($action) {
+            $data = (array) ($action['data'] ?? []);
+
+            return [
+                'intent' => $action['intent'] ?? '',
+                'name' => $data['teacher_name'] ?? ($data['names'][0] ?? null),
+                'subject' => $data['subject_name'] ?? null,
+                'grades' => $data['grades'] ?? null,
+            ];
+        })->all();
+
+        $payload = [
+            'action' => count($pending) > 1 ? 'batch_create_teachers' : 'pending_action',
+            'type' => count($pending) > 1 ? 'multiple_confirmation' : 'confirmation',
+            'items' => $items,
+            'total' => count($pending),
+        ];
+
+        session([
+            self::PENDING_SESSION_KEY => $pending,
+            self::PENDING_BATCH_SESSION_KEY => $payload,
+            'chat_pending' => $payload,
+        ]);
+    }
+
+    private function forgetPendingActions(): void
+    {
+        session()->forget(self::PENDING_SESSION_KEY);
+        session()->forget(self::PENDING_BATCH_SESSION_KEY);
+        session()->forget(self::BATCH_QUEUE_KEY);
+        session()->forget('chat_pending');
+    }
+
+    private function startOneByOneReview(): JsonResponse
+    {
+        $pending = array_values(session(self::PENDING_SESSION_KEY, []));
+        if (count($pending) < 2) {
+            return $this->pendingConfirmationResponse($pending);
+        }
+
+        $first = $pending[0];
+        $rest = array_slice($pending, 1);
+        session([self::BATCH_QUEUE_KEY => $rest]);
+        $this->rememberPendingActions([$first]);
+
+        return $this->pendingConfirmationResponse(
+            [$first],
+            'Vamos uno por uno. Primera acción (1 de '.(count($rest) + 1).'):'
+        );
+    }
+
+    /**
+     * @return array<int,array{id:string,label:string,color?:string}>
+     */
+    private function confirmationButtons(int $count): array
+    {
+        $yesLabel = $count > 1 ? '✅ Sí, crear todos' : '✅ Sí';
+        $noLabel = $count > 1 ? '❌ Cancelar todo' : '❌ No';
+        $buttons = [
+            ['id' => 'confirm_yes', 'label' => $yesLabel, 'color' => 'green'],
+            ['id' => 'confirm_no', 'label' => $noLabel, 'color' => 'red'],
+        ];
+        if ($count > 5) {
+            array_splice($buttons, 1, 0, [[
+                'id' => 'confirm_one_by_one',
+                'label' => '🔎 Revisar uno por uno',
+                'color' => 'orange',
+            ]]);
+        }
+
+        return $buttons;
+    }
+
+    private function wantsOneByOneReview(string $text): bool
+    {
+        $value = $this->normalizedText($text);
+
+        return (bool) preg_match('/\b(?:uno por uno|una por una|revis(?:a|ar)\s+(?:las\s+)?una)\b/u', $value);
+    }
+
+    /**
      * @param  array{teacher_name?:string,subject_name?:string|null,grades?:array}  $data
      */
     private function summarizeCreateTeacher(array $data): string
@@ -1610,9 +1851,9 @@ class AICommandController extends Controller
     private function detectMultiIntentActions(User $director, string $text): array
     {
         $actions = [];
-        $roster = $this->parseTeacherRosterList($director, $text);
-        if (count($roster) >= 2) {
-            $actions = $roster;
+        $batch = $this->extractMultipleActions($director, $text);
+        if (count($batch) >= 2) {
+            $actions = $batch;
         }
 
         $clauses = $this->splitIntentClauses($text);
@@ -1633,7 +1874,7 @@ class AICommandController extends Controller
                 str_contains($value, 'curso') || str_contains($value, 'materia') || str_contains($value, 'asignatura')
             ) && (bool) preg_match('/\b(?:asigna(?:lo|le|r|les)?|inscribe(?:lo|le|r|les)?|matricula(?:lo|le|r|les)?|agregalo|añade|anade)\b/', $value);
 
-            if ($wantsTeacher && count($roster) < 2) {
+            if ($wantsTeacher && count($batch) < 2) {
                 $names = $this->extractTeacherNames($clause);
                 if ($names === []) {
                     [$data, $msg] = $this->parseCreateTeacher($director, $clause);
@@ -1656,7 +1897,7 @@ class AICommandController extends Controller
                 }
             }
 
-            if ($wantsAssignTeacher && count($roster) < 2) {
+            if ($wantsAssignTeacher && count($batch) < 2) {
                 $createAlreadyHasCourses = collect($actions)->contains(
                     fn ($action) => ($action['intent'] ?? '') === 'create_teacher'
                         && ! empty($action['data']['subject_name'])
@@ -3037,6 +3278,11 @@ class AICommandController extends Controller
         }
         $grades = $this->extractGrades($text);
         $teacher = $this->sanitizePersonName($this->extractTeacherName($text));
+        $teacherActions = collect($actions)->where('intent', 'create_teacher');
+        $hasMultipleTeachers = $teacherActions->count() >= 2;
+        $hasPerTeacherSubjects = $teacherActions
+            ->filter(fn ($action) => trim((string) ($action['data']['subject_name'] ?? '')) !== '')
+            ->count() >= 2;
 
         foreach ($actions as &$action) {
             $intent = (string) ($action['intent'] ?? '');
@@ -3045,10 +3291,11 @@ class AICommandController extends Controller
                 $data['teacher_name'] = $this->sanitizePersonName((string) $data['teacher_name']) ?? $data['teacher_name'];
             }
             if (in_array($intent, ['create_teacher', 'create_course', 'assign_teacher'], true)) {
-                if (empty($data['subject_name']) && $subject) {
+                $skipSharedCourseCopy = $intent === 'create_teacher' && $hasMultipleTeachers && $hasPerTeacherSubjects;
+                if (! $skipSharedCourseCopy && empty($data['subject_name']) && $subject) {
                     $data['subject_name'] = $subject;
                 }
-                if (empty($data['grades']) && $grades !== []) {
+                if (! $skipSharedCourseCopy && empty($data['grades']) && $grades !== []) {
                     $data['grades'] = $grades;
                 }
                 if (empty($data['teacher_name']) && $teacher) {
@@ -3111,11 +3358,12 @@ class AICommandController extends Controller
 
     /**
      * @param  array<int,array{intent:string,data:array}>  $actions
+     * @param  array<int,array{intent:string,data:array}>  $localBatch
      * @return array<int,array{intent:string,data:array}>
      */
-    private function preferParsedTeacherRoster(User $director, array $actions, array $roster): array
+    private function preferLocalTeacherBatch(array $actions, array $localBatch): array
     {
-        if (count($roster) < 2) {
+        if (count($localBatch) < 2) {
             return $actions;
         }
 
@@ -3124,7 +3372,157 @@ class AICommandController extends Controller
             fn ($action) => ! in_array($action['intent'] ?? '', ['create_teacher', 'assign_teacher', 'create_course'], true)
         ));
 
-        return array_values(array_merge($roster, $kept));
+        return array_values(array_merge($localBatch, $kept));
+    }
+
+    /**
+     * Extrae todas las acciones de un mensaje con varias personas (texto o voz).
+     *
+     * @return array<int,array{intent:string,data:array}>
+     */
+    private function extractMultipleActions(User $director, string $text): array
+    {
+        $span = $this->teacherListSpan($text);
+        $roster = $this->parseTeacherRosterList($director, $span);
+        if (count($roster) >= 2) {
+            return $roster;
+        }
+
+        $names = $this->extractMultipleNames($span);
+        if (count($names) < 2) {
+            return [];
+        }
+        if (count($names) > 20) {
+            throw ValidationException::withMessages([
+                'teacher' => 'Veo más de 20 profesores en tu mensaje. Parte la lista en dos envíos.',
+            ]);
+        }
+
+        $withOwnSubject = 0;
+        $prepared = [];
+        foreach ($names as $name) {
+            $slice = $this->sliceForName($span, $name, $names);
+            $subject = $this->extractKnownSubject($slice);
+            $grades = $this->extractGrades($slice);
+            if ($subject) {
+                $withOwnSubject++;
+            }
+            $prepared[] = [
+                'name' => $name,
+                'subject' => $subject,
+                'grades' => $grades,
+            ];
+        }
+
+        $sharedSubject = $withOwnSubject === 0 ? $this->extractKnownSubject($span) : null;
+        $sharedGrades = $withOwnSubject === 0 ? $this->extractGrades($span) : [];
+
+        $actions = [];
+        foreach ($prepared as $item) {
+            $subject = $item['subject'] ?? $sharedSubject;
+            $grades = $item['grades'] !== [] ? $item['grades'] : $sharedGrades;
+            $actions[] = [
+                'intent' => 'create_teacher',
+                'data' => [
+                    'teacher_name' => $item['name'],
+                    'subject_name' => $subject,
+                    'grades' => $grades,
+                    'missing_grades' => $this->missingGradesFor($director, $grades),
+                    'expires_in_days' => 30,
+                ],
+            ];
+        }
+
+        return $this->dedupeDetectedActions($actions);
+    }
+
+    /**
+     * Extrae todos los nombres de una lista: "María Clara, Ricardo Gutiérrez y Juan Carlos Guido".
+     *
+     * @return array<int,string>
+     */
+    private function extractMultipleNames(string $text): array
+    {
+        $normalized = $this->normalizedText($text);
+        $isTeacherContext = $this->wantsCreateTeacherPhrase($normalized)
+            || $this->looksLikeStaffingList($text)
+            || (bool) preg_match('/\b(?:profesor(?:a|es)?|docentes?|maestro[as]?)\b/u', $normalized);
+        if (! $isTeacherContext) {
+            return [];
+        }
+
+        if (preg_match('/(?:profesor(?:a|es)?|docentes?|maestro[as]?)\b[^:]{0,180}[:\-]\s*(.+)$/ius', $text, $m)) {
+            $names = $this->splitAndSanitizeNames(trim((string) $m[1]));
+            if (count($names) >= 2) {
+                return $names;
+            }
+        }
+
+        if (preg_match(
+            '/(?:crea(?:r|me|es|e|o)?|agrega(?:r)?|registra(?:r)?|invita(?:r)?)\s+(?:a\s+|al\s+)?(?:los\s+|las\s+|me\s+)?(?:siguientes\s+)?(?:profesor(?:a|es)?|docentes?|maestro[as]?)\s*:?\s*(.+)$/ius',
+            $text,
+            $m
+        )) {
+            $names = $this->splitAndSanitizeNames(trim((string) $m[1]));
+            if (count($names) >= 2) {
+                return $names;
+            }
+        }
+
+        if (preg_match('/(?:crea(?:r|me)?|agrega(?:r)?|registra(?:r)?)\s+a\s+(.+)$/ius', $text, $m)) {
+            $chunk = preg_replace(
+                '/\b(?:los\s+|las\s+)?(?:siguientes\s+)?(?:profesor(?:a|es)?|docentes?|maestro[as]?)\s*:?\s*/iu',
+                '',
+                (string) $m[1]
+            ) ?? (string) $m[1];
+            $names = $this->splitAndSanitizeNames(trim($chunk));
+            if (count($names) >= 2) {
+                return $names;
+            }
+        }
+
+        return $this->extractTeacherNames($text);
+    }
+
+    /**
+     * Recorta el mensaje a la parte de profesores, sin la cláusula de alumnos.
+     */
+    private function teacherListSpan(string $text): string
+    {
+        $clauses = $this->splitIntentClauses($text);
+        $teacherBits = [];
+        foreach ($clauses as $clause) {
+            $value = $this->normalizedText($clause);
+            if ($this->wantsCreateTeacherPhrase($value) || $this->looksLikeStaffingList($clause)) {
+                $teacherBits[] = $clause;
+            }
+        }
+
+        return $teacherBits !== [] ? implode(' ', $teacherBits) : $text;
+    }
+
+    /**
+     * @param  array<int,string>  $allNames
+     */
+    private function sliceForName(string $text, string $name, array $allNames): string
+    {
+        $pos = mb_stripos($text, $name);
+        if ($pos === false) {
+            return '';
+        }
+
+        $end = mb_strlen($text);
+        foreach ($allNames as $other) {
+            if (mb_strtolower($other) === mb_strtolower($name)) {
+                continue;
+            }
+            $otherPos = mb_stripos($text, $other, $pos + 1);
+            if ($otherPos !== false && $otherPos < $end) {
+                $end = $otherPos;
+            }
+        }
+
+        return trim(mb_substr($text, $pos, $end - $pos));
     }
 
     private function wantsCreateTeacherPhrase(string $value): bool
@@ -3705,7 +4103,15 @@ class AICommandController extends Controller
             return true;
         }
 
-        if (preg_match('/^si(?:\s+(crealos|crealos igualmente|crearlos|confirmo|confirmado|dale|adelante|hazlo|por favor|proceder|procede))?$/u', $value)) {
+        if (preg_match('/^si(?:\s+(crealos|crealos igualmente|crearlos|crear todos|crear todas|crear estos|confirmo|confirmado|dale|adelante|hazlo|por favor|proceder|procede))?$/u', $value)) {
+            return true;
+        }
+
+        if (preg_match('/^si\b/u', $value)
+            && ! preg_match('/\buno por uno|\buna por una/u', $value)
+            && preg_match('/\b(?:crealos|crearlos|crear todos|crear todas|crear estos|confirmo|confirmado|dale|adelante|hazlo|proceder|procede)\b/u', $value)
+            && mb_strlen($value) <= 80
+        ) {
             return true;
         }
 
@@ -3730,7 +4136,7 @@ class AICommandController extends Controller
         $value = $this->normalizedText($text);
         $value = trim(preg_replace('/[.!?]+$/', '', $value) ?? $value);
 
-        return (bool) preg_match('/^(?:no|cancelar?|cancela|olvidalo|dejalo|detente|mejor no)$/', $value);
+        return (bool) preg_match('/^(?:no|cancelar?|cancela(?:r)?(?:\s+todo)?|olvidalo|dejalo|detente|mejor no)$/', $value);
     }
 
     private function formatGrade(int $n): string
@@ -3825,17 +4231,19 @@ class AICommandController extends Controller
             'back' => 'volver al menú principal',
         ];
         $textToSend = $customText && trim($customText) !== '' ? $customText : ($textMap[$buttonAction] ?? $buttonAction);
-        if ($buttonAction === 'back') {
+        if ($buttonAction === 'back' || $buttonAction === 'menu_main') {
             session()->put(self::CHAT_MODE_KEY, 'main_menu');
             session()->forget(self::CHAT_SUBJECT_KEY);
             return $this->showMainMenu(null);
         }
+        if ($buttonAction === 'confirm_one_by_one' && session()->has(self::PENDING_SESSION_KEY)) {
+            return $this->startOneByOneReview();
+        }
         if ($buttonAction === 'confirm_yes' && session()->has(self::PENDING_SESSION_KEY)) {
-            return $this->executePending(request(), $director);
+            return $this->executePendingBatch(request(), $director);
         }
         if ($buttonAction === 'confirm_no' && session()->has(self::PENDING_SESSION_KEY)) {
-            session()->forget(self::PENDING_SESSION_KEY);
-            session()->forget('chat_pending');
+            $this->forgetPendingActions();
             $this->conversationContext->clearPendingReferences();
             session()->put(self::CHAT_MODE_KEY, 'main_menu');
             session()->forget(self::CHAT_SUBJECT_KEY);

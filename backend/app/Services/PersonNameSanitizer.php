@@ -16,6 +16,7 @@ class PersonNameSanitizer
         }
 
         $name = trim(preg_replace('/\s+/u', ' ', $name) ?? $name);
+        $name = preg_replace('/\s*\([^)]*\)\s*/u', ' ', $name) ?? $name;
         $name = trim($name, " \t\n\r\0\x0B,.;:");
 
         if (preg_match('/llamad[oa]\s+(.+)$/iu', $name, $called)) {
@@ -29,6 +30,7 @@ class PersonNameSanitizer
         $name = preg_replace('/^(?:profesor(?:a)?|docente)\s+/iu', '', $name) ?? $name;
         $name = preg_replace('/^(?:de\s+(?:la\s+|el\s+)?)(?:'.self::SUBJECT_ALIASES.')\s+/iu', '', $name) ?? $name;
         $name = preg_replace('/\s+de\s+(?:la\s+|el\s+)?(?:'.self::SUBJECT_ALIASES.')\b.*$/iu', '', $name) ?? $name;
+        $name = preg_replace('/\s+(?:'.self::SUBJECT_ALIASES.')\b.*$/iu', '', $name) ?? $name;
 
         $cutPattern = '/\s+(?:'
             .'(?:y\s+)?(?:as[ií]gna(?:lo|le|r|les)?|inscr[ií]be(?:lo|le|r)?|matr[ií]cula(?:lo|le|r)?|agrega(?:lo|le)?|añade|anade|crea(?:r|me)?)'

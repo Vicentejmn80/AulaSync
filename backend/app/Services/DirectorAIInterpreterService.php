@@ -192,7 +192,14 @@ Reglas operativas:
 13. LISTA DE PROFESORES: si el director pide crear VARIOS profesores (con o sin "siguientes", paréntesis, comas o "y"), llama UNA create_teacher POR CADA persona, con su materia y grados. Nunca respondas con un menú de capacidades ni con un solo ejemplo.
     "quiero que me crees a los siguientes profesores: Jorge Alarcón (inglés de 1ro a 6to), Miguel Zambrano (computación 1ro a 6to)"
     → dos create_teacher en paralelo (Jorge Alarcón/Inglés/1ro-6to y Miguel Zambrano/Computación/1ro-6to).
-    PROHIBIDO contestar "Puedo crear y eliminar..." o pedir que reformulen si la lista ya trae nombre + materia + grados.
+    "Crea a los siguientes profesores: María Clara, Ricardo Gutiérrez, Jorge Ramírez, Juan Carlos Guido"
+    → CUATRO create_teacher (una por nombre). NUNCA te quedes solo con el primero o el último.
+    PROHIBIDO contestar "Puedo crear y eliminar..." o pedir que reformulen si la lista ya trae nombres.
+
+DETECCIÓN MÚLTIPLE (obligatoria):
+- Si el usuario menciona VARIAS acciones o VARIOS nombres en un solo mensaje (texto o voz), identifica TODAS.
+- Agrupa las del mismo tipo (todas las creaciones de profesores) y llama las tools en paralelo.
+- Laravel muestra el resumen de confirmación y ejecuta el lote al confirmar. Tú NO ejecutas: solo extrae todas las acciones.
 
 Memoria conversacional: {$memoryJson}
 
@@ -208,7 +215,7 @@ PROMPT;
     {
         $defs = [
             'create_teacher' => [
-                'description' => 'Crear/invitar profesor y opcionalmente asignarle una materia en varios grados. teacher_name SOLO el nombre propio (sin "también", "que te dije", "llamado" ni la materia).',
+                'description' => 'Crear/invitar profesor y opcionalmente asignarle una materia en varios grados. teacher_name SOLO el nombre propio (sin "también", "que te dije", "llamado" ni la materia). Si el mensaje lista VARIOS profesores, llama esta tool UNA vez por cada nombre. Nunca te quedes con uno solo.',
                 'properties' => [
                     'teacher_name' => ['type' => 'string'],
                     'subject_name' => ['type' => ['string', 'null']],
@@ -572,13 +579,18 @@ PROMPT;
                 return "✨ {$body}\nResponde 'sí' para confirmar.";
             }
 
+            $n = $clean->count();
             $lines = $clean->map(function ($msg, $index) {
                 $msg = trim((string) preg_replace('/^Voy a\s+/iu', '', $msg));
 
                 return ($index + 1).'. '.$msg;
             });
+            $review = $n > 5
+                ? "\n¿Quieres confirmar las {$n} acciones o quieres que las revise una por una?"
+                : '';
 
-            return "✨ Voy a realizar las siguientes acciones:\n".$lines->implode("\n")."\nResponde 'sí' para confirmar.";
+            return "Perfecto. He identificado {$n} acciones:\n\n".$lines->implode("\n")
+                ."\n\n¿Confirmas que quieres ejecutar estas {$n} acciones?{$review}\nResponde 'sí' para confirmar.";
         }
 
         $ok = collect($results)->filter(fn ($row) => ($row['success'] ?? true) !== false)->pluck('message')->filter();

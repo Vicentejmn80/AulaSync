@@ -119,7 +119,7 @@ class DirectorAICommandTest extends TestCase
         $this->assertSame('2do', $student['data']['grade'] ?? null);
 
         $message = (string) $draft->json('message');
-        $this->assertStringContainsString('Voy a realizar las siguientes acciones', $message);
+        $this->assertStringContainsString('He identificado', $message);
         $this->assertStringContainsString('Mariano Garcia', $message);
         $this->assertStringContainsString('Laureano Marquez', $message);
         $this->assertStringContainsString("Responde 'sí' para confirmar", $message);
@@ -2286,6 +2286,110 @@ class DirectorAICommandTest extends TestCase
         $this->assertSame(3, Course::query()->where('colegio_id', $colegio->id)->where('subject_name', 'Biología')->count());
         $this->assertSame(4, Course::query()->where('colegio_id', $colegio->id)->where('subject_name', 'Física')->count());
         $this->assertSame(6, Course::query()->where('colegio_id', $colegio->id)->where('subject_name', 'Religión')->count());
+    }
+
+    public function test_comma_separated_teacher_names_create_all_pending_actions(): void
+    {
+        [$director, $colegio] = $this->directorContext();
+
+        $prompt = 'Crea a los siguientes profesores: María Clara, Ricardo Gutiérrez, Jorge Ramírez, Juan Carlos Guido';
+        $draft = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => $prompt,
+        ]);
+
+        $draft->assertOk(json_encode($draft->json(), JSON_UNESCAPED_UNICODE))
+            ->assertJsonPath('requires_confirmation', true);
+
+        $pending = collect($draft->json('pending_actions'));
+        $this->assertCount(4, $pending, json_encode($draft->json(), JSON_UNESCAPED_UNICODE));
+        $this->assertTrue($pending->every(fn ($action) => ($action['intent'] ?? '') === 'create_teacher'));
+
+        $names = $pending->pluck('data.teacher_name')->all();
+        $this->assertEqualsCanonicalizing([
+            'María Clara',
+            'Ricardo Gutiérrez',
+            'Jorge Ramírez',
+            'Juan Carlos Guido',
+        ], $names);
+
+        $message = (string) $draft->json('message');
+        $this->assertStringContainsString('He identificado 4 profesores', $message);
+        $this->assertStringContainsString('María Clara', $message);
+        $this->assertStringContainsString('Juan Carlos Guido', $message);
+        $this->assertStringContainsString('¿Confirmas que quieres crear estos 4 profesores?', $message);
+
+        $buttons = collect($draft->json('buttons'))->pluck('id')->all();
+        $this->assertContains('confirm_yes', $buttons);
+        $this->assertContains('confirm_no', $buttons);
+
+        $execute = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'sí',
+        ]);
+        $execute->assertOk();
+        $this->assertTrue((bool) $execute->json('any_success'), json_encode($execute->json(), JSON_UNESCAPED_UNICODE));
+
+        foreach ([
+            'María Clara',
+            'Ricardo Gutiérrez',
+            'Jorge Ramírez',
+            'Juan Carlos Guido',
+        ] as $name) {
+            $this->assertDatabaseHas('teacher_invites', [
+                'colegio_id' => $colegio->id,
+                'name' => $name,
+            ]);
+        }
+        $this->assertSame(4, TeacherInvite::where('colegio_id', $colegio->id)->count());
+
+        $resultMessage = (string) $execute->json('message');
+        $this->assertStringContainsString('Profesores creados exitosamente', $resultMessage);
+        $this->assertStringContainsString('María Clara', $resultMessage);
+        $this->assertStringContainsString('Juan Carlos Guido', $resultMessage);
+        $this->assertStringContainsString('Código:', $resultMessage);
+    }
+
+    public function test_teacher_list_with_per_person_subjects_without_parentheses(): void
+    {
+        [$director] = $this->directorContext();
+
+        $prompt = 'Crea a los profesores María Clara Lenguaje 1ro a 6to, Ricardo Gutiérrez Matemática 1ro a 6to, Jorge Ramírez Biología 3ro a 6to y Juan Carlos Guido Física 3ro a 6to';
+        $draft = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => $prompt,
+        ]);
+
+        $draft->assertOk(json_encode($draft->json(), JSON_UNESCAPED_UNICODE))
+            ->assertJsonPath('requires_confirmation', true);
+
+        $byName = collect($draft->json('pending_actions'))->keyBy(fn ($action) => $action['data']['teacher_name'] ?? '');
+        $this->assertCount(4, $byName);
+        $this->assertSame('Lenguaje', $byName['María Clara']['data']['subject_name'] ?? null);
+        $this->assertSame(['1ro', '2do', '3ro', '4to', '5to', '6to'], $byName['María Clara']['data']['grades'] ?? null);
+        $this->assertSame('Matemática', $byName['Ricardo Gutiérrez']['data']['subject_name'] ?? null);
+        $this->assertSame('Biología', $byName['Jorge Ramírez']['data']['subject_name'] ?? null);
+        $this->assertSame(['3ro', '4to', '5to', '6to'], $byName['Jorge Ramírez']['data']['grades'] ?? null);
+        $this->assertSame('Física', $byName['Juan Carlos Guido']['data']['subject_name'] ?? null);
+
+        $message = (string) $draft->json('message');
+        $this->assertStringContainsString('Lenguaje', $message);
+        $this->assertStringContainsString('Física', $message);
+    }
+
+    public function test_more_than_five_teachers_asks_to_review_one_by_one(): void
+    {
+        [$director] = $this->directorContext();
+
+        $prompt = 'Crea a los siguientes profesores: Ana Perez, Bruno Diaz, Carla Soto, Diego Luna, Elena Rios, Fabio Cruz';
+        $draft = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => $prompt,
+        ]);
+
+        $draft->assertOk(json_encode($draft->json(), JSON_UNESCAPED_UNICODE))
+            ->assertJsonPath('requires_confirmation', true);
+        $this->assertCount(6, $draft->json('pending_actions'));
+        $message = (string) $draft->json('message');
+        $this->assertStringContainsString('He identificado 6 profesores', $message);
+        $this->assertStringContainsString('una por una', $message);
+        $this->assertContains('confirm_one_by_one', collect($draft->json('buttons'))->pluck('id')->all());
     }
 
     public function test_crea_un_profesor_llamado_does_not_return_generic_menu(): void

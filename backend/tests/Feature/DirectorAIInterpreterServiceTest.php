@@ -205,7 +205,7 @@ class DirectorAIInterpreterServiceTest extends TestCase
             ['message' => 'Crear al Alumno Laureano Márquez en 2do Grado (Lenguaje).'],
         ], true);
 
-        $this->assertStringContainsString('Voy a realizar las siguientes acciones', $reply);
+        $this->assertStringContainsString('He identificado 2 acciones', $reply);
         $this->assertStringContainsString('1. Crear al Profesor Mariano García', $reply);
         $this->assertStringContainsString('2. Crear al Alumno Laureano Márquez', $reply);
         $this->assertStringContainsString("Responde 'sí' para confirmar", $reply);
@@ -264,7 +264,9 @@ class DirectorAIInterpreterServiceTest extends TestCase
                 && str_contains($system, 'Total de profesores activos:')
                 && str_contains($system, 'Colegio Central')
                 && str_contains($system, 'José Martínez')
-                && str_contains($system, 'DOC-ABCD');
+                && str_contains($system, 'DOC-ABCD')
+                && str_contains($system, 'DETECCIÓN MÚLTIPLE')
+                && str_contains($system, 'CUATRO create_teacher');
         });
     }
 }
