@@ -12,6 +12,41 @@
         <button class="btn" type="submit">Abrir dashboard de director</button>
     </form>
 
+    @if (session('invitation_url'))
+        <div class="card">
+            <h3>Enlace mágico de onboarding</h3>
+            <p class="sub">Compártelo con el director. Vence en 48 horas. Cuando lo acepte, su cuenta queda permanente y entra por /login.</p>
+            <input type="text" readonly value="{{ session('invitation_url') }}" style="width:100%;">
+        </div>
+    @endif
+
+    <div class="card">
+        <h3>Enviar enlace mágico de onboarding al director</h3>
+        <form method="POST" action="{{ route('super-admin.colegios.invite-director', $detail['colegio']) }}" class="filters">
+            @csrf
+            <div>
+                <label>Correo del director</label>
+                <input type="email" name="email" required placeholder="director@colegio.edu">
+            </div>
+            <button class="btn" type="submit"><i class="fa-solid fa-link"></i> Generar enlace</button>
+        </form>
+        @if (($pendingInvitations ?? collect())->isNotEmpty())
+            <table style="margin-top:14px;">
+                <thead><tr><th>Correo</th><th>Estado</th><th>Vence</th><th>Enlace</th></tr></thead>
+                <tbody>
+                    @foreach ($pendingInvitations as $invite)
+                        <tr>
+                            <td>{{ $invite->email }}</td>
+                            <td>{{ $invite->isPending() ? 'Pendiente' : 'Vencida' }}</td>
+                            <td>{{ $invite->expires_at?->format('d/m/Y H:i') }}</td>
+                            <td><input type="text" readonly value="{{ $invite->acceptUrl() }}"></td>
+                        </tr>
+                    @endforeach
+                </tbody>
+            </table>
+        @endif
+    </div>
+
     <div class="grid">
         <div class="stat"><b>{{ $detail['overview']['usuarios_30d'] }}</b><span>Activos 30d</span></div>
         <div class="stat"><b>{{ $detail['usage']['actividades'] }}</b><span>Actividades</span></div>

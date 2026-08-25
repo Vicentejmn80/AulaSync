@@ -2,10 +2,13 @@
 
 namespace App\Http\Controllers;
 
+use App\Helpers\InviteCodeHelper;
 use App\Models\Colegio;
 use App\Models\Course;
+use App\Models\Invitation;
 use App\Models\Student;
 use App\Models\User;
+use App\Services\InvitationService;
 use App\Services\SuperAdminAnalyticsService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -15,7 +18,10 @@ use Illuminate\View\View;
 
 class SuperAdminController extends Controller
 {
-    public function __construct(private SuperAdminAnalyticsService $analytics) {}
+    public function __construct(
+        private SuperAdminAnalyticsService $analytics,
+        private InvitationService $invitations,
+    ) {}
 
     public function index(Request $request): View
     {
@@ -51,7 +57,57 @@ class SuperAdminController extends Controller
 
         return $this->section($request, 'schools', 'super-admin.school', [
             'detail' => $this->analytics->schoolDetail($colegio, $filters),
+            'pendingInvitations' => Invitation::query()
+                ->where('colegio_id', $colegio->id)
+                ->whereNull('accepted_at')
+                ->latest()
+                ->get(),
         ]);
+    }
+
+    public function storeSchool(Request $request): RedirectResponse
+    {
+        $this->assertCanManage();
+        $data = $request->validate([
+            'name' => ['required', 'string', 'max:180'],
+            'director_email' => ['required', 'email', 'max:180'],
+        ]);
+
+        $inviteCode = InviteCodeHelper::generateUnique($data['name']);
+        $colegio = Colegio::create([
+            'name' => trim($data['name']),
+            'invite_code' => $inviteCode,
+            'codes_pin' => Colegio::hashPinFromInvite($inviteCode),
+        ]);
+
+        $invitation = $this->invitations->issue([
+            'email' => $data['director_email'],
+            'role' => Invitation::ROLE_DIRECTOR,
+            'colegio_id' => $colegio->id,
+        ], $request->user());
+
+        return redirect()
+            ->route('super-admin.colegios.show', $colegio)
+            ->with('success', 'Colegio creado. Copia el enlace mágico del director o envíalo por correo.')
+            ->with('invitation_url', $invitation->acceptUrl());
+    }
+
+    public function inviteDirector(Request $request, Colegio $colegio): RedirectResponse
+    {
+        $this->assertCanManage();
+        $data = $request->validate([
+            'email' => ['required', 'email', 'max:180'],
+        ]);
+
+        $invitation = $this->invitations->issue([
+            'email' => $data['email'],
+            'role' => Invitation::ROLE_DIRECTOR,
+            'colegio_id' => $colegio->id,
+        ], $request->user());
+
+        return back()
+            ->with('success', 'Enlace mágico listo para el director. Vence en 48 horas.')
+            ->with('invitation_url', $invitation->acceptUrl());
     }
 
     public function health(Request $request): View

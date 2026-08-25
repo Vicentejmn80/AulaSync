@@ -33,11 +33,44 @@
                 {{ session('success') }}
             </div>
         @endif
+        @if(session('invitation_url'))
+            <div class="director-alert-success mb-4">
+                Enlace mágico: <span class="director-code">{{ session('invitation_url') }}</span>
+            </div>
+        @endif
         @if($errors->any())
             <div class="director-alert-error mb-4">
                 {{ $errors->first() }}
             </div>
         @endif
+
+        <section class="director-card mb-6">
+            <h2 class="director-section-title mb-4">Invitar docente por correo</h2>
+            <p class="director-page-subtitle mb-4">Genera un enlace mágico. El docente crea su cuenta (nombre + contraseña) y después entra por el login tradicional.</p>
+            <form method="POST" action="{{ route('director.profesores.invite-link') }}" class="grid gap-4 md:grid-cols-2">
+                @csrf
+                <div class="md:col-span-2">
+                    <label class="director-label" for="magic-email">Correo del docente *</label>
+                    <input id="magic-email" name="email" type="email" required placeholder="docente@colegio.edu" class="director-input">
+                </div>
+                <div>
+                    <button type="submit" class="director-btn-primary">Invitar docente</button>
+                </div>
+            </form>
+            @if(($emailInvites ?? collect())->isNotEmpty())
+                <div class="mt-4 space-y-2">
+                    @foreach($emailInvites as $emailInvite)
+                        <div class="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 p-3 text-sm">
+                            <div>
+                                <p class="font-bold">{{ $emailInvite->email }}</p>
+                                <p class="text-xs text-slate-500">{{ $emailInvite->isPending() ? 'Pendiente' : 'Vencida' }} · vence {{ $emailInvite->expires_at?->format('d/m H:i') }}</p>
+                            </div>
+                            <input class="director-input max-w-xl" readonly value="{{ $emailInvite->acceptUrl() }}">
+                        </div>
+                    @endforeach
+                </div>
+            @endif
+        </section>
 
         <section class="director-card mb-6">
             <h2 class="director-section-title mb-4">Invitar docente</h2>

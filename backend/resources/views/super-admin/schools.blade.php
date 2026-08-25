@@ -4,6 +4,30 @@
     <h1>Salud de colegios</h1>
     <p class="sub">Adopción por colegio con datos reales. Activo = entró en los últimos 7 días; en riesgo = 8–30 días; inactivo = sin acceso en 30 días.</p>
 
+    @if (session('invitation_url'))
+        <div class="card">
+            <h3>Enlace mágico generado</h3>
+            <p class="sub">Cópialo y envíaselo al director. Vence en 48 horas.</p>
+            <input type="text" readonly value="{{ session('invitation_url') }}" style="width:100%;">
+        </div>
+    @endif
+
+    <div class="card">
+        <h3>Registrar colegio y enviar enlace al director</h3>
+        <form method="POST" action="{{ route('super-admin.schools.store') }}" class="filters">
+            @csrf
+            <div>
+                <label>Nombre del colegio</label>
+                <input type="text" name="name" required maxlength="180" placeholder="U.E. Aula Nueva">
+            </div>
+            <div>
+                <label>Correo del director</label>
+                <input type="email" name="director_email" required placeholder="director@colegio.edu">
+            </div>
+            <button class="btn" type="submit"><i class="fa-solid fa-paper-plane"></i> Crear y enviar enlace</button>
+        </form>
+    </div>
+
     <div class="card">
         @if ($schools->isEmpty())
             <p class="empty">No hay colegios registrados.</p>

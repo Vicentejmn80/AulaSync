@@ -18,6 +18,7 @@ use App\Http\Controllers\Director\ReportCardController as DirectorReportCardCont
 use App\Http\Controllers\Director\StaffController as DirectorStaffController;
 use App\Http\Controllers\Director\StudentController as DirectorStudentController;
 use App\Http\Controllers\FamilyCodeController;
+use App\Http\Controllers\InvitationController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\OnboardingController;
 use App\Http\Controllers\PlanningController;
@@ -51,6 +52,11 @@ Route::get('/', function () {
 
 Route::post('/solicitar-demo', [DemoRequestController::class, 'store'])
     ->name('demo.request');
+
+Route::get('/accept-invitation/{token}', [InvitationController::class, 'show'])
+    ->name('invitations.show');
+Route::post('/accept-invitation', [InvitationController::class, 'accept'])
+    ->name('invitations.accept');
 
 Route::get('/e/{token}', [EvaluationController::class, 'take'])->name('evaluations.take');
 Route::post('/e/{token}', [EvaluationController::class, 'submitTake'])->name('evaluations.take.submit');
@@ -92,6 +98,8 @@ Route::middleware('auth')->group(function () {
                     ->name('profesores');
                 Route::post('/profesores/invite', [DirectorStaffController::class, 'invite'])
                     ->name('profesores.invite');
+                Route::post('/profesores/invite-link', [DirectorStaffController::class, 'inviteLink'])
+                    ->name('profesores.invite-link');
                 Route::delete('/profesores/{teacher}', [DirectorStaffController::class, 'destroyTeacher'])
                     ->name('profesores.destroy');
                 Route::post('/profesores/bulk-destroy', [DirectorStaffController::class, 'bulkDestroyTeachers'])
@@ -458,7 +466,13 @@ Route::middleware('auth')->group(function () {
         Route::get('/usage', [SuperAdminController::class, 'usage'])->name('usage');
         Route::get('/intelligence', [SuperAdminController::class, 'intelligence'])->name('intelligence');
         Route::get('/schools', [SuperAdminController::class, 'schools'])->name('schools');
+        Route::post('/schools', [SuperAdminController::class, 'storeSchool'])
+            ->middleware('can:manage-system')
+            ->name('schools.store');
         Route::get('/colegios/{colegio}', [SuperAdminController::class, 'school'])->name('colegios.show');
+        Route::post('/colegios/{colegio}/invite-director', [SuperAdminController::class, 'inviteDirector'])
+            ->middleware('can:manage-system')
+            ->name('colegios.invite-director');
         Route::get('/health', [SuperAdminController::class, 'health'])->name('health');
         Route::get('/insights', [SuperAdminController::class, 'insights'])->name('insights');
         Route::get('/users', [SuperAdminController::class, 'users'])->name('users');

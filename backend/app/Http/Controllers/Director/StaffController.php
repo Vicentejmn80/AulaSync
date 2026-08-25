@@ -5,9 +5,11 @@ namespace App\Http\Controllers\Director;
 use App\Helpers\InviteCodeHelper;
 use App\Http\Controllers\Controller;
 use App\Models\Course;
+use App\Models\Invitation;
 use App\Models\TeacherInvite;
 use App\Models\User;
 use App\Services\DirectorActionService;
+use App\Services\InvitationService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -16,6 +18,7 @@ class StaffController extends Controller
 {
     public function __construct(
         private DirectorActionService $actionService,
+        private InvitationService $invitations,
     ) {}
     public function index(Request $request): View
     {
@@ -45,12 +48,20 @@ class StaffController extends Controller
             ->limit(40)
             ->get();
 
+        $emailInvites = Invitation::query()
+            ->where('colegio_id', $colegioId)
+            ->where('role', Invitation::ROLE_DOCENTE)
+            ->whereNull('accepted_at')
+            ->latest()
+            ->limit(40)
+            ->get();
+
         $courses = Course::where('colegio_id', $colegioId)
             ->orderBy('subject_name')
             ->orderBy('grade')
             ->get(['id', 'subject_name', 'grade', 'section', 'teacher_id']);
 
-        return view('director.profesores', compact('teachers', 'invites', 'courses'));
+        return view('director.profesores', compact('teachers', 'invites', 'emailInvites', 'courses'));
     }
 
     public function invite(Request $request): RedirectResponse
@@ -121,6 +132,26 @@ class StaffController extends Controller
 
         return redirect()->route('director.profesores')
             ->with('success', "Invitación lista. Comparte el código {$invite->invite_code} con {$invite->display_name}. El curso y los alumnos que prepares quedan vinculados a ese código.");
+    }
+
+    public function inviteLink(Request $request): RedirectResponse
+    {
+        $data = $request->validate([
+            'email' => ['required', 'email', 'max:180'],
+        ]);
+
+        $director = $request->user();
+        abort_unless((bool) $director->colegio_id, 403);
+
+        $invitation = $this->invitations->issue([
+            'email' => $data['email'],
+            'role' => Invitation::ROLE_DOCENTE,
+            'colegio_id' => $director->colegio_id,
+        ], $director);
+
+        return redirect()->route('director.profesores')
+            ->with('success', 'Enlace mágico listo. El docente crea su cuenta y luego entra por /login.')
+            ->with('invitation_url', $invitation->acceptUrl());
     }
 
     public function destroyTeacher(Request $request, User $teacher): RedirectResponse
