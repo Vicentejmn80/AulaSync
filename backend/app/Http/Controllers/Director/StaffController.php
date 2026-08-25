@@ -10,6 +10,7 @@ use App\Models\TeacherInvite;
 use App\Models\User;
 use App\Services\DirectorActionService;
 use App\Services\InvitationService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -154,7 +155,7 @@ class StaffController extends Controller
             ->with('invitation_url', $invitation->acceptUrl());
     }
 
-    public function destroyTeacher(Request $request, User $teacher): RedirectResponse
+    public function destroyTeacher(Request $request, User $teacher): RedirectResponse|JsonResponse
     {
         abort_unless(
             $teacher->role === 'profesor'
@@ -166,6 +167,13 @@ class StaffController extends Controller
         $this->actionService->deleteTeacher($request->user(), [
             'teacher_name' => $name,
         ]);
+
+        if ($request->wantsJson()) {
+            return response()->json([
+                'success' => true,
+                'message' => "Se eliminó a {$name} del plantel docente.",
+            ]);
+        }
 
         return redirect()->route('director.profesores')
             ->with('success', "Se eliminó a {$name} del plantel docente.");
@@ -196,7 +204,7 @@ class StaffController extends Controller
             ->with('success', 'Se eliminaron '.count($deleted).' docente(s).');
     }
 
-    public function destroyInvite(Request $request, TeacherInvite $invite): RedirectResponse
+    public function destroyInvite(Request $request, TeacherInvite $invite): RedirectResponse|JsonResponse
     {
         abort_unless((int) $invite->colegio_id === (int) $request->user()->colegio_id, 404);
 
@@ -208,6 +216,13 @@ class StaffController extends Controller
             ->update(['teacher_invite_id' => null]);
 
         $invite->delete();
+
+        if ($request->wantsJson()) {
+            return response()->json([
+                'success' => true,
+                'message' => "Se eliminó la invitación pendiente de {$name}.",
+            ]);
+        }
 
         return redirect()->route('director.profesores')
             ->with('success', "Se eliminó la invitación pendiente de {$name}.");

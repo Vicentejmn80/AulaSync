@@ -13,6 +13,7 @@ use App\Http\Controllers\Director\AttendanceDashboardController;
 use App\Http\Controllers\Director\CourseController as DirectorCourseController;
 use App\Http\Controllers\Director\DashboardController as DirectorDashboardController;
 use App\Http\Controllers\Director\EvaluationPlanOverviewController;
+use App\Http\Controllers\Director\ManagementHubController as DirectorManagementHubController;
 use App\Http\Controllers\Director\PlanificacionesController as DirectorPlanificacionesController;
 use App\Http\Controllers\Director\ReportCardController as DirectorReportCardController;
 use App\Http\Controllers\Director\StaffController as DirectorStaffController;
@@ -94,6 +95,24 @@ Route::middleware('auth')->group(function () {
             ->group(function () {
                 Route::get('/dashboard', [DirectorDashboardController::class, 'index'])
                     ->name('dashboard');
+                Route::get('/gestion', [DirectorManagementHubController::class, 'index'])
+                    ->name('gestion');
+                Route::get('/gestion/snapshot', [DirectorManagementHubController::class, 'snapshot'])
+                    ->name('gestion.snapshot');
+                Route::post('/gestion/teachers', [DirectorManagementHubController::class, 'storeTeacher'])
+                    ->name('gestion.teachers.store');
+                Route::post('/gestion/students', [DirectorManagementHubController::class, 'storeStudent'])
+                    ->name('gestion.students.store');
+                Route::patch('/gestion/students/{student}', [DirectorManagementHubController::class, 'updateStudent'])
+                    ->name('gestion.students.update');
+                Route::post('/gestion/courses', [DirectorManagementHubController::class, 'storeCourse'])
+                    ->name('gestion.courses.store');
+                Route::patch('/gestion/courses/{course}', [DirectorManagementHubController::class, 'updateCourse'])
+                    ->name('gestion.courses.update');
+                Route::post('/gestion/assign-courses', [DirectorManagementHubController::class, 'assignTeacherCourses'])
+                    ->name('gestion.assign');
+                Route::post('/gestion/courses/{course}/unassign', [DirectorManagementHubController::class, 'unassignCourse'])
+                    ->name('gestion.courses.unassign');
                 Route::get('/profesores', [DirectorStaffController::class, 'index'])
                     ->name('profesores');
                 Route::post('/profesores/invite', [DirectorStaffController::class, 'invite'])

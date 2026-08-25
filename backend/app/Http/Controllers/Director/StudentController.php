@@ -8,6 +8,7 @@ use App\Models\Course;
 use App\Models\Student;
 use App\Services\DirectorActionService;
 use App\Services\StudentEnrollmentService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -105,7 +106,7 @@ class StudentController extends Controller
             ->with('success', "Alumno «{$student->name}» matriculado. Código familiar: {$student->family_code}. Entrégaselo al representante.");
     }
 
-    public function destroy(Request $request, Student $student, DirectorActionService $actions): RedirectResponse
+    public function destroy(Request $request, Student $student, DirectorActionService $actions): RedirectResponse|JsonResponse
     {
         abort_unless(
             (int) $student->colegio_id === (int) $request->user()->colegio_id,
@@ -117,6 +118,13 @@ class StudentController extends Controller
             'student_name' => $name,
             'student_id' => $student->id,
         ]);
+
+        if ($request->wantsJson()) {
+            return response()->json([
+                'success' => true,
+                'message' => "Se eliminó al alumno «{$name}».",
+            ]);
+        }
 
         return redirect()->route('director.students')
             ->with('success', "Se eliminó al alumno «{$name}».");

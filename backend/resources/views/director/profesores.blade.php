@@ -22,7 +22,7 @@
                 <div>
                     <p class="text-xs font-bold uppercase tracking-[.3em] text-indigo-600">Gestión institucional</p>
                     <h1 class="director-page-title">Plantel docente</h1>
-                    <p class="director-page-subtitle">Invita docentes con un código DOC-, créales el curso y matricula alumnos antes de que ellos se registren. Al entrar con ese código, heredan todo.</p>
+                    <p class="director-page-subtitle">Invita docentes con un código DOC-. La gestión unificada está en <a class="director-link" href="{{ route('director.gestion') }}">Gestión</a>.</p>
                 </div>
             </div>
             @include('components.user-control-panel')

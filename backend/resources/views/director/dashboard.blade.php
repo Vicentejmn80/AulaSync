@@ -184,14 +184,8 @@
             </div>
 
             <nav class="director-dash-nav" aria-label="Secciones del director">
-                <a href="{{ route('director.profesores') }}" class="rounded-2xl border border-cyan-400/30 bg-cyan-400/10 px-4 py-2 text-sm font-bold text-cyan-200 transition hover:bg-cyan-400/20">
-                    <i class="fa-solid fa-chalkboard-user mr-2"></i>Profesores
-                </a>
-                <a href="{{ route('director.courses') }}" class="rounded-2xl border border-violet-400/30 bg-violet-400/10 px-4 py-2 text-sm font-bold text-violet-200 transition hover:bg-violet-400/20">
-                    <i class="fa-solid fa-chalkboard mr-2"></i>Cursos
-                </a>
-                <a href="{{ route('director.students') }}" class="rounded-2xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-2 text-sm font-bold text-emerald-200 transition hover:bg-emerald-400/20">
-                    <i class="fa-solid fa-user-graduate mr-2"></i>Alumnos
+                <a href="{{ route('director.gestion') }}" class="rounded-2xl border border-cyan-400/30 bg-cyan-400/10 px-4 py-2 text-sm font-bold text-cyan-200 transition hover:bg-cyan-400/20">
+                    <i class="fa-solid fa-layer-group mr-2"></i>Gestión
                 </a>
                 <a href="{{ route('director.periodos') }}" class="rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-white/10">
                     <i class="fa-solid fa-file-invoice mr-2 text-cyan-300"></i>Boletas
@@ -226,7 +220,7 @@
                 </div>
 
                 <div class="grid gap-4 md:grid-cols-3">
-                    <a href="{{ route('director.profesores') }}"
+                    <a href="{{ route('director.gestion', ['panel' => 'teachers']) }}"
                        class="group director-setup-step-pending rounded-2xl border p-5 transition hover:-translate-y-0.5 {{ $totalTeachers > 0 || $pendingInvites > 0 ? 'border-emerald-400/30 bg-emerald-400/5' : 'border-cyan-400/40 bg-white/[.06] ring-1 ring-cyan-400/20' }}">
                         <div class="mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-400 to-blue-500">
                             <span class="text-sm font-black text-white">1</span>
@@ -238,7 +232,7 @@
                         </p>
                     </a>
 
-                    <a href="{{ route('director.courses') }}"
+                    <a href="{{ route('director.gestion', ['panel' => 'courses']) }}"
                        class="group director-setup-step-pending rounded-2xl border p-5 transition hover:-translate-y-0.5 {{ $totalCourses > 0 ? 'border-emerald-400/30 bg-emerald-400/5' : 'border-violet-400/40 bg-white/[.06] ring-1 ring-violet-400/20' }}">
                         <div class="mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-violet-400 to-fuchsia-500">
                             <span class="text-sm font-black text-white">2</span>
@@ -250,7 +244,7 @@
                         </p>
                     </a>
 
-                    <a href="{{ route('director.students') }}"
+                    <a href="{{ route('director.gestion', ['panel' => 'students']) }}"
                        class="group director-setup-step-pending rounded-2xl border p-5 transition hover:-translate-y-0.5 {{ $totalStudents > 0 ? 'border-emerald-400/30 bg-emerald-400/5' : 'border-emerald-400/40 bg-white/[.06] ring-1 ring-emerald-400/20' }}">
                         <div class="mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-400 to-cyan-500">
                             <span class="text-sm font-black text-white">3</span>
@@ -647,11 +641,11 @@
             </div>
 
             <div class="mt-4 flex flex-wrap gap-2">
-                <a href="{{ route('director.profesores') }}"
+                <a href="{{ route('director.gestion', ['panel' => 'teachers']) }}"
                    class="rounded-xl border border-white/10 px-4 py-2 text-sm font-semibold text-slate-300 transition hover:bg-white/10">
-                    <i class="fa-regular fa-eye mr-2"></i>Ver plantel completo
+                    <i class="fa-regular fa-eye mr-2"></i>Abrir gestión
                 </a>
-                <a href="{{ route('director.courses') }}"
+                <a href="{{ route('director.gestion', ['panel' => 'courses']) }}"
                    class="rounded-xl border border-white/10 px-4 py-2 text-sm font-semibold text-slate-300 transition hover:bg-white/10">
                     <i class="fa-solid fa-chalkboard mr-2"></i>Cursos y secciones
                 </a>

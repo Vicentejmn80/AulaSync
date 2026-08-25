@@ -8,6 +8,7 @@ use App\Models\Course;
 use App\Models\Student;
 use App\Models\TeacherInvite;
 use App\Models\User;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -115,10 +116,18 @@ class CourseController extends Controller
             ->with('success', "Curso creado y asignado a {$assigneeLabel}.{$suffix}");
     }
 
-    public function destroy(Request $request, Course $course): RedirectResponse
+    public function destroy(Request $request, Course $course): RedirectResponse|JsonResponse
     {
         abort_unless((int) $course->colegio_id === (int) $request->user()->colegio_id, 403);
+        $label = trim($course->subject_name.' '.$course->grade);
         $course->delete();
+
+        if ($request->wantsJson()) {
+            return response()->json([
+                'success' => true,
+                'message' => "Curso {$label} eliminado.",
+            ]);
+        }
 
         return redirect()->route('director.courses')->with('success', 'Curso eliminado.');
     }

@@ -1321,6 +1321,12 @@ function novaAIAssistant() {
             this.autoResizeTextarea();
             this.loading = true;
             this.scrollToBottom();
+            if (this.isDirector) {
+                const countMatch = text.match(/profesor/i) ? (text.split(/,|\sy\s/i).filter(Boolean).length > 1 ? text.split(/,/).length : null) : null;
+                window.dispatchEvent(new CustomEvent('aula-sync-ai-busy', {
+                    detail: { prompt: text, count: countMatch && countMatch > 1 ? countMatch : null },
+                }));
+            }
 
             const token2 = this.getCsrfToken();
             if (!token2) {
@@ -1427,16 +1433,31 @@ function novaAIAssistant() {
 
             if (json.cancelled) {
                 this.confirmation = null;
+                if (this.isDirector) {
+                    window.dispatchEvent(new CustomEvent('aula-sync-roster-changed', {
+                        detail: { message: json.message || 'Operación cancelada.', cancelled: true },
+                    }));
+                    window.dispatchEvent(new CustomEvent('aula-sync-ai-idle'));
+                }
             }
 
             if (json.message && !json.actions && !json.requires_confirmation) {
                 this.addMessage('assistant', json.message);
+                if (this.isDirector) {
+                    window.dispatchEvent(new CustomEvent('aula-sync-ai-idle'));
+                }
                 return;
             }
 
             if (json.requires_confirmation) {
                 if (json.message) this.addMessage('assistant', json.message);
                 this.confirmation = json;
+                if (this.isDirector) {
+                    const n = Array.isArray(json.pending_actions) ? json.pending_actions.length : 0;
+                    window.dispatchEvent(new CustomEvent('aula-sync-ai-busy', {
+                        detail: { prompt: n > 1 ? `Confirmación: ${n} acciones` : 'Esperando confirmación', count: n > 1 ? n : null },
+                    }));
+                }
                 return;
             }
 
@@ -1485,6 +1506,14 @@ function novaAIAssistant() {
                         this.showToast(toastMsg, 'success', 'fa-check-circle');
                     }
                     window.dispatchEvent(new CustomEvent('ai-canvas-refresh'));
+                    if (this.isDirector) {
+                        window.dispatchEvent(new CustomEvent('aula-sync-roster-changed', {
+                            detail: {
+                                actions: json.actions,
+                                message: json.message || toastMsg || 'Cambios aplicados.',
+                            },
+                        }));
+                    }
                 }
 
                 // Resumen único para operaciones multi-entidad (varios cursos/alumnos).
@@ -1497,6 +1526,10 @@ function novaAIAssistant() {
             if (json.error && !json.any_success && !Array.isArray(json.actions)) {
                 this.addMessage('assistant', `❌ Error: ${json.error}`);
                 this.showToast(json.error, 'error', 'fa-exclamation-triangle');
+            }
+
+            if (this.isDirector && !json.requires_confirmation) {
+                window.dispatchEvent(new CustomEvent('aula-sync-ai-idle'));
             }
         },
 
