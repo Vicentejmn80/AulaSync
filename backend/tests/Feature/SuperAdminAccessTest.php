@@ -193,4 +193,64 @@ class SuperAdminAccessTest extends TestCase
             ->assertRedirect();
         $this->assertDatabaseHas('courses', ['id' => $course->id]);
     }
+
+    public function test_users_page_shows_delete_instead_of_impersonate(): void
+    {
+        $admin = User::factory()->create([
+            'role' => 'super_admin',
+            'onboarding_completed' => true,
+            'name' => 'Admin Founder',
+        ]);
+        $director = User::factory()->create([
+            'role' => 'director',
+            'onboarding_completed' => true,
+            'name' => 'Maria Lopez',
+        ]);
+
+        $html = $this->actingAs($admin)->get('/super-admin/users')->assertOk();
+        $html->assertSee('Eliminar');
+        $html->assertSee('fa-trash');
+        $html->assertDontSee('Impersonar');
+        $html->assertSee($director->name);
+    }
+
+    public function test_super_admin_can_delete_another_user_but_not_self(): void
+    {
+        $admin = User::factory()->create([
+            'role' => 'super_admin',
+            'onboarding_completed' => true,
+        ]);
+        $director = User::factory()->create([
+            'role' => 'director',
+            'onboarding_completed' => true,
+            'name' => 'Josefina',
+        ]);
+
+        $this->actingAs($admin)
+            ->delete(route('super-admin.users.destroy', $admin))
+            ->assertRedirect();
+        $this->assertDatabaseHas('users', ['id' => $admin->id]);
+
+        $this->actingAs($admin)
+            ->delete(route('super-admin.users.destroy', $director))
+            ->assertRedirect();
+        $this->assertDatabaseMissing('users', ['id' => $director->id]);
+    }
+
+    public function test_teacher_cannot_delete_users(): void
+    {
+        $teacher = User::factory()->create([
+            'role' => 'profesor',
+            'onboarding_completed' => true,
+        ]);
+        $director = User::factory()->create([
+            'role' => 'director',
+            'onboarding_completed' => true,
+        ]);
+
+        $this->actingAs($teacher)
+            ->delete(route('super-admin.users.destroy', $director))
+            ->assertRedirect();
+        $this->assertDatabaseHas('users', ['id' => $director->id]);
+    }
 }

@@ -118,19 +118,54 @@ class SuperAdminController extends Controller
         return back()->with('success', "Actualicé a {$user->name}.");
     }
 
-    public function impersonateUser(User $user): RedirectResponse
+    public function destroyUser(Request $request, User $user): RedirectResponse
     {
-        if ($user->role === 'super_admin') {
-            return back()->with('warning', 'No puede impersonarse a sí mismo ni a otro super admin.');
+        $this->assertCanManage();
+        $actor = $request->user();
+
+        if ((int) $user->id === (int) $actor->id) {
+            return back()->with('error', 'No puedes eliminar tu propia cuenta.');
         }
 
-        $currentUser = auth()->user();
-        $currentUser->forceFill([
-            'role' => $user->role,
-            'colegio_id' => $user->colegio_id,
-        ])->save();
+        if ($user->isSuperAdmin()) {
+            $otherAdmins = User::where('role', 'super_admin')->where('id', '!=', $user->id)->count();
+            if ($otherAdmins === 0) {
+                return back()->with('error', 'Debe quedar al menos un super admin.');
+            }
+        }
 
-        return back()->with('success', 'Sesión iniciada como ' . $user->name . '. <a href="' . url('/super-admin/impersonate-exit') . '">Volver a SuperAdmin</a>.');
+        $name = $user->name;
+
+        DB::transaction(function () use ($user, $actor) {
+            $colegioId = (int) $user->colegio_id;
+            $fallbackId = $actor->id;
+            if ($colegioId > 0) {
+                $directorId = Colegio::query()->where('id', $colegioId)->value('director_user_id');
+                if ($directorId && (int) $directorId !== (int) $user->id) {
+                    $fallbackId = (int) $directorId;
+                }
+            }
+
+            Course::query()
+                ->where('teacher_id', $user->id)
+                ->update([
+                    'teacher_id' => null,
+                    'teacher_invite_id' => null,
+                ]);
+
+            Student::query()
+                ->where('teacher_id', $user->id)
+                ->update(['teacher_id' => $fallbackId]);
+
+            Colegio::query()
+                ->where('director_user_id', $user->id)
+                ->update(['director_user_id' => null]);
+
+            $user->representedStudents()->detach();
+            $user->delete();
+        });
+
+        return back()->with('success', "Eliminé al usuario {$name}.");
     }
 
     public function enterSchool(Colegio $colegio): RedirectResponse
