@@ -7,6 +7,7 @@ use App\Services\InvitationService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
 
 class InvitationController extends Controller
@@ -45,7 +46,14 @@ class InvitationController extends Controller
         Auth::login($user);
         $request->session()->regenerate();
 
-        $user->forceFill(['last_login_at' => now()])->save();
+        DB::table('users')->where('id', $user->id)->update([
+            'last_login_at' => now(),
+        ]);
+
+        if ($user->role === 'director') {
+            return redirect()->route('onboarding')
+                ->with('success', 'Tu cuenta quedó lista. Completa tu perfil para entrar al panel.');
+        }
 
         return redirect($this->invitations->dashboardUrl($user))
             ->with('success', 'Tu cuenta quedó lista. Desde ahora entra por Iniciar sesión.');

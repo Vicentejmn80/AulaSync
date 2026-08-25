@@ -92,16 +92,18 @@ class InvitationSystemTest extends TestCase
             'name' => 'Ana Director',
             'password' => 'secreto123',
             'password_confirmation' => 'secreto123',
-        ])->assertRedirect('/director/dashboard');
+        ])->assertRedirect(route('onboarding'));
 
         $this->assertAuthenticated();
         $user = User::query()->where('email', 'ana.director@colegio.test')->first();
         $this->assertNotNull($user);
         $this->assertSame('director', $user->role);
         $this->assertSame($colegio->id, (int) $user->colegio_id);
-        $this->assertTrue((bool) $user->onboarding_completed);
+        $this->assertFalse((bool) $user->onboarding_completed);
         $this->assertNotNull($invitation->fresh()->accepted_at);
         $this->assertSame($user->id, (int) $colegio->fresh()->director_user_id);
+
+        $this->get('/onboarding')->assertOk();
 
         $this->post('/logout');
         $this->assertGuest();
@@ -109,7 +111,7 @@ class InvitationSystemTest extends TestCase
         $this->post('/login', [
             'email' => 'ana.director@colegio.test',
             'password' => 'secreto123',
-        ])->assertRedirect('/director/dashboard');
+        ])->assertRedirect('/onboarding');
         $this->assertAuthenticated();
     }
 

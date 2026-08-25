@@ -6,8 +6,8 @@ use App\Models\Colegio;
 use App\Models\Invitation;
 use App\Models\Student;
 use App\Models\User;
+use App\Support\DatabaseBoolean;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\ValidationException;
@@ -82,14 +82,21 @@ class InvitationService
         }
 
         return DB::transaction(function () use ($invitation, $name, $password) {
-            $user = User::create([
+            $completed = $invitation->role !== Invitation::ROLE_DIRECTOR;
+
+            $user = new User();
+            $user->forceFill([
                 'name' => trim($name),
                 'email' => $invitation->email,
-                'password' => Hash::make($password),
+                'password' => $password,
                 'role' => $invitation->role,
                 'colegio_id' => $invitation->colegio_id,
-                'onboarding_completed' => true,
+            ])->save();
+
+            DB::table('users')->where('id', $user->id)->update([
+                'onboarding_completed' => DatabaseBoolean::bind($completed),
             ]);
+            $user->refresh();
 
             if ($invitation->role === Invitation::ROLE_DIRECTOR && $invitation->colegio_id) {
                 Colegio::query()

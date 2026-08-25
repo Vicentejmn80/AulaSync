@@ -572,10 +572,14 @@ class OnboardingController extends Controller
     private function createOrUpdateDirectorSchool(User $user, string $nombreInstitucion): Colegio
     {
         $cleanName = trim($nombreInstitucion);
-        $colegio = Colegio::where('director_user_id', $user->id)->first();
+        $colegio = Colegio::where('director_user_id', $user->id)->first()
+            ?: ($user->colegio_id ? Colegio::query()->find($user->colegio_id) : null);
 
         if ($colegio) {
             $colegio->name = $cleanName;
+            if (! $colegio->director_user_id) {
+                $colegio->director_user_id = $user->id;
+            }
             if (! $colegio->invite_code) {
                 $colegio->invite_code = InviteCodeHelper::generateUnique($cleanName);
             }

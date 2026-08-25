@@ -18,4 +18,15 @@ class DatabaseBoolean
 
         return $column.' = '.$literal;
     }
+
+    public static function bind(bool $value, ?string $driver = null): mixed
+    {
+        $driver ??= DB::connection()->getDriverName();
+
+        if ($driver === 'pgsql') {
+            return DB::raw($value ? 'true' : 'false');
+        }
+
+        return $value;
+    }
 }
