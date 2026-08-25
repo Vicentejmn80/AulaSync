@@ -5,14 +5,38 @@
     <p class="sub">Qué partes de AulaSync se usan de verdad: documentos, planificaciones, actividades y el chat.</p>
 
     <div class="grid">
-        <div class="stat"><b>{{ $usage['documentos']['total'] }}</b><span>Documentos procesados</span></div>
-        <div class="stat"><b>{{ $usage['planificaciones'] }}</b><span>Planificaciones</span></div>
-        <div class="stat"><b>{{ $usage['actividades'] }}</b><span>Actividades</span></div>
-        <div class="stat"><b>{{ $usage['tareas'] }}</b><span>Tareas</span></div>
-        <div class="stat"><b>{{ $usage['evaluaciones_ia'] }}</b><span>Evaluaciones con IA</span></div>
-        <div class="stat"><b>{{ $usage['consultas'] }}</b><span>Consultas académicas</span></div>
-        <div class="stat"><b>{{ $usage['exitosas'] }}</b><span>Acciones correctas</span></div>
-        <div class="stat"><b>{{ $usage['fallidas'] }}</b><span>Acciones que fallaron</span></div>
+        <div class="stat">
+            <div class="stat-head"><i class="fa-regular fa-file-lines metric-icon"></i><span class="trend-badge neutral">Docs</span></div>
+            <b>{{ $usage['documentos']['total'] }}</b><span>Documentos procesados</span>
+        </div>
+        <div class="stat">
+            <div class="stat-head"><i class="fa-solid fa-list-check metric-icon cyan"></i><span class="trend-badge neutral">Clase</span></div>
+            <b>{{ $usage['planificaciones'] }}</b><span>Planificaciones</span>
+        </div>
+        <div class="stat">
+            <div class="stat-head"><i class="fa-solid fa-pen-ruler metric-icon"></i><span class="trend-badge neutral">Trabajo</span></div>
+            <b>{{ $usage['actividades'] }}</b><span>Actividades</span>
+        </div>
+        <div class="stat">
+            <div class="stat-head"><i class="fa-solid fa-book-open metric-icon cyan"></i><span class="trend-badge neutral">Tarea</span></div>
+            <b>{{ $usage['tareas'] }}</b><span>Tareas</span>
+        </div>
+        <div class="stat">
+            <div class="stat-head"><i class="fa-solid fa-wand-magic-sparkles metric-icon emerald"></i><span class="trend-badge up">IA</span></div>
+            <b>{{ $usage['evaluaciones_ia'] }}</b><span>Evaluaciones con IA</span>
+        </div>
+        <div class="stat">
+            <div class="stat-head"><i class="fa-solid fa-comments metric-icon"></i><span class="trend-badge neutral">Chat</span></div>
+            <b>{{ $usage['consultas'] }}</b><span>Consultas académicas</span>
+        </div>
+        <div class="stat">
+            <div class="stat-head"><i class="fa-solid fa-circle-check metric-icon emerald"></i><span class="trend-badge up">Correctas</span></div>
+            <b>{{ $usage['exitosas'] }}</b><span>Acciones correctas</span>
+        </div>
+        <div class="stat">
+            <div class="stat-head"><i class="fa-solid fa-circle-exclamation metric-icon"></i><span class="trend-badge {{ $usage['fallidas'] > 0 ? 'warn' : 'up' }}">Fallos</span></div>
+            <b>{{ $usage['fallidas'] }}</b><span>Acciones que fallaron</span>
+        </div>
     </div>
 
     <div class="card">
@@ -25,7 +49,7 @@
                 @foreach ($usage['mas_usadas'] as $row)
                     <div class="bar-row">
                         <span>{{ \App\Support\SuperAdminCopy::action($row->action) }}</span>
-                        <div class="bar"><i style="width: {{ round($row->total / $max * 100) }}%"></i></div>
+                        <div class="bar" title="{{ $row->total }} veces"><i style="width: {{ round($row->total / $max * 100) }}%"></i></div>
                         <strong>{{ $row->total }}</strong>
                     </div>
                 @endforeach
@@ -44,8 +68,14 @@
                     @foreach ($usage['acciones_ia'] as $row)
                         <tr>
                             <td>{{ \App\Support\SuperAdminCopy::action($row->action) }}</td>
-                            <td>{{ \App\Support\SuperAdminCopy::source($row->source) }}</td>
-                            <td>{{ $row->total }}</td>
+                            <td>
+                                @php $source = \App\Support\SuperAdminCopy::source($row->source); @endphp
+                                <span class="table-identity">
+                                    <span class="table-avatar">{{ strtoupper(substr($source, 0, 1)) }}</span>
+                                    <span>{{ $source }}</span>
+                                </span>
+                            </td>
+                            <td><span class="status-badge neutral">{{ $row->total }}</span></td>
                         </tr>
                     @endforeach
                 </tbody>
@@ -71,7 +101,7 @@
                 <thead><tr><th>Qué pasó</th><th>Veces</th></tr></thead>
                 <tbody>
                     @foreach ($usage['errores'] as $row)
-                        <tr><td>{{ \App\Support\SuperAdminCopy::error($row->error_code) }}</td><td>{{ $row->total }}</td></tr>
+                        <tr><td>{{ \App\Support\SuperAdminCopy::error($row->error_code) }}</td><td><span class="status-badge failed">{{ $row->total }}</span></td></tr>
                     @endforeach
                 </tbody>
             </table>

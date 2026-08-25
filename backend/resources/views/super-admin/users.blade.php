@@ -21,11 +21,16 @@
             <tbody>
                 @foreach ($users as $user)
                     <tr>
-                        <td>{{ $user->name }}</td>
+                        <td>
+                            <span class="table-identity">
+                                <span class="table-avatar">{{ strtoupper(substr($user->name, 0, 1)) }}</span>
+                                <span>{{ $user->name }}</span>
+                            </span>
+                        </td>
                         <td>{{ $user->email }}</td>
                         <td colspan="4">
                             <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
-                                <form method="POST" action="{{ url('/super-admin/users/'.$user->id) }}" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+                                <form method="POST" action="{{ url('/super-admin/users/'.$user->id) }}" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;background:#f8fafc;border:1px solid #e2e8f0;padding:7px 8px;border-radius:12px;">
                                     @csrf
                                     @method('PATCH')
                                     <select name="role">
@@ -42,7 +47,7 @@
                                     <label style="font-size:13px;color:#6B4D87;">
                                         <input type="checkbox" name="onboarding_completed" value="1" @checked($user->onboarding_completed)> Completado
                                     </label>
-                                    <button class="btn" type="submit">Guardar</button>
+                                    <button class="btn" type="submit"><i class="fa-solid fa-floppy-disk"></i> Guardar</button>
                                 </form>
                                 @if ((int) $user->id !== (int) auth()->id())
                                     <form method="POST"

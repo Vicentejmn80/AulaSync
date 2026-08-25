@@ -27,15 +27,20 @@
                 <tbody>
                     @foreach ($schools as $school)
                         <tr>
-                            <td><strong>{{ $school['name'] }}</strong></td>
+                            <td>
+                                <span class="table-identity">
+                                    <span class="table-avatar">{{ strtoupper(substr($school['name'], 0, 1)) }}</span>
+                                    <strong>{{ $school['name'] }}</strong>
+                                </span>
+                            </td>
                             <td>{{ $school['director'] ?? '—' }}</td>
                             <td>{{ $school['usuarios'] }}</td>
                             <td>{{ $school['docentes'] }}</td>
-                            <td>{{ $school['actividad'] }}</td>
+                            <td><span class="status-badge neutral">{{ $school['actividad'] }}</span></td>
                             <td>{{ $school['ultimo_acceso']?->format('d/m/Y H:i') ?? 'Sin login' }}</td>
-                            <td>{{ $school['funciones'] }}</td>
-                            <td>{{ $school['adopcion'] }}</td>
-                            <td>{{ $school['errores'] }}</td>
+                            <td><span class="status-badge neutral">{{ $school['funciones'] }}</span></td>
+                            <td><span class="status-badge success">{{ $school['adopcion'] }}</span></td>
+                            <td><span class="status-badge {{ $school['errores'] > 0 ? 'failed' : 'success' }}">{{ $school['errores'] }}</span></td>
                             <td><span class="pill {{ $school['estado'] }}">{{ \App\Support\SuperAdminCopy::status($school['estado']) }}</span></td>
                             <td>
                                 <a class="btn btn-ghost" href="{{ url('/super-admin/colegios/'.$school['id']) }}">Ver</a>
