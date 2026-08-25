@@ -256,9 +256,9 @@ class DirectorAIInterpreterServiceTest extends TestCase
         Http::assertSent(function ($request) {
             $system = (string) data_get($request, 'messages.0.content');
 
-            return ($request['temperature'] ?? null) == 0.7
+            return ($request['temperature'] ?? null) == 0.2
                 && ($request['top_p'] ?? null) == 0.9
-                && str_contains($system, 'Eres Nova')
+                && str_contains($system, 'Eres AulaSync')
                 && str_contains($system, 'REGLA DEL SÁNDWICH')
                 && str_contains($system, 'Total de alumnos:')
                 && str_contains($system, 'Total de profesores activos:')

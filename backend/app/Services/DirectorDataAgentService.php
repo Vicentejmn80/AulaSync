@@ -68,7 +68,7 @@ class DirectorDataAgentService
         $value = $this->normalized($text);
 
         return (bool) preg_match(
-            '/\b(?:crea(?:r|me|lo|los|s)?|cree(?:s)?|agrega(?:r)?|invita|elimina|borrar|borra|quita(?:r)?|remover|matricula|inscribe|asigna(?:le|lo)?|desmatricula|actualiza|edita|mueve|cambia|cancel[ae]|anula)\b/u',
+            '/\b(?:crea(?:r|me|lo|los|s)?|cree(?:s)?|agrega(?:r)?|modifica(?:r)?|invita|elimina|borrar|borra|quita(?:r)?|remover|matricula|inscribe|asigna(?:le|lo)?|desmatricula|actualiza|edita|mueve|cambia|aumenta(?:r)?|disminu(?:ye|ir)|incrementa|reduce|cancel[ae]|anula)\b/u',
             $value
         ) && ! preg_match('/\b(?:informe|resumen|compara|tendencia|asistencia|rendimiento|promedio)\b/u', $value);
     }

@@ -40,6 +40,7 @@ return [
         'director_enabled' => env('DIRECTOR_AI_INTERPRETER_ENABLED', true),
         'director_test_enabled' => env('DIRECTOR_AI_INTERPRETER_TEST_ENABLED', false),
         'director_model' => env('DIRECTOR_AI_MODEL', 'gpt-4o-mini'),
+        'whisper_model' => env('OPENAI_WHISPER_MODEL', 'gpt-4o-mini-transcribe'),
         'intelligence_enabled' => env('INTELLIGENCE_AI_ENABLED', true),
         'intelligence_test_enabled' => env('INTELLIGENCE_AI_TEST_ENABLED', false),
         'intelligence_model' => env('INTELLIGENCE_AI_MODEL', 'gpt-4o-mini'),

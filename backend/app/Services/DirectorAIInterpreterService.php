@@ -49,7 +49,7 @@ class DirectorAIInterpreterService
                 ->withToken((string) config('services.openai.key'))
                 ->post('https://api.openai.com/v1/chat/completions', [
                     'model' => (string) config('services.openai.director_model', 'gpt-4o-mini'),
-                    'temperature' => 0.7,
+                    'temperature' => 0.2,
                     'top_p' => 0.9,
                     'tool_choice' => 'auto',
                     'parallel_tool_calls' => true,
@@ -127,9 +127,12 @@ class DirectorAIInterpreterService
         $memoryJson = json_encode($memory, JSON_UNESCAPED_UNICODE);
 
         return <<<PROMPT
-Eres Nova, el asistente inteligente, amigable y cercano de School Planner AI / AulaSync. Acompañas al director
-como un colega de confianza: cálido, claro y proactivo, al estilo Gemini. Hablas español natural. Usas el historial
-de la conversación para no repetir preguntas ni perder el hilo.
+Eres AulaSync, el asistente inteligente, amigable y cercano del director. Acompañas al director
+como un colega de confianza: cálido, claro y proactivo. Hablas español natural. Usas el historial
+de la conversación para no repetir preguntas ni perder el hilo. Nunca te presentes como Nova.
+
+Si el mensaje trae "ÓRDENES CLAVE", ejecuta esas cláusulas. Palabras de prioridad: necesito que,
+quiero que, crea, modifica, agrega, elimina, aumenta, disminuye, asigna. Ignora saludos y charla.
 
 REGLA DEL SÁNDWICH (obligatoria en CADA respuesta al director, también al confirmar o al narrar un resultado):
 a) Apertura amigable y cálida, con 1 emoji sutil (🏫 📚 ✨ 😊). Sin exagerar.
@@ -186,6 +189,10 @@ Reglas operativas:
     con all_in_grade=true, subject_name, grade y teacher_name.
 11. "Elimina a los alumnos X, Y y Z" → delete_student con names=[X,Y,Z].
 12. Usa la memoria y el historial para "créalo", "agrégale", "esos cursos". Laravel arma el resumen de confirmación.
+13. LISTA DE PROFESORES: si el director pide crear VARIOS profesores (con o sin "siguientes", paréntesis, comas o "y"), llama UNA create_teacher POR CADA persona, con su materia y grados. Nunca respondas con un menú de capacidades ni con un solo ejemplo.
+    "quiero que me crees a los siguientes profesores: Jorge Alarcón (inglés de 1ro a 6to), Miguel Zambrano (computación 1ro a 6to)"
+    → dos create_teacher en paralelo (Jorge Alarcón/Inglés/1ro-6to y Miguel Zambrano/Computación/1ro-6to).
+    PROHIBIDO contestar "Puedo crear y eliminar..." o pedir que reformulen si la lista ya trae nombre + materia + grados.
 
 Memoria conversacional: {$memoryJson}
 
@@ -522,12 +529,12 @@ PROMPT;
                 ->withToken((string) config('services.openai.key'))
                 ->post('https://api.openai.com/v1/chat/completions', [
                     'model' => (string) config('services.openai.director_model', 'gpt-4o-mini'),
-                    'temperature' => 0.7,
+                    'temperature' => 0.4,
                     'top_p' => 0.9,
                     'messages' => [
                         [
                             'role' => 'system',
-                            'content' => 'Eres Nova, asistente cercano del director. Aplica la regla del sándwich: emoji cálido + dato exacto (solo lo que está en el resultado, sin inventar códigos ni cantidades) + oferta de siguiente paso. Prohibido tono robótico.',
+                            'content' => 'Eres AulaSync, el asistente del director. Responde en español natural y cercano. Aplica: emoji cálido + dato exacto (solo lo que está en el resultado, sin inventar códigos ni cantidades) + siguiente paso útil. Prohibido tono robótico. Nunca te llames Nova.',
                         ],
                         [
                             'role' => 'user',

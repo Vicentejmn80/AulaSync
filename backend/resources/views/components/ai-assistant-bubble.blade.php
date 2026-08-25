@@ -867,9 +867,9 @@
                     </div>
                 </div>
                 <div class="nova-ai-title">
-                    <h3 x-text="isDirector ? 'Director AI Ops' : 'AulaSync Assistant'"></h3>
+                    <h3>AulaSync</h3>
                     <p>
-                        <span class="nova-ai-badge" x-text="isDirector ? 'Operación escolar' : 'IA Educativa'"></span>
+                        <span class="nova-ai-badge" x-text="isDirector ? 'Asistente del director' : 'Asistente docente'"></span>
                         <span>⚡ Siempre activa</span>
                     </p>
                 </div>
@@ -1071,7 +1071,7 @@
             <div class="input-wrapper">
                 <textarea x-ref="novaMainTextarea" x-model="input" @keydown.enter.prevent="if(!$event.shiftKey) sendCommand()" @input="autoResizeTextarea()" :disabled="loading" rows="1" placeholder="Escribe tu mensaje..."></textarea>
                 <div class="input-actions">
-                    <button class="voice-btn" :class="{ 'listening': listening }" @click="toggleVoice()" title="Dictado de voz">
+                    <button class="voice-btn" :class="{ 'listening': listening }" @click="toggleVoice()" :title="isDirector ? 'Nota de voz: graba y envía' : 'Dictado de voz'">
                         <i class="fa-solid" :class="listening ? 'fa-stop' : 'fa-microphone'"></i>
                     </button>
                     <button class="send-btn" @click="sendCommand()" :disabled="loading || !input.trim()">
@@ -1079,8 +1079,10 @@
                     </button>
                 </div>
             </div>
-            <div x-show="listening" class="voice-status" style="font-size: 10px; color: #EF4444; text-align: center; margin-top: 6px;">
-                🔴 Escuchando...
+            <div x-show="listening || transcribing" class="voice-status" style="font-size: 10px; color: #EF4444; text-align: center; margin-top: 6px;">
+                <span x-show="isDirector && listening && !transcribing">🔴 Grabando nota de voz... toca el micrófono para transcribir y enviar</span>
+                <span x-show="isDirector && transcribing">⏳ Transcribiendo y entendiendo la orden...</span>
+                <span x-show="!isDirector">🔴 Escuchando...</span>
             </div>
         </div>
     </div>
@@ -1100,6 +1102,7 @@ function novaAIAssistant() {
         open: false,
         loading: false,
         listening: false,
+        transcribing: false,
         input: '',
         messages: @json(auth()->check() ? app(\App\Services\AiChatHistoryService::class)->load(auth()->id()) : []),
         confirmation: null,
@@ -1113,6 +1116,9 @@ function novaAIAssistant() {
         isTeacher: {{ auth()->check() && auth()->user()->role === 'profesor' ? 'true' : 'false' }},
         isDirector: {{ auth()->check() && auth()->user()->role === 'director' ? 'true' : 'false' }},
         commandEndpoint: @json(auth()->check() && auth()->user()->role === 'director' ? route('director.ai.command') : route('ai.command')),
+        transcribeEndpoint: @json(auth()->check() && auth()->user()->role === 'director' ? route('director.ai.transcribe') : null),
+        mediaRecorder: null,
+        audioChunks: [],
         toast: {
             visible: false,
             message: '',
@@ -1547,19 +1553,122 @@ function novaAIAssistant() {
         },
 
         toggleVoice() {
-            if (!('webkitSpeechRecognition' in window)) {
-                this.showToast('Tu navegador no soporta dictado', 'error', 'fa-microphone-slash');
+            if (this.listening) {
+                this.stopVoiceCapture();
                 return;
             }
 
-            if (this.listening) {
-                this.recognition?.stop();
+            this.open = true;
+            if (this.isDirector && this.transcribeEndpoint && navigator.mediaDevices?.getUserMedia && window.MediaRecorder) {
+                this.startVoiceNote();
+                return;
+            }
+
+            this.startBrowserDictation();
+        },
+
+        stopVoiceCapture() {
+            if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
+                this.mediaRecorder.stop();
+                return;
+            }
+            this.recognition?.stop();
+            this.listening = false;
+        },
+
+        async startVoiceNote() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        autoGainControl: true,
+                        channelCount: 1,
+                    },
+                });
+                const mimeType = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4']
+                    .find((type) => window.MediaRecorder.isTypeSupported(type)) || '';
+                this.audioChunks = [];
+                this.mediaRecorder = mimeType
+                    ? new MediaRecorder(stream, { mimeType, audioBitsPerSecond: 128000 })
+                    : new MediaRecorder(stream);
+                this.mediaRecorder.ondataavailable = (event) => {
+                    if (event.data && event.data.size > 0) {
+                        this.audioChunks.push(event.data);
+                    }
+                };
+                this.mediaRecorder.onstop = async () => {
+                    stream.getTracks().forEach((track) => track.stop());
+                    this.listening = false;
+                    const blob = new Blob(this.audioChunks, { type: this.mediaRecorder?.mimeType || 'audio/webm' });
+                    this.mediaRecorder = null;
+                    await this.sendVoiceNote(blob);
+                };
+                this.mediaRecorder.start(250);
+                this.listening = true;
+            } catch (err) {
+                this.startBrowserDictation();
+            }
+        },
+
+        async sendVoiceNote(blob) {
+            if (!blob || blob.size < 800) {
+                this.showToast('La nota quedó muy corta. Graba de nuevo.', 'error', 'fa-microphone-slash');
+                return;
+            }
+
+            const token = this.getCsrfToken();
+            if (!token || !this.transcribeEndpoint) {
+                this.showToast('No pude verificar tu sesión', 'error', 'fa-circle-xmark');
+                return;
+            }
+
+            this.transcribing = true;
+            this.loading = true;
+            const form = new FormData();
+            const extension = (blob.type || '').includes('mp4') ? 'm4a' : 'webm';
+            form.append('audio', blob, `nota-voz.${extension}`);
+
+            try {
+                const res = await fetch(this.transcribeEndpoint, {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: {
+                        'Accept': 'application/json',
+                        'X-CSRF-TOKEN': token,
+                        'X-Requested-With': 'XMLHttpRequest',
+                    },
+                    body: form,
+                });
+                const json = await res.json().catch(() => ({}));
+                const errorText = json?.message || json?.errors?.audio?.[0] || 'No pude transcribir la nota de voz. Intenta de nuevo.';
+                if (!res.ok || !json?.success || !json?.transcript) {
+                    this.showToast(errorText, 'error', 'fa-microphone-slash');
+                    this.addMessage('assistant', errorText);
+                    return;
+                }
+                this.input = json.transcript;
+                this.autoResizeTextarea();
+            } catch (err) {
+                this.showToast('Error al enviar la nota de voz', 'error', 'fa-exclamation-triangle');
+                return;
+            } finally {
+                this.transcribing = false;
+                this.loading = false;
+            }
+
+            await this.sendCommand();
+        },
+
+        startBrowserDictation() {
+            if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+                this.showToast('Tu navegador no soporta el micrófono', 'error', 'fa-microphone-slash');
                 return;
             }
 
             const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
             this.recognition = new SR();
-            this.recognition.lang = 'es-ES';
+            this.recognition.lang = 'es-VE';
             this.recognition.continuous = false;
             this.recognition.interimResults = false;
 

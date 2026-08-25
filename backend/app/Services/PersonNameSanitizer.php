@@ -4,7 +4,7 @@ namespace App\Services;
 
 class PersonNameSanitizer
 {
-    private const SUBJECT_ALIASES = 'matem[aá]ticas?|ingl[eé]s|lenguaje|lengua|ciencias?|historia|geograf[ií]a|f[ií]sica|qu[ií]mica|biolog[ií]a|educaci[oó]n f[ií]sica|robotica|rob[oó]tica|computaci[oó]n';
+    private const SUBJECT_ALIASES = 'matem[aá]ticas?|ingl[eé]s|lenguaje|lengua|ciencias?|historia|geograf[ií]a|f[ií]sica|qu[ií]mica|biolog[ií]a|educaci[oó]n f[ií]sica|robotica|rob[oó]tica|computaci[oó]n|religi[oó]n';
 
     /**
      * Extrae un nombre de persona limpio, sin preposiciones, grado, curso ni conectores.

@@ -195,6 +195,9 @@ Route::middleware('auth')->group(function () {
                 Route::post('/ai/command', [DirectorAICommandController::class, 'handle'])
                     ->middleware('throttle:30,1')
                     ->name('ai.command');
+                Route::post('/ai/transcribe', [DirectorAICommandController::class, 'transcribe'])
+                    ->middleware('throttle:20,1')
+                    ->name('ai.transcribe');
             });
 
         // Representante — Panel de seguimiento

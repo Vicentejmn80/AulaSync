@@ -17,8 +17,10 @@ use App\Services\DirectorAIInterpreterService;
 use App\Services\DirectorAnalyticsQueryService;
 use App\Services\DirectorConversationContextService;
 use App\Services\DirectorDataAgentService;
+use App\Services\DirectorCommandFocusService;
 use App\Services\PersonNameMatcher;
 use App\Services\PersonNameSanitizer;
+use App\Services\SpeechToTextService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
@@ -39,7 +41,32 @@ class AICommandController extends Controller
         private DirectorConversationContextService $conversationContext,
         private DirectorAnalyticsQueryService $analytics,
         private DirectorDataAgentService $dataAgent,
+        private SpeechToTextService $speechToText,
+        private DirectorCommandFocusService $commandFocus,
     ) {}
+
+    public function transcribe(Request $request): JsonResponse
+    {
+        $director = $request->user();
+        if (! $director || $director->role !== 'director') {
+            return response()->json([
+                'success' => false,
+                'error' => 'No autorizado.',
+                'message' => 'Solo directores pueden enviar notas de voz.',
+            ], 403);
+        }
+
+        $request->validate([
+            'audio' => ['required', 'file', 'max:25600'],
+        ]);
+
+        $transcript = $this->speechToText->transcribe($request->file('audio'));
+
+        return response()->json([
+            'success' => true,
+            'transcript' => $transcript,
+        ]);
+    }
 
     public function handle(Request $request): JsonResponse
     {
@@ -53,8 +80,8 @@ class AICommandController extends Controller
         }
 
         $payload = $request->validate([
-            'prompt' => ['nullable', 'string', 'max:1200'],
-            'message' => ['nullable', 'string', 'max:1200'],
+            'prompt' => ['nullable', 'string', 'max:8000'],
+            'message' => ['nullable', 'string', 'max:8000'],
             'confirmed' => ['sometimes', 'boolean'],
             'pending_actions' => ['sometimes', 'array'],
             'pending_actions.*.intent' => ['required_with:pending_actions', 'string'],
@@ -194,45 +221,25 @@ class AICommandController extends Controller
         }
 
         try {
+            $focus = $this->commandFocus->extract($text);
             $interpreted = $this->interpreter->interpret(
                 $director,
-                $text,
+                $focus['for_model'],
                 (array) ($payload['conversation'] ?? []),
                 $this->conversationContext->current(),
             );
+            $text = $focus['working'];
 
             $actions = $this->enrichActionsFromText((array) ($interpreted['actions'] ?? []), $text);
-            if ($actions !== []) {
+            $roster = $this->parseTeacherRosterList($director, $text);
+            $actions = $this->preferParsedTeacherRoster($director, $actions, $roster);
+            if ($actions !== [] && count($roster) < 2) {
                 $actions = $this->mergeMissingIntentsFromText($director, $actions, $text);
             }
 
-            if ($actions === []) {
-                $llmReply = is_array($interpreted)
-                    ? trim((string) ($interpreted['message'] ?? $interpreted['clarification'] ?? ''))
-                    : '';
-                $intentGuess = $this->detectIntent($text);
-                if ($llmReply !== '') {
-                    // query_academic no puede contestarse desde el roster: si el LLM
-                    // respondió en texto sin tool, caemos al parser local.
-                    $trustLlmText = $intentGuess !== 'query_academic'
-                        && ! $this->intentRequiresConfirmation((string) $intentGuess);
-                    if ($trustLlmText) {
-                        return response()->json([
-                            'success' => true,
-                            'message' => $llmReply,
-                        ]);
-                    }
-                    if ($intentGuess !== null && $intentGuess !== 'query_academic') {
-                        $this->conversationContext->rememberError($llmReply);
-
-                        return response()->json([
-                            'success' => false,
-                            'needs_clarification' => true,
-                            'message' => $llmReply,
-                        ], 422);
-                    }
-                }
-            }
+            $llmReply = is_array($interpreted)
+                ? trim((string) ($interpreted['message'] ?? $interpreted['clarification'] ?? ''))
+                : '';
 
             if ($actions === []) {
                 $contextualAction = $this->contextualFallbackAction($text);
@@ -245,6 +252,30 @@ class AICommandController extends Controller
                 $composite = $this->detectMultiIntentActions($director, $text);
                 if ($composite !== []) {
                     $actions = $this->enrichActionsFromText($composite, $text);
+                }
+            }
+
+            if ($actions === [] && $llmReply !== '') {
+                $intentGuess = $this->detectIntent($text);
+                $looksLikeWorkOrder = $this->dataAgent->looksLikeMutation($text) || $this->looksLikeStaffingList($text);
+                // Si el director dio una orden, no devolver prosa de "qué puedo hacer".
+                $trustLlmText = ! $looksLikeWorkOrder
+                    && $intentGuess !== 'query_academic'
+                    && ! $this->intentRequiresConfirmation((string) $intentGuess);
+                if ($trustLlmText) {
+                    return response()->json([
+                        'success' => true,
+                        'message' => $llmReply,
+                    ]);
+                }
+                if ($intentGuess !== null && $intentGuess !== 'query_academic' && ! $looksLikeWorkOrder) {
+                    $this->conversationContext->rememberError($llmReply);
+
+                    return response()->json([
+                        'success' => false,
+                        'needs_clarification' => true,
+                        'message' => $llmReply,
+                    ], 422);
                 }
             }
 
@@ -590,7 +621,7 @@ class AICommandController extends Controller
 
     /**
      * Resuelve el objetivo de eliminación antes de pedir confirmación.
-     * Si hay ambigüedad, lanza ValidationException para que Nova pida aclaración.
+     * Si hay ambigüedad, lanza ValidationException para que AulaSync pida aclaración.
      */
     private function resolveDeleteTarget(User $director, string $intent, array $data): array
     {
@@ -1430,7 +1461,7 @@ class AICommandController extends Controller
         }
 
         // A teacher creation may also mention courses/subjects. It must win over create_course.
-        if (preg_match('/\b(?:cre(?:a|ar|es|e|o)|creame|invita)\s+(?:(?:a|al)\s+|el\s+|la\s+)?(?:profesor(?:a)?|docente)\b/', $value)) {
+        if ($this->wantsCreateTeacherPhrase($value)) {
             return 'create_teacher';
         }
 
@@ -1552,6 +1583,11 @@ class AICommandController extends Controller
     private function detectMultiIntentActions(User $director, string $text): array
     {
         $actions = [];
+        $roster = $this->parseTeacherRosterList($director, $text);
+        if (count($roster) >= 2) {
+            $actions = $roster;
+        }
+
         $clauses = $this->splitIntentClauses($text);
         if ($clauses === []) {
             $clauses = [$text];
@@ -1559,10 +1595,7 @@ class AICommandController extends Controller
 
         foreach ($clauses as $clause) {
             $value = $this->normalizedText($clause);
-            $wantsTeacher = (bool) preg_match(
-                '/\b(?:cre(?:a|ar|es|e|o)|creame|invita)\s+(?:(?:a|al)\s+|el\s+|la\s+)?(?:profesor(?:a)?|docente)\b/',
-                $value
-            );
+            $wantsTeacher = $this->wantsCreateTeacherPhrase($value);
             $wantsAssignTeacher = (bool) preg_match(
                 '/\b(?:as[ií]gna(?:le)?|dara|dará|agrega(?:le)?)\b/',
                 $value
@@ -1573,7 +1606,7 @@ class AICommandController extends Controller
                 str_contains($value, 'curso') || str_contains($value, 'materia') || str_contains($value, 'asignatura')
             ) && (bool) preg_match('/\b(?:asigna(?:lo|le|r|les)?|inscribe(?:lo|le|r|les)?|matricula(?:lo|le|r|les)?|agregalo|añade|anade)\b/', $value);
 
-            if ($wantsTeacher) {
+            if ($wantsTeacher && count($roster) < 2) {
                 $names = $this->extractTeacherNames($clause);
                 if ($names === []) {
                     [$data, $msg] = $this->parseCreateTeacher($director, $clause);
@@ -1581,9 +1614,9 @@ class AICommandController extends Controller
                         $names = [$data['teacher_name']];
                     }
                 }
-                if (count($names) > 5) {
+                if (count($names) > 20) {
                     throw ValidationException::withMessages([
-                        'teacher' => 'Veo más de 5 profesores en tu mensaje. Dime los nombres de a uno o máximo 5 a la vez.',
+                        'teacher' => 'Veo más de 20 profesores en tu mensaje. Parte la lista en dos envíos.',
                     ]);
                 }
                 if ($names !== []) {
@@ -1596,7 +1629,7 @@ class AICommandController extends Controller
                 }
             }
 
-            if ($wantsAssignTeacher) {
+            if ($wantsAssignTeacher && count($roster) < 2) {
                 $assignSegments = preg_split(
                     '/\s+y\s+(?=a\s+[A-Za-zÁÉÍÓÚáéíóúÑñ]|as[ií]gna(?:le)?\s+|dara\s+|dará\s+|agrega(?:le)?\s+)/iu',
                     $clause,
@@ -3039,14 +3072,121 @@ class AICommandController extends Controller
         return app(PersonNameSanitizer::class)->titleCase($name);
     }
 
-    private function extractKnownSubject(?string $text): ?string
+    /**
+     * @param  array<int,array{intent:string,data:array}>  $actions
+     * @return array<int,array{intent:string,data:array}>
+     */
+    private function preferParsedTeacherRoster(User $director, array $actions, array $roster): array
     {
-        if ($text === null || trim($text) === '') {
+        if (count($roster) < 2) {
+            return $actions;
+        }
+
+        $kept = array_values(array_filter(
+            $actions,
+            fn ($action) => ! in_array($action['intent'] ?? '', ['create_teacher', 'assign_teacher', 'create_course'], true)
+        ));
+
+        return array_values(array_merge($roster, $kept));
+    }
+
+    private function wantsCreateTeacherPhrase(string $value): bool
+    {
+        return (bool) preg_match(
+            '/\b(?:crea(?:r|me)?|crees|cree|creo|invita)\b(?:\s+(?:a|al|el|la|los|las|me)){0,4}\s+(?:siguientes?\s+)?(?:profesor(?:a|es)?|docentes?)\b/',
+            $value
+        );
+    }
+
+    private function looksLikeStaffingList(string $text): bool
+    {
+        $value = $this->normalizedText($text);
+
+        return (bool) preg_match('/\b(?:profesor(?:a)?|docente)s\b/', $value)
+            && (bool) preg_match('/\b(?:crea|crear|crees|creame|invita|siguientes|estos|lista)\b/', $value);
+    }
+
+    /**
+     * Lista tipo: "crea a los siguientes profesores: Jorge Alarcón (inglés de 1ro a 6to), ..."
+     *
+     * @return array<int,array{intent:string,data:array}>
+     */
+    private function parseTeacherRosterList(User $director, string $text): array
+    {
+        if (! $this->looksLikeStaffingList($text) && ! preg_match('/\b(?:crea|crear|crees|creame|invita)\b/u', $this->normalizedText($text))) {
+            return [];
+        }
+
+        $subjectGrade = '/\b(ingl[eé]s|matem[aá]ticas?|lenguaje|lengua|ciencias?|historia|geograf[ií]a|f[ií]sica|qu[ií]mica|biolog[ií]a|educaci[oó]n\s+f[ií]sica|rob[oó]tica|computaci[oó]n|religi[oó]n|educaci[oó]n\s+cristiana)\b\s+(?:de\s+)?([1-6](?:ro|do|to|ero|er)?)\s*(?:grado\s+)?(?:a|al|-|–|—)\s*([1-6](?:ro|do|to|ero|er)?)/iu';
+
+        if (! preg_match_all($subjectGrade, $text, $matches, PREG_OFFSET_CAPTURE)) {
+            return [];
+        }
+
+        $actions = [];
+        $cursor = 0;
+        foreach ($matches[0] as $index => $fullMatch) {
+            $fullStart = (int) $fullMatch[1];
+            $chunk = substr($text, $cursor, max(0, $fullStart - $cursor));
+            $cursor = $fullStart + strlen((string) $fullMatch[0]);
+
+            $name = $this->extractTrailingPersonName($chunk);
+            $subject = $this->extractKnownSubject((string) $matches[1][$index][0]);
+            $from = (int) $matches[2][$index][0];
+            $to = (int) $matches[3][$index][0];
+
+            if (! $name || ! $subject || $from < 1 || $to < $from || $to > 6) {
+                continue;
+            }
+
+            $grades = collect(range($from, $to))->map(fn ($n) => $this->formatGrade((int) $n))->all();
+            $actions[] = [
+                'intent' => 'create_teacher',
+                'data' => [
+                    'teacher_name' => $name,
+                    'subject_name' => $subject,
+                    'grades' => $grades,
+                    'missing_grades' => $this->missingGradesFor($director, $grades),
+                    'expires_in_days' => 30,
+                ],
+            ];
+        }
+
+        if (count($actions) > 20) {
+            throw ValidationException::withMessages([
+                'teacher' => 'Veo más de 20 profesores en tu mensaje. Parte la lista en dos envíos.',
+            ]);
+        }
+
+        return $this->dedupeDetectedActions($actions);
+    }
+
+    private function extractTrailingPersonName(string $chunk): ?string
+    {
+        $chunk = preg_replace('/[(:\-,;]\s*$/u', '', $chunk) ?? $chunk;
+        $chunk = preg_replace(
+            '/\b(?:profesor(?:a|es)?|docentes?|maestr[oa]s?|siguientes?|crea(?:r|me|es|e|o)?|quiero|que|me|los|las|al|a)\b/iu',
+            ' ',
+            $chunk
+        ) ?? $chunk;
+        $chunk = trim($chunk, " \t\n\r,:;()");
+        if ($chunk === '') {
             return null;
         }
 
-        $normalized = $this->normalizedText($text);
-        $aliases = [
+        if (! preg_match('/([A-Za-zÁÉÍÓÚáéíóúÑñ][A-Za-zÁÉÍÓÚáéíóúÑñ\'.-]+(?:\s+[A-Za-zÁÉÍÓÚáéíóúÑñ\'.-]+){0,3})\s*$/u', $chunk, $m)) {
+            return null;
+        }
+
+        return $this->sanitizePersonName((string) $m[1]);
+    }
+
+    /**
+     * @return array<string,string>
+     */
+    private function knownSubjectAliases(): array
+    {
+        return [
             'ingles' => 'Inglés',
             'matematica' => 'Matemática',
             'matematicas' => 'Matemática',
@@ -3061,8 +3201,19 @@ class AICommandController extends Controller
             'educacion fisica' => 'Educación Física',
             'robotica' => 'Robótica',
             'computacion' => 'Computación',
+            'religion' => 'Religión',
+            'educacion cristiana' => 'Religión',
         ];
-        foreach ($aliases as $alias => $canonical) {
+    }
+
+    private function extractKnownSubject(?string $text): ?string
+    {
+        if ($text === null || trim($text) === '') {
+            return null;
+        }
+
+        $normalized = $this->normalizedText($text);
+        foreach ($this->knownSubjectAliases() as $alias => $canonical) {
             if (preg_match('/\b'.preg_quote($alias, '/').'\b/u', $normalized)) {
                 return $canonical;
             }
@@ -3241,6 +3392,14 @@ class AICommandController extends Controller
         }
 
         if (preg_match('/de\s+([1-6])(?:ro|ero|er|°|º|do|to)?\s*(?:grado)?\s+a(?:l)?\s+([1-6])(?:to|do|ro|ero|er|°|º)?/u', $value, $m)) {
+            $from = (int) $m[1];
+            $to = (int) $m[2];
+            if ($from <= $to) {
+                return collect(range($from, $to))->map(fn ($n) => $this->formatGrade((int) $n))->all();
+            }
+        }
+
+        if (preg_match('/([1-6])(?:ro|ero|er|°|º|do|to)?\s*(?:grado)?\s*(?:a|al|-|–|—)\s*([1-6])(?:to|do|ro|ero|er|°|º)?/u', $value, $m)) {
             $from = (int) $m[1];
             $to = (int) $m[2];
             if ($from <= $to) {

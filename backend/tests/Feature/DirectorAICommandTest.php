@@ -2229,6 +2229,115 @@ class DirectorAICommandTest extends TestCase
         ]);
     }
 
+    public function test_staffing_list_creates_seven_teachers_with_their_subjects_and_grades(): void
+    {
+        [$director, $colegio] = $this->directorContext();
+
+        $prompt = 'quiero que me crees a los siguientes profesores: Jorge alarcon (ingles de 1ro a 6to grado), Miguel zambrano (computacion 1ro a 6to grado), jessica vazques (robotica 1ro a 6to grado), juan trujillo (matematica 1ro a 6to grado), abde rutero (biologia 4to a 6to), miguel mejias (fisica 3ro a 6to), yovanny jonsefo (religion 1ro a 6to).';
+
+        $draft = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => $prompt,
+        ]);
+
+        $draft->assertOk(json_encode($draft->json(), JSON_UNESCAPED_UNICODE))
+            ->assertJsonPath('requires_confirmation', true);
+        $this->assertStringNotContainsString('Puedo crear y eliminar profesores', (string) $draft->json('message'));
+
+        $pending = collect($draft->json('pending_actions'));
+        $this->assertCount(7, $pending);
+        $this->assertTrue($pending->every(fn ($action) => ($action['intent'] ?? '') === 'create_teacher'));
+
+        $byName = $pending->keyBy(fn ($action) => $action['data']['teacher_name'] ?? '');
+        $this->assertSame('Inglés', $byName['Jorge Alarcon']['data']['subject_name'] ?? null);
+        $this->assertSame(['1ro', '2do', '3ro', '4to', '5to', '6to'], $byName['Jorge Alarcon']['data']['grades'] ?? null);
+        $this->assertSame('Computación', $byName['Miguel Zambrano']['data']['subject_name'] ?? null);
+        $this->assertSame(['1ro', '2do', '3ro', '4to', '5to', '6to'], $byName['Miguel Zambrano']['data']['grades'] ?? null);
+        $this->assertSame('Robótica', $byName['Jessica Vazques']['data']['subject_name'] ?? null);
+        $this->assertSame('Matemática', $byName['Juan Trujillo']['data']['subject_name'] ?? null);
+        $this->assertSame('Biología', $byName['Abde Rutero']['data']['subject_name'] ?? null);
+        $this->assertSame(['4to', '5to', '6to'], $byName['Abde Rutero']['data']['grades'] ?? null);
+        $this->assertSame('Física', $byName['Miguel Mejias']['data']['subject_name'] ?? null);
+        $this->assertSame(['3ro', '4to', '5to', '6to'], $byName['Miguel Mejias']['data']['grades'] ?? null);
+        $this->assertSame('Religión', $byName['Yovanny Jonsefo']['data']['subject_name'] ?? null);
+
+        $execute = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'confirmed' => true,
+            'pending_actions' => $draft->json('pending_actions'),
+        ]);
+        $execute->assertOk();
+        $this->assertTrue((bool) $execute->json('any_success'), json_encode($execute->json(), JSON_UNESCAPED_UNICODE));
+
+        foreach ([
+            'Jorge Alarcon',
+            'Miguel Zambrano',
+            'Jessica Vazques',
+            'Juan Trujillo',
+            'Abde Rutero',
+            'Miguel Mejias',
+            'Yovanny Jonsefo',
+        ] as $name) {
+            $this->assertDatabaseHas('teacher_invites', [
+                'colegio_id' => $colegio->id,
+                'name' => $name,
+            ]);
+        }
+
+        $this->assertSame(6, Course::query()->where('colegio_id', $colegio->id)->where('subject_name', 'Inglés')->count());
+        $this->assertSame(3, Course::query()->where('colegio_id', $colegio->id)->where('subject_name', 'Biología')->count());
+        $this->assertSame(4, Course::query()->where('colegio_id', $colegio->id)->where('subject_name', 'Física')->count());
+        $this->assertSame(6, Course::query()->where('colegio_id', $colegio->id)->where('subject_name', 'Religión')->count());
+    }
+
+    public function test_rambling_necesito_que_still_creates_the_teacher_list(): void
+    {
+        [$director] = $this->directorContext();
+
+        $prompt = 'Hola buenos días, el colegio está bien, te cuento después. Necesito que crees a los siguientes profesores: Jorge alarcon (ingles de 1ro a 6to grado), Miguel zambrano (computacion 1ro a 6to grado).';
+
+        $draft = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => $prompt,
+        ]);
+
+        $draft->assertOk(json_encode($draft->json(), JSON_UNESCAPED_UNICODE))
+            ->assertJsonPath('requires_confirmation', true);
+        $this->assertStringNotContainsString('Puedo crear y eliminar profesores', (string) $draft->json('message'));
+        $pending = collect($draft->json('pending_actions'));
+        $this->assertCount(2, $pending);
+        $byName = $pending->keyBy(fn ($action) => $action['data']['teacher_name'] ?? '');
+        $this->assertSame('Inglés', $byName['Jorge Alarcon']['data']['subject_name'] ?? null);
+        $this->assertSame('Computación', $byName['Miguel Zambrano']['data']['subject_name'] ?? null);
+    }
+
+    public function test_director_can_transcribe_a_voice_note(): void
+    {
+        [$director] = $this->directorContext();
+        config([
+            'services.openai.key' => 'test-key',
+            'services.openai.director_enabled' => true,
+            'services.openai.director_test_enabled' => true,
+        ]);
+        Http::fake(function (\Illuminate\Http\Client\Request $request) {
+            if (str_contains($request->url(), 'audio/transcriptions')) {
+                return Http::response([
+                    'text' => 'Crea al profesor Yovanny Andrade y asígnale Religión de 1ro a 6to',
+                ]);
+            }
+
+            return Http::response(['choices' => [['message' => ['content' => '']]]], 200);
+        });
+
+        $file = \Illuminate\Http\UploadedFile::fake()->createWithContent('nota.webm', str_repeat('x', 4096));
+        $response = $this->actingAs($director)
+            ->withHeaders(['Accept' => 'application/json'])
+            ->post(route('director.ai.transcribe'), [
+                'audio' => $file,
+            ]);
+
+        $response->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('transcript', 'Crea al profesor Yovanny Andrade y asígnale Religión de 1ro a 6to');
+    }
+
     /**
      * @return array{0:User,1:Colegio}
      */
