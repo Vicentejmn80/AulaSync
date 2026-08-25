@@ -48,6 +48,14 @@
     </div>
 
     <div class="card">
+        <h3>Transparencia de medición</h3>
+        <p class="sub" style="margin-bottom:0;">
+            <strong>Sesiones abiertas:</strong> se calcula desde la tabla <code>sessions</code>,
+            contando solo registros con <code>user_id</code> y actividad en los últimos <strong>15 minutos</strong>.
+        </p>
+    </div>
+
+    <div class="card">
         <h3>Altas de usuarios</h3>
         @if ($overview['crecimiento']->isEmpty())
             <p class="empty">No hay altas en este periodo.</p>
