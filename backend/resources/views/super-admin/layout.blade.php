@@ -61,12 +61,12 @@
         <div class="top">
             <div class="brand">AulaSync <span>Founder Center</span></div>
             <nav class="nav">
-                <a href="{{ url('/super-admin') }}" class="{{ ($section ?? '') === 'overview' ? 'active' : '' }}">Overview</a>
+                <a href="{{ url('/super-admin') }}" class="{{ ($section ?? '') === 'overview' ? 'active' : '' }}">Resumen</a>
                 <a href="{{ url('/super-admin/usage') }}" class="{{ ($section ?? '') === 'usage' ? 'active' : '' }}">Uso</a>
                 <a href="{{ url('/super-admin/intelligence') }}" class="{{ ($section ?? '') === 'intelligence' ? 'active' : '' }}">IA</a>
                 <a href="{{ url('/super-admin/schools') }}" class="{{ ($section ?? '') === 'schools' ? 'active' : '' }}">Colegios</a>
                 <a href="{{ url('/super-admin/health') }}" class="{{ ($section ?? '') === 'health' ? 'active' : '' }}">Salud</a>
-                <a href="{{ url('/super-admin/insights') }}" class="{{ ($section ?? '') === 'insights' ? 'active' : '' }}">Insights</a>
+                <a href="{{ url('/super-admin/insights') }}" class="{{ ($section ?? '') === 'insights' ? 'active' : '' }}">Hallazgos</a>
                 <a href="{{ url('/super-admin/users') }}" class="{{ ($section ?? '') === 'users' ? 'active' : '' }}">Usuarios</a>
                 <form method="POST" action="{{ url('/logout') }}" style="margin:0;">
                     @csrf

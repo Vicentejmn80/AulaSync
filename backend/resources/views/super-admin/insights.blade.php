@@ -1,8 +1,8 @@
 @extends('super-admin.layout')
-@section('title', 'Founder Insights')
+@section('title', 'Hallazgos')
 @section('content')
-    <h1>Founder Insights</h1>
-    <p class="sub">Decisiones a partir de datos reales. Si no hay señal, lo dice.</p>
+    <h1>Hallazgos</h1>
+    <p class="sub">Lectura corta de los datos. Si no hay señal suficiente, lo dice.</p>
 
     <div class="card"><h3>Lo que más utilizan</h3><p>{{ $insights['mas_utilizan'] }}</p></div>
     <div class="card"><h3>Lo que están intentando hacer</h3><p>{{ $insights['intentando'] }}</p></div>

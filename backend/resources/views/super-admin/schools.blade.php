@@ -1,8 +1,8 @@
 @extends('super-admin.layout')
 @section('title', 'Salud de colegios')
 @section('content')
-    <h1>Customer / School Health</h1>
-    <p class="sub">Adopción por colegio con datos reales. Activo = login en 7 días; riesgo = 8–30 días; inactivo = sin login en 30 días.</p>
+    <h1>Salud de colegios</h1>
+    <p class="sub">Adopción por colegio con datos reales. Activo = entró en los últimos 7 días; en riesgo = 8–30 días; inactivo = sin acceso en 30 días.</p>
 
     <div class="card">
         @if ($schools->isEmpty())
@@ -36,7 +36,7 @@
                             <td>{{ $school['funciones'] }}</td>
                             <td>{{ $school['adopcion'] }}</td>
                             <td>{{ $school['errores'] }}</td>
-                            <td><span class="pill {{ $school['estado'] }}">{{ $school['estado'] }}</span></td>
+                            <td><span class="pill {{ $school['estado'] }}">{{ \App\Support\SuperAdminCopy::status($school['estado']) }}</span></td>
                             <td>
                                 <a class="btn btn-ghost" href="{{ url('/super-admin/colegios/'.$school['id']) }}">Ver</a>
                             </td>

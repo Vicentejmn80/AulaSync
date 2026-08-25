@@ -12,6 +12,7 @@ use App\Models\Planificacion;
 use App\Models\ProductEvent;
 use App\Models\Student;
 use App\Models\User;
+use App\Support\SuperAdminCopy;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -91,7 +92,7 @@ class SuperAdminAnalyticsService
             ->get();
 
         $aiActions = $this->eventsQuery($filters)
-            ->whereIn('source', ['teacher_ai', 'director_ai'])
+            ->whereIn('source', $this->aiSources())
             ->whereNotNull('action')
             ->selectRaw('action, source, COUNT(*) as total')
             ->groupBy('action', 'source')
@@ -155,7 +156,7 @@ class SuperAdminAnalyticsService
         $to = $filters['to'];
 
         $byRole = $this->eventsQuery($filters)
-            ->whereIn('source', ['teacher_ai', 'director_ai'])
+            ->whereIn('source', $this->aiSources())
             ->selectRaw('source, role, COUNT(*) as total')
             ->groupBy('source', 'role')
             ->get();
@@ -170,7 +171,7 @@ class SuperAdminAnalyticsService
             ->get();
 
         $categories = $this->eventsQuery($filters)
-            ->whereIn('source', ['teacher_ai', 'director_ai', 'intelligence'])
+            ->whereIn('source', $this->aiSources())
             ->selectRaw('category, COUNT(*) as total')
             ->groupBy('category')
             ->orderByDesc('total')
@@ -179,12 +180,12 @@ class SuperAdminAnalyticsService
         $unresolved = DirectorAiOperationLog::query()
             ->whereBetween('created_at', [$from, $to])
             ->when($filters['colegio_id'], fn ($q) => $q->where('colegio_id', $filters['colegio_id']))
-            ->whereIn('status', ['pending_confirmation', 'received'])
+            ->where('status', 'pending_confirmation')
             ->count()
             + $this->eventsQuery($filters)->where('status', 'unresolved')->count();
 
         $failedActions = $this->eventsQuery($filters)
-            ->whereIn('source', ['teacher_ai', 'director_ai'])
+            ->whereIn('source', $this->aiSources())
             ->where('status', 'failed')
             ->selectRaw('action, COUNT(*) as total')
             ->groupBy('action')
@@ -202,7 +203,7 @@ class SuperAdminAnalyticsService
             ->first();
 
         $trend = $this->eventsQuery($filters)
-            ->whereIn('source', ['teacher_ai', 'director_ai', 'intelligence'])
+            ->whereIn('source', $this->aiSources())
             ->selectRaw($this->dayExpr('created_at').' as day, COUNT(*) as total')
             ->groupBy('day')
             ->orderBy('day')
@@ -371,7 +372,7 @@ class SuperAdminAnalyticsService
             ->first();
 
         $iaFails = $this->eventsQuery($filters)
-            ->whereIn('source', ['teacher_ai', 'director_ai', 'intelligence'])
+            ->whereIn('source', $this->aiSources())
             ->where('status', 'failed')
             ->count()
             + DirectorAiOperationLog::query()
@@ -415,29 +416,31 @@ class SuperAdminAnalyticsService
 
         $top = $usage['mas_usadas']->first();
         $topIntent = $intelligence['intenciones']->first();
+        $errorLabels = $usage['errores']->take(3)->map(fn ($row) => SuperAdminCopy::error($row->error_code))->all();
+        $unusedLabels = array_map(fn ($name) => SuperAdminCopy::action($name), array_slice($usage['menos_usadas'], 0, 5));
 
         return [
             'mas_utilizan' => $top
-                ? $top->action.' ('.$top->total.' eventos en el periodo)'
-                : 'Todavía no hay eventos de producto en este periodo.',
+                ? SuperAdminCopy::action($top->action).' ('.$top->total.' veces en el periodo).'
+                : 'Todavía no hay actividad registrada en este periodo.',
             'intentando' => $topIntent
-                ? 'En IA de dirección predomina «'.$topIntent->intent.'».'
-                : 'No hay intenciones de IA de dirección registradas en este periodo.',
+                ? 'En el chat del director lo más pedido es «'.SuperAdminCopy::action($topIntent->intent).'».'
+                : 'No hay pedidos del chat de dirección en este periodo.',
             'problemas' => $health['acciones_fallidas'] > 0
-                ? $health['acciones_fallidas'].' acciones fallidas y '.$health['fallos_ia'].' fallos de IA.'
-                : 'No hay fallos registrados en telemetría para este periodo.',
+                ? $health['acciones_fallidas'].' acciones fallaron y '.$health['fallos_ia'].' fueron del chat o de documentos con IA.'
+                : 'No hay fallos registrados en este periodo.',
             'mejorar' => $usage['errores']->isNotEmpty()
-                ? 'Revisar '.$usage['errores']->pluck('error_code')->take(3)->implode(', ').'.'
+                ? 'Revisar: '.implode(', ', $errorLabels).'.'
                 : ($intelligence['sin_resolver'] > 0
-                    ? $intelligence['sin_resolver'].' solicitudes quedaron sin resolver o pendientes.'
+                    ? $intelligence['sin_resolver'].' consultas quedaron sin respuesta clara o esperando confirmación.'
                     : 'No hay suficiente señal de error para priorizar un arreglo.'),
-            'casi_nadie' => $usage['menos_usadas'] !== []
-                ? implode(', ', array_slice($usage['menos_usadas'], 0, 5))
-                : 'Las acciones conocidas ya aparecen en el uso registrado, o aún no hay telemetría suficiente.',
+            'casi_nadie' => $unusedLabels !== []
+                ? implode(', ', $unusedLabels)
+                : 'Las funciones conocidas ya aparecen en el uso, o aún no hay actividad suficiente para comparar.',
             'tendencia' => $overview['nuevos_usuarios'].' usuarios nuevos; '.$overview['usuarios_30d'].' activos en 30 días; '.$overview['colegios_activos'].' colegios activos.',
             'costo' => $intelligence['costo_usd'] !== null
-                ? '$'.number_format($intelligence['costo_usd'], 4).' USD estimados (tokens registrados).'
-                : 'Aún no hay tokens/costo de IA persistidos. El costo por colegio aparecerá cuando las llamadas registren usage.',
+                ? '$'.number_format($intelligence['costo_usd'], 4).' USD estimados, según el consumo que sí se registró.'
+                : 'Todavía no hay consumo de IA registrado. El costo aparecerá cuando las llamadas guarden tokens.',
         ];
     }
 
@@ -531,5 +534,15 @@ class SuperAdminAnalyticsService
         return DB::getDriverName() === 'pgsql'
             ? "to_char({$column}, 'YYYY-MM-DD')"
             : "strftime('%Y-%m-%d', {$column})";
+    }
+
+    /**
+     * Fuentes que cuentan como uso de IA (chat docente, chat director y documentos).
+     *
+     * @return list<string>
+     */
+    private function aiSources(): array
+    {
+        return ['teacher_ai', 'director_ai', 'director_data_agent', 'intelligence'];
     }
 }

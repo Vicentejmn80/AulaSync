@@ -3,7 +3,10 @@
 namespace Tests\Feature;
 
 use App\Models\Colegio;
+use App\Models\DirectorAiOperationLog;
+use App\Models\ProductEvent;
 use App\Models\User;
+use App\Services\SuperAdminAnalyticsService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -78,7 +81,7 @@ class SuperAdminAccessTest extends TestCase
 
         $this->actingAs($admin)->get('/super-admin')
             ->assertOk()
-            ->assertSee('Overview');
+            ->assertSee('Resumen');
 
         $this->actingAs($admin)->get('/super-admin/schools')
             ->assertOk()
@@ -252,5 +255,61 @@ class SuperAdminAccessTest extends TestCase
             ->delete(route('super-admin.users.destroy', $director))
             ->assertRedirect();
         $this->assertDatabaseHas('users', ['id' => $director->id]);
+    }
+
+    public function test_dashboard_uses_spanish_labels_and_counts_director_chat_failures(): void
+    {
+        $admin = User::factory()->create([
+            'role' => 'super_admin',
+            'onboarding_completed' => true,
+        ]);
+
+        ProductEvent::create([
+            'source' => 'director_data_agent',
+            'event' => 'ai_action',
+            'action' => 'get_at_risk_students',
+            'category' => 'academic',
+            'status' => 'failed',
+            'error_code' => 'tool_failed',
+            'role' => 'director',
+            'created_at' => now(),
+        ]);
+
+        DirectorAiOperationLog::create([
+            'director_user_id' => $admin->id,
+            'intent' => 'create_course',
+            'status' => 'received',
+        ]);
+
+        $analytics = app(SuperAdminAnalyticsService::class);
+        $filters = $analytics->filters([]);
+        $intelligence = $analytics->intelligence($filters);
+        $health = $analytics->health($filters);
+
+        $this->assertSame(0, $intelligence['sin_resolver']);
+        $this->assertSame(1, $health['fallos_ia']);
+        $this->assertTrue(
+            $intelligence['acciones_error']->contains(fn ($row) => $row->action === 'get_at_risk_students')
+        );
+
+        $this->actingAs($admin)->get('/super-admin')
+            ->assertOk()
+            ->assertSee('Resumen')
+            ->assertDontSee('telemetr', false);
+
+        $this->actingAs($admin)->get('/super-admin/health')
+            ->assertOk()
+            ->assertSee('Salud del sistema')
+            ->assertSee('Consultó alumnos en riesgo')
+            ->assertSee('Falló al consultar los datos')
+            ->assertDontSee('director_data_agent')
+            ->assertDontSee('Jobs fallidos');
+
+        $this->actingAs($admin)->get('/super-admin/intelligence')
+            ->assertOk()
+            ->assertSee('Uso de IA')
+            ->assertSee('Consultas sin respuesta clara')
+            ->assertSee('Chat del director (consultas)')
+            ->assertDontSee('telemetrados');
     }
 }
