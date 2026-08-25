@@ -12,6 +12,7 @@ use App\Models\Planificacion;
 use App\Models\ProductEvent;
 use App\Models\Student;
 use App\Models\User;
+use App\Support\DatabaseBoolean;
 use App\Support\SuperAdminCopy;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
@@ -138,7 +139,7 @@ class SuperAdminAnalyticsService
             'tareas' => (clone $activities)->where(function ($q) {
                 $q->where('type', 'tarea')->orWhere('is_homework', true);
             })->count(),
-            'evaluaciones_ia' => $evals->where('generated_by_ai', true)->count(),
+            'evaluaciones_ia' => $evals->whereRaw(DatabaseBoolean::equals('generated_by_ai', true))->count(),
             'consultas' => $this->eventsQuery($filters)->where('category', 'academic')->where('event', 'ai_action')->count()
                 + DirectorAiOperationLog::query()->whereBetween('created_at', [$from, $to])
                     ->when($filters['colegio_id'], fn ($q) => $q->where('colegio_id', $filters['colegio_id']))

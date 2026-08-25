@@ -5,9 +5,11 @@ namespace Tests\Feature;
 use App\Models\Activity;
 use App\Models\Colegio;
 use App\Models\Course;
+use App\Models\Evaluation;
 use App\Models\ProductEvent;
 use App\Models\User;
 use App\Services\ProductTelemetry;
+use App\Services\SuperAdminAnalyticsService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -62,7 +64,11 @@ class SuperAdminDashboardTest extends TestCase
 
         $this->actingAs($admin)->get('/super-admin/usage')
             ->assertOk()
-            ->assertSee('query_academic');
+            ->assertSee('Hizo una consulta académica');
+
+        $this->actingAs($admin)->get('/super-admin/insights')
+            ->assertOk()
+            ->assertSee('Hallazgos');
 
         $this->actingAs($admin)->get('/super-admin/colegios/'.$colegio->id)
             ->assertOk()
@@ -75,6 +81,26 @@ class SuperAdminDashboardTest extends TestCase
             'colegio_id' => $colegio->id,
         ]);
         $this->assertNull(ProductEvent::first()?->meta['prompt'] ?? null);
+    }
+
+    public function test_usage_and_insights_count_ai_evaluations_without_boolean_integer_sql(): void
+    {
+        $admin = User::factory()->create(['role' => 'super_admin', 'onboarding_completed' => true]);
+        $teacher = User::factory()->create(['role' => 'profesor', 'onboarding_completed' => true]);
+        Evaluation::create([
+            'teacher_id' => $teacher->id,
+            'title' => 'Parcial con IA',
+            'status' => 'published',
+            'generated_by_ai' => true,
+        ]);
+
+        $usage = app(SuperAdminAnalyticsService::class)->usage(
+            app(SuperAdminAnalyticsService::class)->filters([])
+        );
+        $this->assertSame(1, $usage['evaluaciones_ia']);
+
+        $this->actingAs($admin)->get('/super-admin/usage')->assertOk()->assertSee('Evaluaciones con IA');
+        $this->actingAs($admin)->get('/super-admin/insights')->assertOk()->assertSee('Hallazgos');
     }
 
     public function test_login_writes_last_seen_and_does_not_store_prompt_text(): void
