@@ -39,7 +39,7 @@
         </div>
         <div class="stat">
             <div class="stat-head"><i class="fa-solid fa-link metric-icon"></i><span class="trend-badge neutral">Live</span></div>
-            <b>{{ $overview['sesiones_activas'] }}</b><span>Sesiones abiertas ahora</span>
+            <b>{{ $overview['sesiones_activas'] }}</b><span>Sesiones abiertas (ult. 15 min)</span>
         </div>
         <div class="stat">
             <div class="stat-head"><i class="fa-solid fa-right-to-bracket metric-icon cyan"></i><span class="trend-badge neutral">Periodo</span></div>

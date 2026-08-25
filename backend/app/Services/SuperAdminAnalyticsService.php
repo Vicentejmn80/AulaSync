@@ -49,9 +49,7 @@ class SuperAdminAnalyticsService
     {
         $from = $filters['from'];
         $to = $filters['to'];
-
-        $activeCutoff = now()->subDays(30);
-        $activeColegioIds = $this->activeColegioIds($activeCutoff);
+        $activeColegioIds = $this->activeColegioIdsBetween($from, $to, $filters);
 
         $directors = User::query()->where('role', 'director');
         $teachers = User::query()->where('role', 'profesor');
@@ -65,9 +63,9 @@ class SuperAdminAnalyticsService
             'colegios' => Colegio::count(),
             'colegios_activos' => $activeColegioIds->count(),
             'directores' => (clone $directors)->count(),
-            'directores_activos' => (clone $directors)->where('last_login_at', '>=', $activeCutoff)->count(),
+            'directores_activos' => $this->activeUsersByRoleInPeriod('director', $filters),
             'docentes' => (clone $teachers)->count(),
-            'docentes_activos' => (clone $teachers)->where('last_login_at', '>=', $activeCutoff)->count(),
+            'docentes_activos' => $this->activeUsersByRoleInPeriod('profesor', $filters),
             'usuarios_hoy' => $this->activeUsersSince(now()->startOfDay(), $filters),
             'usuarios_7d' => $this->activeUsersSince(now()->subDays(6)->startOfDay(), $filters),
             'usuarios_30d' => $this->activeUsersSince(now()->subDays(29)->startOfDay(), $filters),
@@ -480,8 +478,10 @@ class SuperAdminAnalyticsService
             return 0;
         }
 
-        $cutoff = now()->subMinutes(120)->timestamp;
-        $query = DB::table('sessions')->where('last_activity', '>=', $cutoff);
+        $cutoff = now()->subMinutes(15)->timestamp;
+        $query = DB::table('sessions')
+            ->whereNotNull('user_id')
+            ->where('last_activity', '>=', $cutoff);
         if ($filters['colegio_id'] || $filters['role']) {
             $userIds = User::query()
                 ->when($filters['colegio_id'], fn ($q) => $q->where('colegio_id', $filters['colegio_id']))
@@ -493,21 +493,30 @@ class SuperAdminAnalyticsService
         return $query->count();
     }
 
-    private function activeColegioIds(Carbon $since): Collection
+    private function activeColegioIdsBetween(Carbon $from, Carbon $to, array $filters): Collection
     {
         $fromLogins = User::query()
             ->whereNotNull('colegio_id')
-            ->where('last_login_at', '>=', $since)
+            ->whereNotNull('last_login_at')
+            ->whereBetween('last_login_at', [$from, $to])
+            ->when($filters['colegio_id'], fn ($q) => $q->where('colegio_id', $filters['colegio_id']))
+            ->when($filters['role'], fn ($q) => $q->where('role', $filters['role']))
             ->distinct()
             ->pluck('colegio_id');
 
         $fromActivity = Activity::query()
-            ->where('created_at', '>=', $since)
+            ->whereBetween('created_at', [$from, $to])
+            ->whereNotNull('colegio_id')
+            ->when($filters['colegio_id'], fn ($q) => $q->where('colegio_id', $filters['colegio_id']))
+            ->distinct()
+            ->pluck('colegio_id');
+
+        $fromEvents = $this->eventsQuery($filters)
             ->whereNotNull('colegio_id')
             ->distinct()
             ->pluck('colegio_id');
 
-        return $fromLogins->merge($fromActivity)->unique()->values();
+        return $fromLogins->merge($fromActivity)->merge($fromEvents)->unique()->values();
     }
 
     private function userGrowth(Carbon $from, Carbon $to, array $filters): Collection
@@ -525,9 +534,28 @@ class SuperAdminAnalyticsService
     private function recentActivity(array $filters, int $limit): Collection
     {
         return $this->eventsQuery($filters)
+            ->orderByDesc('created_at')
             ->orderByDesc('id')
             ->limit($limit)
             ->get(['id', 'source', 'event', 'action', 'status', 'role', 'colegio_id', 'created_at']);
+    }
+
+    private function activeUsersByRoleInPeriod(string $role, array $filters): int
+    {
+        $eventUsers = $this->eventsQuery($filters)
+            ->where('role', $role)
+            ->whereNotNull('user_id')
+            ->distinct()
+            ->pluck('user_id');
+
+        $loginUsers = User::query()
+            ->where('role', $role)
+            ->whereNotNull('last_login_at')
+            ->whereBetween('last_login_at', [$filters['from'], $filters['to']])
+            ->when($filters['colegio_id'], fn ($q) => $q->where('colegio_id', $filters['colegio_id']))
+            ->pluck('id');
+
+        return $eventUsers->merge($loginUsers)->unique()->count();
     }
 
     private function dayExpr(string $column): string

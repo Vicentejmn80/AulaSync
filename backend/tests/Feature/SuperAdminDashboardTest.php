@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Services\ProductTelemetry;
 use App\Services\SuperAdminAnalyticsService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 class SuperAdminDashboardTest extends TestCase
@@ -114,5 +115,81 @@ class SuperAdminDashboardTest extends TestCase
         $this->post('/login', ['email' => $user->email, 'password' => 'password'])->assertRedirect();
         $this->assertNotNull($user->fresh()->last_login_at);
         $this->assertDatabaseHas('product_events', ['event' => 'login', 'user_id' => $user->id]);
+    }
+
+    public function test_overview_counts_sessions_in_last_fifteen_minutes_with_user_id(): void
+    {
+        $admin = User::factory()->create(['role' => 'super_admin', 'onboarding_completed' => true]);
+        $teacher = User::factory()->create(['role' => 'profesor', 'onboarding_completed' => true]);
+
+        DB::table('sessions')->insert([
+            [
+                'id' => 'sess-new',
+                'user_id' => $teacher->id,
+                'ip_address' => '127.0.0.1',
+                'user_agent' => 'phpunit',
+                'payload' => 'x',
+                'last_activity' => now()->subMinutes(5)->timestamp,
+            ],
+            [
+                'id' => 'sess-old',
+                'user_id' => $teacher->id,
+                'ip_address' => '127.0.0.1',
+                'user_agent' => 'phpunit',
+                'payload' => 'x',
+                'last_activity' => now()->subMinutes(20)->timestamp,
+            ],
+            [
+                'id' => 'sess-anon',
+                'user_id' => null,
+                'ip_address' => '127.0.0.1',
+                'user_agent' => 'phpunit',
+                'payload' => 'x',
+                'last_activity' => now()->subMinutes(1)->timestamp,
+            ],
+        ]);
+
+        $overview = app(SuperAdminAnalyticsService::class)->overview(
+            app(SuperAdminAnalyticsService::class)->filters([])
+        );
+
+        $this->assertSame(1, $overview['sesiones_activas']);
+        $this->actingAs($admin)->get('/super-admin')->assertOk()->assertSee('Sesiones abiertas (ult. 15 min)');
+    }
+
+    public function test_overview_active_roles_use_logs_in_selected_period(): void
+    {
+        $admin = User::factory()->create(['role' => 'super_admin', 'onboarding_completed' => true]);
+        $director = User::factory()->create(['role' => 'director', 'onboarding_completed' => true, 'colegio_id' => null]);
+        $teacher = User::factory()->create(['role' => 'profesor', 'onboarding_completed' => true, 'colegio_id' => null]);
+
+        ProductEvent::create([
+            'user_id' => $director->id,
+            'role' => 'director',
+            'source' => 'director_data_agent',
+            'event' => 'ai_action',
+            'action' => 'get_students',
+            'status' => 'success',
+            'created_at' => now()->subDays(2),
+        ]);
+        ProductEvent::create([
+            'user_id' => $teacher->id,
+            'role' => 'profesor',
+            'source' => 'teacher_ai',
+            'event' => 'ai_action',
+            'action' => 'createActivity',
+            'status' => 'success',
+            'created_at' => now()->subDays(1),
+        ]);
+
+        $filters = app(SuperAdminAnalyticsService::class)->filters([
+            'from' => now()->subDays(7)->toDateString(),
+            'to' => now()->toDateString(),
+        ]);
+        $overview = app(SuperAdminAnalyticsService::class)->overview($filters);
+
+        $this->assertSame(1, $overview['directores_activos']);
+        $this->assertSame(1, $overview['docentes_activos']);
+        $this->actingAs($admin)->get('/super-admin')->assertOk();
     }
 }
