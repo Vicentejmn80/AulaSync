@@ -34,6 +34,7 @@ class PersonNameSanitizer
             .'(?:y\s+)?(?:as[ií]gna(?:lo|le|r|les)?|inscr[ií]be(?:lo|le|r)?|matr[ií]cula(?:lo|le|r)?|agrega(?:lo|le)?|añade|anade|crea(?:r|me)?)'
             .'|en\s+el|en\s+la|en\s+los|en\s+las'
             .'|al\s+curso|a\s+el\s+curso|del\s+curso|de\s+el\s+curso'
+            .'|que\s+va(?:\s+a(?:\s+dar)?)?|va\s+a\s+dar'
             .'|(?:en|de|del|para|a)\s+(?:el\s+|la\s+)?(?:primer|primero|segundo|tercer|tercero|cuarto|quinto|sexto|[1-6](?:ro|ero|er|do|to|°|º)?)'
             .'|(?:en|de|del|para)\s+(?:el\s+|la\s+)?(?:curso|grado|materia|asignatura|seccion|sección)'
             .'|con\s+(?:el\s+|la\s+)?(?:profesor|profesora|docente)'

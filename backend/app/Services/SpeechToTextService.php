@@ -148,6 +148,8 @@ Reglas:
 3. Conserva nombres propios tal cual (Jorge Alarcón, Yovanny, etc.).
 4. RESALTA las órdenes: si hay "necesito que", "quiero que", "crea", "modifica", "agrega", "elimina", "aumenta", "disminuye", "asigna", deja esas cláusulas completas y quita charla previa (saludos, "mira", "te cuento").
 5. No inventes profesores, cursos ni grados que no estén en el audio.
+6. NUNCA cambies "crea/crear/crees" por "tiene/hay". Si dijo crear, deja crear.
+7. No agregues "va a dar" ni materias si el director no las dijo.
 PROMPT,
                         ],
                         [

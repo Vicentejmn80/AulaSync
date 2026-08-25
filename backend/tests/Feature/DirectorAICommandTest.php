@@ -2288,6 +2288,38 @@ class DirectorAICommandTest extends TestCase
         $this->assertSame(6, Course::query()->where('colegio_id', $colegio->id)->where('subject_name', 'Religión')->count());
     }
 
+    public function test_crea_un_profesor_llamado_does_not_return_generic_menu(): void
+    {
+        [$director] = $this->directorContext();
+
+        $draft = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'Crea un profesor llamado Vicente.',
+        ]);
+
+        $draft->assertOk(json_encode($draft->json(), JSON_UNESCAPED_UNICODE))
+            ->assertJsonPath('requires_confirmation', true)
+            ->assertJsonPath('pending_actions.0.intent', 'create_teacher')
+            ->assertJsonPath('pending_actions.0.data.teacher_name', 'Vicente');
+        $this->assertStringNotContainsString('Puedo crear y eliminar profesores', (string) $draft->json('message'));
+    }
+
+    public function test_tiene_un_profesor_llamado_que_va_a_dar_materia_creates_teacher(): void
+    {
+        [$director] = $this->directorContext();
+
+        $draft = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'Tiene un profesor llamado Vicente que va a dar matemáticas de 1ro a 6to grado.',
+        ]);
+
+        $draft->assertOk(json_encode($draft->json(), JSON_UNESCAPED_UNICODE))
+            ->assertJsonPath('requires_confirmation', true)
+            ->assertJsonPath('pending_actions.0.intent', 'create_teacher')
+            ->assertJsonPath('pending_actions.0.data.teacher_name', 'Vicente')
+            ->assertJsonPath('pending_actions.0.data.subject_name', 'Matemática');
+        $this->assertSame(['1ro', '2do', '3ro', '4to', '5to', '6to'], $draft->json('pending_actions.0.data.grades'));
+        $this->assertStringNotContainsString('Puedo crear y eliminar profesores', (string) $draft->json('message'));
+    }
+
     public function test_rambling_necesito_que_still_creates_the_teacher_list(): void
     {
         [$director] = $this->directorContext();

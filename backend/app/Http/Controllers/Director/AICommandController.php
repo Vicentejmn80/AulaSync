@@ -257,9 +257,13 @@ class AICommandController extends Controller
 
             if ($actions === [] && $llmReply !== '') {
                 $intentGuess = $this->detectIntent($text);
-                $looksLikeWorkOrder = $this->dataAgent->looksLikeMutation($text) || $this->looksLikeStaffingList($text);
+                $looksLikeWorkOrder = $this->dataAgent->looksLikeMutation($text)
+                    || $this->looksLikeStaffingList($text)
+                    || $this->looksLikeTeacherStaffing($text)
+                    || $this->looksLikeCapabilityMenu($llmReply);
                 // Si el director dio una orden, no devolver prosa de "qué puedo hacer".
                 $trustLlmText = ! $looksLikeWorkOrder
+                    && ! $this->looksLikeCapabilityMenu($llmReply)
                     && $intentGuess !== 'query_academic'
                     && ! $this->intentRequiresConfirmation((string) $intentGuess);
                 if ($trustLlmText) {
@@ -295,6 +299,24 @@ class AICommandController extends Controller
             }
 
             if ($actions === []) {
+                if ($this->looksLikeTeacherStaffing($text)) {
+                    [$staffingData, $staffingMsg] = $this->parseCreateTeacher($director, $text);
+                    if (! $staffingMsg && ! empty($staffingData['teacher_name'])) {
+                        $actions = $this->enrichActionsFromText([[
+                            'intent' => 'create_teacher',
+                            'data' => $staffingData,
+                        ]], $text);
+                    } elseif ($staffingMsg) {
+                        return response()->json([
+                            'success' => false,
+                            'needs_clarification' => true,
+                            'message' => $staffingMsg,
+                        ]);
+                    }
+                }
+            }
+
+            if ($actions === []) {
                 // Red de seguridad: si el intérprete no armó mutación pero la
                 // frase es una consulta académica, no devolver el menú CRUD.
                 if ($this->dataAgent->looksLikeAcademicInquiry($text)) {
@@ -306,6 +328,11 @@ class AICommandController extends Controller
                     return $this->respondWithDataAgent($director, $text, $screenContext, null);
                 }
 
+                $clarification = is_array($interpreted) ? ($interpreted['clarification'] ?? null) : null;
+                if ($this->looksLikeCapabilityMenu(is_string($clarification) ? $clarification : null)) {
+                    $clarification = null;
+                }
+
                 Log::warning('director.ai.crud_menu_fallback', [
                     'prompt' => mb_substr($text, 0, 240),
                     'decision' => $this->dataAgent->routeDecision($text),
@@ -314,8 +341,8 @@ class AICommandController extends Controller
                 return response()->json([
                     'success' => false,
                     'needs_clarification' => true,
-                    'message' => (is_array($interpreted) ? ($interpreted['clarification'] ?? null) : null)
-                        ?: 'Puedo crear y eliminar profesores, cursos y alumnos, matricular alumnos en cursos y consultar notas o faltas. Ejemplos: "Crea al alumno Andrés Pérez y asígnalo al curso de Inglés de 1ro" o "Crea al profesor Yovanny Andrade y asígnale Inglés de 1ro a 6to".',
+                    'message' => $clarification
+                        ?: 'No entendí esa orden. Prueba con: "Crea al profesor Vicente y asígnale Matemática de 1ro a 6to".',
                     'routing' => $this->dataAgent->routeDecision($text),
                 ]);
             }
@@ -1495,7 +1522,7 @@ class AICommandController extends Controller
                 || preg_match('/\b(?:para|en|de|del)\s+(?:el\s+)?[1-6](?:ro|er|do|to|°|º|ero)?\s*(?:grado\b|[,.]|(?:y|e)\b|$)/', $value))) {
             return 'create_course';
         }
-        if ((str_contains($value, 'dara') || str_contains($value, 'asigna') || str_contains($value, 'agregale') || str_contains($value, 'asignale'))
+        if ((str_contains($value, 'dara') || str_contains($value, 'va a dar') || str_contains($value, 'asigna') || str_contains($value, 'agregale') || str_contains($value, 'asignale'))
             && (str_contains($value, 'grado') || str_contains($value, 'curso') || str_contains($value, 'materia') || preg_match('/\b[1-6](ro|do|to|er)?\b/', $value))) {
             return 'assign_teacher';
         }
@@ -1597,7 +1624,7 @@ class AICommandController extends Controller
             $value = $this->normalizedText($clause);
             $wantsTeacher = $this->wantsCreateTeacherPhrase($value);
             $wantsAssignTeacher = (bool) preg_match(
-                '/\b(?:as[ií]gna(?:le)?|dara|dará|agrega(?:le)?)\b/',
+                '/\b(?:as[ií]gna(?:le)?|dara|dará|agrega(?:le)?|va a dar|imparte|enseña)\b/',
                 $value
             );
             $wantsStudent = (bool) preg_match('/\b(?:alumno|estudiante)s?\b/', $value)
@@ -1630,6 +1657,12 @@ class AICommandController extends Controller
             }
 
             if ($wantsAssignTeacher && count($roster) < 2) {
+                $createAlreadyHasCourses = collect($actions)->contains(
+                    fn ($action) => ($action['intent'] ?? '') === 'create_teacher'
+                        && ! empty($action['data']['subject_name'])
+                        && ! empty($action['data']['grades'])
+                );
+                if (! $createAlreadyHasCourses) {
                 $assignSegments = preg_split(
                     '/\s+y\s+(?=a\s+[A-Za-zÁÉÍÓÚáéíóúÑñ]|as[ií]gna(?:le)?\s+|dara\s+|dará\s+|agrega(?:le)?\s+)/iu',
                     $clause,
@@ -1652,6 +1685,7 @@ class AICommandController extends Controller
                             $actions[] = ['intent' => 'assign_teacher', 'data' => $data];
                         }
                     }
+                }
                 }
             }
 
@@ -2901,6 +2935,7 @@ class AICommandController extends Controller
     private function extractTeacherName(string $text): ?string
     {
         $patterns = [
+            '/llamad[oa]\s+([A-Za-zÁÉÍÓÚáéíóúÑñ]+(?:\s+[A-Za-zÁÉÍÓÚáéíóúÑñ]+){0,3}?)(?=\s+(?:que\s+|va\s+a|para\s+|de\s+[1-6]|y\s+|tambien|también)|[,.]|$)/iu',
             '/con\s+(?:el\s+|la\s+)?profesor(?:a)?\s+(.+)$/iu',
             '/profesor(?:a)?\s+de\s+[A-Za-zÁÉÍÓÚáéíóúÑñ]+\s+llamad[oa]\s+([A-Za-zÁÉÍÓÚáéíóúÑñ][A-Za-zÁÉÍÓÚáéíóúÑñ\s]{1,80}?)(?:\s+(?:y|para|con|tambien|también)|,|\.|$)/iu',
             '/profesor(?:a)?\s+(?:llamad[oa]\s+)?([A-Za-zÁÉÍÓÚáéíóúÑñ]+(?:\s+[A-Za-zÁÉÍÓÚáéíóúÑñ]+){0,3}?)\s+(?:tambien|también|que\s+te|ademas|además|y\s+crea)/iu',
@@ -2933,10 +2968,12 @@ class AICommandController extends Controller
      */
     private function extractTeacherNames(string $text): array
     {
-        $pattern = '/(?:a\s+)?(?:al\s+|a la\s+|el\s+|la\s+)?(?:profesor(?:a)?|docente|maestr[oa])\s+'
+        $pattern = '/(?:a\s+)?(?:al\s+|a la\s+|el\s+|la\s+|un\s+|una\s+)?(?:profesor(?:a)?|docente|maestr[oa])\s+'
+            .'(?:llamad[oa]\s+)?'
             .'([A-Za-zÁÉÍÓÚáéíóúÑñ][A-Za-zÁÉÍÓÚáéíóúÑñ\s\'-]{0,120}?)'
             .'(?=\s+(?:(?:y\s+|,\s*)?(?:a\s+)?(?:al\s+|a la\s+|el\s+|la\s+)?(?:profesor(?:a)?|docente|maestr[oa])'
             .'|de\s+[1-6](?:ro|er|do|to|°|º)?\s*(?:grado)?'
+            .'|que\s+va|va\s+a\s+dar'
             .'|(?:de|para|en|del)\s+(?:el\s+|la\s+)?(?:curso|grado|materia|asignatura|seccion|sección))\b|$)/iu';
 
         if (! preg_match_all($pattern, $text, $matches)) {
@@ -3092,10 +3129,45 @@ class AICommandController extends Controller
 
     private function wantsCreateTeacherPhrase(string $value): bool
     {
-        return (bool) preg_match(
-            '/\b(?:crea(?:r|me)?|crees|cree|creo|invita)\b(?:\s+(?:a|al|el|la|los|las|me)){0,4}\s+(?:siguientes?\s+)?(?:profesor(?:a|es)?|docentes?)\b/',
+        if (preg_match(
+            '/\b(?:crea(?:r|me)?|crees|cree|creo|invita|agrega(?:r)?|registra(?:r)?)\b(?:\s+(?:a|al|el|la|los|las|me|un|una|uno|nuevo|nueva)){0,4}\s+(?:siguientes?\s+)?(?:profesor(?:a|es)?|docentes?|maestro[as]?)\b/u',
             $value
-        );
+        )) {
+            return true;
+        }
+
+        // "tiene un profesor llamado Vicente que va a dar matemáticas"
+        if (! $this->hasDeleteVerb($value)
+            && preg_match('/\b(?:profesor(?:a)?|docente|maestro[as]?)\s+llamad[oa]\b/u', $value)
+            && preg_match('/\b(?:crea|crear|crees|agrega|invita|tiene|hay|nuevo|nueva|ingresa|va a dar|dara|dará|dicta|imparte|enseña)\b/u', $value)) {
+            return true;
+        }
+
+        return false;
+    }
+
+    private function looksLikeTeacherStaffing(string $text): bool
+    {
+        $value = $this->normalizedText($text);
+
+        return $this->wantsCreateTeacherPhrase($value)
+            || (
+                preg_match('/\b(?:profesor(?:a)?|docente|maestro[as]?)\b/u', $value)
+                && preg_match('/\b(?:llamad[oa]|va a dar|dara|dará|imparte|enseña)\b/u', $value)
+                && ! $this->hasDeleteVerb($value)
+            );
+    }
+
+    private function looksLikeCapabilityMenu(?string $text): bool
+    {
+        if ($text === null || trim($text) === '') {
+            return false;
+        }
+
+        $value = mb_strtolower($text);
+
+        return str_contains($value, 'puedo crear y eliminar profesores')
+            || (str_contains($value, 'ejemplos:') && str_contains($value, 'crea al profesor'));
     }
 
     private function looksLikeStaffingList(string $text): bool

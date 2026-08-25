@@ -66,11 +66,15 @@ class DirectorDataAgentService
     public function looksLikeMutation(string $text): bool
     {
         $value = $this->normalized($text);
-
-        return (bool) preg_match(
-            '/\b(?:crea(?:r|me|lo|los|s)?|cree(?:s)?|agrega(?:r)?|modifica(?:r)?|invita|elimina|borrar|borra|quita(?:r)?|remover|matricula|inscribe|asigna(?:le|lo)?|desmatricula|actualiza|edita|mueve|cambia|aumenta(?:r)?|disminu(?:ye|ir)|incrementa|reduce|cancel[ae]|anula)\b/u',
+        $isMutation = (bool) preg_match(
+            '/\b(?:crea(?:r|me|lo|los|s)?|cree(?:s)?|agrega(?:r)?|modifica(?:r)?|invita|elimina|borrar|borra|quita(?:r)?|remover|matricula|inscribe|asigna(?:le|lo)?|desmatricula|actualiza|edita|mueve|cambia|aumenta(?:r)?|disminu(?:ye|ir)|incrementa|reduce|cancel[ae]|anula|va a dar)\b/u',
             $value
-        ) && ! preg_match('/\b(?:informe|resumen|compara|tendencia|asistencia|rendimiento|promedio)\b/u', $value);
+        ) || (
+            (bool) preg_match('/\b(?:profesor|docente|maestro)s?\s+llamad/u', $value)
+            && (bool) preg_match('/\b(?:tiene|hay|nuevo|nueva|dara|dará|imparte|enseña)\b/u', $value)
+        );
+
+        return $isMutation && ! preg_match('/\b(?:informe|resumen|compara|tendencia|asistencia|rendimiento|promedio)\b/u', $value);
     }
 
     /**
