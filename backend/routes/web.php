@@ -107,12 +107,16 @@ Route::middleware('auth')->group(function () {
                     ->name('gestion.students.update');
                 Route::post('/gestion/courses', [DirectorManagementHubController::class, 'storeCourse'])
                     ->name('gestion.courses.store');
+                Route::post('/gestion/courses/destroy-subject', [DirectorManagementHubController::class, 'destroySubject'])
+                    ->name('gestion.courses.destroy-subject');
                 Route::patch('/gestion/courses/{course}', [DirectorManagementHubController::class, 'updateCourse'])
                     ->name('gestion.courses.update');
                 Route::post('/gestion/assign-courses', [DirectorManagementHubController::class, 'assignTeacherCourses'])
                     ->name('gestion.assign');
                 Route::post('/gestion/courses/{course}/unassign', [DirectorManagementHubController::class, 'unassignCourse'])
                     ->name('gestion.courses.unassign');
+                Route::post('/gestion/bulk-destroy', [DirectorManagementHubController::class, 'bulkDestroy'])
+                    ->name('gestion.bulk-destroy');
                 Route::get('/profesores', [DirectorStaffController::class, 'index'])
                     ->name('profesores');
                 Route::post('/profesores/invite', [DirectorStaffController::class, 'invite'])

@@ -66,14 +66,13 @@
 <body class="min-h-screen bg-[#f6f8fc] text-slate-900" x-data="gestionHub()" x-init="init()">
     <div class="mx-auto max-w-7xl px-5 py-6 lg:px-8">
         <header class="mb-8 flex flex-wrap items-start justify-between gap-4">
-            <div class="flex items-center gap-4">
-                <a href="{{ route('director.dashboard') }}" class="flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-600 text-white shadow-lg shadow-indigo-600/20 hover:bg-indigo-700">
-                    <i class="fa-solid fa-arrow-left"></i>
-                </a>
-                <div>
-                    <p class="text-[11px] font-bold uppercase tracking-[.28em] text-indigo-500">Centro de mando</p>
-                    <h1 class="text-3xl font-extrabold tracking-tight">Gestión del colegio</h1>
-                    <p class="mt-1 max-w-xl text-sm text-slate-500">Profesores, alumnos y cursos en un solo lugar. Crea, busca y asigna sin cambiar de pantalla.</p>
+            <div>
+                <p class="text-[11px] font-bold uppercase tracking-[.28em] text-indigo-500">Colegio</p>
+                <h1 class="text-3xl font-extrabold tracking-tight">Gestión</h1>
+                <p class="mt-1 max-w-xl text-sm text-slate-500">Plantel, nómina y materias. Los cursos de un profesor eliminado quedan huérfanos para reasignarlos.</p>
+                <div class="mt-4 inline-flex rounded-2xl border border-slate-200 bg-white p-1 shadow-sm">
+                    <a href="{{ route('director.dashboard') }}" class="rounded-xl px-4 py-2 text-sm font-semibold text-slate-500 hover:bg-slate-50">Resumen</a>
+                    <span class="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-bold text-white">Gestión</span>
                 </div>
             </div>
             @include('components.user-control-panel')
@@ -122,9 +121,17 @@
             <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
                 <div>
                     <h2 class="text-lg font-bold" x-text="panelTitle"></h2>
-                    <p class="text-sm text-slate-500">Doble clic para editar. Arrastra un curso sobre un profesor para asignarlo.</p>
+                    <p class="text-sm text-slate-500" x-text="panelHint"></p>
                 </div>
                 <div class="flex flex-wrap items-center gap-2">
+                    <label class="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-600">
+                        <input type="checkbox" class="h-4 w-4 accent-indigo-600" :checked="allVisibleSelected" @change="toggleSelectAll($event.target.checked)">
+                        Seleccionar todo
+                    </label>
+                    <button type="button" class="hub-btn hub-btn-danger" x-show="selectedIds.length" x-cloak @click="bulkDelete()">
+                        <i class="fa-solid fa-trash-can"></i>
+                        Eliminar (<span x-text="selectedIds.length"></span>)
+                    </button>
                     <div class="relative">
                         <i class="fa-solid fa-magnifying-glass pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-400"></i>
                         <input class="hub-input w-64 pl-9" x-model="query" placeholder="Buscar por nombre, grado, materia…">
@@ -136,27 +143,31 @@
                 </div>
             </div>
 
-            <div x-show="panel === 'teachers' && courses.length" class="mb-4 flex flex-wrap gap-2">
-                <span class="text-xs font-semibold uppercase tracking-wide text-slate-400 self-center">Arrastra un curso:</span>
-                <template x-for="course in courses" :key="'drag-'+course.id">
+            <div x-show="panel === 'teachers' && groupedDragCourses.length" class="mb-4 flex flex-wrap gap-2">
+                <span class="text-xs font-semibold uppercase tracking-wide text-slate-400 self-center">Arrastra una materia:</span>
+                <template x-for="group in groupedDragCourses" :key="'drag-'+group.name">
                     <span class="hub-chip cursor-grab" draggable="true"
-                          @dragstart="draggingCourseId = course.id"
-                          @dragend="draggingCourseId = null"
-                          x-text="course.label"></span>
+                          @dragstart="draggingCourseIds = group.ids"
+                          @dragend="draggingCourseIds = []"
+                          x-text="group.label"></span>
                 </template>
             </div>
 
             <div class="hub-table-wrap">
                 <table class="hub-table" x-show="panel === 'teachers'">
-                    <thead><tr><th>Docente</th><th>Estado</th><th>Cursos</th><th></th></tr></thead>
+                    <thead><tr>
+                        <th class="w-10"></th>
+                        <th>Docente</th><th>Estado</th><th>Cursos</th><th></th>
+                    </tr></thead>
                     <tbody>
                         <template x-for="row in filteredPeople" :key="row.kind+row.id">
                             <tr class="hub-row"
                                 :class="[highlights[row.kind+row.id] && 'just-in', selected?.key === row.kind+row.id && 'bg-indigo-50']"
                                 @dblclick="select(row)"
-                                @dragover.prevent="draggingCourseId && ($event.currentTarget.classList.add('drop-over'))"
+                                @dragover.prevent="draggingCourseIds.length && ($event.currentTarget.classList.add('drop-over'))"
                                 @dragleave="$event.currentTarget.classList.remove('drop-over')"
                                 @drop.prevent="dropCourse(row, $event)">
+                                <td><input type="checkbox" class="h-4 w-4 accent-indigo-600" :checked="isSelected(row.kind, row.id)" @click.stop @change="toggleSelected(row.kind, row.id)"></td>
                                 <td>
                                     <p class="font-semibold" x-text="row.name"></p>
                                     <p class="text-xs text-slate-400" x-text="row.email || row.invite_code || 'Sin correo'"></p>
@@ -166,11 +177,8 @@
                                 </td>
                                 <td>
                                     <div class="flex flex-wrap gap-1">
-                                        <template x-for="chip in row.courses" :key="chip.id">
-                                            <span class="hub-chip">
-                                                <span x-text="chip.label"></span>
-                                                <button type="button" class="text-indigo-400 hover:text-rose-500" @click.stop="unassign(chip.id)" title="Quitar"><i class="fa-solid fa-xmark"></i></button>
-                                            </span>
+                                        <template x-for="chip in groupedTeacherCourses(row)" :key="chip.name">
+                                            <span class="hub-chip" x-text="chip.label"></span>
                                         </template>
                                         <span class="text-xs text-slate-400" x-show="!row.courses.length">Sin cursos</span>
                                     </div>
@@ -185,10 +193,14 @@
                 </table>
 
                 <table class="hub-table" x-show="panel === 'students'" x-cloak>
-                    <thead><tr><th>Alumno</th><th>Grado</th><th>Sección</th><th>Cursos</th><th></th></tr></thead>
+                    <thead><tr>
+                        <th class="w-10"></th>
+                        <th>Alumno</th><th>Grado</th><th>Sección</th><th>Cursos</th><th></th>
+                    </tr></thead>
                     <tbody>
                         <template x-for="row in filteredStudents" :key="'s'+row.id">
                             <tr class="hub-row" :class="highlights['student'+row.id] && 'just-in'">
+                                <td><input type="checkbox" class="h-4 w-4 accent-indigo-600" :checked="isSelected('student', row.id)" @change="toggleSelected('student', row.id)"></td>
                                 <td @dblclick="startEdit(row, 'name')"><span x-show="editKey !== 's'+row.id+'.name'" x-text="row.name"></span>
                                     <input x-show="editKey === 's'+row.id+'.name'" x-cloak class="hub-input" x-model="editValue" @keydown.enter="saveEdit(row, 'name')" @blur="saveEdit(row, 'name')"></td>
                                 <td @dblclick="startEdit(row, 'grade')"><span x-show="editKey !== 's'+row.id+'.grade'" x-text="row.grade || '—'"></span>
@@ -202,23 +214,56 @@
                     </tbody>
                 </table>
 
-                <table class="hub-table" x-show="panel === 'courses'" x-cloak>
-                    <thead><tr><th>Curso</th><th>Grado</th><th>Docente</th><th>Alumnos</th><th></th></tr></thead>
-                    <tbody>
-                        <template x-for="row in filteredCourses" :key="'c'+row.id">
-                            <tr class="hub-row" :class="highlights['course'+row.id] && 'just-in'" @click="selectCourse(row)">
-                                <td @dblclick="startCourseEdit(row, 'subject_name')">
-                                    <span x-show="editKey !== 'c'+row.id+'.subject_name'" class="font-semibold" x-text="row.subject_name"></span>
-                                    <input x-show="editKey === 'c'+row.id+'.subject_name'" x-cloak class="hub-input" x-model="editValue" @keydown.enter="saveCourseEdit(row, 'subject_name')" @blur="saveCourseEdit(row, 'subject_name')">
-                                </td>
-                                <td><span x-text="row.grade + (row.section ? ' / '+row.section : '')"></span></td>
-                                <td x-text="row.teacher_name || 'Sin asignar'"></td>
-                                <td x-text="row.students_count"></td>
-                                <td class="text-right"><button class="hub-btn hub-btn-danger !py-1.5 !text-xs" @click.stop="queueDelete(row, 'course')"><i class="fa-solid fa-trash-can"></i></button></td>
-                            </tr>
+                <div x-show="panel === 'courses'" x-cloak class="p-4">
+                    <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                        <template x-for="card in gradeCards" :key="card.key">
+                            <article class="overflow-hidden rounded-2xl border border-slate-100 shadow-sm" :style="'background:' + card.soft">
+                                <button type="button" class="w-full p-5 text-left" @click="expandedGrade = expandedGrade === card.key ? null : card.key">
+                                    <div class="mb-4 flex items-center justify-between">
+                                        <span class="flex h-12 w-12 items-center justify-center rounded-2xl text-lg font-black text-white" :style="'background:' + card.color" x-text="card.short"></span>
+                                        <span class="text-xs font-semibold uppercase tracking-wide text-slate-500" x-text="card.subjects.length + ' materia(s)'"></span>
+                                    </div>
+                                    <p class="text-xl font-extrabold text-slate-800" x-text="card.label"></p>
+                                    <p class="mt-1 text-sm text-slate-500" x-text="card.orphanCount ? card.orphanCount + ' sin docente' : 'Listo para desglosar'"></p>
+                                </button>
+                                <div x-show="expandedGrade === card.key" x-cloak class="border-t border-white/70 bg-white/70 px-4 py-3">
+                                    <p class="mb-2 text-xs text-slate-400" x-show="!card.subjects.length">Todavía no hay materias en este grado.</p>
+                                    <template x-for="subject in card.subjects" :key="card.key + subject.name">
+                                        <div class="mb-3 rounded-xl bg-white p-3 shadow-sm">
+                                            <div class="mb-2 flex items-center justify-between gap-2">
+                                                <p class="font-bold text-slate-800" x-text="subject.name"></p>
+                                                <button type="button" class="text-xs font-semibold text-rose-500 hover:text-rose-700" @click.stop="deleteSubject(subject.name, card.grade)">
+                                                    Borrar materia
+                                                </button>
+                                            </div>
+                                            <ul class="space-y-1">
+                                                <template x-for="item in subject.items" :key="item.id">
+                                                    <li class="flex items-center justify-between gap-2 rounded-lg px-1 py-1 text-sm">
+                                                        <label class="flex min-w-0 flex-1 items-center gap-2">
+                                                            <input type="checkbox" class="h-4 w-4 accent-indigo-600" :checked="isSelected('course', item.id)" @change="toggleSelected('course', item.id)">
+                                                            <span class="min-w-0 truncate">
+                                                                <span x-text="item.section ? 'Sección ' + item.section : 'Sección única'"></span>
+                                                                <span class="text-slate-400"> · </span>
+                                                                <span x-text="item.teacher_name || 'Sin docente'"></span>
+                                                            </span>
+                                                            <span x-show="item.orphan" class="hub-chip shrink-0" style="background:#fff7ed;color:#c2410c">Huérfano</span>
+                                                        </label>
+                                                        <button type="button" class="shrink-0 text-rose-400 hover:text-rose-600" @click.stop="queueDelete(item, 'course')" title="Borrar este curso">
+                                                            <i class="fa-solid fa-trash-can text-xs"></i>
+                                                        </button>
+                                                    </li>
+                                                </template>
+                                            </ul>
+                                        </div>
+                                    </template>
+                                    <button type="button" class="mt-1 text-xs font-semibold text-rose-500" x-show="card.courses.length" @click="deleteGradeCourses(card)">
+                                        Eliminar todo el grado
+                                    </button>
+                                </div>
+                            </article>
                         </template>
-                    </tbody>
-                </table>
+                    </div>
+                </div>
             </div>
             <p class="px-2 py-4 text-sm text-slate-400" x-show="emptyState" x-text="emptyCopy"></p>
         </section>
@@ -351,11 +396,22 @@
                 course: (id) => @json(url('/director/gestion/courses')).replace(/\/$/, '') + '/' + id,
                 assign: @json(route('director.gestion.assign')),
                 unassign: (id) => @json(url('/director/gestion/courses')).replace(/\/$/, '') + '/' + id + '/unassign',
+                bulkDestroy: @json(route('director.gestion.bulk-destroy')),
+                destroySubject: @json(route('director.gestion.courses.destroy-subject')),
                 destroyTeacher: (id) => @json(url('/director/profesores')).replace(/\/$/, '') + '/' + id,
                 destroyInvite: (id) => @json(url('/director/profesores/invite')).replace(/\/$/, '') + '/' + id,
                 destroyStudent: (id) => @json(url('/director/students')).replace(/\/$/, '') + '/' + id,
                 destroyCourse: (id) => @json(url('/director/courses')).replace(/\/$/, '') + '/' + id,
             };
+            const gradeMeta = [
+                { key: '1', short: '1°', label: '1er grado', grade: '1ro', color: '#0ea5e9', soft: '#e0f2fe' },
+                { key: '2', short: '2°', label: '2do grado', grade: '2do', color: '#8b5cf6', soft: '#ede9fe' },
+                { key: '3', short: '3°', label: '3er grado', grade: '3ro', color: '#10b981', soft: '#d1fae5' },
+                { key: '4', short: '4°', label: '4to grado', grade: '4to', color: '#f59e0b', soft: '#fef3c7' },
+                { key: '5', short: '5°', label: '5to grado', grade: '5to', color: '#ec4899', soft: '#fce7f3' },
+                { key: '6', short: '6°', label: '6to grado', grade: '6to', color: '#6366f1', soft: '#e0e7ff' },
+            ];
+            const gradeLabels = { 1: '1ro', 2: '2do', 3: '3ro', 4: '4to', 5: '5to', 6: '6to' };
             return {
                 panel: new URLSearchParams(location.search).get('panel') || 'teachers',
                 query: '',
@@ -364,8 +420,10 @@
                 highlights: {},
                 selected: null,
                 selectedCourse: null,
+                selectedIds: [],
                 pendingTags: [],
                 gradeFilter: '',
+                expandedGrade: null,
                 creating: false,
                 saving: false,
                 form: {},
@@ -373,13 +431,18 @@
                 editValue: '',
                 toast: null,
                 pendingDelete: null,
-                draggingCourseId: null,
+                draggingCourseIds: [],
                 aiBusy: false,
                 aiStatus: '',
                 aiDetail: '',
                 get people() { return [...this.invites, ...this.teachers]; },
                 get panelTitle() {
-                    return this.panel === 'teachers' ? 'Plantel docente' : this.panel === 'students' ? 'Alumnos' : 'Cursos y materias';
+                    return this.panel === 'teachers' ? 'Plantel docente' : this.panel === 'students' ? 'Alumnos' : 'Oferta por grado';
+                },
+                get panelHint() {
+                    if (this.panel === 'courses') return 'Seis tarjetas, una por grado. Ábrelas para ver secciones, borrar una materia o dejar un curso huérfano listo para reasignar.';
+                    if (this.panel === 'teachers') return 'Si eliminas un profesor, sus cursos quedan huérfanos (sin docente) para reasignarlos. Arrastra una materia agrupada sobre el docente.';
+                    return 'Doble clic para editar. Usa seleccionar todo para borrar la nómina visible.';
                 },
                 get createLabel() {
                     return this.panel === 'teachers' ? 'Invitar profesor' : this.panel === 'students' ? 'Matricular alumno' : 'Crear curso';
@@ -396,15 +459,48 @@
                     const q = this.query.toLowerCase();
                     return this.courses.filter(p => JSON.stringify(p).toLowerCase().includes(q));
                 },
+                get visibleRows() {
+                    if (this.panel === 'teachers') return this.filteredPeople.map(p => ({ kind: p.kind, id: p.id }));
+                    if (this.panel === 'students') return this.filteredStudents.map(p => ({ kind: 'student', id: p.id }));
+                    return this.filteredCourses.map(p => ({ kind: 'course', id: p.id }));
+                },
+                get allVisibleSelected() {
+                    const rows = this.visibleRows;
+                    return rows.length > 0 && rows.every(row => this.isSelected(row.kind, row.id));
+                },
                 get emptyState() {
+                    if (this.panel === 'courses') return false;
                     if (this.panel === 'teachers') return this.filteredPeople.length === 0;
-                    if (this.panel === 'students') return this.filteredStudents.length === 0;
-                    return this.filteredCourses.length === 0;
+                    return this.filteredStudents.length === 0;
                 },
                 get emptyCopy() { return this.query ? 'Nada coincide con esa búsqueda.' : 'Todavía no hay registros. Crea el primero o pídeselo a AulaSync.'; },
                 get assignableCourses() {
                     const taken = new Set((this.selected?.courses || []).map(c => c.id).concat(this.pendingTags));
                     return this.courses.filter(c => !taken.has(c.id) && (!this.gradeFilter || c.grade === this.gradeFilter));
+                },
+                get groupedDragCourses() {
+                    return this.groupCourses(this.courses);
+                },
+                get gradeCards() {
+                    const q = this.query.toLowerCase();
+                    return gradeMeta.map((meta) => {
+                        const courses = this.courses.filter((course) => {
+                            if (String(this.gradeNumber(course.grade)) !== meta.key) return false;
+                            return !q || JSON.stringify(course).toLowerCase().includes(q);
+                        });
+                        const subjects = {};
+                        courses.forEach((course) => {
+                            const name = course.subject_name || 'Materia';
+                            if (!subjects[name]) subjects[name] = { name, items: [] };
+                            subjects[name].items.push(course);
+                        });
+                        return {
+                            ...meta,
+                            courses,
+                            subjects: Object.values(subjects),
+                            orphanCount: courses.filter((course) => course.orphan).length,
+                        };
+                    });
                 },
                 async init() {
                     window.novaContext = { type: 'director_school', screen: 'gestion' };
@@ -440,10 +536,98 @@
                     this.highlights[key] = true;
                     setTimeout(() => { const copy = { ...this.highlights }; delete copy[key]; this.highlights = copy; }, 1800);
                 },
+                gradeNumber(grade) {
+                    const value = String(grade || '').toLowerCase();
+                    if (!value) return 0;
+                    if (/(primero|primer|1ero|1er|\b1ro\b|1°|1º)/.test(value)) return 1;
+                    if (/(segundo|\b2do\b|2°|2º)/.test(value)) return 2;
+                    if (/(tercero|tercer|3er|\b3ro\b|3°|3º)/.test(value)) return 3;
+                    if (/(cuarto|\b4to\b|4°|4º)/.test(value)) return 4;
+                    if (/(quinto|\b5to\b|5°|5º)/.test(value)) return 5;
+                    if (/(sexto|\b6to\b|6°|6º)/.test(value)) return 6;
+                    const digit = value.match(/[1-6]/);
+                    return digit ? Number(digit[0]) : 0;
+                },
+                formatGradeRange(grades) {
+                    const nums = [...new Set((grades || []).map((g) => this.gradeNumber(g)).filter((n) => n >= 1 && n <= 6))].sort((a, b) => a - b);
+                    if (!nums.length) return (grades || []).filter(Boolean).join(', ') || '';
+                    const consecutive = nums.length > 1 && nums.every((n, i) => i === 0 || n === nums[i - 1] + 1);
+                    if (consecutive) return gradeLabels[nums[0]] + ' a ' + gradeLabels[nums[nums.length - 1]];
+                    return nums.map((n) => gradeLabels[n]).join(', ');
+                },
+                groupCourses(list) {
+                    const map = {};
+                    (list || []).forEach((course) => {
+                        const name = course.subject_name || 'Materia';
+                        if (!map[name]) map[name] = { name, grades: [], ids: [] };
+                        map[name].grades.push(course.grade);
+                        map[name].ids.push(course.id);
+                    });
+                    return Object.values(map).map((group) => ({
+                        name: group.name,
+                        ids: group.ids,
+                        label: group.name + (this.formatGradeRange(group.grades) ? ' · ' + this.formatGradeRange(group.grades) : ''),
+                    }));
+                },
+                groupedTeacherCourses(row) {
+                    return this.groupCourses(row.courses || []);
+                },
+                isSelected(kind, id) {
+                    return this.selectedIds.some((item) => item.kind === kind && Number(item.id) === Number(id));
+                },
+                toggleSelected(kind, id) {
+                    if (this.isSelected(kind, id)) {
+                        this.selectedIds = this.selectedIds.filter((item) => !(item.kind === kind && Number(item.id) === Number(id)));
+                        return;
+                    }
+                    this.selectedIds = [...this.selectedIds, { kind, id: Number(id) }];
+                },
+                toggleSelectAll(checked) {
+                    const rows = this.visibleRows;
+                    if (checked) {
+                        const extra = rows.filter((row) => !this.isSelected(row.kind, row.id));
+                        this.selectedIds = [...this.selectedIds, ...extra];
+                        return;
+                    }
+                    const keys = new Set(rows.map((row) => row.kind + ':' + row.id));
+                    this.selectedIds = this.selectedIds.filter((item) => !keys.has(item.kind + ':' + item.id));
+                },
+                async bulkDelete() {
+                    if (!this.selectedIds.length) return;
+                    if (!confirm('¿Eliminar lo seleccionado? Los cursos de un profesor quedan huérfanos para reasignarlos.')) return;
+                    const payload = { teachers: [], invites: [], students: [], courses: [] };
+                    this.selectedIds.forEach((item) => {
+                        if (item.kind === 'teacher') payload.teachers.push(item.id);
+                        else if (item.kind === 'invite') payload.invites.push(item.id);
+                        else if (item.kind === 'student') payload.students.push(item.id);
+                        else payload.courses.push(item.id);
+                    });
+                    const json = await this.api('POST', routes.bulkDestroy, payload);
+                    this.selectedIds = [];
+                    await this.refresh();
+                    this.showToast(json.message || 'Eliminación aplicada.');
+                },
+                async deleteSubject(name, grade) {
+                    if (!confirm('¿Borrar ' + name + ' en ' + grade + '? Se eliminan sus secciones de este grado.')) return;
+                    const json = await this.api('POST', routes.destroySubject, { subject_name: name, grade });
+                    await this.refresh();
+                    this.showToast(json.message || 'Materia eliminada.');
+                },
+                async deleteGradeCourses(card) {
+                    const ids = (card.courses || []).map((course) => course.id);
+                    if (!ids.length) return;
+                    if (!confirm('¿Eliminar todas las materias de ' + card.label + '?')) return;
+                    const json = await this.api('POST', routes.bulkDestroy, { courses: ids });
+                    this.selectedIds = this.selectedIds.filter((item) => item.kind !== 'course' || !ids.includes(item.id));
+                    await this.refresh();
+                    this.showToast(json.message || 'Grado vaciado.');
+                },
                 openPanel(name) {
                     this.panel = name;
                     this.selected = null;
                     this.selectedCourse = null;
+                    this.selectedIds = [];
+                    this.expandedGrade = null;
                     history.replaceState(null, '', '?panel=' + name);
                 },
                 async refresh() {
@@ -485,15 +669,16 @@
                 },
                 async dropCourse(row, event) {
                     event.currentTarget.classList.remove('drop-over');
-                    if (!this.draggingCourseId) return;
+                    const ids = (this.draggingCourseIds || []).map(Number).filter(Boolean);
+                    this.draggingCourseIds = [];
+                    if (!ids.length) return;
                     await this.api('POST', routes.assign, {
                         teacher_id: row.kind === 'teacher' ? row.id : null,
                         invite_id: row.kind === 'invite' ? row.id : null,
-                        course_ids: [this.draggingCourseId],
+                        course_ids: ids,
                     });
-                    this.draggingCourseId = null;
                     await this.refresh();
-                    this.showToast('Curso asignado.');
+                    this.showToast('Materia asignada.');
                 },
                 async unassign(courseId) {
                     await this.api('POST', routes.unassign(courseId), {});
@@ -535,7 +720,12 @@
                 queueDelete(row, type) {
                     const kind = type || row.kind;
                     this.pendingDelete = { row, kind, timer: setTimeout(() => this.commitDelete(), 5000) };
-                    this.toast = { message: 'Se eliminará en 5 segundos.', undo: true };
+                    this.toast = {
+                        message: kind === 'teacher' || kind === 'invite'
+                            ? 'Se eliminará en 5 segundos. Los cursos quedarán huérfanos para reasignar.'
+                            : 'Se eliminará en 5 segundos.',
+                        undo: true,
+                    };
                 },
                 undoDelete() {
                     if (this.pendingDelete?.timer) clearTimeout(this.pendingDelete.timer);

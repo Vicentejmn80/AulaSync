@@ -184,8 +184,11 @@
             </div>
 
             <nav class="director-dash-nav" aria-label="Secciones del director">
-                <a href="{{ route('director.gestion') }}" class="rounded-2xl border border-cyan-400/30 bg-cyan-400/10 px-4 py-2 text-sm font-bold text-cyan-200 transition hover:bg-cyan-400/20">
-                    <i class="fa-solid fa-layer-group mr-2"></i>Gestión
+                <a href="{{ route('director.dashboard') }}" class="rounded-2xl border border-cyan-400/40 bg-cyan-400/20 px-4 py-2 text-sm font-bold text-cyan-100 shadow-sm shadow-cyan-500/10 transition hover:bg-cyan-400/30">
+                    <i class="fa-solid fa-chart-line mr-2"></i>Resumen
+                </a>
+                <a href="{{ route('director.gestion') }}" class="rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-bold text-white transition hover:bg-white/10">
+                    <i class="fa-solid fa-layer-group mr-2 text-cyan-300"></i>Gestión
                 </a>
                 <a href="{{ route('director.periodos') }}" class="rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-white/10">
                     <i class="fa-solid fa-file-invoice mr-2 text-cyan-300"></i>Boletas
@@ -209,9 +212,13 @@
                         <p class="text-[11px] font-bold uppercase tracking-[.25em] text-cyan-300">Configura tu colegio</p>
                         <h2 class="mt-1 text-xl font-black text-white sm:text-2xl">Primeros pasos</h2>
                         <p class="mt-1 max-w-2xl text-sm text-slate-400">
-                            El código que copiaste es para que los docentes se registren. Desde aquí tú creas la estructura: invita profesores, abre cursos y matricula alumnos.
+                            El código que copiaste es para que los docentes se registren. Revisa aquí el estado del colegio; para crear profesores, cursos o alumnos usa <strong class="text-slate-200">Gestión</strong> arriba.
                         </p>
                     </div>
+                    <a href="{{ route('director.gestion') }}" class="inline-flex items-center gap-2 rounded-2xl border border-cyan-400/40 bg-cyan-400/15 px-4 py-2 text-sm font-bold text-cyan-100 transition hover:bg-cyan-400/25">
+                        <i class="fa-solid fa-layer-group"></i>
+                        Ir a Gestión
+                    </a>
                     @if($pendingInvites > 0)
                         <span class="rounded-full border border-amber-300/30 bg-amber-400/10 px-4 py-2 text-xs font-bold text-amber-200">
                             {{ $pendingInvites }} invitación(es) DOC- pendiente(s)
@@ -220,41 +227,38 @@
                 </div>
 
                 <div class="grid gap-4 md:grid-cols-3">
-                    <a href="{{ route('director.gestion', ['panel' => 'teachers']) }}"
-                       class="group director-setup-step-pending rounded-2xl border p-5 transition hover:-translate-y-0.5 {{ $totalTeachers > 0 || $pendingInvites > 0 ? 'border-emerald-400/30 bg-emerald-400/5' : 'border-cyan-400/40 bg-white/[.06] ring-1 ring-cyan-400/20' }}">
+                    <div class="director-setup-step-pending rounded-2xl border p-5 {{ $totalTeachers > 0 || $pendingInvites > 0 ? 'border-emerald-400/30 bg-emerald-400/5' : 'border-cyan-400/40 bg-white/[.06] ring-1 ring-cyan-400/20' }}">
                         <div class="mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-400 to-blue-500">
                             <span class="text-sm font-black text-white">1</span>
                         </div>
-                        <p class="font-bold text-white group-hover:text-cyan-200">Invitar docentes</p>
+                        <p class="font-bold text-white">Invitar docentes</p>
                         <p class="mt-2 text-sm text-slate-400">Genera códigos <strong class="text-slate-200">DOC-</strong> para cada profesor. Ellos los usan al registrarse.</p>
                         <p class="mt-3 text-xs font-semibold uppercase tracking-wide {{ $totalTeachers > 0 || $pendingInvites > 0 ? 'text-emerald-300' : 'text-cyan-300' }}">
                             {{ $totalTeachers > 0 ? $totalTeachers.' docente(s) activo(s)' : ($pendingInvites > 0 ? $pendingInvites.' invitación(es) enviada(s)' : 'Pendiente') }}
                         </p>
-                    </a>
+                    </div>
 
-                    <a href="{{ route('director.gestion', ['panel' => 'courses']) }}"
-                       class="group director-setup-step-pending rounded-2xl border p-5 transition hover:-translate-y-0.5 {{ $totalCourses > 0 ? 'border-emerald-400/30 bg-emerald-400/5' : 'border-violet-400/40 bg-white/[.06] ring-1 ring-violet-400/20' }}">
+                    <div class="director-setup-step-pending rounded-2xl border p-5 {{ $totalCourses > 0 ? 'border-emerald-400/30 bg-emerald-400/5' : 'border-violet-400/40 bg-white/[.06] ring-1 ring-violet-400/20' }}">
                         <div class="mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-violet-400 to-fuchsia-500">
                             <span class="text-sm font-black text-white">2</span>
                         </div>
-                        <p class="font-bold text-white group-hover:text-violet-200">Crear cursos</p>
+                        <p class="font-bold text-white">Crear cursos</p>
                         <p class="mt-2 text-sm text-slate-400">Define materias, grados y secciones. Asigna cada curso a un docente.</p>
                         <p class="mt-3 text-xs font-semibold uppercase tracking-wide {{ $totalCourses > 0 ? 'text-emerald-300' : 'text-violet-300' }}">
                             {{ $totalCourses > 0 ? $totalCourses.' curso(s) creado(s)' : 'Pendiente' }}
                         </p>
-                    </a>
+                    </div>
 
-                    <a href="{{ route('director.gestion', ['panel' => 'students']) }}"
-                       class="group director-setup-step-pending rounded-2xl border p-5 transition hover:-translate-y-0.5 {{ $totalStudents > 0 ? 'border-emerald-400/30 bg-emerald-400/5' : 'border-emerald-400/40 bg-white/[.06] ring-1 ring-emerald-400/20' }}">
+                    <div class="director-setup-step-pending rounded-2xl border p-5 {{ $totalStudents > 0 ? 'border-emerald-400/30 bg-emerald-400/5' : 'border-emerald-400/40 bg-white/[.06] ring-1 ring-emerald-400/20' }}">
                         <div class="mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-400 to-cyan-500">
                             <span class="text-sm font-black text-white">3</span>
                         </div>
-                        <p class="font-bold text-white group-hover:text-emerald-200">Matricular alumnos</p>
+                        <p class="font-bold text-white">Matricular alumnos</p>
                         <p class="mt-2 text-sm text-slate-400">Registra la nómina escolar. Luego los docentes los vinculan a sus cursos.</p>
                         <p class="mt-3 text-xs font-semibold uppercase tracking-wide {{ $totalStudents > 0 ? 'text-emerald-300' : 'text-emerald-300' }}">
                             {{ $totalStudents > 0 ? number_format($totalStudents).' alumno(s)' : 'Pendiente' }}
                         </p>
-                    </a>
+                    </div>
                 </div>
             </section>
         @endif
@@ -641,13 +645,9 @@
             </div>
 
             <div class="mt-4 flex flex-wrap gap-2">
-                <a href="{{ route('director.gestion', ['panel' => 'teachers']) }}"
+                <a href="{{ route('director.gestion') }}"
                    class="rounded-xl border border-white/10 px-4 py-2 text-sm font-semibold text-slate-300 transition hover:bg-white/10">
                     <i class="fa-regular fa-eye mr-2"></i>Abrir gestión
-                </a>
-                <a href="{{ route('director.gestion', ['panel' => 'courses']) }}"
-                   class="rounded-xl border border-white/10 px-4 py-2 text-sm font-semibold text-slate-300 transition hover:bg-white/10">
-                    <i class="fa-solid fa-chalkboard mr-2"></i>Cursos y secciones
                 </a>
                 <a href="{{ route('director.periodos') }}"
                    class="rounded-xl border border-white/10 px-4 py-2 text-sm font-semibold text-slate-300 transition hover:bg-white/10">

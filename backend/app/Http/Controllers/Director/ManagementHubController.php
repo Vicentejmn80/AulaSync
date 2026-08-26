@@ -341,6 +341,95 @@ class ManagementHubController extends Controller
         ]);
     }
 
+    public function bulkDestroy(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'teachers' => ['nullable', 'array'],
+            'teachers.*' => ['integer'],
+            'invites' => ['nullable', 'array'],
+            'invites.*' => ['integer'],
+            'students' => ['nullable', 'array'],
+            'students.*' => ['integer'],
+            'courses' => ['nullable', 'array'],
+            'courses.*' => ['integer'],
+        ]);
+
+        $director = $request->user();
+        $colegioId = (int) $director->colegio_id;
+        $deleted = 0;
+
+        foreach (User::query()->where('colegio_id', $colegioId)->where('role', 'profesor')->whereIn('id', $data['teachers'] ?? [])->get() as $teacher) {
+            $this->actions->deleteTeacher($director, ['teacher_name' => $teacher->name]);
+            $deleted++;
+        }
+
+        foreach (TeacherInvite::query()->where('colegio_id', $colegioId)->whereIn('id', $data['invites'] ?? [])->get() as $invite) {
+            Course::query()->where('colegio_id', $colegioId)->where('teacher_invite_id', $invite->id)->update(['teacher_invite_id' => null]);
+            $invite->delete();
+            $deleted++;
+        }
+
+        foreach (Student::query()->where('colegio_id', $colegioId)->whereIn('id', $data['students'] ?? [])->get() as $student) {
+            $this->actions->deleteStudent($director, [
+                'student_name' => $student->name,
+                'student_id' => $student->id,
+            ]);
+            $deleted++;
+        }
+
+        $courses = Course::query()->where('colegio_id', $colegioId)->whereIn('id', $data['courses'] ?? [])->get();
+        foreach ($courses as $course) {
+            $course->students()->detach();
+            $course->delete();
+            $deleted++;
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => $deleted === 0 ? 'No había elementos para eliminar.' : "Se eliminaron {$deleted} registro(s). Los cursos de un profesor quedan huérfanos para reasignar.",
+            'deleted' => $deleted,
+        ]);
+    }
+
+    public function destroySubject(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'subject_name' => ['required', 'string', 'max:120'],
+            'grade' => ['nullable', 'string', 'max:60'],
+        ]);
+
+        $colegioId = (int) $request->user()->colegio_id;
+        $courses = Course::query()
+            ->where('colegio_id', $colegioId)
+            ->whereRaw('LOWER(subject_name) = ?', [mb_strtolower($data['subject_name'])])
+            ->get();
+
+        if (! empty($data['grade'])) {
+            $bucket = $this->gradeBucket($data['grade']);
+            $courses = $courses->filter(function (Course $course) use ($data, $bucket) {
+                if ($bucket !== null && $this->gradeBucket($course->grade) === $bucket) {
+                    return true;
+                }
+
+                return mb_strtolower((string) $course->grade) === mb_strtolower($data['grade']);
+            })->values();
+        }
+        foreach ($courses as $course) {
+            $course->students()->detach();
+            $course->delete();
+        }
+
+        $scope = $data['subject_name'].(! empty($data['grade']) ? ' · '.$data['grade'] : '');
+
+        return response()->json([
+            'success' => true,
+            'message' => $courses->isEmpty()
+                ? "No había cursos de {$scope}."
+                : "Se eliminó {$scope} ({$courses->count()} curso(s)).",
+            'deleted' => $courses->count(),
+        ]);
+    }
+
     /**
      * @param  array<int,int>  $courseIds
      */
@@ -417,6 +506,7 @@ class ManagementHubController extends Controller
             'invite_id' => $course->teacher_invite_id,
             'teacher_name' => $teacherName,
             'pending' => (bool) $course->teacher_invite_id && ! $course->teacher_id,
+            'orphan' => $teacherName === null || $teacherName === '',
             'students_count' => $course->students_count ?? $students->count(),
             'students' => $students->map(fn (Student $student) => [
                 'id' => $student->id,
@@ -438,5 +528,33 @@ class ManagementHubController extends Controller
             'students_count' => $course->students_count ?? null,
             'label' => trim($course->subject_name.' · '.$course->grade.($course->section ? ' '.$course->section : '')),
         ];
+    }
+
+    private function gradeBucket(?string $grade): ?int
+    {
+        $value = mb_strtolower(trim((string) $grade));
+        if ($value === '') {
+            return null;
+        }
+
+        $named = [
+            'primero' => 1, 'primer' => 1, '1ro' => 1, '1ero' => 1, '1er' => 1,
+            'segundo' => 2, '2do' => 2,
+            'tercero' => 3, 'tercer' => 3, '3ro' => 3, '3er' => 3,
+            'cuarto' => 4, '4to' => 4,
+            'quinto' => 5, '5to' => 5,
+            'sexto' => 6, '6to' => 6,
+        ];
+        foreach ($named as $needle => $bucket) {
+            if ($value === $needle || str_contains($value, $needle)) {
+                return $bucket;
+            }
+        }
+
+        if (preg_match('/[1-6]/', $value, $match)) {
+            return (int) $match[0];
+        }
+
+        return null;
     }
 }
