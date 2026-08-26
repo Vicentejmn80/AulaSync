@@ -242,9 +242,9 @@ class InvitationService
                 }
             );
         } catch (\Throwable $e) {
-            Log::warning('invitation.mail_failed', [
+            Log::error('Error enviando correo vía Resend: '.$e->getMessage(), [
                 'email' => $invitation->email,
-                'error' => $e->getMessage(),
+                'role' => $invitation->role,
             ]);
         }
     }
