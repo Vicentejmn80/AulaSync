@@ -294,6 +294,130 @@ class DirectorAICommandTest extends TestCase
         $this->assertSame(3, Course::where('colegio_id', $colegio->id)->count());
     }
 
+    public function test_pending_with_slots(): void
+    {
+        [$director] = $this->directorContext();
+
+        $first = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'Crea a Georgina Vázquez',
+        ]);
+
+        $first->assertOk()
+            ->assertJsonPath('needs_clarification', true);
+        $this->assertStringContainsString('¿En qué grado', (string) $first->json('message'));
+        $this->assertNull($first->json('pending_plan.slots.grade'));
+        $this->assertNull($first->json('pending_plan.slots.section'));
+
+        $second = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => '3ro',
+        ]);
+
+        $second->assertOk()
+            ->assertJsonPath('needs_clarification', true)
+            ->assertJsonPath('pending_plan.slots.grade', '3ro');
+        $this->assertNull($second->json('pending_plan.slots.section'));
+        $this->assertStringContainsString('¿En qué sección', (string) $second->json('message'));
+
+        $third = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'A',
+        ]);
+
+        $third->assertOk()
+            ->assertJsonPath('requires_confirmation', true)
+            ->assertJsonPath('pending_actions.0.intent', 'create_students_batch')
+            ->assertJsonPath('pending_actions.0.data.grade', '3ro')
+            ->assertJsonPath('pending_actions.0.data.section', 'A')
+            ->assertJsonPath('pending_actions.0.data.names.0', 'Georgina Vázquez');
+    }
+
+    public function test_affirmative_completes_plan(): void
+    {
+        [$director, $colegio] = $this->directorContext();
+
+        $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'Crea a Georgina Vázquez',
+        ])->assertOk();
+        $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => '3ro',
+        ])->assertOk();
+        $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'A',
+        ])->assertOk()->assertJsonPath('requires_confirmation', true);
+
+        $execute = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'sí',
+        ]);
+
+        $execute->assertOk()->assertJsonPath('actions.0.success', true);
+        $this->assertDatabaseHas('students', [
+            'colegio_id' => $colegio->id,
+            'name' => 'Georgina Vázquez',
+            'grade' => '3ro',
+            'section' => 'A',
+        ]);
+    }
+
+    public function test_context_4_turns_history_keeps_last_20(): void
+    {
+        [$director, $colegio] = $this->directorContext();
+        User::factory()->create([
+            'name' => 'Profesor Uno',
+            'role' => 'profesor',
+            'colegio_id' => $colegio->id,
+            'onboarding_completed' => true,
+        ]);
+
+        for ($i = 1; $i <= 22; $i++) {
+            $this->actingAs($director)->postJson(route('director.ai.command'), [
+                'prompt' => "¿Qué profesores tengo? turno {$i}",
+            ])->assertOk();
+        }
+
+        $history = session('director_chat_history', []);
+        $this->assertCount(20, $history);
+        $this->assertStringContainsString('turno 3', (string) ($history[0]['user'] ?? ''));
+        $this->assertStringContainsString('turno 22', (string) ($history[19]['user'] ?? ''));
+    }
+
+    public function test_batch_rollback_when_one_action_fails(): void
+    {
+        [$director, $colegio] = $this->directorContext();
+
+        $pending = [
+            [
+                'intent' => 'create_students_batch',
+                'data' => [
+                    'names' => ['Alumno Rollback'],
+                    'grade' => '2do',
+                    'section' => 'A',
+                ],
+            ],
+            [
+                'intent' => 'assign_teacher',
+                'data' => [
+                    'teacher_name' => 'Profesor Inexistente',
+                    'subject_name' => 'Matemática',
+                    'grades' => ['2do'],
+                ],
+            ],
+        ];
+
+        $response = $this->withSession([
+            'director_ai_pending_actions' => $pending,
+        ])->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'sí',
+        ]);
+
+        $response->assertStatus(422)
+            ->assertJsonPath('success', false);
+        $this->assertStringContainsString('revirtieron todos los cambios', (string) $response->json('message'));
+        $this->assertDatabaseMissing('students', [
+            'colegio_id' => $colegio->id,
+            'name' => 'Alumno Rollback',
+            'grade' => '2do',
+        ]);
+    }
+
     public function test_director_can_create_course_with_greater_variants(): void
     {
         [$director, $colegio] = $this->directorContext();
@@ -521,6 +645,103 @@ class DirectorAICommandTest extends TestCase
             $this->assertStringNotContainsStringIgnoringCase('curso', $name);
             $this->assertStringNotContainsStringIgnoringCase('grado', $name);
         }
+    }
+
+    /**
+     * Sprint 2 (reingeniería del agente): "alumna" debe detectarse igual que
+     * "alumno" en todo el pipeline local. Antes, "Crea a la alumna X e
+     * intégrala al curso" caía en create_course por la palabra "curso".
+     */
+    public function test_alumna_detection(): void
+    {
+        [$director, $colegio] = $this->directorContext();
+
+        $draft = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'Crea a la alumna Georgina Vázquez para 3er grado',
+        ]);
+
+        $draft->assertOk()->assertJsonPath('requires_confirmation', true);
+        $pending = $draft->json('pending_actions');
+        $this->assertSame('create_students_batch', $pending[0]['intent']);
+        $this->assertSame(['Georgina Vázquez'], $pending[0]['data']['names']);
+
+        $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'confirmed' => true,
+            'pending_actions' => $pending,
+        ]);
+
+        $this->assertDatabaseHas('students', [
+            'colegio_id' => $colegio->id,
+            'name' => 'Georgina Vázquez',
+            'grade' => '3ro',
+        ]);
+    }
+
+    /**
+     * Caso 4 del diagnóstico: mencionar "curso" junto a "alumna" no debe
+     * desviar la intención hacia create_course.
+     */
+    public function test_alumna_mentioning_curso_does_not_trigger_create_course(): void
+    {
+        [$director] = $this->directorContext();
+
+        $draft = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'Crea a la alumna Georgina Vázquez e intégrala al curso de Biología de 3er grado',
+        ]);
+
+        $draft->assertOk()->assertJsonPath('requires_confirmation', true);
+        $pending = $draft->json('pending_actions');
+        $this->assertSame('create_students_batch', $pending[0]['intent']);
+        $this->assertSame(['Georgina Vázquez'], $pending[0]['data']['names']);
+        $this->assertSame('Biología', $pending[0]['data']['subject_name']);
+    }
+
+    /**
+     * Sprint 2: extracción de múltiples alumnos aunque el rol ("alumno"/
+     * "alumna") solo se repita en algunos de los nombres.
+     */
+    public function test_multiple_students_with_repeated_role_words_are_all_extracted(): void
+    {
+        [$director, $colegio] = $this->directorContext();
+
+        $draft = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'Crea al alumno Vicente José y a la alumna Georgina Vázquez para 3er grado',
+        ]);
+
+        $draft->assertOk()->assertJsonPath('requires_confirmation', true);
+        $pending = $draft->json('pending_actions');
+        $this->assertSame('create_students_batch', $pending[0]['intent']);
+        $this->assertSame(['Vicente José', 'Georgina Vázquez'], $pending[0]['data']['names']);
+
+        $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'confirmed' => true,
+            'pending_actions' => $pending,
+        ]);
+
+        $this->assertDatabaseHas('students', ['colegio_id' => $colegio->id, 'name' => 'Vicente José', 'grade' => '3ro']);
+        $this->assertDatabaseHas('students', ['colegio_id' => $colegio->id, 'name' => 'Georgina Vázquez', 'grade' => '3ro']);
+    }
+
+    public function test_multiple_students(): void
+    {
+        [$director, $colegio] = $this->directorContext();
+
+        $draft = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'Crea a Vicente José y a la alumna Georgina Vázquez para 3er grado',
+        ]);
+
+        $draft->assertOk()->assertJsonPath('requires_confirmation', true);
+        $pending = $draft->json('pending_actions');
+        $this->assertSame('create_students_batch', $pending[0]['intent']);
+        $this->assertSame(['Vicente José', 'Georgina Vázquez'], $pending[0]['data']['names']);
+
+        $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'confirmed' => true,
+            'pending_actions' => $pending,
+        ]);
+
+        $this->assertDatabaseHas('students', ['colegio_id' => $colegio->id, 'name' => 'Vicente José', 'grade' => '3ro']);
+        $this->assertDatabaseHas('students', ['colegio_id' => $colegio->id, 'name' => 'Georgina Vázquez', 'grade' => '3ro']);
     }
 
     public function test_director_can_create_student_and_enroll_in_course_in_one_command(): void
@@ -1031,6 +1252,28 @@ class DirectorAICommandTest extends TestCase
         $response->assertOk()->assertJsonPath('actions.0.success', true);
         $this->assertSame(1, count($response->json('actions.0.data.teachers')));
         $this->assertNull($response->json('requires_confirmation'));
+    }
+
+    public function test_director_can_get_teacher_invite_code(): void
+    {
+        [$director, $colegio] = $this->directorContext();
+        User::factory()->create([
+            'name' => 'Manuel Vázquez',
+            'email' => 'manuel@example.com',
+            'role' => 'profesor',
+            'colegio_id' => $colegio->id,
+            'onboarding_completed' => true,
+        ]);
+
+        $response = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'Necesito el código de invitación de Manuel Vázquez',
+        ]);
+
+        $response->assertOk()->assertJsonPath('actions.0.success', true);
+        $this->assertNull($response->json('requires_confirmation'));
+        $this->assertStringContainsString('Código', (string) $response->json('actions.0.message'));
+        $this->assertMatchesRegularExpression('/^DOC-[A-Z0-9]{4,8}$/', (string) $response->json('actions.0.data.invite_code'));
+        $this->assertSame('Activo', $response->json('actions.0.data.status'));
     }
 
     public function test_director_cannot_use_teacher_chat_endpoint(): void
@@ -2556,6 +2799,39 @@ class DirectorAICommandTest extends TestCase
         $response->assertOk()
             ->assertJsonPath('success', true)
             ->assertJsonPath('transcript', 'Crea al profesor Yovanny Andrade y asígnale Religión de 1ro a 6to');
+    }
+
+    public function test_director_can_transcribe_and_process_voice_note_in_single_request(): void
+    {
+        [$director] = $this->directorContext();
+        config([
+            'services.openai.key' => 'test-key',
+            'services.openai.director_enabled' => true,
+            'services.openai.director_test_enabled' => true,
+        ]);
+        Http::fake(function (\Illuminate\Http\Client\Request $request) {
+            if (str_contains($request->url(), 'audio/transcriptions')) {
+                return Http::response([
+                    'text' => 'Crea al profesor Yovanny Andrade y asígnale Religión de 1ro a 6to',
+                ]);
+            }
+
+            return Http::response(['choices' => [['message' => ['content' => '']]]], 200);
+        });
+
+        $file = \Illuminate\Http\UploadedFile::fake()->createWithContent('nota.webm', str_repeat('x', 4096));
+        $response = $this->actingAs($director)
+            ->withHeaders(['Accept' => 'application/json'])
+            ->post(route('director.ai.transcribe'), [
+                'audio' => $file,
+                'process_command' => true,
+            ]);
+
+        $response->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('processed', true)
+            ->assertJsonPath('requires_confirmation', true)
+            ->assertJsonPath('pending_actions.0.intent', 'create_teacher');
     }
 
     /**

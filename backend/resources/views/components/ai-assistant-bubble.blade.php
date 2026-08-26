@@ -1416,9 +1416,29 @@ function novaAIAssistant() {
                 this.scrollToBottom();
             });
         },
+        formatTimeline(timeline) {
+            if (!Array.isArray(timeline) || !timeline.length) return '';
+            const iconByStatus = {
+                analyzing: '🔍',
+                planning: '📋',
+                confirming: '⏳',
+                executing: '⚙️',
+                completed: '✅',
+                error: '❌',
+            };
+            const lines = timeline
+                .filter(step => step && typeof step.message === 'string' && step.message.trim() !== '')
+                .map(step => `${iconByStatus[step.status] || '•'} ${step.message.trim()}`);
+            if (!lines.length) return '';
+            return lines.join('\n');
+        },
         handleResponse(json) {
             if (!json || typeof json !== 'object') {
                 return;
+            }
+            const timelineMessage = this.formatTimeline(json.timeline);
+            if (timelineMessage) {
+                this.addMessage('assistant', timelineMessage);
             }
             // Guardar botones y modo para UI híbrida
             if (Array.isArray(json.buttons)) {

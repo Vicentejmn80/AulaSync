@@ -7,6 +7,8 @@ use Illuminate\Support\Arr;
 class DirectorConversationContextService
 {
     private const SESSION_KEY = 'director_ai_conversation_context';
+    private const HISTORY_KEY = 'director_chat_history';
+    private const HISTORY_LIMIT = 20;
 
     public function current(): array
     {
@@ -32,6 +34,7 @@ class DirectorConversationContextService
         $section = $ctx['section'] ?? $focus['section'] ?? null;
 
         return array_merge($ctx, [
+            'history' => $this->history(),
             'last_user_text' => $ctx['last_user_text'] ?? null,
             'last_intent' => $ctx['last_intent'] ?? ($focus['intent'] ?? null),
             'last_student' => $ctx['student_name'] ?? $focus['student_name'] ?? ($students[0] ?? null),
@@ -45,7 +48,44 @@ class DirectorConversationContextService
             'sort' => $ctx['sort'] ?? $focus['sort'] ?? data_get($ctx, 'filters.sort'),
             'focus' => $focus,
             'last_result_summary' => $ctx['last_result_summary'] ?? null,
+            'pending_plan' => session('director_ai_pending_plan'),
+            'chat_mode' => session('chat_mode', 'main_menu'),
+            'chat_subject' => session('chat_subject'),
         ]);
+    }
+
+    /**
+     * @param  array<int,array{action_type?:string,intent?:string,success?:bool}>  $actions
+     */
+    public function addTurn(string $userMessage, string $assistantResponse, array $actions = []): void
+    {
+        $history = $this->history();
+        $history[] = [
+            'user' => $userMessage,
+            'assistant' => $assistantResponse,
+            'actions' => collect($actions)->map(function ($action) {
+                return [
+                    'intent' => (string) ($action['action_type'] ?? $action['intent'] ?? ''),
+                    'success' => (bool) ($action['success'] ?? true),
+                ];
+            })->values()->all(),
+            'entities' => $this->extractEntities($userMessage),
+            'timestamp' => now()->toIso8601String(),
+        ];
+
+        if (count($history) > self::HISTORY_LIMIT) {
+            $history = array_slice($history, -self::HISTORY_LIMIT);
+        }
+
+        session([self::HISTORY_KEY => $history]);
+    }
+
+    /**
+     * @return array<int,array<string,mixed>>
+     */
+    public function history(): array
+    {
+        return array_values((array) session(self::HISTORY_KEY, []));
     }
 
     /**
@@ -91,6 +131,22 @@ class DirectorConversationContextService
         $context = $this->current();
         unset($context['last_actions'], $context['last_error']);
         session([self::SESSION_KEY => $context]);
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    private function extractEntities(string $text): array
+    {
+        $entities = [];
+        if (preg_match('/\b([1-6](?:ro|do|to|er|ero)?)\b/u', $text, $grade)) {
+            $entities['grade'] = (string) $grade[1];
+        }
+        if (preg_match('/\bsecci[oó]n\s+([A-Za-z0-9]{1,3})\b/iu', $text, $section)) {
+            $entities['section'] = mb_strtoupper((string) $section[1]);
+        }
+
+        return $entities;
     }
 
     private function absorbData(array &$context, array $data): void

@@ -10,6 +10,7 @@ class DirectorAIInterpreterService
 {
     public function __construct(
         private SchoolRosterContextService $rosterContext,
+        private DirectorUnifiedAgentService $unifiedAgent,
     ) {}
 
     /**
@@ -209,201 +210,22 @@ PROMPT;
     }
 
     /**
+     * Catálogo único de herramientas (lectura + escritura), delegado a
+     * DirectorUnifiedAgentService. Antes este método construía su propia
+     * lista de mutaciones y además pedía las tools de datos a
+     * DirectorDataAgentService vía service locator: dos catálogos separados
+     * que podían desincronizarse. Ahora hay una sola fuente de verdad.
+     *
      * @return array<int,array{type:string,function:array}>
      */
     private function toolDefinitions(): array
     {
-        $defs = [
-            'create_teacher' => [
-                'description' => 'Crear/invitar profesor y opcionalmente asignarle una materia en varios grados. teacher_name SOLO el nombre propio (sin "también", "que te dije", "llamado" ni la materia). Si el mensaje lista VARIOS profesores, llama esta tool UNA vez por cada nombre. Nunca te quedes con uno solo.',
-                'properties' => [
-                    'teacher_name' => ['type' => 'string'],
-                    'subject_name' => ['type' => ['string', 'null']],
-                    'grades' => ['type' => 'array', 'items' => ['type' => 'string']],
-                    'section' => ['type' => ['string', 'null']],
-                ],
-                'required' => ['teacher_name'],
-            ],
-            'create_course' => [
-                'description' => 'Crear uno o varios cursos/materias, opcionalmente asignados a un profesor o invitación.',
-                'properties' => [
-                    'subject_name' => ['type' => 'string'],
-                    'grades' => ['type' => 'array', 'items' => ['type' => 'string']],
-                    'section' => ['type' => ['string', 'null']],
-                    'teacher_name' => ['type' => ['string', 'null']],
-                ],
-                'required' => ['subject_name', 'grades'],
-            ],
-            'assign_teacher' => [
-                'description' => 'Asignar una materia y grados a un profesor registrado o invitación pendiente.',
-                'properties' => [
-                    'teacher_name' => ['type' => 'string'],
-                    'subject_name' => ['type' => 'string'],
-                    'grades' => ['type' => 'array', 'items' => ['type' => 'string']],
-                    'section' => ['type' => ['string', 'null']],
-                ],
-                'required' => ['teacher_name', 'subject_name', 'grades'],
-            ],
-            'create_students_batch' => [
-                'description' => 'Crear uno o varios alumnos y, si hay materia/profesor, matricularlos en course_student. names es un ARRAY de nombres propios completos. Incluye subject_name y teacher_name cuando el director mencione el curso o el docente.',
-                'properties' => [
-                    'names' => ['type' => 'array', 'items' => ['type' => 'string']],
-                    'grade' => ['type' => 'string'],
-                    'section' => ['type' => ['string', 'null']],
-                    'subject_name' => ['type' => ['string', 'null']],
-                    'teacher_name' => ['type' => ['string', 'null']],
-                ],
-                'required' => ['names', 'grade'],
-            ],
-            'enroll_students_course' => [
-                'description' => 'Matricular alumnos existentes en un curso. Usa all_in_grade=true para inscribir a todo un grado (ej. "los alumnos de 1ro").',
-                'properties' => [
-                    'names' => ['type' => 'array', 'items' => ['type' => 'string']],
-                    'subject_name' => ['type' => 'string'],
-                    'grade' => ['type' => 'string'],
-                    'section' => ['type' => ['string', 'null']],
-                    'teacher_name' => ['type' => ['string', 'null']],
-                    'all_in_grade' => ['type' => ['boolean', 'null']],
-                ],
-                'required' => ['subject_name', 'grade'],
-            ],
-            'unenroll_students_course' => [
-                'description' => 'Desmatricular alumnos de un curso sin eliminarlos del colegio.',
-                'properties' => [
-                    'names' => ['type' => 'array', 'items' => ['type' => 'string']],
-                    'subject_name' => ['type' => 'string'],
-                    'grade' => ['type' => 'string'],
-                    'section' => ['type' => ['string', 'null']],
-                ],
-                'required' => ['names', 'subject_name', 'grade'],
-            ],
-            'unassign_teacher' => [
-                'description' => 'Desasignar cursos de un profesor o invitación sin eliminar el profesor ni los cursos.',
-                'properties' => [
-                    'teacher_name' => ['type' => 'string'],
-                    'subject_name' => ['type' => ['string', 'null']],
-                    'grades' => ['type' => 'array', 'items' => ['type' => 'string']],
-                ],
-                'required' => ['teacher_name'],
-            ],
-            'update_course' => [
-                'description' => 'Modificar nombre de materia, grado o sección de un curso existente.',
-                'properties' => [
-                    'subject_name' => ['type' => 'string'],
-                    'grade' => ['type' => 'string'],
-                    'section' => ['type' => ['string', 'null']],
-                    'new_subject_name' => ['type' => ['string', 'null']],
-                    'new_grade' => ['type' => ['string', 'null']],
-                    'new_section' => ['type' => ['string', 'null']],
-                ],
-                'required' => ['subject_name', 'grade'],
-            ],
-            'update_student' => [
-                'description' => 'Modificar nombre, grado o sección de un alumno; también sirve para moverlo de grado. Al cambiar de grado se re-matricula en los cursos de destino.',
-                'properties' => [
-                    'student_name' => ['type' => 'string'],
-                    'new_name' => ['type' => ['string', 'null']],
-                    'new_grade' => ['type' => ['string', 'null']],
-                    'new_section' => ['type' => ['string', 'null']],
-                ],
-                'required' => ['student_name'],
-            ],
-            'delete_teacher' => [
-                'description' => 'Eliminar un profesor registrado específico. No usar para cancelar invitaciones; para eso usa delete_teacher_invite.',
-                'properties' => ['teacher_name' => ['type' => 'string']],
-                'required' => ['teacher_name'],
-            ],
-            'delete_teacher_invite' => [
-                'description' => 'Cancelar/revocar una invitación DOC- pendiente de un profesor. NO elimina el profesor registrado. teacher_name SOLO el nombre propio.',
-                'properties' => ['teacher_name' => ['type' => 'string']],
-                'required' => ['teacher_name'],
-            ],
-            'delete_all_teachers' => [
-                'description' => 'Eliminar todos los profesores del colegio.',
-                'properties' => [],
-                'required' => [],
-            ],
-            'delete_course' => [
-                'description' => 'Eliminar cursos de una materia, opcionalmente grado y sección.',
-                'properties' => [
-                    'subject_name' => ['type' => 'string'],
-                    'grade' => ['type' => ['string', 'null']],
-                    'section' => ['type' => ['string', 'null']],
-                ],
-                'required' => ['subject_name'],
-            ],
-            'delete_all_courses' => [
-                'description' => 'Eliminar todos los cursos del colegio.',
-                'properties' => [],
-                'required' => [],
-            ],
-            'delete_student' => [
-                'description' => 'Eliminar uno o varios alumnos de la nómina. Usa names para lotes.',
-                'properties' => [
-                    'student_name' => ['type' => ['string', 'null']],
-                    'names' => ['type' => ['array', 'null'], 'items' => ['type' => 'string']],
-                ],
-                'required' => [],
-            ],
-            'query_academic' => [
-                'description' => 'Consulta académica heredada. Prefiere las herramientas get_* (get_course_performance, get_attendance, compare_courses, get_at_risk_students, generate_school_report). Usa query_academic solo para vistas de un profesor o un alumno en una materia.',
-                'properties' => [
-                    'query_type' => [
-                        'type' => 'string',
-                        'enum' => [
-                            'teacher_overview', 'teacher_courses', 'teacher_students_grade',
-                            'student_subject_overview', 'student_absences', 'student_evaluations',
-                            'school_stats', 'school_courses', 'school_teachers', 'grade_overview',
-                            'frequent_absentees', 'subject_at_risk', 'at_risk_students',
-                            'class_performance', 'student_performance', 'attendance',
-                            'rankings', 'trends', 'compare_grades', 'students_list', 'section_counts',
-                        ],
-                    ],
-                    'teacher_name' => ['type' => ['string', 'null']],
-                    'student_name' => ['type' => ['string', 'null']],
-                    'subject_name' => ['type' => ['string', 'null']],
-                    'grade' => ['type' => ['string', 'null']],
-                    'grade_b' => ['type' => ['string', 'null']],
-                    'section' => ['type' => ['string', 'null']],
-                    'metric' => ['type' => ['string', 'null'], 'enum' => ['average', 'absences', null]],
-                    'limit' => ['type' => ['integer', 'null']],
-                    'days' => ['type' => ['integer', 'null']],
-                    'weeks' => ['type' => ['integer', 'null']],
-                    'stat' => ['type' => ['string', 'null'], 'enum' => ['teachers', 'students', 'courses', null]],
-                ],
-                'required' => ['query_type'],
-            ],
-        ];
-
-        $mapped = collect($defs)->map(function ($definition, $name) {
-            return [
-                'type' => 'function',
-                'function' => [
-                    'name' => $name,
-                    'description' => $definition['description'],
-                    'strict' => false,
-                    'parameters' => [
-                        'type' => 'object',
-                        'properties' => $definition['properties'],
-                        'required' => $definition['required'],
-                        'additionalProperties' => false,
-                    ],
-                ],
-            ];
-        })->values()->all();
-
-        return array_merge($mapped, app(DirectorDataAgentService::class)->toolDefinitions());
+        return $this->unifiedAgent->toolDefinitions();
     }
 
     private function allowedIntents(): array
     {
-        return array_values(array_unique(array_merge([
-            'create_teacher', 'create_course', 'assign_teacher',
-            'create_students_batch', 'enroll_students_course', 'unenroll_students_course',
-            'unassign_teacher', 'update_course', 'update_student',
-            'delete_teacher', 'delete_teacher_invite', 'delete_all_teachers', 'delete_course',
-            'delete_all_courses', 'delete_student', 'query_academic',
-        ], DirectorDataAgentService::TOOLS)));
+        return DirectorUnifiedAgentService::TOOLS;
     }
 
     private function normalizeArguments(string $intent, array $arguments): array
