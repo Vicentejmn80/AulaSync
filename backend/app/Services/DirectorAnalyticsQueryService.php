@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Helpers\InviteCodeHelper;
 use App\Models\Activity;
 use App\Models\Attendance;
 use App\Models\Colegio;
@@ -9,6 +10,7 @@ use App\Models\Course;
 use App\Models\Evaluation;
 use App\Models\Grade;
 use App\Models\Student;
+use App\Models\TeacherInvite;
 use App\Models\User;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -112,6 +114,95 @@ class DirectorAnalyticsQueryService
                 'teachers' => $teachers,
                 'count' => $count,
                 'teachers_count' => $count,
+            ],
+        ];
+    }
+
+    public function getTeacherInviteCode(int $colegioId, string $teacherName): array
+    {
+        $teacherName = trim($teacherName);
+        if ($teacherName === '') {
+            return [
+                'message' => 'Indícame el nombre del profesor para buscar su código de invitación.',
+                'data' => ['exists' => false],
+            ];
+        }
+
+        $teacherMatch = $this->matcher->resolveTeacher($colegioId, $teacherName);
+        if ($teacherMatch->isAmbiguous()) {
+            return [
+                'message' => $teacherMatch->message ?? 'Hay más de un profesor con ese nombre.',
+                'data' => ['exists' => null, 'ambiguous' => true],
+            ];
+        }
+
+        $teacher = $teacherMatch->isUnique() ? $teacherMatch->model : null;
+        if ($teacher instanceof User) {
+            $teacher = User::query()
+                ->where('id', $teacher->id)
+                ->where('colegio_id', $colegioId)
+                ->where('role', 'profesor')
+                ->first(['id', 'name', 'email', 'onboarding_completed']) ?? $teacher;
+        }
+        $teacherLabel = $teacherMatch->isUnique()
+            ? ($teacherMatch->label ?: (string) ($teacher?->name ?? $teacherName))
+            : $teacherName;
+
+        $invite = null;
+        if ($teacher instanceof User) {
+            $invite = TeacherInvite::query()
+                ->where('colegio_id', $colegioId)
+                ->whereRaw('LOWER(name) = ?', [mb_strtolower((string) $teacher->name)])
+                ->whereNull('revoked_at')
+                ->latest('id')
+                ->first();
+
+            if (! $invite) {
+                $invite = TeacherInvite::create([
+                    'colegio_id' => $colegioId,
+                    'created_by' => $teacher->id,
+                    'name' => (string) $teacher->name,
+                    'email' => $teacher->email ?: null,
+                    'invite_code' => InviteCodeHelper::generateTeacherInvite(),
+                    'expires_at' => now()->addDays(7),
+                ]);
+            }
+        } else {
+            $inviteMatch = $this->matcher->resolveInvite($colegioId, $teacherName);
+            if ($inviteMatch->isAmbiguous()) {
+                return [
+                    'message' => $inviteMatch->message ?? 'Hay varias invitaciones pendientes con ese nombre.',
+                    'data' => ['exists' => null, 'ambiguous' => true],
+                ];
+            }
+            if ($inviteMatch->isUnique() && $inviteMatch->model instanceof TeacherInvite) {
+                $invite = $inviteMatch->model;
+                $teacherLabel = $inviteMatch->label ?: $invite->name;
+            }
+        }
+
+        if (! $invite) {
+            return [
+                'message' => "No encontré un profesor o invitación para \"{$teacherName}\" en este colegio.",
+                'data' => ['exists' => false, 'teacher_name' => $teacherName],
+            ];
+        }
+
+        $status = ($teacher instanceof User && $teacher->onboarding_completed)
+            ? 'Activo'
+            : 'Pendiente de activación';
+        $expires = $invite->expires_at?->format('d/m/Y');
+
+        return [
+            'message' => "📋 {$teacherLabel} - Código: {$invite->invite_code}",
+            'data' => [
+                'exists' => true,
+                'teacher_name' => $teacherLabel,
+                'invite_code' => $invite->invite_code,
+                'email' => $invite->email ?: ($teacher?->email),
+                'status' => $status,
+                'expires_at' => $expires,
+                'invite_link' => route('onboarding.teacher', ['code' => $invite->invite_code]),
             ],
         ];
     }
@@ -774,6 +865,450 @@ class DirectorAnalyticsQueryService
         return $this->getTrends($colegioId, $metric, $weeks);
     }
 
+    public function getSchoolHealth(int $colegioId): array
+    {
+        $totalStudents = Student::query()
+            ->where('colegio_id', $colegioId)
+            ->count();
+        $totalTeachers = User::query()
+            ->where('colegio_id', $colegioId)
+            ->where('role', 'profesor')
+            ->count();
+        $averageGrades = Grade::query()
+            ->join('activities', 'grades.activity_id', '=', 'activities.id')
+            ->where('grades.colegio_id', $colegioId)
+            ->whereNotNull('grades.score')
+            ->selectRaw(self::AVG_PCT.' as avg_pct')
+            ->value('avg_pct');
+        $averageGrades = $averageGrades !== null ? round((float) $averageGrades, 1) : null;
+
+        $trend = $this->gradeTrendDelta($colegioId, null, null, 4);
+        $attendanceStats = Attendance::query()
+            ->where('colegio_id', $colegioId)
+            ->where('attended_on', '>=', now()->subDays(30)->toDateString())
+            ->selectRaw('COUNT(*) as total_records')
+            ->selectRaw('SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) as absent_records', [Attendance::STATUS_ABSENT])
+            ->first();
+        $totalAttendance = (int) ($attendanceStats->total_records ?? 0);
+        $absentRecords = (int) ($attendanceStats->absent_records ?? 0);
+        $attendance = $totalAttendance > 0
+            ? round((1 - ($absentRecords / max(1, $totalAttendance))) * 100, 1)
+            : null;
+
+        $risk = $this->getRiskAnalysis($colegioId);
+        $atRiskCount = (int) (($risk['data']['at_risk_count'] ?? 0));
+
+        $courseAverages = Grade::query()
+            ->join('activities', 'grades.activity_id', '=', 'activities.id')
+            ->join('courses', 'activities.course_id', '=', 'courses.id')
+            ->where('grades.colegio_id', $colegioId)
+            ->whereNotNull('grades.score')
+            ->groupBy('courses.id', 'courses.subject_name', 'courses.grade', 'courses.section')
+            ->selectRaw('courses.id, courses.subject_name, courses.grade, courses.section, '.self::AVG_PCT.' as avg_pct')
+            ->get();
+        $bestCourse = $courseAverages->sortByDesc('avg_pct')->first();
+        $worstCourse = $courseAverages->sortBy('avg_pct')->first();
+
+        $subjectAverages = Grade::query()
+            ->join('activities', 'grades.activity_id', '=', 'activities.id')
+            ->join('courses', 'activities.course_id', '=', 'courses.id')
+            ->where('grades.colegio_id', $colegioId)
+            ->whereNotNull('grades.score')
+            ->groupBy('courses.subject_name')
+            ->selectRaw('courses.subject_name, '.self::AVG_PCT.' as avg_pct')
+            ->get();
+        $bestSubject = $subjectAverages->sortByDesc('avg_pct')->first();
+        $worstSubject = $subjectAverages->sortBy('avg_pct')->first();
+
+        $directionLabel = match ($trend['direction']) {
+            'up' => 'subiendo',
+            'down' => 'bajando',
+            default => 'estable',
+        };
+        $trendLabel = $trend['delta_pct'] !== null
+            ? "{$trend['delta_pct']} pts ({$directionLabel})"
+            : "sin datos ({$directionLabel})";
+
+        return [
+            'message' => "📊 Salud general del colegio:\n"
+                ."- Matrícula: {$totalStudents} alumno(s)\n"
+                ."- Profesores: {$totalTeachers}\n"
+                .'- Promedio general: '.($averageGrades !== null ? "{$averageGrades}%" : 'sin datos suficientes')."\n"
+                ."- Tendencia reciente: {$trendLabel}\n"
+                .'- Asistencia (30 días): '.($attendance !== null ? "{$attendance}%" : 'sin registros')."\n"
+                ."- Alumnos en riesgo: {$atRiskCount}",
+            'data' => [
+                'total_students' => $totalStudents,
+                'total_teachers' => $totalTeachers,
+                'average_grades' => $averageGrades,
+                'trend' => $trend['delta_pct'],
+                'trend_direction' => $trend['direction'],
+                'attendance' => $attendance,
+                'at_risk_count' => $atRiskCount,
+                'best_course' => $bestCourse ? trim($bestCourse->grade.' '.($bestCourse->section ?? '').' - '.$bestCourse->subject_name.' ('.round((float) $bestCourse->avg_pct, 1).'%)') : null,
+                'worst_course' => $worstCourse ? trim($worstCourse->grade.' '.($worstCourse->section ?? '').' - '.$worstCourse->subject_name.' ('.round((float) $worstCourse->avg_pct, 1).'%)') : null,
+                'best_subject' => $bestSubject ? ($bestSubject->subject_name.' ('.round((float) $bestSubject->avg_pct, 1).'%)') : null,
+                'worst_subject' => $worstSubject ? ($worstSubject->subject_name.' ('.round((float) $worstSubject->avg_pct, 1).'%)') : null,
+            ],
+        ];
+    }
+
+    public function getTrendAnalysis(int $colegioId, ?string $grade = null, ?string $section = null, int $weeks = 4): array
+    {
+        $weeks = max(2, min($weeks, 16));
+        $since = now()->subWeeks($weeks);
+        $scopeLabel = trim(($grade ?? 'colegio').($section ? ' '.$section : ''));
+        $weekSql = $this->weekBucketSql('grades.created_at');
+
+        $scopeRows = Grade::query()
+            ->join('activities', 'grades.activity_id', '=', 'activities.id')
+            ->join('students', 'grades.student_id', '=', 'students.id')
+            ->where('grades.colegio_id', $colegioId)
+            ->whereNotNull('grades.score')
+            ->where('grades.created_at', '>=', $since)
+            ->when($grade, fn ($q) => $q->whereRaw('LOWER(students.grade) = ?', [$this->key($grade)]))
+            ->when($section, fn ($q) => $q->whereRaw('LOWER(COALESCE(students.section, ?)) = ?', ['', $this->key($section)]))
+            ->selectRaw("{$weekSql} as week, ".self::AVG_PCT.' as avg_pct, COUNT(grades.id) as total')
+            ->groupByRaw($weekSql)
+            ->orderBy('week')
+            ->get();
+
+        if ($scopeRows->isEmpty()) {
+            return [
+                'message' => "No hay calificaciones suficientes para analizar tendencia en {$scopeLabel}.",
+                'data' => [
+                    'grade' => $grade,
+                    'section' => $section,
+                    'trend' => 'stable',
+                    'percentage' => 0.0,
+                    'history' => [],
+                ],
+            ];
+        }
+
+        $schoolRows = Grade::query()
+            ->join('activities', 'grades.activity_id', '=', 'activities.id')
+            ->where('grades.colegio_id', $colegioId)
+            ->whereNotNull('grades.score')
+            ->where('grades.created_at', '>=', $since)
+            ->selectRaw("{$weekSql} as week, ".self::AVG_PCT.' as avg_pct')
+            ->groupByRaw($weekSql)
+            ->orderBy('week')
+            ->get()
+            ->keyBy('week');
+
+        $history = $scopeRows->map(function ($row) use ($schoolRows) {
+            $school = $schoolRows->get($row->week);
+            $scopeAvg = round((float) $row->avg_pct, 1);
+            $schoolAvg = $school?->avg_pct !== null ? round((float) $school->avg_pct, 1) : null;
+
+            return [
+                'week' => $row->week,
+                'label' => $this->weekLabel((string) $row->week),
+                'average_pct' => $scopeAvg,
+                'school_average_pct' => $schoolAvg,
+                'diff_vs_school' => $schoolAvg !== null ? round($scopeAvg - $schoolAvg, 1) : null,
+                'records' => (int) $row->total,
+            ];
+        })->values();
+
+        $first = (float) ($history->first()['average_pct'] ?? 0.0);
+        $last = (float) ($history->last()['average_pct'] ?? $first);
+        $delta = round($last - $first, 1);
+        $trend = $this->trendDirection($delta);
+
+        return [
+            'message' => "📈 Tendencia de {$scopeLabel} (últimas {$weeks} semanas): {$trend} ({$delta} pts).",
+            'data' => [
+                'grade' => $grade,
+                'section' => $section,
+                'weeks' => $weeks,
+                'trend' => $trend,
+                'percentage' => $delta,
+                'history' => $history->all(),
+                'patterns' => [
+                    'scope_vs_school' => $history->last()['diff_vs_school'] ?? null,
+                ],
+            ],
+        ];
+    }
+
+    public function getRiskAnalysis(int $colegioId, ?string $grade = null, ?string $section = null): array
+    {
+        $students = Student::query()
+            ->where('colegio_id', $colegioId)
+            ->when($grade, fn ($q) => $q->whereRaw('LOWER(grade) = ?', [$this->key($grade)]))
+            ->when($section, fn ($q) => $q->whereRaw('LOWER(COALESCE(section, ?)) = ?', ['', $this->key($section)]))
+            ->get(['id', 'name', 'grade', 'section']);
+
+        if ($students->isEmpty()) {
+            return [
+                'message' => 'No hay alumnos en ese alcance para analizar riesgo.',
+                'data' => ['students' => [], 'at_risk_count' => 0],
+            ];
+        }
+
+        $studentIds = $students->pluck('id');
+        $now = now();
+        $recentStart = $now->copy()->subDays(30);
+        $previousStart = $now->copy()->subDays(60);
+
+        $grades = Grade::query()
+            ->join('activities', 'grades.activity_id', '=', 'activities.id')
+            ->where('grades.colegio_id', $colegioId)
+            ->whereIn('grades.student_id', $studentIds)
+            ->whereNotNull('grades.score')
+            ->orderBy('grades.created_at')
+            ->get(['grades.student_id', 'grades.score', 'activities.max_score', 'grades.created_at']);
+
+        $absences = Attendance::query()
+            ->where('colegio_id', $colegioId)
+            ->whereIn('student_id', $studentIds)
+            ->where('status', Attendance::STATUS_ABSENT)
+            ->where('attended_on', '>=', $recentStart->toDateString())
+            ->selectRaw('student_id, COUNT(*) as absences')
+            ->groupBy('student_id')
+            ->pluck('absences', 'student_id');
+
+        $riskRows = $students->map(function ($student) use ($grades, $absences, $recentStart, $previousStart) {
+            $studentGrades = $grades->where('student_id', $student->id)->values();
+            $allAvg = $this->avgPercent($studentGrades);
+            $recentGrades = $studentGrades->filter(fn ($row) => $row->created_at >= $recentStart);
+            $previousGrades = $studentGrades->filter(fn ($row) => $row->created_at >= $previousStart && $row->created_at < $recentStart);
+            $recentAvg = $this->avgPercent($recentGrades);
+            $previousAvg = $this->avgPercent($previousGrades);
+            $drop = ($recentAvg !== null && $previousAvg !== null) ? round($previousAvg - $recentAvg, 1) : 0.0;
+            $absenceCount = (int) ($absences[$student->id] ?? 0);
+
+            $flags = [];
+            if ($allAvg !== null && $allAvg < 60) {
+                $flags[] = 'average_below_60';
+            }
+            if ($drop > 10) {
+                $flags[] = 'drop_over_10';
+            }
+            if ($absenceCount > 3) {
+                $flags[] = 'absences_over_3';
+            }
+
+            return [
+                'name' => $student->name,
+                'grade' => $student->grade,
+                'section' => $student->section,
+                'average_pct' => $allAvg,
+                'previous_avg_pct' => $previousAvg,
+                'recent_avg_pct' => $recentAvg,
+                'drop_pct' => $drop,
+                'absences_30d' => $absenceCount,
+                'risk_flags' => $flags,
+                'risk_score' => count($flags),
+            ];
+        })->filter(fn ($row) => $row['risk_score'] > 0)
+            ->sortBy([
+                ['risk_score', 'desc'],
+                ['average_pct', 'asc'],
+            ])->values();
+
+        if ($riskRows->isEmpty()) {
+            $scope = $this->gradeLabel($grade, $section, null);
+
+            return [
+                'message' => "No detecté alumnos en riesgo en {$scope} con los umbrales actuales.",
+                'data' => [
+                    'students' => [],
+                    'at_risk_count' => 0,
+                    'scope' => $scope,
+                ],
+            ];
+        }
+
+        $lines = $riskRows->take(8)->map(function ($row, $idx) {
+            $riskText = collect($row['risk_flags'])->map(function ($flag) {
+                return match ($flag) {
+                    'average_below_60' => 'promedio < 60%',
+                    'drop_over_10' => 'bajó > 10 pts',
+                    'absences_over_3' => 'faltas > 3',
+                    default => $flag,
+                };
+            })->implode(', ');
+
+            return ($idx + 1).'. '.$row['name'].' ('.round((float) $row['average_pct'], 1)."%) — {$riskText}";
+        })->implode("\n");
+
+        return [
+            'message' => "🔴 Alumnos en riesgo detectados: {$riskRows->count()}\n{$lines}",
+            'data' => [
+                'students' => $riskRows->all(),
+                'at_risk_count' => $riskRows->count(),
+                'grade' => $grade,
+                'section' => $section,
+            ],
+        ];
+    }
+
+    public function getCauseAnalysis(int $colegioId, string $grade, ?string $section = null, ?string $studentName = null): array
+    {
+        $trendData = $this->getTrendAnalysis($colegioId, $grade, $section, 8)['data'] ?? [];
+        $riskData = $this->getRiskAnalysis($colegioId, $grade, $section)['data'] ?? [];
+        $riskRows = collect($riskData['students'] ?? []);
+        $target = null;
+        if ($studentName !== null && trim($studentName) !== '') {
+            $needle = mb_strtolower(trim($studentName));
+            $target = $riskRows->first(function ($row) use ($needle) {
+                $name = mb_strtolower((string) ($row['name'] ?? ''));
+
+                return $name !== '' && (str_contains($name, $needle) || str_contains($needle, $name));
+            });
+        }
+
+        $causes = [];
+        $trendDelta = (float) ($trendData['percentage'] ?? 0);
+        if ($trendDelta <= -5) {
+            $causes[] = [
+                'cause' => 'Descenso sostenido del rendimiento',
+                'confidence' => 'alta',
+                'evidence' => "La tendencia del curso es {$trendDelta} puntos en las últimas semanas.",
+            ];
+        }
+
+        $absences = (int) (($target['absences_30d'] ?? 0) ?: $riskRows->max('absences_30d'));
+        if ($absences > 3) {
+            $causes[] = [
+                'cause' => 'Ausentismo reciente',
+                'confidence' => $absences > 5 ? 'alta' : 'media',
+                'evidence' => "Se observan {$absences} faltas en 30 días en los casos analizados.",
+            ];
+        }
+
+        $drop = (float) (($target['drop_pct'] ?? 0) ?: $riskRows->max('drop_pct'));
+        if ($drop > 10) {
+            $causes[] = [
+                'cause' => 'Evaluaciones recientes más complejas o baja preparación',
+                'confidence' => 'media',
+                'evidence' => "Hay una caída de {$drop} puntos entre el periodo anterior y el reciente.",
+            ];
+        }
+
+        $teacherVariety = Course::query()
+            ->where('colegio_id', $colegioId)
+            ->whereRaw('LOWER(grade) = ?', [$this->key($grade)])
+            ->when($section, fn ($q) => $q->whereRaw('LOWER(COALESCE(section, ?)) = ?', ['', $this->key($section)]))
+            ->whereNotNull('teacher_id')
+            ->distinct('teacher_id')
+            ->count('teacher_id');
+        if ($teacherVariety >= 3) {
+            $causes[] = [
+                'cause' => 'Alta rotación o variación docente en el grupo',
+                'confidence' => 'media',
+                'evidence' => "El grupo registra {$teacherVariety} docentes distintos en sus cursos.",
+            ];
+        }
+
+        if ($causes === []) {
+            $causes[] = [
+                'cause' => 'Datos insuficientes para una hipótesis fuerte',
+                'confidence' => 'baja',
+                'evidence' => 'No hay cambios consistentes de notas o asistencia para explicar la variación con certeza.',
+            ];
+        }
+
+        $targetLabel = $studentName ? " para {$studentName}" : '';
+        $message = collect($causes)->map(function ($cause, $idx) {
+            return ($idx + 1).". {$cause['cause']} ({$cause['confidence']}) — {$cause['evidence']}";
+        })->implode("\n");
+
+        return [
+            'message' => "🧠 Posibles causas detectadas en {$grade}".($section ? " {$section}" : '')."{$targetLabel}:\n".$message,
+            'data' => [
+                'grade' => $grade,
+                'section' => $section,
+                'student_name' => $studentName,
+                'possible_causes' => $causes,
+                'trend' => $trendData,
+                'risk_snapshot' => $target ?: null,
+            ],
+        ];
+    }
+
+    public function getSmartRecommendations(int $colegioId, ?string $grade = null, ?string $section = null): array
+    {
+        $health = $this->getSchoolHealth($colegioId)['data'] ?? [];
+        $risk = $this->getRiskAnalysis($colegioId, $grade, $section)['data'] ?? [];
+        $trend = $this->getTrendAnalysis($colegioId, $grade, $section, 6)['data'] ?? [];
+
+        $recommendations = [];
+        $scope = $this->gradeLabel($grade, $section, null);
+        $riskRows = collect($risk['students'] ?? []);
+        if ($riskRows->isNotEmpty()) {
+            $top = $riskRows->first();
+            $recommendations[] = [
+                'priority' => 'high',
+                'action' => 'Agendar reunión con familias de alumnos en riesgo.',
+                'reason' => "Hay {$riskRows->count()} alumno(s) con señales críticas. Caso inicial sugerido: ".($top['name'] ?? 'sin nombre').'.',
+                'scope' => $scope,
+            ];
+        }
+
+        $trendDelta = (float) ($trend['percentage'] ?? 0);
+        if ($trendDelta <= -5) {
+            $recommendations[] = [
+                'priority' => 'high',
+                'action' => 'Reunión pedagógica con docentes del grupo para ajustar estrategia.',
+                'reason' => "La tendencia reciente cayó {$trendDelta} puntos.",
+                'scope' => $scope,
+            ];
+        } elseif ($trendDelta < 0) {
+            $recommendations[] = [
+                'priority' => 'medium',
+                'action' => 'Monitoreo semanal del rendimiento con metas de recuperación.',
+                'reason' => "Hay una baja leve de {$trendDelta} puntos.",
+                'scope' => $scope,
+            ];
+        }
+
+        $attendance = $health['attendance'] ?? null;
+        if ($attendance !== null && (float) $attendance < 90) {
+            $recommendations[] = [
+                'priority' => 'medium',
+                'action' => 'Activar plan de asistencia con seguimiento de faltas semanales.',
+                'reason' => "La asistencia está en {$attendance}%, por debajo de 90%.",
+                'scope' => $scope,
+            ];
+        }
+
+        if (! empty($health['worst_subject'])) {
+            $recommendations[] = [
+                'priority' => 'medium',
+                'action' => 'Refuerzo focalizado en la materia con peor desempeño.',
+                'reason' => "La materia más débil actualmente es {$health['worst_subject']}.",
+                'scope' => $scope,
+            ];
+        }
+
+        if ($recommendations === []) {
+            $recommendations[] = [
+                'priority' => 'low',
+                'action' => 'Mantener seguimiento quincenal y reconocer buenas prácticas docentes.',
+                'reason' => 'No se detectan alertas críticas con los datos actuales.',
+                'scope' => $scope,
+            ];
+        }
+
+        usort($recommendations, fn ($a, $b) => $this->priorityScore($a['priority']) <=> $this->priorityScore($b['priority']));
+        $lines = collect($recommendations)->map(function ($item, $idx) {
+            return ($idx + 1).'. ['.strtoupper($item['priority']).'] '.$item['action'].' — '.$item['reason'];
+        })->implode("\n");
+
+        return [
+            'message' => "💡 Recomendaciones estratégicas para {$scope}:\n".$lines,
+            'data' => [
+                'grade' => $grade,
+                'section' => $section,
+                'recommendations' => $recommendations,
+            ],
+        ];
+    }
+
     public function getGrades(int $colegioId, ?string $grade = null, ?string $section = null, ?string $studentName = null, ?string $subject = null, int $limit = 30): array
     {
         $limit = max(1, min($limit, 80));
@@ -1205,6 +1740,62 @@ class DirectorAnalyticsQueryService
         $cut = preg_split('/\n(?=\|)/', $text, 2);
 
         return trim((string) ($cut[0] ?? $text));
+    }
+
+    private function gradeTrendDelta(int $colegioId, ?string $grade, ?string $section, int $weeks = 4): array
+    {
+        $weeks = max(2, min($weeks, 16));
+        $recentStart = now()->subWeeks($weeks);
+        $previousStart = now()->subWeeks($weeks * 2);
+
+        $base = Grade::query()
+            ->join('activities', 'grades.activity_id', '=', 'activities.id')
+            ->join('students', 'grades.student_id', '=', 'students.id')
+            ->where('grades.colegio_id', $colegioId)
+            ->whereNotNull('grades.score')
+            ->when($grade, fn ($q) => $q->whereRaw('LOWER(students.grade) = ?', [$this->key($grade)]))
+            ->when($section, fn ($q) => $q->whereRaw('LOWER(COALESCE(students.section, ?)) = ?', ['', $this->key($section)]));
+
+        $recent = (clone $base)
+            ->where('grades.created_at', '>=', $recentStart)
+            ->selectRaw(self::AVG_PCT.' as avg_pct')
+            ->value('avg_pct');
+        $previous = (clone $base)
+            ->whereBetween('grades.created_at', [$previousStart, $recentStart])
+            ->selectRaw(self::AVG_PCT.' as avg_pct')
+            ->value('avg_pct');
+
+        $recent = $recent !== null ? round((float) $recent, 1) : null;
+        $previous = $previous !== null ? round((float) $previous, 1) : null;
+        $delta = ($recent !== null && $previous !== null) ? round($recent - $previous, 1) : null;
+
+        return [
+            'recent_avg_pct' => $recent,
+            'previous_avg_pct' => $previous,
+            'delta_pct' => $delta,
+            'direction' => $this->trendDirection((float) ($delta ?? 0.0)),
+        ];
+    }
+
+    private function trendDirection(float $delta): string
+    {
+        if ($delta > 1.5) {
+            return 'up';
+        }
+        if ($delta < -1.5) {
+            return 'down';
+        }
+
+        return 'stable';
+    }
+
+    private function priorityScore(string $priority): int
+    {
+        return match ($this->key($priority)) {
+            'high', 'alta' => 1,
+            'medium', 'media' => 2,
+            default => 3,
+        };
     }
 
     // ─── Helpers internos ───────────────────────────────────────────────────

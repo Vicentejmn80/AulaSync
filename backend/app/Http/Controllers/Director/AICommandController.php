@@ -15,9 +15,11 @@ use App\Models\User;
 use App\Services\DirectorActionService;
 use App\Services\DirectorAIInterpreterService;
 use App\Services\DirectorAnalyticsQueryService;
+use App\Services\DirectorConfirmationManager;
 use App\Services\DirectorConversationContextService;
 use App\Services\DirectorDataAgentService;
 use App\Services\DirectorCommandFocusService;
+use App\Services\DirectorUnifiedAgentService;
 use App\Services\PersonNameMatcher;
 use App\Services\PersonNameSanitizer;
 use App\Services\SpeechToTextService;
@@ -25,6 +27,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 
@@ -41,10 +44,12 @@ class AICommandController extends Controller
         private DirectorActionService $actionService,
         private DirectorAIInterpreterService $interpreter,
         private DirectorConversationContextService $conversationContext,
+        private DirectorConfirmationManager $confirmationManager,
         private DirectorAnalyticsQueryService $analytics,
         private DirectorDataAgentService $dataAgent,
         private SpeechToTextService $speechToText,
         private DirectorCommandFocusService $commandFocus,
+        private DirectorUnifiedAgentService $unifiedAgent,
     ) {}
 
     public function transcribe(Request $request): JsonResponse
@@ -60,14 +65,42 @@ class AICommandController extends Controller
 
         $request->validate([
             'audio' => ['required', 'file', 'max:25600'],
+            'process_command' => ['sometimes', 'boolean'],
+            'conversation' => ['sometimes', 'array', 'max:40'],
+            'conversation.*.role' => ['required_with:conversation', 'in:user,assistant'],
+            'conversation.*.content' => ['required_with:conversation', 'string', 'max:12000'],
+            'screen_context' => ['sometimes', 'nullable', 'array'],
         ]);
 
         $transcript = $this->speechToText->transcribe($request->file('audio'));
 
-        return response()->json([
-            'success' => true,
-            'transcript' => $transcript,
+        if (! $request->boolean('process_command')) {
+            return response()->json([
+                'success' => true,
+                'transcript' => $transcript,
+            ]);
+        }
+
+        $proxy = Request::create('/director/ai/command', 'POST', [
+            'prompt' => $transcript,
+            'conversation' => (array) $request->input('conversation', []),
+            'screen_context' => (array) $request->input('screen_context', []),
+            'is_voice' => true,
         ]);
+        $proxy->setUserResolver(fn () => $director);
+        $proxy->setLaravelSession($request->session());
+
+        $response = $this->handle($proxy);
+        $payload = $response->getData(true);
+        if (! is_array($payload)) {
+            $payload = ['success' => false, 'message' => 'No se pudo procesar el comando transcrito.'];
+        }
+        $payload['transcript'] = $transcript;
+        $payload['processed'] = true;
+
+        return response()->json([
+            ...$payload,
+        ], $response->getStatusCode());
     }
 
     public function handle(Request $request): JsonResponse
@@ -122,9 +155,18 @@ class AICommandController extends Controller
         }
         $chatMode = session()->get(self::CHAT_MODE_KEY, 'main_menu');
         $chatSubject = session()->get(self::CHAT_SUBJECT_KEY);
+        $hasPendingPlan = $this->confirmationManager->hasPendingPlan();
         $hasPending = session()->has(self::PENDING_SESSION_KEY)
             || session()->has('chat_pending')
             || session()->has(self::PENDING_BATCH_SESSION_KEY);
+
+        // PRIORIDAD 0: Plan pendiente con slots (antes de la confirmación final)
+        if ($hasPendingPlan) {
+            $slotReply = $this->handlePendingPlanSlots($director, $text);
+            if ($slotReply !== null) {
+                return $slotReply;
+            }
+        }
 
         // PRIORIDAD 1: Mutación pendiente (confirmación)
         if ($hasPending && $this->wantsOneByOneReview($text) && count(session(self::PENDING_SESSION_KEY, [])) > 1) {
@@ -294,6 +336,10 @@ class AICommandController extends Controller
                 if ($intent) {
                     [$operationData, $missingDataMessage] = $this->buildOperationData($director, $intent, $text);
                     if ($missingDataMessage) {
+                        $slotResponse = $this->startPendingPlanFromMissingData($director, $intent, $text, $operationData, $missingDataMessage);
+                        if ($slotResponse !== null) {
+                            return $slotResponse;
+                        }
                         return response()->json([
                             'success' => false,
                             'needs_clarification' => true,
@@ -396,11 +442,13 @@ class AICommandController extends Controller
                 'tools' => array_column($plan['tools'] ?? [], 'tool'),
                 'decision' => $this->dataAgent->routeDecision($text),
             ]);
-            $result = $this->dataAgent->answer(
+            $result = $this->unifiedAgent->handleIntelligentQuery(
                 $director,
                 $text,
-                $plan,
+                $screenContext,
+                $preplanned,
                 fn (array $data) => $this->queryAcademic($director, $data),
+                $this->conversationContext->current(),
             );
         } catch (\Throwable $e) {
             Log::error('Director data agent failed', [
@@ -409,11 +457,14 @@ class AICommandController extends Controller
                 'error' => $e->getMessage(),
             ]);
 
+            $message = $this->friendlyDataAgentFailure($e);
+            $this->conversationContext->addTurn($text, $message, []);
+
             return response()->json([
                 'success' => true,
                 'any_success' => true,
                 'actions' => [],
-                'message' => $this->friendlyDataAgentFailure($e),
+                'message' => $message,
                 'agent' => 'director_data',
                 'tools' => [],
             ]);
@@ -421,6 +472,7 @@ class AICommandController extends Controller
 
         if (! empty($result['needs_clarification'])) {
             $this->conversationContext->rememberError((string) $result['message']);
+            $this->conversationContext->addTurn($text, (string) $result['message'], []);
 
             return response()->json([
                 'success' => false,
@@ -449,6 +501,7 @@ class AICommandController extends Controller
             );
         }
         $this->conversationContext->rememberFocus((array) ($result['focus'] ?? []));
+        $this->conversationContext->addTurn($text, (string) ($result['message'] ?? ''), (array) ($result['actions'] ?? []));
 
         return response()->json([
             'success' => true,
@@ -528,11 +581,15 @@ class AICommandController extends Controller
                 ];
             }
 
+            $narrative = $this->interpreter->narrate($rawText, $results);
+            $this->conversationContext->addTurn($rawText, $narrative, $results);
+
             return response()->json([
                 'success' => true,
                 'any_success' => true,
                 'actions' => $results,
-                'message' => $this->interpreter->narrate($rawText, $results),
+                'message' => $narrative,
+                'timeline' => $this->mutationTimeline('completed', 'Cambios aplicados correctamente.'),
             ]);
         }
 
@@ -553,6 +610,7 @@ class AICommandController extends Controller
         }
 
         $this->rememberPendingActions($pending);
+        $this->conversationContext->addTurn($rawText, $this->formatPendingConfirmation($pending), []);
 
         return $this->pendingConfirmationResponse($pending);
     }
@@ -756,12 +814,8 @@ class AICommandController extends Controller
         }
 
         $results = [];
-        $anySuccess = false;
-        $failedActions = [];
-
-        foreach ($actions as $action) {
-            $intent = (string) Arr::get($action, 'intent', '');
-            $data = (array) Arr::get($action, 'data', []);
+        $logMap = [];
+        foreach ($actions as $idx => $action) {
             $logId = Arr::get($action, 'audit_log_id');
             $log = $logId
                 ? DirectorAiOperationLog::query()
@@ -770,42 +824,52 @@ class AICommandController extends Controller
                     ->where('colegio_id', $director->colegio_id)
                     ->first()
                 : null;
+            if ($logId && ! $log) {
+                throw ValidationException::withMessages([
+                    'pending_actions' => 'La acción pendiente no pertenece a este director o colegio.',
+                ]);
+            }
+            $logMap[(int) $idx] = $log;
+        }
 
-            try {
-                if ($logId && ! $log) {
-                    throw ValidationException::withMessages([
-                        'pending_actions' => 'La acción pendiente no pertenece a este director o colegio.',
-                    ]);
+        try {
+            DB::transaction(function () use ($actions, &$results, $logMap, $director): void {
+                foreach ($actions as $idx => $action) {
+                    $intent = (string) Arr::get($action, 'intent', '');
+                    $data = (array) Arr::get($action, 'data', []);
+                    /** @var DirectorAiOperationLog|null $log */
+                    $log = $logMap[(int) $idx] ?? null;
+
+                    if ($log) {
+                        $log->update([
+                            'status' => 'confirmed',
+                            'confirmed_at' => now(),
+                        ]);
+                    }
+
+                    $result = $this->runIntent($director, $intent, $data);
+                    $summary = $this->verifyResult($director, $intent, $result);
+
+                    if ($log) {
+                        $log->update([
+                            'status' => 'verified',
+                            'executed_at' => now(),
+                            'verified_at' => now(),
+                            'result_payload' => $summary,
+                        ]);
+                    }
+
+                    $results[] = [
+                        'success' => true,
+                        'action_type' => $intent,
+                        'message' => $summary['message'] ?? 'Operación ejecutada.',
+                        'data' => $summary['data'] ?? [],
+                    ];
                 }
-                if ($log) {
-                    $log->update([
-                        'status' => 'confirmed',
-                        'confirmed_at' => now(),
-                    ]);
-                }
-
-                $result = $this->runIntent($director, $intent, $data);
-                $summary = $this->verifyResult($director, $intent, $result);
-
-                if ($log) {
-                    $log->update([
-                        'status' => 'verified',
-                        'executed_at' => now(),
-                        'verified_at' => now(),
-                        'result_payload' => $summary,
-                    ]);
-                }
-
-                $results[] = [
-                    'success' => true,
-                    'action_type' => $intent,
-                    'message' => $summary['message'] ?? 'Operación ejecutada.',
-                    'data' => $summary['data'] ?? [],
-                ];
-                $this->conversationContext->rememberResult($intent, $data, $summary);
-                $anySuccess = true;
-            } catch (ValidationException $e) {
-                $msg = collect($e->errors())->flatten()->first() ?: 'Error de validación.';
+            });
+        } catch (ValidationException $e) {
+            $msg = collect($e->errors())->flatten()->first() ?: 'Error de validación.';
+            foreach ($logMap as $log) {
                 if ($log) {
                     $log->update([
                         'status' => 'failed',
@@ -813,20 +877,38 @@ class AICommandController extends Controller
                         'error_payload' => ['message' => $msg],
                     ]);
                 }
-                $results[] = [
+            }
+            $this->conversationContext->rememberError($msg);
+            session([self::PENDING_SESSION_KEY => $actions->all()]);
+
+            $rollbackMessage = 'La operación falló y se revirtieron todos los cambios. '.$msg;
+            $this->conversationContext->addTurn(
+                (string) ($this->conversationContext->current()['last_user_text'] ?? ''),
+                $rollbackMessage,
+                []
+            );
+
+            return response()->json([
+                'success' => false,
+                'any_success' => false,
+                'requires_clarification' => true,
+                'pending_actions' => $actions->all(),
+                'actions' => [[
                     'success' => false,
-                    'action_type' => $intent,
-                    'message' => $msg,
-                ];
-                $failedActions[] = $action;
-                $this->conversationContext->rememberError($msg);
-            } catch (\Throwable $e) {
-                Log::error('Director AI execution failed', [
-                    'director_id' => $director->id,
-                    'intent' => $intent,
-                    'message' => $e->getMessage(),
-                    'trace' => $e->getTraceAsString(),
-                ]);
+                    'message' => $rollbackMessage,
+                    'action_type' => 'batch',
+                ]],
+                'message' => $rollbackMessage,
+                'timeline' => $this->mutationTimeline('rollback', $rollbackMessage),
+                'buttons' => $this->confirmationButtons($actions->count()),
+            ], 422);
+        } catch (\Throwable $e) {
+            Log::error('Director AI execution failed', [
+                'director_id' => $director->id,
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+            foreach ($logMap as $log) {
                 if ($log) {
                     $log->update([
                         'status' => 'failed',
@@ -834,77 +916,107 @@ class AICommandController extends Controller
                         'error_payload' => ['message' => $e->getMessage()],
                     ]);
                 }
-                $results[] = [
+            }
+            $this->conversationContext->rememberError('Falló la ejecución de la operación.');
+            session([self::PENDING_SESSION_KEY => $actions->all()]);
+
+            $rollbackMessage = 'La operación falló y se revirtieron todos los cambios.';
+            $this->conversationContext->addTurn(
+                (string) ($this->conversationContext->current()['last_user_text'] ?? ''),
+                $rollbackMessage,
+                []
+            );
+
+            return response()->json([
+                'success' => false,
+                'any_success' => false,
+                'requires_clarification' => true,
+                'pending_actions' => $actions->all(),
+                'actions' => [[
                     'success' => false,
-                    'action_type' => $intent,
-                    'message' => 'Falló la ejecución de la operación.',
-                ];
-                $failedActions[] = $action;
-                $this->conversationContext->rememberError('Falló la ejecución de la operación.');
-            }
+                    'message' => $rollbackMessage,
+                    'action_type' => 'batch',
+                ]],
+                'message' => $rollbackMessage,
+                'timeline' => $this->mutationTimeline('rollback', $rollbackMessage),
+                'buttons' => $this->confirmationButtons($actions->count()),
+            ], 500);
         }
 
-        if ($failedActions === []) {
-            $queued = array_values(session(self::BATCH_QUEUE_KEY, []));
-            if ($queued !== []) {
-                $next = array_shift($queued);
-                session([self::BATCH_QUEUE_KEY => $queued]);
-                $this->rememberPendingActions([$next]);
-                $remaining = count($queued) + 1;
-
-                return $this->pendingConfirmationResponse(
-                    [$next],
-                    "Listo el paso anterior. Siguiente acción (queda {$remaining}):"
-                );
-            }
-            $this->forgetPendingActions();
-        } else {
-            session([self::PENDING_SESSION_KEY => $failedActions]);
+        foreach ($results as $row) {
+            $this->conversationContext->rememberResult(
+                (string) ($row['action_type'] ?? ''),
+                (array) ($row['data'] ?? []),
+                $row
+            );
         }
+
+        if ($results !== []) {
+            $this->conversationContext->addTurn(
+                (string) ($this->conversationContext->current()['last_user_text'] ?? ''),
+                $this->formatBatchResults($results) ?? $this->interpreter->narrate(
+                    (string) ($this->conversationContext->current()['last_user_text'] ?? ''),
+                    $results,
+                ),
+                $results
+            );
+        }
+
+        $queued = array_values(session(self::BATCH_QUEUE_KEY, []));
+        if ($queued !== []) {
+            $next = array_shift($queued);
+            session([self::BATCH_QUEUE_KEY => $queued]);
+            $this->rememberPendingActions([$next]);
+            $remaining = count($queued) + 1;
+
+            return $this->pendingConfirmationResponse(
+                [$next],
+                "Listo el paso anterior. Siguiente acción (queda {$remaining}):"
+            );
+        }
+        $this->forgetPendingActions();
 
         $batchMessage = $this->formatBatchResults($results);
 
         return response()->json([
-            'success' => $anySuccess,
-            'any_success' => $anySuccess,
-            'requires_clarification' => $failedActions !== [],
-            'pending_actions' => $failedActions !== [] ? $failedActions : null,
+            'success' => true,
+            'any_success' => true,
+            'requires_clarification' => false,
+            'pending_actions' => null,
             'actions' => $results,
             'message' => $batchMessage ?? $this->interpreter->narrate(
                 (string) ($this->conversationContext->current()['last_user_text'] ?? ''),
                 $results,
             ),
-            'buttons' => $failedActions === [] ? [['id' => 'menu_main', 'label' => '🏠 Menú principal']] : $this->confirmationButtons(count($failedActions)),
+            'timeline' => $this->mutationTimeline('completed', 'Cambios aplicados correctamente.'),
+            'buttons' => [['id' => 'menu_main', 'label' => '🏠 Menú principal']],
         ]);
     }
 
+    /**
+     * Único punto de ejecución de intents del Director AI: delega en
+     * DirectorUnifiedAgentService, que a su vez despacha a
+     * DirectorActionService (escritura) o DirectorDataAgentService
+     * (lectura, incluida query_academic vía el callback legado).
+     */
+    /**
+     * Único punto de ejecución de intents del Director AI: delega en
+     * DirectorUnifiedAgentService, que a su vez despacha a
+     * DirectorActionService (escritura) o DirectorDataAgentService
+     * (lectura, incluida query_academic vía el callback legado).
+     */
     private function runIntent(User $director, string $intent, array $data): array
     {
-        return match ($intent) {
-            'create_teacher' => $this->actionService->createTeacherInviteWithAssignments($director, $data),
-            'create_subject' => $this->actionService->createSubject($director, $data),
-            'create_course' => count($data['grades'] ?? []) > 1
-                ? $this->actionService->createCourses($director, $data)
-                : $this->actionService->createCourse($director, $data),
-            'assign_teacher' => $this->actionService->assignTeacherToGradesSubject($director, $data),
-            'create_students_batch' => $this->actionService->createStudentsBatch($director, $data),
-            'enroll_students_course' => $this->actionService->enrollStudentsToCourse($director, $data),
-            'unenroll_students_course' => $this->actionService->unenrollStudentsFromCourse($director, $data),
-            'unassign_teacher' => $this->actionService->unassignTeacher($director, $data),
-            'update_course' => $this->actionService->updateCourse($director, $data),
-            'update_student' => $this->actionService->updateStudent($director, $data),
-            'manage_invite_code' => $this->actionService->manageInviteCode($director, $data),
-            'query_academic' => $this->queryAcademic($director, $data),
-            'delete_teacher' => $this->actionService->deleteTeacher($director, $data),
-            'delete_teacher_invite' => $this->actionService->deleteTeacherInvite($director, $data),
-            'delete_all_teachers' => $this->actionService->deleteAllTeachers($director, $data),
-            'delete_course' => $this->actionService->deleteCourse($director, $data),
-            'delete_all_courses' => $this->actionService->deleteAllCourses($director, $data),
-            'delete_student' => $this->actionService->deleteStudent($director, $data),
-            default => throw ValidationException::withMessages([
-                'intent' => 'Intent no soportado para Director AI.',
-            ]),
-        };
+        if ($intent === 'create_subject') {
+            return $this->actionService->createSubject($director, $data);
+        }
+
+        return $this->unifiedAgent->execute(
+            $director,
+            $intent,
+            $data,
+            fn (array $args) => $this->queryAcademic($director, $args),
+        );
     }
 
     private function verifyResult(User $director, string $intent, array $result): array
@@ -926,6 +1038,7 @@ class AICommandController extends Controller
             'enroll_students_course' => $this->verifyEnrollStudentsToCourse($director, $result),
             'unenroll_students_course' => $this->verifyUnenrollStudentsFromCourse($director, $result),
             'unassign_teacher', 'update_course', 'update_student' => $this->verifyGenericMutation($result),
+            'get_teacher_invite_code' => $this->verifyGetTeacherInviteCode($result),
             'manage_invite_code' => $this->verifyManageInviteCode($director, $result),
             'query_academic' => $this->verifyAcademicQueryResult($result),
             'delete_teacher' => $this->verifyDeletePeople($director, $result, 'profesor'),
@@ -1204,6 +1317,14 @@ class AICommandController extends Controller
         ];
     }
 
+    private function verifyGetTeacherInviteCode(array $result): array
+    {
+        return [
+            'message' => (string) ($result['message'] ?? 'No pude obtener el código de invitación.'),
+            'data' => (array) ($result['data'] ?? []),
+        ];
+    }
+
     private function verifyAcademicQueryResult(array $result): array
     {
         return [
@@ -1306,6 +1427,7 @@ class AICommandController extends Controller
             'enroll_students_course' => $this->parseEnrollStudentsCourse($director, $text),
             'unenroll_students_course' => $this->parseEnrollStudentsCourse($director, $text),
             'update_student' => $this->parseUpdateStudent($director, $text),
+            'get_teacher_invite_code' => $this->parseGetTeacherInviteCode($text),
             'manage_invite_code' => $this->parseManageInviteCode($text),
             'query_academic' => $this->parseQueryAcademic($text),
             'delete_teacher' => $this->parseDeleteTeacher($director, $text),
@@ -1375,6 +1497,7 @@ class AICommandController extends Controller
             'requires_confirmation' => true,
             'message' => $message,
             'pending_actions' => $pending,
+            'timeline' => $this->mutationTimeline('confirming', 'Esperando tu confirmación para ejecutar.'),
             'buttons' => $this->confirmationButtons(count($pending) + $queued),
         ]);
     }
@@ -1529,10 +1652,184 @@ class AICommandController extends Controller
 
     private function forgetPendingActions(): void
     {
+        $this->confirmationManager->clear();
         session()->forget(self::PENDING_SESSION_KEY);
         session()->forget(self::PENDING_BATCH_SESSION_KEY);
         session()->forget(self::BATCH_QUEUE_KEY);
         session()->forget('chat_pending');
+    }
+
+    /**
+     * @param  array<string,mixed>  $partialData
+     */
+    private function startPendingPlanFromMissingData(
+        User $director,
+        string $intent,
+        string $rawText,
+        array $partialData,
+        string $fallbackMessage
+    ): ?JsonResponse {
+        if ($intent !== 'create_students_batch') {
+            return null;
+        }
+
+        $names = $this->extractStudentNames($rawText);
+        if ($names === []) {
+            return null;
+        }
+
+        $grade = $partialData['grade'] ?? $this->extractTargetGrade($rawText);
+        $section = $partialData['section'] ?? $this->extractSection($rawText);
+        $subject = $partialData['subject_name']
+            ?? $this->extractKnownSubject($rawText)
+            ?? $this->extractSubjectFromCoursePrompt($rawText)
+            ?? $this->extractSubject($rawText);
+        $teacherName = $partialData['teacher_name'] ?? $this->sanitizePersonName($this->extractTeacherName($rawText));
+
+        $slots = [
+            'grade' => $grade ?: null,
+            // En flujo por slots pedimos sección explícita para no perder contexto.
+            'section' => $section ?: null,
+        ];
+
+        $this->confirmationManager->startPlan([
+            'intent' => $intent,
+            'data' => [
+                'names' => $names,
+                'grade' => $grade ?: null,
+                'section' => $section ?: null,
+                'subject_name' => $subject,
+                'teacher_name' => $teacherName,
+                'missing_grades' => [],
+                'raw_text' => $rawText,
+            ],
+        ], $slots);
+
+        $nextQuestion = $this->nextSlotQuestion($this->confirmationManager->missingSlots());
+
+        return response()->json([
+            'success' => false,
+            'needs_clarification' => true,
+            'pending_plan' => $this->confirmationManager->getPlan(),
+            'message' => $nextQuestion ?: $fallbackMessage,
+        ]);
+    }
+
+    private function handlePendingPlanSlots(User $director, string $text): ?JsonResponse
+    {
+        if (! $this->confirmationManager->hasPendingPlan()) {
+            return null;
+        }
+
+        if ($this->isNegativeText($text)) {
+            $this->confirmationManager->clear();
+
+            return response()->json([
+                'success' => true,
+                'cancelled' => true,
+                'message' => 'Operación cancelada. No hice cambios.',
+                'buttons' => $this->mainMenuButtons(),
+                'mode' => 'main_menu',
+            ]);
+        }
+
+        $plan = $this->confirmationManager->getPlan();
+        if (! $plan) {
+            $this->confirmationManager->clear();
+
+            return null;
+        }
+
+        $missingBefore = $this->confirmationManager->missingSlots();
+        foreach ($missingBefore as $slot) {
+            $value = $this->extractSlotValue((string) $slot, $text);
+            if ($value === null || $value === '') {
+                continue;
+            }
+            $this->confirmationManager->fillSlot((string) $slot, $value);
+        }
+
+        if (! $this->confirmationManager->isComplete()) {
+            $missingAfter = $this->confirmationManager->missingSlots();
+            if ($this->isAffirmativeText($text)) {
+                $missingLabel = implode(', ', $missingAfter);
+
+                return response()->json([
+                    'success' => false,
+                    'needs_clarification' => true,
+                    'pending_plan' => $this->confirmationManager->getPlan(),
+                    'message' => "Aún faltan datos ({$missingLabel}). ".$this->nextSlotQuestion($missingAfter),
+                ]);
+            }
+
+            return response()->json([
+                'success' => false,
+                'needs_clarification' => true,
+                'pending_plan' => $this->confirmationManager->getPlan(),
+                'message' => $this->nextSlotQuestion($missingAfter) ?? 'Necesito un dato adicional para continuar.',
+            ]);
+        }
+
+        $completed = $this->confirmationManager->getPlan();
+        if (! $completed) {
+            $this->confirmationManager->clear();
+
+            return null;
+        }
+
+        $intent = (string) ($completed['intent'] ?? '');
+        $data = (array) ($completed['data'] ?? []);
+        $slots = (array) ($completed['slots'] ?? []);
+        $data = array_merge($data, [
+            'grade' => (string) ($slots['grade'] ?? $data['grade'] ?? ''),
+            'section' => $slots['section'] ?? $data['section'] ?? null,
+        ]);
+        $data['missing_grades'] = $this->missingGradesFor($director, [(string) ($data['grade'] ?? '')]);
+
+        $this->confirmationManager->clear();
+
+        return $this->prepareActions($director, [[
+            'intent' => $intent,
+            'data' => $data,
+        ]], (string) ($data['raw_text'] ?? $text));
+    }
+
+    /**
+     * @param  array<int,string>  $missingSlots
+     */
+    private function nextSlotQuestion(array $missingSlots): ?string
+    {
+        if (in_array('grade', $missingSlots, true)) {
+            return '¿En qué grado debo crear al alumno?';
+        }
+        if (in_array('section', $missingSlots, true)) {
+            return '¿En qué sección?';
+        }
+
+        return null;
+    }
+
+    private function extractSlotValue(string $slot, string $text): ?string
+    {
+        return match ($slot) {
+            'grade' => $this->extractTargetGrade($text),
+            'section' => $this->extractSection($text) ?? $this->extractLooseSectionToken($text),
+            default => null,
+        };
+    }
+
+    private function extractLooseSectionToken(string $text): ?string
+    {
+        $trimmed = trim($text);
+        if (! preg_match('/^[A-Za-z]{1,2}$/u', $trimmed)) {
+            return null;
+        }
+        $normalized = mb_strtolower($trimmed);
+        if (in_array($normalized, ['si', 'sí', 'no', 'ok', 'dale'], true)) {
+            return null;
+        }
+
+        return mb_strtoupper($trimmed);
     }
 
     private function startOneByOneReview(): JsonResponse
@@ -1733,7 +2030,7 @@ class AICommandController extends Controller
                 if (preg_match('/\b(?:profesor(?:a)?|docente)\b/', $value) || preg_match('/\b(?:de|del)\s+[a-z]+\s+profesor\b/', $value)) {
                     return 'delete_teacher_invite';
                 }
-                if (! preg_match('/\b(?:alumno|estudiante|curso|materia|asignatura)s?\b/', $value)) {
+                if (! preg_match('/\b(?:alumn[oa]|estudiante|curso|materia|asignatura)s?\b/', $value)) {
                     return 'delete_teacher_invite';
                 }
             }
@@ -1746,7 +2043,7 @@ class AICommandController extends Controller
             if (preg_match('/\b(?:profesor(?:a)?|docente)\b/', $value)) {
                 return 'delete_teacher';
             }
-            if (preg_match('/\b(?:alumno|estudiante)s?\b/', $value) && ! preg_match('/\b(?:profesores|docentes|cursos)\b/', $value)) {
+            if (preg_match('/\b(?:alumn[oa]|estudiante)s?\b/', $value) && ! preg_match('/\b(?:profesores|docentes|cursos)\b/', $value)) {
                 return 'delete_student';
             }
             if (preg_match('/\b(?:curso|asignatura|materia)s?\b/', $value)) {
@@ -1768,13 +2065,13 @@ class AICommandController extends Controller
 
         // Mover / cambiar de grado o sección.
         if (preg_match('/\b(?:mueve|mover|traslada|trasladar|pasa(?:r)?|cambi(?:a|ar))\b/', $value)
-            && preg_match('/\b(?:alumno|estudiante)s?\b/', $value)
+            && preg_match('/\b(?:alumn[oa]|estudiante)s?\b/', $value)
             && (str_contains($value, 'grado') || str_contains($value, 'seccion') || str_contains($value, 'curso'))) {
             return 'update_student';
         }
 
-        // Student creation/enrollment must win over create_course when the user mentions alumnos.
-        if (preg_match('/\b(?:alumno|estudiante)s?\b/', $value)
+        // Student creation/enrollment must win over create_course when the user mentions alumnos (o alumnas).
+        if (preg_match('/\b(?:alumn[oa]|estudiante)s?\b/', $value)
             && (preg_match('/\b(?:cre(?:a|ar|es|e|o)|creame|agrega|matricula|inscribe)\b/', $value)
                 || preg_match('/\b(?:asigna|inscribe|matricula|agregalo|añade)\b/', $value))) {
             $looksLikeEnroll = (str_contains($value, 'curso') || str_contains($value, 'materia') || str_contains($value, 'asignatura'))
@@ -1788,6 +2085,12 @@ class AICommandController extends Controller
             return 'create_students_batch';
         }
 
+        if (preg_match('/\b(?:cre(?:a|ar|es|e|o)|creame|agrega|matricula|inscribe)\b/', $value)
+            && ! preg_match('/\b(?:profesor(?:a)?|docente|maestr[oa])\b/', $value)
+            && $this->extractStudentNames($text) !== []) {
+            return 'create_students_batch';
+        }
+
         if (preg_match('/\b(?:matricula(?:r|lo|le)?|inscribe(?:r|lo|le)?)\b/', $value)
             && $this->extractKnownSubject($text)
             && ($this->extractGrades($text) !== [] || $this->extractTargetGrade($text))) {
@@ -1796,7 +2099,7 @@ class AICommandController extends Controller
 
         // Crear uno o varios cursos: "crea el curso de X", "crees los cursos de: 1ero..6to de ingles",
         // "Crea Matemática para 4.º, 5.º y 6.º."
-        if (! preg_match('/\b(?:alumno|estudiante)s?\b/', $value)
+        if (! preg_match('/\b(?:alumn[oa]|estudiante)s?\b/', $value)
             && (preg_match('/\bcre(?:a|ar|es|e|o)\b/', $value) || str_contains($value, 'crea') || str_contains($value, 'crear') || str_contains($value, 'crees'))
             && (str_contains($value, 'curso') || str_contains($value, 'cursso') || str_contains($value, 'asignatura') || str_contains($value, 'materia')
                 || preg_match('/\b(?:para|en|de|del)\s+(?:el\s+)?[1-6](?:ro|er|do|to|°|º|ero)?\s*(?:grado\b|[,.]|(?:y|e)\b|$)/', $value))) {
@@ -1808,21 +2111,25 @@ class AICommandController extends Controller
         }
         if ((str_contains($value, 'desmatricula') || str_contains($value, 'retira') || str_contains($value, 'saca'))
             && str_contains($value, 'curso')
-            && (str_contains($value, 'alumno') || str_contains($value, 'estudiante') || preg_match('/\sa\s+[a-z]/', $value))) {
+            && (preg_match('/\balumn[oa]s?\b/', $value) || str_contains($value, 'estudiante') || preg_match('/\sa\s+[a-z]/', $value))) {
             return 'unenroll_students_course';
         }
         if ((str_contains($value, 'inscribe') || preg_match('/\basigna(?:lo|le|r|les)?\b/', $value))
             && str_contains($value, 'curso')
-            && (str_contains($value, 'alumno') || str_contains($value, 'estudiante') || preg_match('/\sa\s+[a-z]/', $value))) {
+            && (preg_match('/\balumn[oa]s?\b/', $value) || str_contains($value, 'estudiante') || preg_match('/\sa\s+[a-z]/', $value))) {
             return 'enroll_students_course';
         }
         if ((str_contains($value, 'agrega') || str_contains($value, 'matricula') || str_contains($value, 'crear') || str_contains($value, 'inscribe') || str_contains($value, 'crea a') || str_contains($value, 'crear a'))
-            && (str_contains($value, 'alumno') || str_contains($value, 'estudiante'))) {
+            && (preg_match('/\balumn[oa]s?\b/', $value) || str_contains($value, 'estudiante'))) {
             return 'create_students_batch';
         }
         if ((str_contains($value, 'agrega') || str_contains($value, 'matricula') || str_contains($value, 'crea') || str_contains($value, 'crear'))
             && preg_match('/\b[1-6](ro|do|to|er)?\b.*grado/', $value)) {
             return 'create_students_batch';
+        }
+        if ((str_contains($value, 'doc-') || str_contains($value, 'codigo') || str_contains($value, 'invitacion'))
+            && (str_contains($value, 'profesor') || str_contains($value, 'docente') || preg_match('/\b(?:de|del)\s+[a-záéíóúñ]+(?:\s+[a-záéíóúñ]+){0,2}\b/u', $value))) {
+            return 'get_teacher_invite_code';
         }
         if ((str_contains($value, 'doc-') || str_contains($value, 'codigo'))
             && (str_contains($value, 'consulta') || str_contains($value, 'estado') || str_contains($value, 'mostrar') || str_contains($value, 'tiene') || str_contains($value, 'dame'))) {
@@ -1907,7 +2214,7 @@ class AICommandController extends Controller
                 '/\b(?:as[ií]gna(?:le)?|dara|dará|agrega(?:le)?|va a dar|imparte|enseña)\b/',
                 $value
             );
-            $wantsStudent = (bool) preg_match('/\b(?:alumno|estudiante)s?\b/', $value)
+            $wantsStudent = (bool) preg_match('/\b(?:alumn[oa]|estudiante)s?\b/', $value)
                 && (bool) preg_match('/\b(?:cre(?:a|ar|es|e|o)|creame|agrega|matricula)\b/', $value);
             $wantsEnroll = $wantsStudent && (
                 str_contains($value, 'curso') || str_contains($value, 'materia') || str_contains($value, 'asignatura')
@@ -2000,7 +2307,7 @@ class AICommandController extends Controller
     private function splitIntentClauses(string $text): array
     {
         $parts = preg_split(
-            '/\s+(?:y\s+)?(?:tambien|también|ademas|además)\s+|\s+y\s+(?=crea(?:r|me)?\s+(?:al?\s+)?(?:alumno|estudiante|profesor|docente))/iu',
+            '/\s+(?:y\s+)?(?:tambien|también|ademas|además)\s+|\s+y\s+(?=crea(?:r|me)?\s+(?:al?\s+)?(?:alumn[oa]|estudiante|profesor|docente))/iu',
             $text,
             -1,
             PREG_SPLIT_NO_EMPTY
@@ -2106,7 +2413,7 @@ class AICommandController extends Controller
     private function teacherClauseMentionsCourses(string $text): bool
     {
         $span = $text;
-        if (preg_match('/^(.*?)(?:\b(?:tambien|también|ademas|además|y)\s+)?(?:crea(?:r|me)?\s+)?(?:al?\s+)?(?:alumno|estudiante)/iu', $text, $m)) {
+        if (preg_match('/^(.*?)(?:\b(?:tambien|también|ademas|además|y)\s+)?(?:crea(?:r|me)?\s+)?(?:al?\s+)?(?:alumn[oa]|estudiante)/iu', $text, $m)) {
             $span = trim((string) $m[1]);
         }
 
@@ -2212,7 +2519,7 @@ class AICommandController extends Controller
     private function parseDeleteStudent(User $director, string $text): array
     {
         $blob = '';
-        if (preg_match('/(?:elimina(?:r)?|borra(?:r)?|quita(?:r)?)\s+(?:a\s+|al\s+)?(?:los\s+|las\s+)?(?:alumnos?|estudiantes?)\s+(.+)$/iu', $text, $m)) {
+        if (preg_match('/(?:elimina(?:r)?|borra(?:r)?|quita(?:r)?)\s+(?:a\s+|al\s+)?(?:los\s+|las\s+)?(?:alumn[oa]s?|estudiantes?)\s+(.+)$/iu', $text, $m)) {
             $blob = trim((string) $m[1]);
         }
         $names = $blob !== '' ? $this->splitAndSanitizeNames($blob) : [];
@@ -2429,7 +2736,7 @@ class AICommandController extends Controller
         $section = $this->extractSection($text);
         $teacherName = $this->sanitizePersonName($this->extractTeacherName($text));
         $allInGrade = (bool) preg_match(
-            '/\b(?:alumnos|estudiantes)\s+de\s+(?:el\s+|la\s+)?(?:[1-6]|primer|segundo|tercer|cuarto|quinto|sexto)/iu',
+            '/\b(?:alumn[oa]s|estudiantes)\s+de\s+(?:el\s+|la\s+)?(?:[1-6]|primer|segundo|tercer|cuarto|quinto|sexto)/iu',
             $text
         );
         $names = $allInGrade ? [] : $this->extractStudentNames($text);
@@ -2444,6 +2751,22 @@ class AICommandController extends Controller
             'subject_names' => $subjects !== [] ? $subjects : [$subject],
             'grade' => $grade,
             'section' => $section,
+            'teacher_name' => $teacherName,
+        ], null];
+    }
+
+    /**
+     * @return array{0:array,1:?string}
+     */
+    private function parseGetTeacherInviteCode(string $text): array
+    {
+        $teacherName = $this->sanitizePersonName($this->extractTeacherName($text))
+            ?? $this->extractNamedPersonAfterRole($text, 'profesor');
+        if (! $teacherName) {
+            return [[], 'Indícame el nombre del profesor para buscar su código de invitación.'];
+        }
+
+        return [[
             'teacher_name' => $teacherName,
         ], null];
     }
@@ -3303,7 +3626,7 @@ class AICommandController extends Controller
     {
         $rolePattern = $role === 'profesor'
             ? 'profesor(?:a)?'
-            : ($role === 'alumno' ? 'alumnos?' : 'estudiantes?');
+            : ($role === 'alumno' ? 'alumn[oa]s?' : 'estudiantes?');
 
         if (! preg_match('/(?:al?\s+)?'.$rolePattern.'\s+(.+)$/iu', $text, $m)) {
             return null;
@@ -3313,7 +3636,7 @@ class AICommandController extends Controller
         $name = trim(preg_replace('/[.!?]+$/', '', $name) ?? $name);
         $name = trim(preg_replace('/^(?:al|a la|el|la|los|las)\s+/iu', '', $name) ?? $name);
         $name = preg_replace(
-            '/\s+(?:en el|en la|al curso|de primer|de 1|en 1|a\s+[1-6]|a\s+(?:primer|segundo|tercer|cuarto|quinto|sexto)|y as[ií]gna|y inscr[ií]be|y matr[ií]cula|y crea|tambien|también|que te|y\s+(?:a\s+)?(?:al|el|la)\s+(?:profesor(?:a)?|docente|maestr[oa])).*$/iu',
+            '/\s+(?:en el|en la|al curso|de primer|de 1|en 1|a\s+[1-6]|a\s+(?:primer|segundo|tercer|cuarto|quinto|sexto)|y as[ií]gna|y inscr[ií]be|y matr[ií]cula|y crea|(?:e|y)\s+(?:int[eé]gr|matr[ií]cul|inscr[ií]b|asign|agreg)[a-záéíóúñ]*|tambien|también|que te|y\s+(?:a\s+)?(?:al|el|la)\s+(?:profesor(?:a)?|docente|maestr[oa])).*$/iu',
             '',
             $name
         ) ?? $name;
@@ -3996,8 +4319,8 @@ class AICommandController extends Controller
      */
     private function extractStudentNames(string $text): array
     {
-        // Lista después de "alumnos/estudiantes ... :" aunque haya contexto de grado/sección/materia.
-        if (preg_match('/(?:alumnos?|estudiantes?)\b[^:]{0,180}[:\-]\s*(.+)$/ius', $text, $m)) {
+        // Lista después de "alumnos/alumnas/estudiantes ... :" aunque haya contexto de grado/sección/materia.
+        if (preg_match('/(?:alumn[oa]s?|estudiantes?)\b[^:]{0,180}[:\-]\s*(.+)$/ius', $text, $m)) {
             $names = $this->splitAndSanitizeNames(trim((string) $m[1]));
             if ($names !== []) {
                 return $names;
@@ -4015,16 +4338,23 @@ class AICommandController extends Controller
             }
         }
 
+        // Varios alumnos nombrados por separado, con o sin repetir "alumno/alumna" en cada uno:
+        // "Crea al alumno Vicente José y a la alumna Georgina Vázquez", "Crea a Vicente José y a Georgina Vázquez".
+        $connectorNames = $this->extractMultipleStudentNamesByConnectors($text);
+        if (count($connectorNames) >= 2) {
+            return $connectorNames;
+        }
+
         $verb = '(?:agrega|agregar|matricula|matricular|inscribe|inscribir|crea|crear|crees|cree|creo|creame)';
 
-        if (preg_match('/'.$verb.'\s+(?:a\s+|al\s+)?(?:los\s+|las\s+)?(?:siguientes\s+)?(?:alumnos?|estudiantes?)\b[^:]*[:\-]\s*(.+)$/iu', $text, $m)) {
+        if (preg_match('/'.$verb.'\s+(?:a\s+|al\s+)?(?:los\s+|las\s+)?(?:siguientes\s+)?(?:alumn[oa]s?|estudiantes?)\b[^:]*[:\-]\s*(.+)$/iu', $text, $m)) {
             $names = $this->splitAndSanitizeNames(trim((string) $m[1]));
             if ($names !== []) {
                 return $names;
             }
         }
 
-        if (preg_match('/'.$verb.'\s+(?:a\s+|al\s+)?(?:los\s+|las\s+)?(?:siguientes\s+)?(?:alumnos?|estudiantes?)\s+(.+?)(?:\s+(?:para(?:\s+(?:el|la|[1-6]))?|al\s+(?:curso|grado)|en\s+(?:el|la|la\s+secci)|a\s+la|del\s+(?:curso|grado)))\b/iu', $text, $m)) {
+        if (preg_match('/'.$verb.'\s+(?:a\s+|al\s+)?(?:los\s+|las\s+)?(?:siguientes\s+)?(?:alumn[oa]s?|estudiantes?)\s+(.+?)(?:\s+(?:para(?:\s+(?:el|la|[1-6]))?|al\s+(?:curso|grado)|en\s+(?:el|la|la\s+secci)|a\s+la|del\s+(?:curso|grado)))\b/iu', $text, $m)) {
             $names = $this->splitAndSanitizeNames(trim((string) $m[1]));
             if ($names !== []) {
                 return $names;
@@ -4037,7 +4367,11 @@ class AICommandController extends Controller
             return [$single];
         }
 
-        if (preg_match('/'.$verb.'\s+(?:a|al)\s+(?:alumno|estudiante)\s+(.+?)\s+(?:y\s+)?(?:al|a la|en|asigna|inscribe|matricula)\s+/iu', $text, $m)) {
+        if (count($connectorNames) === 1 && ! preg_match('/,/', $text)) {
+            return $connectorNames;
+        }
+
+        if (preg_match('/'.$verb.'\s+(?:a|al)\s+(?:alumn[oa]|estudiante)\s+(.+?)\s+(?:y\s+)?(?:al|a la|en|asigna|inscribe|matricula)\s+/iu', $text, $m)) {
             $single = $this->sanitizePersonName(trim($m[1]));
             if ($single) {
                 return [$single];
@@ -4052,11 +4386,38 @@ class AICommandController extends Controller
     }
 
     /**
+     * Extrae varios nombres de alumnos introducidos por "a"/"al"/"a la" con o sin la
+     * palabra de rol (alumno/alumna/estudiante) repetida antes de cada nombre. Cubre
+     * frases como "Crea al alumno Vicente José y a la alumna Georgina Vázquez" y
+     * "Crea a Vicente José y a Georgina Vázquez", donde el patrón de "y" simple con
+     * un solo rol al principio no basta para separar ambos nombres.
+     *
+     * @return array<int,string>
+     */
+    private function extractMultipleStudentNamesByConnectors(string $text): array
+    {
+        if (! preg_match_all(
+            '/(?:a\s+la\s+|al\s+|a\s+)(?:alumn[oa]s?\s+|estudiantes?\s+)?(?:llamad[oa]\s+)?([A-ZÁÉÍÓÚÑ][\p{L}]+(?:\s+[A-ZÁÉÍÓÚÑ][\p{L}]+){0,2})/u',
+            $text,
+            $matches
+        )) {
+            return [];
+        }
+
+        return collect($matches[1] ?? [])
+            ->map(fn ($name) => $this->sanitizePersonName(trim((string) $name)))
+            ->filter(fn ($name) => $name !== null && mb_strlen($name) >= 2)
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
      * @return array<int,string>
      */
     private function splitAndSanitizeNames(string $raw): array
     {
-        $raw = preg_replace('/^(?:alumno|estudiante|a\s+|al\s+|el\s+|la\s+|los\s+|las\s+|siguientes\s+|para\s+(?:el|la)\s+)\s*/iu', '', $raw) ?? $raw;
+        $raw = preg_replace('/^(?:alumn[oa]|estudiante|a\s+|al\s+|el\s+|la\s+|los\s+|las\s+|siguientes\s+|para\s+(?:el|la)\s+)\s*/iu', '', $raw) ?? $raw;
         $raw = preg_replace('/^(?:para\s+(?:el|la)\s+(?:curso|grado|materia|asignatura)\s+(?:de\s+)?)\s*/iu', '', $raw) ?? $raw;
         $raw = preg_replace('/\s+y\s+/iu', ',', $raw) ?? $raw;
 
@@ -4142,6 +4503,31 @@ class AICommandController extends Controller
         $student = $match->model;
 
         return $student;
+    }
+
+    /**
+     * @return array<int,array{status:string,message:string}>
+     */
+    private function mutationTimeline(string $state, string $finalMessage): array
+    {
+        $steps = [
+            ['status' => 'analyzing', 'message' => 'Analizando tu mensaje...'],
+            ['status' => 'planning', 'message' => 'Identificando acciones a ejecutar...'],
+        ];
+
+        if ($state === 'confirming') {
+            $steps[] = ['status' => 'confirming', 'message' => $finalMessage];
+
+            return $steps;
+        }
+
+        $steps[] = ['status' => 'executing', 'message' => 'Ejecutando acciones...'];
+        $steps[] = [
+            'status' => $state === 'rollback' ? 'error' : 'completed',
+            'message' => $finalMessage,
+        ];
+
+        return $steps;
     }
 
     private function intentRequiresConfirmation(string $intent): bool

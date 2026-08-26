@@ -22,6 +22,7 @@ class DirectorDataAgentService
         'get_student',
         'get_courses',
         'get_teachers',
+        'get_teacher_invite_code',
         'verify_teacher',
         'verify_student',
         'get_grades',
@@ -31,6 +32,11 @@ class DirectorDataAgentService
         'get_student_performance',
         'get_course_performance',
         'compare_courses',
+        'get_school_health',
+        'get_trend_analysis',
+        'get_risk_analysis',
+        'get_cause_analysis',
+        'get_smart_recommendations',
         'get_at_risk_students',
         'get_declining_students',
         'get_academic_trends',
@@ -105,6 +111,10 @@ class DirectorDataAgentService
 
         if ($this->looksLikeTeacherRosterQuery($text)) {
             return ['intent' => 'professors', 'agent' => 'data_agent'];
+        }
+
+        if ($this->looksLikeInviteCodeQuery($text)) {
+            return ['intent' => 'invite_code', 'agent' => 'data_agent'];
         }
 
         if (preg_match('/\b(?:alumnos?|estudiantes?)\b/u', $value)
@@ -223,7 +233,7 @@ class DirectorDataAgentService
         $value = $this->normalized($text);
 
         return (bool) preg_match(
-            '/(?:como va|como van|como le va|como esta|como estan|como estamos|quien|quienes|cuantos|cuantas|que alumnos|que cursos|que profesores|que evaluaciones|que tareas|compara|tendencia|tendencias|evolucion|ranking|informe|resumen|resume|estado academico|asistencia|faltas|promedio|rendimiento|notas|calificaciones|quiero saber|preocup|problemas|atencion|destacado|bajo rendimiento|este mes|mi curso|mi colegio|dame|dime|le va a|evaluaciones|tareas|diagnostico|investiga|empeor|impresion|por que|que tienen en comun|preocupante|en que materia|quien es su profesor|con que profesor|quien (?:le )?da|quien tiene|prepara(?:me)?|nombr|listame|listado|nomina|como se llama|nombre del colegio|curso mas avanzado|grado mas alto|grado mas avanzado|ultimo grado|todos los alumnos|todos los estudiantes|nombre de todos|nombres de los|abecedario|alfabet|a\s*-\s*z|esos alumnos|sus notas)/u',
+            '/(?:como va|como van|como le va|como esta|como estan|como estamos|quien|quienes|cuantos|cuantas|que alumnos|que cursos|que profesores|que evaluaciones|que tareas|compara|tendencia|tendencias|evolucion|ranking|informe|resumen|resume|estado academico|asistencia|faltas|promedio|rendimiento|notas|calificaciones|quiero saber|preocup|problemas|atencion|destacado|bajo rendimiento|este mes|esta semana|priorizar|prioridad|mi curso|mi colegio|dame|dime|le va a|evaluaciones|tareas|diagnostico|investiga|empeor|impresion|por que|que tienen en comun|preocupante|en que materia|quien es su profesor|con que profesor|quien (?:le )?da|quien tiene|prepara(?:me)?|nombr|listame|listado|nomina|como se llama|nombre del colegio|curso mas avanzado|grado mas alto|grado mas avanzado|ultimo grado|todos los alumnos|todos los estudiantes|nombre de todos|nombres de los|abecedario|alfabet|a\s*-\s*z|esos alumnos|sus notas)/u',
             $value
         ) || (bool) preg_match('/\btop\s+\d/u', $value)
         || $this->looksLikeFollowUp($text)
@@ -508,7 +518,7 @@ class DirectorDataAgentService
                     'parallel_tool_calls' => true,
                     'tools' => $this->toolDefinitions(),
                     'messages' => [
-                        ['role' => 'system', 'content' => 'Eres el orquestador del Director Data Agent de AulaSync. Solo decides qué herramientas usar para responder preguntas de directores sobre su colegio. Nunca inventes datos. Resuelve pronombres (él, ellos, ese alumno, los de 1ro) con el contexto. Elige 1-3 herramientas. colegio_id lo pone el backend.'],
+                        ['role' => 'system', 'content' => 'Eres el orquestador inteligente de AulaSync para directores. Tu trabajo es decidir SOLO qué tools consultar (no redactar la respuesta final). Piensa como asesor estratégico: identifica la intención real, elige datos mínimos necesarios y evita ejecutar herramientas de más. Reglas: 1) Nunca inventes datos. 2) Resuelve pronombres con el contexto (él, ellos, ese alumno, los de 1ro). 3) Elige 1-4 herramientas como máximo. 4) Si preguntan panorama general, prioriza get_school_health y complementa con get_smart_recommendations. 5) Si preguntan quién necesita atención, prioriza get_risk_analysis y get_smart_recommendations. 6) Si preguntan por qué bajó un curso/alumno, prioriza get_trend_analysis + get_cause_analysis. 7) colegio_id siempre lo pone el backend.'],
                         ['role' => 'user', 'content' => "Pregunta: {$text}\nContexto conversacional: {$memoryBrief}"],
                     ],
                 ]);
@@ -609,13 +619,15 @@ class DirectorDataAgentService
     private function synthesisSystemPrompt(string $style): string
     {
         $format = match ($style) {
-            'informe' => 'Usa subtítulos, métricas, hallazgos, riesgos y recomendaciones. Estructura de informe ejecutivo.',
-            'panorama' => 'Responde en un párrafo natural de panorama. Sin plantilla de Hechos/Análisis/Estado.',
-            default => 'Responde de forma breve y natural, como un asistente conversacional. Sin Hechos/Análisis/Estado.',
+            'informe' => 'Estructura de informe ejecutivo con subtítulos, riesgos y plan de acción.',
+            'panorama' => 'Respuesta tipo panorama del colegio, orientada a toma de decisiones.',
+            default => 'Respuesta conversacional natural, breve cuando aplique y accionable cuando haya riesgos.',
         };
 
         return <<<PROMPT
-Eres un asistente para directores escolares. Redactas la respuesta final en español.
+Eres "AulaSync", asistente inteligente del director escolar. Redactas la respuesta final en español.
+
+No eres un traductor de datos: eres un asesor estratégico.
 
 Reglas:
 1. Nunca inventes alumnos, notas, profesores, cursos, asistencia ni ningún dato.
@@ -623,12 +635,25 @@ Reglas:
 3. Si un dato no existe, di que no está disponible.
 4. No menciones tools, SQL, backend, agentes ni arquitectura interna.
 5. No digas que los números son registros reales ni menciones verificaciones internas.
-6. No uses "Hechos / Análisis / Estado" salvo que el director pida un informe.
-7. Habla como un asistente inteligente, profesional y humano.
-8. Sé conciso en preguntas simples y más detallado en informes o explicaciones.
-9. Evita frases repetitivas y no conviertas cada respuesta en la misma plantilla.
-10. Si piden opinión, diferencia el dato observado de la interpretación.
-11. {$format}
+6. Nunca respondas en formato robótico ni solo listado de números; interpreta qué significan.
+7. Conecta patrones cuando sea posible (notas, asistencia, tendencia, riesgo) sin afirmar causalidad absoluta.
+8. Si detectas riesgo, incluye recomendación concreta y prioridad (alta/media/baja).
+9. Si el usuario pregunta "qué hacer", entrega acciones priorizadas y justificadas.
+10. Si el usuario pregunta "por qué", entrega hipótesis basadas en datos y explícitalas como hipótesis.
+11. Mantén tono natural, cálido y profesional, como conversación con un director.
+12. Sé conciso en preguntas simples y más detallado en diagnósticos e informes.
+13. Evita repetir plantillas rígidas; adapta la respuesta a la intención.
+14. Si aplica, cierra con una pregunta breve de seguimiento para profundizar.
+15. {$format}
+
+Ejemplo de estilo esperado para panorama:
+"Panorama general: el promedio está bajando y eso merece atención esta semana. Lo más urgente es revisar 2do A y contactar a las familias de los alumnos en riesgo. Si quieres, te preparo una agenda de acciones por prioridad."
+
+Ejemplo de estilo esperado para riesgo:
+"Identifico alumnos en riesgo por combinación de promedio bajo y ausencias. Recomendación alta: reunión con padres en los casos críticos; recomendación media: refuerzo focalizado en la materia más débil."
+
+Ejemplo de estilo esperado para causa:
+"Con los datos actuales, la caída parece asociarse a una baja reciente de notas junto con faltas. Es una hipótesis, no una certeza. Sugiero validar con el docente y ajustar plan de apoyo esta semana."
 PROMPT;
     }
 
@@ -914,6 +939,10 @@ PROMPT;
                 $this->str($args, 'subject_name') ?? $this->str($args, 'subject'),
             ),
             'get_teachers' => $this->analytics->getTeachers($colegioId),
+            'get_teacher_invite_code' => $this->analytics->getTeacherInviteCode(
+                $colegioId,
+                (string) ($args['teacher_name'] ?? ''),
+            ),
             'verify_teacher' => $this->analytics->verifyTeacher($colegioId, (string) ($args['teacher_name'] ?? $args['name'] ?? '')),
             'verify_student' => $this->analytics->verifyStudent($colegioId, (string) ($args['student_name'] ?? $args['name'] ?? '')),
             'get_grades' => $this->analytics->getGrades(
@@ -961,6 +990,29 @@ PROMPT;
                 $this->str($args, 'section') ?? $this->str($args, 'section_a'),
                 $this->str($args, 'section_b'),
                 $this->str($args, 'subject_name') ?? $this->str($args, 'subject'),
+            ),
+            'get_school_health' => $this->analytics->getSchoolHealth($colegioId),
+            'get_trend_analysis' => $this->analytics->getTrendAnalysis(
+                $colegioId,
+                $this->str($args, 'grade'),
+                $this->str($args, 'section'),
+                (int) ($args['weeks'] ?? 4),
+            ),
+            'get_risk_analysis' => $this->analytics->getRiskAnalysis(
+                $colegioId,
+                $this->str($args, 'grade'),
+                $this->str($args, 'section'),
+            ),
+            'get_cause_analysis' => $this->analytics->getCauseAnalysis(
+                $colegioId,
+                (string) ($args['grade'] ?? ''),
+                $this->str($args, 'section'),
+                $this->str($args, 'student_name'),
+            ),
+            'get_smart_recommendations' => $this->analytics->getSmartRecommendations(
+                $colegioId,
+                $this->str($args, 'grade'),
+                $this->str($args, 'section'),
             ),
             'get_at_risk_students' => $this->analytics->getAtRiskStudents(
                 $colegioId,
@@ -1131,6 +1183,34 @@ PROMPT;
             '/\bquien (?:enseña|imparte)\b/u',
             $value
         );
+    }
+
+    private function looksLikeInviteCodeQuery(string $text): bool
+    {
+        $value = $this->normalized($text);
+        if ($this->looksLikeMutation($text)) {
+            return false;
+        }
+
+        if (! preg_match('/\b(?:codigo|cod(?:igo)?|doc-?|invitaci[oó]n)\b/u', $value)) {
+            return false;
+        }
+
+        return (bool) preg_match('/\b(?:profesor|docente|maestro)\b/u', $value)
+            || (bool) preg_match('/\b(?:de|del)\s+[a-záéíóúñ]+(?:\s+[a-záéíóúñ]+){0,2}\b/u', $value)
+            || str_contains($value, 'doc-');
+    }
+
+    private function extractTeacherNameForInviteCode(string $text): ?string
+    {
+        if (preg_match('/(?:codigo|invitaci[oó]n)\s+(?:de|del)\s+(?:profesor|docente|maestro)?\s*([a-záéíóúñ]+(?:\s+[a-záéíóúñ]+){0,3})/iu', $text, $m)) {
+            return $this->titlePersonName((string) $m[1]);
+        }
+        if (preg_match('/(?:profesor|docente|maestro)\s+([a-záéíóúñ]+(?:\s+[a-záéíóúñ]+){0,3})/iu', $text, $m)) {
+            return $this->titlePersonName((string) $m[1]);
+        }
+
+        return null;
     }
 
     public function looksLikeExistenceVerification(string $text): bool
@@ -1566,6 +1646,7 @@ PROMPT;
             'get_student' => ['Obtener un alumno por nombre.', ['student_name']],
             'get_courses' => ['Listar cursos del colegio.', ['grade', 'section', 'subject_name']],
             'get_teachers' => ['Listar profesores del colegio.', []],
+            'get_teacher_invite_code' => ['Obtener el código DOC- de invitación de un profesor específico.', ['teacher_name']],
             'verify_teacher' => ['Verificar si una persona está registrada como profesor.', ['teacher_name']],
             'verify_student' => ['Verificar si una persona está registrada como alumno.', ['student_name']],
             'get_grades' => ['Listar calificaciones reales.', ['grade', 'section', 'subject_name', 'student_name']],
@@ -1575,6 +1656,11 @@ PROMPT;
             'get_student_performance' => ['Rendimiento de un alumno.', ['student_name']],
             'get_course_performance' => ['Rendimiento de un grado/sección.', ['grade', 'section', 'subject_name']],
             'compare_courses' => ['Comparar dos cursos o grados.', ['grade', 'grade_b', 'section', 'section_b', 'subject_name']],
+            'get_school_health' => ['Panorama general del colegio con métricas clave.', []],
+            'get_trend_analysis' => ['Análisis de evolución temporal por curso o colegio.', ['grade', 'section', 'weeks']],
+            'get_risk_analysis' => ['Análisis de alumnos en riesgo por notas, caída y faltas.', ['grade', 'section']],
+            'get_cause_analysis' => ['Hipótesis de causa para caídas de rendimiento.', ['grade', 'section', 'student_name']],
+            'get_smart_recommendations' => ['Recomendaciones accionables priorizadas según los datos.', ['grade', 'section']],
             'get_at_risk_students' => ['Alumnos con bajo rendimiento.', ['grade', 'section', 'subject_name']],
             'get_declining_students' => ['Alumnos que bajaron su promedio.', ['grade', 'section']],
             'get_academic_trends' => ['Tendencias de notas o faltas.', ['metric', 'weeks']],
@@ -1637,6 +1723,19 @@ PROMPT;
         $detected = $this->detectIntent($text);
         if (($detected['intent'] ?? '') === 'professors') {
             return $this->pack('get_teachers', []);
+        }
+        if (($detected['intent'] ?? '') === 'invite_code') {
+            $teacher = $this->extractTeacherNameForInviteCode($text);
+            if (! $teacher) {
+                return [
+                    'tools' => [],
+                    'intent' => 'needs_teacher_name',
+                    'clarification' => '¿De qué profesor necesitas el código de invitación?',
+                    'wants_opinion' => false,
+                ];
+            }
+
+            return $this->pack('get_teacher_invite_code', ['teacher_name' => $teacher]);
         }
         if (($detected['intent'] ?? '') === 'verification') {
             $person = $this->extractPersonToVerify($text);
@@ -1720,6 +1819,44 @@ PROMPT;
             ];
         }
 
+        if (preg_match('/\b(?:salud\s+del\s+colegio|panorama\s+general|estado\s+general)\b/u', $value)) {
+            return [
+                'tools' => [
+                    ['tool' => 'get_school_health', 'args' => []],
+                    ['tool' => 'get_smart_recommendations', 'args' => []],
+                ],
+                'intent' => 'school_health',
+                'clarification' => null,
+                'wants_opinion' => true,
+            ];
+        }
+
+        if (preg_match('/\b(?:priorizar|prioridad|que debo hacer esta semana|esta semana)\b/u', $value)) {
+            return [
+                'tools' => [
+                    ['tool' => 'get_school_health', 'args' => []],
+                    ['tool' => 'get_risk_analysis', 'args' => array_filter(['grade' => $grade, 'section' => $section])],
+                    ['tool' => 'get_smart_recommendations', 'args' => array_filter(['grade' => $grade, 'section' => $section])],
+                ],
+                'intent' => 'weekly_priorities',
+                'clarification' => null,
+                'wants_opinion' => true,
+            ];
+        }
+
+        if (preg_match('/\bpor\s+que\b.*\b(?:bajo|bajo|baj[oó]|cayo|cay[oó]|empeor)\b/u', $value) && $grade) {
+            return [
+                'tools' => [
+                    ['tool' => 'get_trend_analysis', 'args' => array_filter(['grade' => $grade, 'section' => $section, 'weeks' => 8])],
+                    ['tool' => 'get_cause_analysis', 'args' => array_filter(['grade' => $grade, 'section' => $section, 'student_name' => $this->extractStudentName($text)])],
+                    ['tool' => 'get_smart_recommendations', 'args' => array_filter(['grade' => $grade, 'section' => $section])],
+                ],
+                'intent' => 'cause_analysis',
+                'clarification' => null,
+                'wants_opinion' => true,
+            ];
+        }
+
         if ($this->wantsExecutiveReport($text)) {
             return [
                 'tools' => [['tool' => 'generate_school_report', 'args' => array_filter([
@@ -1778,6 +1915,8 @@ PROMPT;
                         'threshold' => $this->extractThreshold($text),
                     ])],
                     ['tool' => 'get_attendance', 'args' => array_filter(['grade' => $grade, 'section' => $section])],
+                    ['tool' => 'get_risk_analysis', 'args' => array_filter(['grade' => $grade, 'section' => $section])],
+                    ['tool' => 'get_smart_recommendations', 'args' => array_filter(['grade' => $grade, 'section' => $section])],
                 ],
                 'intent' => 'school_concerns',
                 'clarification' => null,
@@ -2021,6 +2160,7 @@ PROMPT;
                 'get_course_performance', 'get_attendance', 'get_students', 'get_grades',
                 'get_evaluations', 'get_assignments', 'get_at_risk_students',
                 'generate_school_report', 'get_declining_students', 'get_rankings',
+                'get_trend_analysis', 'get_risk_analysis', 'get_cause_analysis', 'get_smart_recommendations',
             ], true);
             if ($needsScope && empty($args['grade']) && ! empty($context['grade']) && ($this->refersToSelectedCourse($text) || $this->extractGrade($text) === null)) {
                 $args['grade'] = $context['grade'];

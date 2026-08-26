@@ -141,6 +141,79 @@ class DirectorDataAgentTest extends TestCase
         $this->assertStringContainsString('Lidera 2do A', $message);
     }
 
+    public function test_school_health_prompt_uses_school_health_tools(): void
+    {
+        [$director, $colegio] = $this->directorContext();
+        $this->seedClass($colegio, '2do', 'A', [['Pepe Sol', 18]]);
+        $this->seedClass($colegio, '4to', 'A', [['Ana Ruiz', 10]]);
+
+        $response = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'Dame el panorama general de salud del colegio.',
+        ]);
+
+        $response->assertOk();
+        $tools = $response->json('tools');
+        $this->assertContains('get_school_health', $tools);
+        $this->assertContains('get_smart_recommendations', $tools);
+        $this->assertStringContainsString('Salud general', (string) $response->json('actions.0.message'));
+    }
+
+    public function test_priorities_prompt_returns_recommendations_tools(): void
+    {
+        [$director, $colegio] = $this->directorContext();
+        [$teacher, $course, $ana] = $this->seedClass($colegio, '3ro', 'A', [['Pedro Gil', 9]]);
+        Attendance::create([
+            'colegio_id' => $colegio->id,
+            'course_id' => $course->id,
+            'student_id' => $ana->id,
+            'teacher_id' => $teacher->id,
+            'attended_on' => now()->subDay()->toDateString(),
+            'status' => Attendance::STATUS_ABSENT,
+        ]);
+
+        $response = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => '¿Qué debo priorizar esta semana?',
+        ]);
+
+        $response->assertOk();
+        $tools = $response->json('tools');
+        $this->assertContains('get_risk_analysis', $tools);
+        $this->assertContains('get_smart_recommendations', $tools);
+        $this->assertStringContainsString('Recomendaciones', (string) $response->json('message'));
+    }
+
+    public function test_cause_prompt_uses_trend_and_cause_tools(): void
+    {
+        [$director, $colegio] = $this->directorContext();
+        [$teacher, $course, $student] = $this->seedClass($colegio, '2do', 'A', [['Rodrigo Meza', 16]]);
+
+        $oldActivity = Activity::create([
+            'teacher_id' => $teacher->id,
+            'course_id' => $course->id,
+            'title' => 'Diagnóstico inicial',
+            'max_score' => 20,
+        ]);
+        $oldGrade = Grade::create([
+            'activity_id' => $oldActivity->id,
+            'student_id' => $student->id,
+            'colegio_id' => $colegio->id,
+            'score' => 18,
+            'status' => 'published',
+        ]);
+        $oldGrade->forceFill(['created_at' => now()->subDays(45)])->save();
+
+        $response = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => '¿Por qué bajó 2do A?',
+        ]);
+
+        $response->assertOk();
+        $tools = $response->json('tools');
+        $this->assertContains('get_trend_analysis', $tools);
+        $this->assertContains('get_cause_analysis', $tools);
+        $payload = json_encode($response->json(), JSON_UNESCAPED_UNICODE);
+        $this->assertStringContainsString('Posibles causas', $payload);
+    }
+
     public function test_example_queries_use_named_tools_and_do_not_invent_data(): void
     {
         [$director, $colegio] = $this->directorContext();
