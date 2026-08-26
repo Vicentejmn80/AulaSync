@@ -31,11 +31,17 @@
         :root:not(.dark) .text-slate-100,
         :root:not(.dark) .text-slate-200,
         :root:not(.dark) .text-slate-300,
-        :root:not(.dark) .text-slate-400 { color: var(--text-primary); }
+        :root:not(.dark) .text-slate-400,
+        :root:not(.dark) .text-cyan-100 { color: var(--text-primary); }
         :root:not(.dark) .bg-white\/5,
         :root:not(.dark) .bg-white\/\[\.045\],
+        :root:not(.dark) .bg-white\/\[\.06\],
         :root:not(.dark) .bg-white\/10 { background: var(--bg-card); }
         :root:not(.dark) .border-white\/10 { border-color: var(--nova-glass-border); }
+        :root:not(.dark) .bg-cyan-400\/15 { background-color: rgba(6, 182, 212, 0.18); }
+        :root:not(.dark) .bg-cyan-400\/20 { background-color: rgba(6, 182, 212, 0.22); }
+        :root:not(.dark) .hover\:bg-cyan-400\/25:hover { background-color: rgba(6, 182, 212, 0.28); }
+        :root:not(.dark) .hover\:bg-cyan-400\/30:hover { background-color: rgba(8, 145, 178, 0.22); }
         :root:not(.dark) .text-cyan-200,
         :root:not(.dark) .text-violet-200,
         :root:not(.dark) .text-fuchsia-200,
@@ -51,9 +57,9 @@
             box-shadow: 0 22px 60px rgba(34, 211, 238, 0.14), 0 0 0 1px rgba(139, 92, 246, 0.1);
         }
         :root:not(.dark) .director-setup-card {
-            background: linear-gradient(135deg, rgba(6, 182, 212, 0.16) 0%, rgba(139, 92, 246, 0.18) 50%, rgba(217, 70, 239, 0.12) 100%);
-            border-color: rgba(6, 182, 212, 0.38);
-            box-shadow: 0 18px 48px rgba(139, 92, 246, 0.14), 0 0 0 1px rgba(6, 182, 212, 0.12);
+            background: linear-gradient(135deg, rgba(6, 182, 212, 0.28) 0%, rgba(139, 92, 246, 0.24) 50%, rgba(217, 70, 239, 0.16) 100%);
+            border-color: rgba(8, 145, 178, 0.55);
+            box-shadow: 0 18px 48px rgba(139, 92, 246, 0.16), 0 0 0 1px rgba(6, 182, 212, 0.22);
         }
         :root:not(.dark) .text-cyan-300 { color: #0891B2; }
         :root:not(.dark) .text-violet-300 { color: #7C3AED; }

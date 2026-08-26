@@ -406,4 +406,28 @@
         background-color: #1e293b;
         color: #e2e8f0;
     }
+    html.dark .director-btn-secondary:hover {
+        background-color: #334155;
+        border-color: #475569;
+    }
+    html.dark .director-card table {
+        background-color: transparent;
+        color: #e2e8f0;
+    }
+    html.dark .director-card thead {
+        background-color: rgba(255, 255, 255, 0.04) !important;
+        color: #94a3b8 !important;
+    }
+    html.dark .director-card tbody,
+    html.dark .director-card tbody tr,
+    html.dark .director-card tbody td {
+        background-color: transparent;
+    }
+    html.dark .director-card tbody tr:hover {
+        background-color: rgba(255, 255, 255, 0.04);
+    }
+    html.dark .director-card tbody td {
+        border-color: #1e293b;
+        color: #cbd5e1;
+    }
 </style>

@@ -36,17 +36,17 @@
         </header>
 
         <section class="mb-6 grid gap-3 sm:grid-cols-3">
-            <article class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                <p class="text-[11px] font-bold uppercase tracking-wider text-emerald-700">Con notas</p>
-                <p class="mt-1 text-3xl font-black text-slate-900">{{ $withGrades }}</p>
+            <article class="director-card !p-4">
+                <p class="text-[11px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">Con notas</p>
+                <p class="mt-1 text-3xl font-black text-slate-900 dark:text-slate-100">{{ $withGrades }}</p>
             </article>
-            <article class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                <p class="text-[11px] font-bold uppercase tracking-wider text-amber-700">Pendientes</p>
-                <p class="mt-1 text-3xl font-black text-slate-900">{{ $withoutGrades }}</p>
+            <article class="director-card !p-4">
+                <p class="text-[11px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-300">Pendientes</p>
+                <p class="mt-1 text-3xl font-black text-slate-900 dark:text-slate-100">{{ $withoutGrades }}</p>
             </article>
-            <article class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                <p class="text-[11px] font-bold uppercase tracking-wider text-indigo-700">Promedio del listado</p>
-                <p class="mt-1 text-3xl font-black text-slate-900">{{ $schoolAvg !== null ? $schoolAvg.'%' : '—' }}</p>
+            <article class="director-card !p-4">
+                <p class="text-[11px] font-bold uppercase tracking-wider text-indigo-700 dark:text-indigo-300">Promedio del listado</p>
+                <p class="mt-1 text-3xl font-black text-slate-900 dark:text-slate-100">{{ $schoolAvg !== null ? $schoolAvg.'%' : '—' }}</p>
             </article>
         </section>
 
@@ -71,21 +71,21 @@
                     $avg = $row['globalAverage'];
                     $ready = (bool) $row['has_grades'];
                 @endphp
-                <article class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                <article class="director-card !p-4">
                     <div class="flex items-start justify-between gap-3">
                         <div>
-                            <p class="font-bold text-slate-900">{{ $student->name }}</p>
-                            <span class="mt-1 inline-flex rounded-full bg-indigo-100 px-2 py-0.5 text-[11px] font-bold text-indigo-800">
+                            <p class="font-bold text-slate-900 dark:text-slate-100">{{ $student->name }}</p>
+                            <span class="mt-1 inline-flex rounded-full bg-indigo-100 px-2 py-0.5 text-[11px] font-bold text-indigo-800 dark:bg-indigo-500/20 dark:text-indigo-200">
                                 {{ $student->grade }}{{ $student->section ? ' / '.$student->section : '' }}
                             </span>
                         </div>
                         @if($ready)
-                            <span class="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-bold text-emerald-800">{{ $avg }}%</span>
+                            <span class="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-bold text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300">{{ $avg }}%</span>
                         @else
-                            <span class="rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-bold text-amber-800">Pendiente</span>
+                            <span class="rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-bold text-amber-800 dark:bg-amber-400/15 dark:text-amber-200">Pendiente</span>
                         @endif
                     </div>
-                    <p class="mt-2 text-xs text-slate-500">{{ $row['courses'] }} curso(s)</p>
+                    <p class="mt-2 text-xs text-slate-500 dark:text-slate-400">{{ $row['courses'] }} curso(s)</p>
                     <div class="mt-3 flex gap-2">
                         <a href="{{ route('director.report-card', $student->id) }}" class="director-btn-secondary flex-1 justify-center !text-xs">Ver</a>
                         <a href="{{ route('director.report-card.pdf', $student->id) }}" class="director-btn-primary flex-1 justify-center !text-xs">
@@ -100,7 +100,7 @@
 
         <section class="director-card hidden overflow-hidden !p-0 md:block">
             <table class="w-full text-left text-sm">
-                <thead class="bg-slate-50 text-xs uppercase tracking-wider text-slate-500">
+                <thead class="bg-slate-50 text-xs uppercase tracking-wider text-slate-500 dark:bg-transparent dark:text-slate-400">
                     <tr>
                         <th class="px-5 py-3">Alumno</th>
                         <th class="px-5 py-3">Grado</th>
@@ -110,43 +110,43 @@
                         <th class="px-5 py-3 text-right">Acciones</th>
                     </tr>
                 </thead>
-                <tbody class="divide-y divide-slate-100">
+                <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
                     @forelse($rows as $row)
                         @php
                             $student = $row['student'];
                             $avg = $row['globalAverage'];
                             $ready = (bool) $row['has_grades'];
                         @endphp
-                        <tr class="hover:bg-slate-50">
-                            <td class="px-5 py-4 font-semibold text-slate-900">{{ $student->name }}</td>
+                        <tr class="hover:bg-slate-50 dark:hover:bg-white/[.04]">
+                            <td class="px-5 py-4 font-semibold text-slate-900 dark:text-slate-100">{{ $student->name }}</td>
                             <td class="px-5 py-4">
-                                <span class="rounded-full bg-indigo-100 px-2.5 py-1 text-xs font-bold text-indigo-800">
+                                <span class="rounded-full bg-indigo-100 px-2.5 py-1 text-xs font-bold text-indigo-800 dark:bg-indigo-500/20 dark:text-indigo-200">
                                     {{ $student->grade }}{{ $student->section ? ' / '.$student->section : '' }}
                                 </span>
                             </td>
-                            <td class="px-5 py-4 text-slate-600">{{ $row['courses'] }}</td>
+                            <td class="px-5 py-4 text-slate-600 dark:text-slate-400">{{ $row['courses'] }}</td>
                             <td class="px-5 py-4">
                                 @if($ready)
-                                    <span class="rounded-full bg-emerald-100 px-2.5 py-1 text-[11px] font-bold text-emerald-800">Generado</span>
+                                    <span class="rounded-full bg-emerald-100 px-2.5 py-1 text-[11px] font-bold text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300">Generado</span>
                                 @else
-                                    <span class="rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-bold text-amber-800">Pendiente</span>
+                                    <span class="rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-bold text-amber-800 dark:bg-amber-400/15 dark:text-amber-200">Pendiente</span>
                                 @endif
                             </td>
                             <td class="px-5 py-4">
                                 @if($ready)
-                                    <strong class="text-slate-900">{{ $avg }}%</strong>
+                                    <strong class="text-slate-900 dark:text-slate-100">{{ $avg }}%</strong>
                                 @else
                                     <span class="text-slate-400">Sin notas aún</span>
                                 @endif
                             </td>
                             <td class="px-5 py-4 text-right">
-                                <a href="{{ route('director.report-card', $student->id) }}" class="inline-flex rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50">Ver</a>
-                                <a href="{{ route('director.report-card.pdf', $student->id) }}" class="inline-flex rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-indigo-700">PDF</a>
+                                <a href="{{ route('director.report-card', $student->id) }}" class="director-btn-secondary !px-3 !py-1.5 !text-xs">Ver</a>
+                                <a href="{{ route('director.report-card.pdf', $student->id) }}" class="director-btn-primary !px-3 !py-1.5 !text-xs">PDF</a>
                             </td>
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="6" class="px-5 py-12 text-center text-slate-500">No hay alumnos para mostrar.</td>
+                            <td colspan="6" class="px-5 py-12 text-center text-slate-500 dark:text-slate-400">No hay alumnos para mostrar.</td>
                         </tr>
                     @endforelse
                 </tbody>
