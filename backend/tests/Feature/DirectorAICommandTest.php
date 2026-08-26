@@ -49,6 +49,90 @@ class DirectorAICommandTest extends TestCase
         $this->assertSame(3, Course::where('colegio_id', $colegio->id)->count());
     }
 
+    public function test_director_can_create_subject_in_catalog_via_ai(): void
+    {
+        [$director, $colegio] = $this->directorContext();
+
+        $draft = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'Crea la materia Biología',
+        ]);
+        $draft->assertOk()
+            ->assertJsonPath('requires_confirmation', true)
+            ->assertJsonPath('pending_actions.0.intent', 'create_subject');
+
+        $execute = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'confirmed' => true,
+            'pending_actions' => $draft->json('pending_actions'),
+        ]);
+        $execute->assertOk();
+        $this->assertTrue(
+            (bool) $execute->json('actions.0.success'),
+            json_encode($execute->json(), JSON_UNESCAPED_UNICODE)
+        );
+        $this->assertDatabaseHas('materias', [
+            'colegio_id' => $colegio->id,
+            'name' => 'Biología',
+        ]);
+        $this->assertSame(0, Course::where('colegio_id', $colegio->id)->count());
+    }
+
+    public function test_second_teacher_assignment_does_not_duplicate_courses(): void
+    {
+        [$director, $colegio] = $this->directorContext();
+
+        $first = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'Crea al profesor Vicente Maduro y asígnale Inglés de 1ro a 3ro.',
+        ]);
+        $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'confirmed' => true,
+            'pending_actions' => $first->json('pending_actions'),
+        ])->assertOk();
+
+        $this->assertSame(3, Course::where('colegio_id', $colegio->id)->where('subject_name', 'Inglés')->count());
+
+        $second = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'Crea al profesor Ana Rodríguez y asígnale Inglés de 1ro a 3ro.',
+        ]);
+        $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'confirmed' => true,
+            'pending_actions' => $second->json('pending_actions'),
+        ])->assertOk();
+
+        $this->assertSame(3, Course::where('colegio_id', $colegio->id)->where('subject_name', 'Inglés')->count());
+        $this->assertSame(1, \App\Models\Materia::where('colegio_id', $colegio->id)->where('name', 'Inglés')->count());
+    }
+
+    public function test_director_can_enroll_student_in_multiple_named_courses(): void
+    {
+        [$director, $colegio] = $this->directorContext();
+        $teacher = $this->makeTeacher($colegio);
+        $math = $this->makeCourse($colegio, $teacher, 'Matemática', '2do', 'A');
+        $lang = $this->makeCourse($colegio, $teacher, 'Lenguaje', '2do', 'A');
+        $bio = $this->makeCourse($colegio, $teacher, 'Biología', '2do', 'A');
+        $this->makeStudent($colegio, $teacher, 'Luis Guerra', '2do', 'A');
+
+        $draft = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'Matricula a Luis Guerra en Matemática 2do A, Lenguaje 2do A y Biología 2do A',
+        ]);
+        $draft->assertOk(json_encode($draft->json(), JSON_UNESCAPED_UNICODE))
+            ->assertJsonPath('requires_confirmation', true)
+            ->assertJsonPath('pending_actions.0.intent', 'enroll_students_course');
+
+        $execute = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'confirmed' => true,
+            'pending_actions' => $draft->json('pending_actions'),
+        ]);
+        $execute->assertOk();
+        $this->assertTrue(
+            (bool) $execute->json('actions.0.success'),
+            json_encode($execute->json(), JSON_UNESCAPED_UNICODE)
+        );
+
+        $this->assertTrue($math->fresh()->students()->where('name', 'Luis Guerra')->exists());
+        $this->assertTrue($lang->fresh()->students()->where('name', 'Luis Guerra')->exists());
+        $this->assertTrue($bio->fresh()->students()->where('name', 'Luis Guerra')->exists());
+    }
+
     public function test_colloquial_teacher_prompt_saves_clean_name_and_subject(): void
     {
         [$director, $colegio] = $this->directorContext();

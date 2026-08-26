@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Director;
 use App\Helpers\InviteCodeHelper;
 use App\Http\Controllers\Controller;
 use App\Models\Course;
+use App\Models\Materia;
 use App\Models\Student;
 use App\Models\TeacherInvite;
 use App\Models\User;
@@ -73,6 +74,17 @@ class ManagementHubController extends Controller
             ->get()
             ->map(fn (Course $course) => $this->serializeCourse($course));
 
+        $materias = Materia::query()
+            ->where('colegio_id', $colegioId)
+            ->withCount('courses')
+            ->orderBy('name')
+            ->get()
+            ->map(fn (Materia $materia) => [
+                'id' => $materia->id,
+                'name' => $materia->name,
+                'courses_count' => $materia->courses_count,
+            ]);
+
         $grades = $courses->pluck('grade')->merge($students->pluck('grade'))->filter()->unique()->values();
 
         return response()->json([
@@ -83,11 +95,13 @@ class ManagementHubController extends Controller
                 'teachers_pending' => $invites->count(),
                 'students' => $students->count(),
                 'courses' => $courses->count(),
+                'materias' => $materias->count(),
             ],
             'teachers' => $teachers,
             'invites' => $invites,
             'students' => $students,
             'courses' => $courses,
+            'materias' => $materias,
             'grades' => $grades,
         ]);
     }
@@ -97,28 +111,13 @@ class ManagementHubController extends Controller
         $data = $request->validate([
             'name' => ['required', 'string', 'max:180'],
             'email' => ['nullable', 'email', 'max:180'],
-            'subject_name' => ['nullable', 'string', 'max:120'],
-            'grades' => ['nullable', 'array'],
-            'grades.*' => ['string', 'max:20'],
-            'grade' => ['nullable', 'string', 'max:60'],
-            'section' => ['nullable', 'string', 'max:10'],
             'course_ids' => ['nullable', 'array'],
             'course_ids.*' => ['integer'],
         ]);
 
-        $grades = collect($data['grades'] ?? [])
-            ->when(! empty($data['grade']), fn ($c) => $c->push($data['grade']))
-            ->filter()
-            ->unique()
-            ->values()
-            ->all();
-
         $result = $this->actions->createTeacherInviteWithAssignments($request->user(), [
             'teacher_name' => $data['name'],
             'email' => $data['email'] ?? null,
-            'subject_name' => $data['subject_name'] ?? null,
-            'grades' => $grades,
-            'section' => $data['section'] ?? null,
         ]);
 
         $invite = $result['invite'];
@@ -141,19 +140,38 @@ class ManagementHubController extends Controller
             'grade' => ['nullable', 'string', 'max:60'],
             'section' => ['nullable', 'string', 'max:10'],
             'course_id' => ['nullable', 'integer'],
+            'course_ids' => ['nullable', 'array'],
+            'course_ids.*' => ['integer'],
         ]);
 
+        $courseIds = collect($data['course_ids'] ?? [])
+            ->when(! empty($data['course_id']), fn ($c) => $c->push($data['course_id']))
+            ->map(fn ($id) => (int) $id)
+            ->filter()
+            ->unique()
+            ->values();
+
         $course = null;
-        if (! empty($data['course_id'])) {
+        if ($courseIds->isNotEmpty()) {
             $course = Course::query()
                 ->where('colegio_id', $request->user()->colegio_id)
-                ->where('id', $data['course_id'])
+                ->where('id', $courseIds->first())
                 ->firstOrFail();
-            $data['grade'] = $data['grade'] ?: $course->grade;
-            $data['section'] = $data['section'] ?: $course->section;
+            $data['grade'] = ($data['grade'] ?? '') ?: $course->grade;
+            $data['section'] = ($data['section'] ?? '') ?: $course->section;
         }
 
         $student = $this->enrollment->enroll($request->user(), $data, $course);
+
+        foreach ($courseIds->skip(1) as $id) {
+            $extra = Course::query()
+                ->where('colegio_id', $request->user()->colegio_id)
+                ->where('id', $id)
+                ->first();
+            if ($extra) {
+                $this->enrollment->attachExisting($extra, $student, $request->user());
+            }
+        }
 
         return response()->json([
             'success' => true,
@@ -195,7 +213,8 @@ class ManagementHubController extends Controller
     public function storeCourse(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'subject_name' => ['required', 'string', 'max:120'],
+            'materia_id' => ['nullable', 'integer'],
+            'subject_name' => ['nullable', 'string', 'max:120'],
             'grade' => ['required', 'string', 'max:60'],
             'section' => ['nullable', 'string', 'max:10'],
             'teacher_id' => ['nullable', 'integer'],
@@ -203,6 +222,16 @@ class ManagementHubController extends Controller
         ]);
 
         $director = $request->user();
+        $materia = null;
+        if (! empty($data['materia_id'])) {
+            $materia = Materia::query()
+                ->where('colegio_id', $director->colegio_id)
+                ->where('id', $data['materia_id'])
+                ->firstOrFail();
+            $data['subject_name'] = $materia->name;
+        }
+        abort_unless(! empty($data['subject_name']), 422, 'Selecciona o escribe una materia.');
+
         $teacherId = null;
         $inviteId = null;
         $label = 'sin docente';
@@ -225,32 +254,21 @@ class ManagementHubController extends Controller
             $label = $teacher->name;
         }
 
-        $course = Course::create([
-            'teacher_id' => $teacherId,
-            'teacher_invite_id' => $inviteId,
-            'colegio_id' => $director->colegio_id,
+        $result = $this->actions->createCourse($director, [
             'subject_name' => $data['subject_name'],
             'grade' => $data['grade'],
             'section' => ($data['section'] ?? null) ?: null,
-            'school_year' => date('Y').'-'.(date('Y') + 1),
-            'invite_code' => InviteCodeHelper::generateCourseCode(
-                $data['subject_name'],
-                $data['grade'],
-                $data['section'] ?? null
-            ),
+            'teacher_name' => $label !== 'sin docente' ? $label : null,
         ]);
+        $course = $result['course'];
 
-        if ($inviteId) {
-            $invite = TeacherInvite::find($inviteId);
-            if ($invite) {
-                $ids = collect($invite->course_ids ?? [])->push($course->id)->unique()->values()->all();
-                $invite->update(['course_ids' => $ids]);
-            }
-        }
+        $created = ! ($result['was_existing'] ?? false);
 
         return response()->json([
             'success' => true,
-            'message' => "Curso {$course->subject_name} {$course->grade} creado".($label !== 'sin docente' ? " y asignado a {$label}" : '').'.',
+            'message' => $created
+                ? "Curso {$course->subject_name} {$course->grade} creado".($label !== 'sin docente' ? " y asignado a {$label}" : '').'.'
+                : "Ese curso ya existía: {$course->subject_name} {$course->grade}.",
             'course' => $this->serializeCourse($course->fresh(['teacher', 'pendingInvite', 'students'])),
         ]);
     }
@@ -294,7 +312,20 @@ class ManagementHubController extends Controller
         $owned = Course::query()
             ->where('colegio_id', $colegioId)
             ->whereIn('id', $courseIds)
-            ->get();
+            ->get()
+            ->filter(function (Course $course) use ($data) {
+                if (! empty($data['teacher_id']) && (int) $course->teacher_id === (int) $data['teacher_id']) {
+                    return true;
+                }
+                if (! empty($data['invite_id']) && (int) $course->teacher_invite_id === (int) $data['invite_id']) {
+                    return true;
+                }
+
+                return ! $course->teacher_id && ! $course->teacher_invite_id;
+            })
+            ->values();
+
+        abort_if($owned->isEmpty(), 422, 'Solo se pueden asignar cursos sin docente. Los ocupados no se reasignan desde aquí.');
 
         if (! empty($data['invite_id'])) {
             $invite = TeacherInvite::query()
@@ -326,6 +357,48 @@ class ManagementHubController extends Controller
         ]);
     }
 
+    public function storeMateria(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'name' => ['required', 'string', 'max:120'],
+        ]);
+
+        $result = $this->actions->createSubject($request->user(), [
+            'subject_name' => $data['name'],
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => $result['message'],
+            'materia' => [
+                'id' => $result['materia']->id,
+                'name' => $result['materia']->name,
+                'courses_count' => $result['materia']->courses()->count(),
+            ],
+        ]);
+    }
+
+    public function destroyMateria(Request $request, Materia $materia): JsonResponse
+    {
+        abort_unless((int) $materia->colegio_id === (int) $request->user()->colegio_id, 404);
+
+        $count = $materia->courses()->count();
+        if ($count > 0) {
+            return response()->json([
+                'success' => false,
+                'message' => "No se puede borrar «{$materia->name}»: tiene {$count} curso(s). Borra o reasigna esos cursos primero.",
+            ], 422);
+        }
+
+        $name = $materia->name;
+        $materia->delete();
+
+        return response()->json([
+            'success' => true,
+            'message' => "Se eliminó «{$name}» del catálogo.",
+        ]);
+    }
+
     public function unassignCourse(Request $request, Course $course): JsonResponse
     {
         abort_unless((int) $course->colegio_id === (int) $request->user()->colegio_id, 404);
@@ -352,6 +425,8 @@ class ManagementHubController extends Controller
             'students.*' => ['integer'],
             'courses' => ['nullable', 'array'],
             'courses.*' => ['integer'],
+            'materias' => ['nullable', 'array'],
+            'materias.*' => ['integer'],
         ]);
 
         $director = $request->user();
@@ -381,6 +456,14 @@ class ManagementHubController extends Controller
         foreach ($courses as $course) {
             $course->students()->detach();
             $course->delete();
+            $deleted++;
+        }
+
+        foreach (Materia::query()->where('colegio_id', $colegioId)->whereIn('id', $data['materias'] ?? [])->get() as $materia) {
+            if ($materia->courses()->exists()) {
+                continue;
+            }
+            $materia->delete();
             $deleted++;
         }
 
@@ -435,15 +518,33 @@ class ManagementHubController extends Controller
      */
     private function assignCoursesToInvite(int $colegioId, TeacherInvite $invite, array $courseIds): void
     {
-        Course::query()
+        $openIds = Course::query()
             ->where('colegio_id', $colegioId)
             ->whereIn('id', $courseIds)
+            ->get()
+            ->filter(function (Course $course) use ($invite) {
+                if ((int) $course->teacher_invite_id === (int) $invite->id) {
+                    return true;
+                }
+
+                return ! $course->teacher_id && ! $course->teacher_invite_id;
+            })
+            ->pluck('id')
+            ->all();
+
+        if ($openIds === []) {
+            return;
+        }
+
+        Course::query()
+            ->where('colegio_id', $colegioId)
+            ->whereIn('id', $openIds)
             ->update([
                 'teacher_id' => null,
                 'teacher_invite_id' => $invite->id,
             ]);
 
-        $ids = collect($invite->course_ids ?? [])->merge($courseIds)->unique()->values()->all();
+        $ids = collect($invite->course_ids ?? [])->merge($openIds)->unique()->values()->all();
         $invite->update(['course_ids' => $ids]);
     }
 
@@ -498,6 +599,7 @@ class ManagementHubController extends Controller
 
         return [
             'id' => $course->id,
+            'materia_id' => $course->materia_id,
             'subject_name' => $course->subject_name,
             'grade' => $course->grade,
             'section' => $course->section,
@@ -507,6 +609,7 @@ class ManagementHubController extends Controller
             'teacher_name' => $teacherName,
             'pending' => (bool) $course->teacher_invite_id && ! $course->teacher_id,
             'orphan' => $teacherName === null || $teacherName === '',
+            'assignment_status' => $teacherName ? 'occupied' : 'open',
             'students_count' => $course->students_count ?? $students->count(),
             'students' => $students->map(fn (Student $student) => [
                 'id' => $student->id,

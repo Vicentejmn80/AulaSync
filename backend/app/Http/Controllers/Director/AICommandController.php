@@ -882,6 +882,7 @@ class AICommandController extends Controller
     {
         return match ($intent) {
             'create_teacher' => $this->actionService->createTeacherInviteWithAssignments($director, $data),
+            'create_subject' => $this->actionService->createSubject($director, $data),
             'create_course' => count($data['grades'] ?? []) > 1
                 ? $this->actionService->createCourses($director, $data)
                 : $this->actionService->createCourse($director, $data),
@@ -910,6 +911,13 @@ class AICommandController extends Controller
     {
         return match ($intent) {
             'create_teacher' => $this->verifyCreateTeacher($director, $result),
+            'create_subject' => [
+                'message' => $result['message'] ?? 'Materia lista en el catálogo.',
+                'data' => [
+                    'subject_name' => $result['materia']->name ?? null,
+                    'created' => (bool) ($result['created'] ?? false),
+                ],
+            ],
             'create_course' => isset($result['courses'])
                 ? $this->verifyCreateCourses($director, $result)
                 : $this->verifyCreateCourse($director, $result),
@@ -1275,6 +1283,7 @@ class AICommandController extends Controller
     {
         return match ($intent) {
             'create_teacher' => $this->parseCreateTeacher($director, $text),
+            'create_subject' => $this->parseCreateSubject($text),
             'create_course' => $this->parseCreateCourse($director, $text),
             'assign_teacher' => $this->parseAssignTeacher($director, $text),
             'create_students_batch' => $this->parseCreateStudentsBatch($director, $text),
@@ -1300,6 +1309,7 @@ class AICommandController extends Controller
 
         $message = match ($intent) {
             'create_teacher' => $this->summarizeCreateTeacher($data),
+            'create_subject' => 'Agregar al catálogo la materia '.($data['subject_name'] ?? '').'.',
             'create_course' => count($data['grades'] ?? []) > 1
                 ? 'Crear los cursos de '.$data['subject_name'].' para '.implode(', ', $data['grades']).(($data['section'] ?? null) ? " sección {$data['section']}" : '').'.'
                 : "Crear el curso {$data['subject_name']} para {$data['grade']}".(($data['section'] ?? null) ? " sección {$data['section']}" : '').'.',
@@ -1733,6 +1743,13 @@ class AICommandController extends Controller
             return 'create_teacher';
         }
 
+        if (preg_match('/\bcrea(?:r|me)?\b/', $value)
+            && preg_match('/\bmateria\b/', $value)
+            && ! preg_match('/\bcurso/', $value)
+            && ! preg_match('/\b[1-6](?:ro|do|to|er|ero)?\b/', $value)) {
+            return 'create_subject';
+        }
+
         // Mover / cambiar de grado o sección.
         if (preg_match('/\b(?:mueve|mover|traslada|trasladar|pasa(?:r)?|cambi(?:a|ar))\b/', $value)
             && preg_match('/\b(?:alumno|estudiante)s?\b/', $value)
@@ -1753,6 +1770,12 @@ class AICommandController extends Controller
             }
 
             return 'create_students_batch';
+        }
+
+        if (preg_match('/\b(?:matricula(?:r|lo|le)?|inscribe(?:r|lo|le)?)\b/', $value)
+            && $this->extractKnownSubject($text)
+            && ($this->extractGrades($text) !== [] || $this->extractTargetGrade($text))) {
+            return 'enroll_students_course';
         }
 
         // Crear uno o varios cursos: "crea el curso de X", "crees los cursos de: 1ero..6to de ingles",
@@ -1873,6 +1896,9 @@ class AICommandController extends Controller
             $wantsEnroll = $wantsStudent && (
                 str_contains($value, 'curso') || str_contains($value, 'materia') || str_contains($value, 'asignatura')
             ) && (bool) preg_match('/\b(?:asigna(?:lo|le|r|les)?|inscribe(?:lo|le|r|les)?|matricula(?:lo|le|r|les)?|agregalo|añade|anade)\b/', $value);
+            $wantsEnrollOnly = ! $wantsStudent
+                && (bool) preg_match('/\b(?:matricula(?:r|lo|le)?|inscribe(?:r|lo|le)?)\b/', $value)
+                && $this->extractKnownSubjects($clause) !== [];
 
             if ($wantsTeacher && count($batch) < 2) {
                 $names = $this->extractTeacherNames($clause);
@@ -1940,6 +1966,11 @@ class AICommandController extends Controller
                     if (! $enrollMsg && ! empty($enroll['names'])) {
                         $actions[] = ['intent' => 'enroll_students_course', 'data' => $enroll];
                     }
+                }
+            } elseif ($wantsEnrollOnly) {
+                [$enroll, $enrollMsg] = $this->parseEnrollStudentsCourse($director, $clause);
+                if (! $enrollMsg && ! empty($enroll['names'])) {
+                    $actions[] = ['intent' => 'enroll_students_course', 'data' => $enroll];
                 }
             }
         }
@@ -2242,6 +2273,24 @@ class AICommandController extends Controller
     /**
      * @return array{0:array,1:?string}
      */
+    private function parseCreateSubject(string $text): array
+    {
+        $match = [];
+        if (! preg_match('/materia(?:s)?\s+(.+)$/iu', trim($text), $match)) {
+            return [[], '¿Qué materia agrego al catálogo? Ejemplo: "Crea la materia Biología".'];
+        }
+        $name = trim(preg_replace('/[.,;]+$/', '', $match[1]) ?? '');
+        $name = trim(preg_replace('/\s+y\s+asígn.*$/iu', '', $name) ?? $name);
+        if ($name === '') {
+            return [[], 'Indica el nombre de la materia.'];
+        }
+
+        return [['subject_name' => $name], null];
+    }
+
+    /**
+     * @return array{0:array,1:?string}
+     */
     private function parseCreateCourse(User $director, string $text): array
     {
         $grades = $this->extractGrades($text);
@@ -2353,7 +2402,8 @@ class AICommandController extends Controller
             return [[], '¿En qué grado está ese curso?'];
         }
 
-        $subject = $this->extractKnownSubject($text)
+        $subjects = $this->extractKnownSubjects($text);
+        $subject = $subjects[0]
             ?? $this->extractSubjectFromCoursePrompt($text)
             ?? $this->extractSubject($text);
         if (! $subject) {
@@ -2375,6 +2425,7 @@ class AICommandController extends Controller
             'names' => $names,
             'all_in_grade' => $allInGrade,
             'subject_name' => $subject,
+            'subject_names' => $subjects !== [] ? $subjects : [$subject],
             'grade' => $grade,
             'section' => $section,
             'teacher_name' => $teacherName,
@@ -3676,20 +3727,31 @@ class AICommandController extends Controller
         ];
     }
 
-    private function extractKnownSubject(?string $text): ?string
+    /**
+     * @return array<int,string>
+     */
+    private function extractKnownSubjects(?string $text): array
     {
         if ($text === null || trim($text) === '') {
-            return null;
+            return [];
         }
 
         $normalized = $this->normalizedText($text);
+        $found = [];
         foreach ($this->knownSubjectAliases() as $alias => $canonical) {
             if (preg_match('/\b'.preg_quote($alias, '/').'\b/u', $normalized)) {
-                return $canonical;
+                $found[$canonical] = $canonical;
             }
         }
 
-        return null;
+        return array_values($found);
+    }
+
+    private function extractKnownSubject(?string $text): ?string
+    {
+        $subjects = $this->extractKnownSubjects($text);
+
+        return $subjects[0] ?? null;
     }
 
     private function utteranceMentionsCourses(string $text): bool
@@ -4070,6 +4132,7 @@ class AICommandController extends Controller
     {
         return in_array($intent, [
             'create_teacher',
+            'create_subject',
             'create_course',
             'assign_teacher',
             'create_students_batch',

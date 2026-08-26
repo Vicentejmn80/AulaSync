@@ -15,6 +15,7 @@ class Course extends Model
         'teacher_id',
         'teacher_invite_id',
         'colegio_id',
+        'materia_id',
         'subject_name',
         'grade',
         'section',
@@ -35,6 +36,11 @@ class Course extends Model
     public function pendingInvite(): BelongsTo
     {
         return $this->belongsTo(TeacherInvite::class, 'teacher_invite_id');
+    }
+
+    public function materia(): BelongsTo
+    {
+        return $this->belongsTo(Materia::class, 'materia_id');
     }
 
     public function students(): BelongsToMany

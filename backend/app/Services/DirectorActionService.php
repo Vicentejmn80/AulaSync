@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Helpers\InviteCodeHelper;
 use App\Models\Course;
+use App\Models\Materia;
 use App\Models\Student;
 use App\Models\TeacherInvite;
 use App\Models\User;
@@ -66,7 +67,11 @@ class DirectorActionService
                 ]);
             }
 
-            $courseIds = collect($invite->course_ids ?? [])->map(fn ($id) => (int) $id)->filter()->all();
+            $courseIds = collect($invite->course_ids ?? [])
+                ->merge($payload['course_ids'] ?? [])
+                ->map(fn ($id) => (int) $id)
+                ->filter()
+                ->all();
             $createdCourses = [];
             $grades = collect($payload['grades'] ?? [])->filter()->values();
             $subject = trim((string) ($payload['subject_name'] ?? ''));
@@ -80,39 +85,50 @@ class DirectorActionService
                         continue;
                     }
 
-                    $existing = Course::query()
-                        ->where('colegio_id', $colegioId)
-                        ->whereRaw('LOWER(subject_name) = ?', [mb_strtolower($subject)])
-                        ->whereRaw('LOWER(grade) = ?', [mb_strtolower($grade)])
-                        ->when($section, fn ($query) => $query->whereRaw('LOWER(COALESCE(section, ?)) = ?', ['', mb_strtolower($section)]))
-                        ->where(function ($query) use ($invite) {
-                            $query->where('teacher_invite_id', $invite->id)
-                                ->orWhereNull('teacher_id');
-                        })
-                        ->first();
-
+                    $existing = $this->findExistingCourse($colegioId, $subject, $grade, $section);
                     if ($existing) {
+                        if ($this->courseOccupiedByOther($existing, null, $invite->id)) {
+                            continue;
+                        }
                         $existing->update([
                             'teacher_id' => null,
                             'teacher_invite_id' => $invite->id,
                         ]);
                         $courseIds[] = $existing->id;
-
                         continue;
                     }
 
+                    $materia = $this->findOrCreateMateria($colegioId, $subject);
                     $course = Course::create([
                         'teacher_id' => null,
                         'teacher_invite_id' => $invite->id,
                         'colegio_id' => $colegioId,
-                        'subject_name' => $subject,
+                        'materia_id' => $materia->id,
+                        'subject_name' => $materia->name,
                         'grade' => $grade,
                         'section' => $section,
                         'school_year' => date('Y').'-'.(date('Y') + 1),
-                        'invite_code' => InviteCodeHelper::generateCourseCode($subject, $grade, $section),
+                        'invite_code' => InviteCodeHelper::generateCourseCode($materia->name, $grade, $section),
                     ]);
                     $courseIds[] = $course->id;
                     $createdCourses[] = $course;
+                }
+            }
+
+            if ($courseIds !== []) {
+                $available = Course::query()
+                    ->where('colegio_id', $colegioId)
+                    ->whereIn('id', $courseIds)
+                    ->get();
+                foreach ($available as $course) {
+                    if ($this->courseOccupiedByOther($course, null, $invite->id)) {
+                        continue;
+                    }
+                    $course->update([
+                        'teacher_id' => null,
+                        'teacher_invite_id' => $invite->id,
+                    ]);
+                    $courseIds[] = $course->id;
                 }
             }
 
@@ -154,6 +170,34 @@ class DirectorActionService
     }
 
     /**
+     * @param array{subject_name:string} $payload
+     */
+    public function createSubject(User $director, array $payload): array
+    {
+        $colegioId = $this->requireColegioId($director);
+        $name = trim((string) ($payload['subject_name'] ?? $payload['name'] ?? ''));
+        if ($name === '') {
+            throw ValidationException::withMessages([
+                'subject' => 'Indica el nombre de la materia.',
+            ]);
+        }
+
+        $created = ! Materia::query()
+            ->where('colegio_id', $colegioId)
+            ->whereRaw('LOWER(name) = ?', [mb_strtolower($name)])
+            ->exists();
+        $materia = $this->findOrCreateMateria($colegioId, $name);
+
+        return [
+            'materia' => $materia,
+            'created' => $created,
+            'message' => $created
+                ? 'Materia «'.$materia->name.'» agregada al catálogo.'
+                : 'La materia «'.$materia->name.'» ya estaba en el catálogo.',
+        ];
+    }
+
+    /**
      * @param array{
      *   teacher_name:string,
      *   subject_name:string,
@@ -180,33 +224,44 @@ class DirectorActionService
         return DB::transaction(function () use ($colegioId, $subject, $section, $grades, $teacherId, $inviteId, $teacherLabel) {
             $courses = collect();
 
+            $missing = [];
             foreach ($grades as $grade) {
-                $course = Course::query()
-                    ->where('colegio_id', $colegioId)
-                    ->whereRaw('LOWER(subject_name) = ?', [mb_strtolower($subject)])
-                    ->whereRaw('LOWER(grade) = ?', [mb_strtolower($grade)])
-                    ->when($section, fn ($query) => $query->whereRaw('LOWER(COALESCE(section, ?)) = ?', ['', mb_strtolower($section)]))
-                    ->first();
+                $course = $this->findExistingCourse($colegioId, $subject, $grade, $section);
 
                 if (! $course) {
+                    $materia = $this->findOrCreateMateria($colegioId, $subject);
                     $course = Course::create([
                         'teacher_id' => $teacherId,
                         'teacher_invite_id' => $inviteId,
                         'colegio_id' => $colegioId,
-                        'subject_name' => $subject,
+                        'materia_id' => $materia->id,
+                        'subject_name' => $materia->name,
                         'grade' => $grade,
                         'section' => $section,
                         'school_year' => date('Y').'-'.(date('Y') + 1),
-                        'invite_code' => InviteCodeHelper::generateCourseCode($subject, $grade, $section),
+                        'invite_code' => InviteCodeHelper::generateCourseCode($materia->name, $grade, $section),
                     ]);
-                } else {
-                    $course->update([
-                        'teacher_id' => $teacherId,
-                        'teacher_invite_id' => $inviteId,
-                    ]);
+                    $courses->push($course);
+                    continue;
+                }
+                if ($this->courseOccupiedByOther($course, $teacherId, $inviteId)) {
+                    continue;
                 }
 
+                $course->update([
+                    'teacher_id' => $teacherId,
+                    'teacher_invite_id' => $inviteId,
+                ]);
                 $courses->push($course);
+            }
+
+            if ($courses->isEmpty()) {
+                $hint = $missing !== []
+                    ? 'No existen estos cursos: '.implode(', ', $missing).'. Créalos primero en la oferta académica.'
+                    : 'Esos cursos ya tienen docente. No se duplican: reasigna desde Gestión o elige cursos libres.';
+                throw ValidationException::withMessages([
+                    'assignment' => $hint,
+                ]);
             }
 
             if ($inviteId) {
@@ -404,33 +459,34 @@ class DirectorActionService
             $existing = 0;
 
             foreach ($grades as $grade) {
-                $existingCourse = Course::query()
-                    ->where('colegio_id', $colegioId)
-                    ->whereRaw('LOWER(subject_name) = ?', [mb_strtolower($subject)])
-                    ->whereRaw('LOWER(grade) = ?', [mb_strtolower($grade)])
-                    ->when($section, fn ($query) => $query->whereRaw('LOWER(COALESCE(section, ?)) = ?', ['', mb_strtolower($section)]))
-                    ->first();
+                $existingCourse = $this->findExistingCourse($colegioId, $subject, $grade, $section);
 
                 if ($existingCourse) {
-                    $existingCourse->update([
-                        'teacher_id' => $teacherId,
-                        'teacher_invite_id' => $inviteId,
-                    ]);
+                    if ($teacherId !== null || $inviteId !== null) {
+                        if (! $this->courseOccupiedByOther($existingCourse, $teacherId, $inviteId)) {
+                            $existingCourse->update([
+                                'teacher_id' => $teacherId,
+                                'teacher_invite_id' => $inviteId,
+                            ]);
+                        }
+                    }
                     $courses->push($existingCourse->fresh());
                     $existing++;
 
                     continue;
                 }
 
+                $materia = $this->findOrCreateMateria($colegioId, $subject);
                 $course = Course::create([
                     'teacher_id' => $teacherId,
                     'teacher_invite_id' => $inviteId,
                     'colegio_id' => $colegioId,
-                    'subject_name' => $subject,
+                    'materia_id' => $materia->id,
+                    'subject_name' => $materia->name,
                     'grade' => $grade,
                     'section' => $section,
                     'school_year' => date('Y').'-'.(date('Y') + 1),
-                    'invite_code' => InviteCodeHelper::generateCourseCode($subject, $grade, $section),
+                    'invite_code' => InviteCodeHelper::generateCourseCode($materia->name, $grade, $section),
                 ]);
                 $courses->push($course);
                 $created++;
@@ -496,15 +552,10 @@ class DirectorActionService
                 [$teacherId, $inviteId, $teacherLabel] = $this->resolveAssigneeByName($colegioId, (string) $payload['teacher_name']);
             }
 
-            $existing = Course::query()
-                ->where('colegio_id', $colegioId)
-                ->whereRaw('LOWER(subject_name) = ?', [mb_strtolower($subject)])
-                ->whereRaw('LOWER(grade) = ?', [mb_strtolower($grade)])
-                ->whereRaw('LOWER(COALESCE(section, ?)) = ?', ['', mb_strtolower((string) $section)])
-                ->first();
+            $existing = $this->findExistingCourse($colegioId, $subject, $grade, $section);
 
             if ($existing) {
-                if ($teacherId !== null || $inviteId !== null) {
+                if (($teacherId !== null || $inviteId !== null) && ! $this->courseOccupiedByOther($existing, $teacherId, $inviteId)) {
                     $existing->update([
                         'teacher_id' => $teacherId,
                         'teacher_invite_id' => $inviteId,
@@ -513,15 +564,17 @@ class DirectorActionService
 
                 $course = $existing->fresh();
             } else {
+                $materia = $this->findOrCreateMateria($colegioId, $subject);
                 $course = Course::create([
                     'teacher_id' => $teacherId,
                     'teacher_invite_id' => $inviteId,
                     'colegio_id' => $colegioId,
-                    'subject_name' => $subject,
+                    'materia_id' => $materia->id,
+                    'subject_name' => $materia->name,
                     'grade' => $grade,
                     'section' => $section,
                     'school_year' => date('Y').'-'.(date('Y') + 1),
-                    'invite_code' => InviteCodeHelper::generateCourseCode($subject, $grade, $section),
+                    'invite_code' => InviteCodeHelper::generateCourseCode($materia->name, $grade, $section),
                 ]);
             }
 
@@ -549,6 +602,7 @@ class DirectorActionService
                 'course' => $verified,
                 'teacher_label' => $teacherLabel,
                 'was_existing' => (bool) $existing,
+                'created' => ! $existing,
             ];
         });
     }
@@ -564,7 +618,6 @@ class DirectorActionService
     public function enrollStudentsToCourse(User $director, array $payload): array
     {
         $colegioId = (int) $director->colegio_id;
-        $subject = trim((string) $payload['subject_name']);
         $grade = trim((string) $payload['grade']);
         $section = trim((string) ($payload['section'] ?? ''));
         $section = $section !== '' ? $section : null;
@@ -575,26 +628,43 @@ class DirectorActionService
             ->filter()
             ->unique()
             ->values();
+        $subjects = collect($payload['subject_names'] ?? [])
+            ->push($payload['subject_name'] ?? '')
+            ->map(fn ($name) => trim((string) $name))
+            ->filter()
+            ->unique(fn ($name) => mb_strtolower($name))
+            ->values();
 
-        if ($subject === '' || $grade === '' || ($names->isEmpty() && ! $allInGrade)) {
+        if ($subjects->isEmpty() || $grade === '' || ($names->isEmpty() && ! $allInGrade)) {
             throw ValidationException::withMessages([
                 'enroll' => 'Debes indicar alumnos (o un grado completo), materia y grado para inscribir.',
             ]);
         }
 
-        $placement = $this->resolveCourseForPlacement(
-            $colegioId,
-            $subject,
-            $grade,
-            $section,
-            $teacherName !== '' ? $teacherName : null,
-            $director,
-            $teacherName !== '',
-        );
-        $course = $placement['course'];
+        $missingCourses = [];
+        $courses = collect();
+        foreach ($subjects as $subject) {
+            $placement = $this->resolveCourseForPlacement(
+                $colegioId,
+                $subject,
+                $grade,
+                $section,
+                $teacherName !== '' ? $teacherName : null,
+                $director,
+                false,
+            );
+            if ($placement['course']) {
+                $courses->push($placement['course']);
+            } else {
+                $missingCourses[] = trim($subject.' '.$grade.($section ? ' '.$section : ''));
+            }
+        }
+
+        $courses = $courses->unique('id')->values();
+        $course = $courses->first();
         if (! $course) {
             throw ValidationException::withMessages([
-                'course' => $placement['note'] ?? ("No encontré el curso {$subject} de {$grade}".($section ? " sección {$section}" : '').'.'),
+                'course' => 'No encontré estos cursos: '.implode(', ', $missingCourses).'. Créalos primero en la oferta académica.',
             ]);
         }
 
@@ -614,13 +684,21 @@ class DirectorActionService
             $enrolled = [];
             $alreadyEnrolled = [];
             foreach ($roster as $student) {
-                if ($course->students()->where('students.id', $student->id)->exists()) {
-                    $alreadyEnrolled[] = $student->name;
-
-                    continue;
+                $attachedAny = false;
+                $alreadyAll = true;
+                foreach ($courses as $target) {
+                    if ($target->students()->where('students.id', $student->id)->exists()) {
+                        continue;
+                    }
+                    $alreadyAll = false;
+                    $this->enrollmentService->attachExisting($target, $student, $director);
+                    $attachedAny = true;
                 }
-                $this->enrollmentService->attachExisting($course, $student, $director);
-                $enrolled[] = $student->name;
+                if ($attachedAny) {
+                    $enrolled[] = $student->name;
+                } elseif ($alreadyAll) {
+                    $alreadyEnrolled[] = $student->name;
+                }
             }
 
             return [
@@ -628,6 +706,7 @@ class DirectorActionService
                 'enrolled' => $enrolled,
                 'already_enrolled' => $alreadyEnrolled,
                 'missing_students' => [],
+                'missing_courses' => $missingCourses,
                 'total_students_in_course' => $course->fresh()->students()->count(),
             ];
         }
@@ -636,7 +715,7 @@ class DirectorActionService
         $missingStudents = [];
         $alreadyEnrolled = [];
 
-        DB::transaction(function () use ($director, $colegioId, $names, $course, &$enrolled, &$missingStudents, &$alreadyEnrolled) {
+        DB::transaction(function () use ($director, $colegioId, $names, $courses, &$enrolled, &$missingStudents, &$alreadyEnrolled) {
             foreach ($names as $name) {
                 $student = Student::query()
                     ->where('colegio_id', $colegioId)
@@ -662,15 +741,22 @@ class DirectorActionService
                     continue;
                 }
 
-                $isAlready = $course->students()->where('students.id', $student->id)->exists();
-                if ($isAlready) {
-                    $alreadyEnrolled[] = $student->name;
-
-                    continue;
+                $attachedAny = false;
+                $alreadyAll = true;
+                foreach ($courses as $target) {
+                    if ($target->students()->where('students.id', $student->id)->exists()) {
+                        continue;
+                    }
+                    $alreadyAll = false;
+                    $this->enrollmentService->attachExisting($target, $student, $director);
+                    $attachedAny = true;
                 }
 
-                $this->enrollmentService->attachExisting($course, $student, $director);
-                $enrolled[] = $student->name;
+                if ($attachedAny) {
+                    $enrolled[] = $student->name;
+                } elseif ($alreadyAll) {
+                    $alreadyEnrolled[] = $student->name;
+                }
             }
         });
 
@@ -681,6 +767,7 @@ class DirectorActionService
             'enrolled' => $enrolled,
             'already_enrolled' => $alreadyEnrolled,
             'missing_students' => $missingStudents,
+            'missing_courses' => $missingCourses,
             'total_students_in_course' => $verifiedCount,
         ];
     }
@@ -1411,14 +1498,16 @@ class DirectorActionService
         }
 
         if ($createIfMissing && $subject && $teacherId) {
+            $materia = $this->findOrCreateMateria($colegioId, $subject);
             $course = Course::create([
                 'teacher_id' => $teacherId,
                 'colegio_id' => $colegioId,
-                'subject_name' => $subject,
+                'materia_id' => $materia->id,
+                'subject_name' => $materia->name,
                 'grade' => $grade,
                 'section' => $section,
                 'school_year' => date('Y').'-'.(date('Y') + 1),
-                'invite_code' => InviteCodeHelper::generateCourseCode($subject, $grade, $section),
+                'invite_code' => InviteCodeHelper::generateCourseCode($materia->name, $grade, $section),
             ]);
 
             return [
@@ -1479,6 +1568,43 @@ class DirectorActionService
         return strtr($value, [
             'á' => 'a', 'é' => 'e', 'í' => 'i', 'ó' => 'o', 'ú' => 'u', 'ñ' => 'n',
         ]);
+    }
+
+    private function findOrCreateMateria(int $colegioId, string $name): Materia
+    {
+        $name = trim($name);
+        $existing = Materia::query()
+            ->where('colegio_id', $colegioId)
+            ->whereRaw('LOWER(name) = ?', [mb_strtolower($name)])
+            ->first();
+        if ($existing) {
+            return $existing;
+        }
+
+        return Materia::create([
+            'colegio_id' => $colegioId,
+            'name' => $name,
+        ]);
+    }
+
+    private function findExistingCourse(int $colegioId, string $subject, string $grade, ?string $section): ?Course
+    {
+        return $this->findCourseByAcademicKey($colegioId, $subject, $grade, $section);
+    }
+
+    private function courseOccupiedByOther(Course $course, ?int $teacherId, ?int $inviteId): bool
+    {
+        if ($teacherId && (int) $course->teacher_id === (int) $teacherId) {
+            return false;
+        }
+        if ($inviteId && (int) $course->teacher_invite_id === (int) $inviteId) {
+            return false;
+        }
+        if ($course->teacher_id || $course->teacher_invite_id) {
+            return true;
+        }
+
+        return false;
     }
 
     private function findCourseByAcademicKey(int $colegioId, string $subject, string $grade, ?string $section): ?Course

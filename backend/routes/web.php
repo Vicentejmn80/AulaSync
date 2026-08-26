@@ -99,6 +99,10 @@ Route::middleware('auth')->group(function () {
                     ->name('gestion');
                 Route::get('/gestion/snapshot', [DirectorManagementHubController::class, 'snapshot'])
                     ->name('gestion.snapshot');
+                Route::post('/gestion/materias', [DirectorManagementHubController::class, 'storeMateria'])
+                    ->name('gestion.materias.store');
+                Route::delete('/gestion/materias/{materia}', [DirectorManagementHubController::class, 'destroyMateria'])
+                    ->name('gestion.materias.destroy');
                 Route::post('/gestion/teachers', [DirectorManagementHubController::class, 'storeTeacher'])
                     ->name('gestion.teachers.store');
                 Route::post('/gestion/students', [DirectorManagementHubController::class, 'storeStudent'])

@@ -14,17 +14,18 @@
     @include('partials.nova-theme')
     @include('partials.director-ui-styles')
     <style>
-        body { font-family: Inter, system-ui, sans-serif; }
+        body { font-family: Inter, system-ui, sans-serif; background: var(--bg-primary); color: var(--text-primary); }
         [x-cloak] { display: none !important; }
         .hub-card {
-            background: #fff;
-            border: 1px solid #e8eef6;
+            background: var(--bg-card);
+            border: 1px solid var(--nova-glass-border);
             border-radius: 1.25rem;
-            box-shadow: 0 10px 30px -18px rgba(15, 23, 42, .25);
-            transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+            box-shadow: var(--nova-shadow);
+            color: var(--text-primary);
+            transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease, background-color .18s ease;
         }
-        .hub-card:hover { transform: translateY(-2px); box-shadow: 0 18px 40px -20px rgba(79, 70, 229, .35); }
-        .hub-card.active { border-color: #818cf8; box-shadow: 0 0 0 4px rgba(99,102,241,.12); }
+        .hub-card:hover { transform: translateY(-2px); }
+        .hub-card.active { border-color: var(--nova-violet); box-shadow: 0 0 0 4px color-mix(in srgb, var(--nova-violet) 18%, transparent); }
         .hub-row { transition: background .15s ease, transform .25s ease, opacity .25s ease; }
         .hub-row.just-in { animation: hubIn .45s ease; }
         @keyframes hubIn {
@@ -34,7 +35,7 @@
         .hub-chip {
             display: inline-flex; align-items: center; gap: .35rem;
             border-radius: 999px; padding: .2rem .65rem;
-            font-size: .72rem; font-weight: 600; background: #eef2ff; color: #3730a3;
+            font-size: .72rem; font-weight: 600; background: color-mix(in srgb, var(--nova-violet) 14%, transparent); color: var(--nova-violet);
         }
         .hub-btn {
             display: inline-flex; align-items: center; gap: .45rem;
@@ -42,37 +43,78 @@
             transition: background .15s ease, transform .15s ease, box-shadow .15s ease;
         }
         .hub-btn:hover { transform: translateY(-1px); }
-        .hub-btn-solid { background: #4f46e5; color: #fff; box-shadow: 0 8px 18px -10px #4f46e5; }
-        .hub-btn-solid:hover { background: #4338ca; }
-        .hub-btn-ghost { border: 1px solid #dbe3ef; background: #fff; color: #334155; }
-        .hub-btn-ghost:hover { background: #f8fafc; }
-        .hub-btn-danger { border: 1px solid #fecaca; color: #b91c1c; background: #fff; }
+        .hub-btn-solid { background: var(--nova-violet); color: #fff; box-shadow: 0 8px 18px -10px var(--nova-violet); }
+        .hub-btn-solid:hover { filter: brightness(1.05); }
+        .hub-btn-ghost { border: 1px solid var(--nova-glass-border); background: var(--bg-card); color: var(--text-primary); }
+        .hub-btn-ghost:hover { background: var(--bg-tertiary); }
+        .hub-btn-danger { border: 1px solid #fecaca; color: #b91c1c; background: var(--bg-card); }
+        html.dark .hub-btn-danger { border-color: rgba(248,113,113,.35); color: #fecaca; }
         .hub-btn-danger:hover { background: #fef2f2; }
+        html.dark .hub-btn-danger:hover { background: rgba(127,29,29,.35); }
         .hub-input {
-            width: 100%; border: 1px solid #dbe3ef; border-radius: .9rem; padding: .7rem .9rem;
-            background: #fff; font-size: .9rem;
+            width: 100%; border: 1px solid var(--nova-glass-border); border-radius: .9rem; padding: .7rem .9rem;
+            background: var(--bg-secondary); font-size: .9rem; color: var(--text-primary);
         }
-        .hub-input:focus { outline: none; border-color: #818cf8; box-shadow: 0 0 0 3px rgba(99,102,241,.15); }
-        .hub-table-wrap { overflow: auto; border-radius: 1.1rem; border: 1px solid #e8eef6; background: #fff; }
+        .hub-input:focus { outline: none; border-color: var(--nova-violet); box-shadow: 0 0 0 3px color-mix(in srgb, var(--nova-violet) 22%, transparent); }
+        .hub-table-wrap { overflow: auto; border-radius: 1.1rem; border: 1px solid var(--nova-glass-border); background: var(--bg-card); }
         table.hub-table { width: 100%; border-collapse: collapse; }
-        table.hub-table th { text-align: left; font-size: .7rem; letter-spacing: .08em; text-transform: uppercase; color: #64748b; padding: .85rem 1rem; border-bottom: 1px solid #eef2f7; }
-        table.hub-table td { padding: .85rem 1rem; border-bottom: 1px solid #f1f5f9; font-size: .9rem; }
-        .drop-over { outline: 2px dashed #6366f1; background: #eef2ff; }
-        .progress-bar { height: 4px; border-radius: 99px; overflow: hidden; background: #e0e7ff; }
-        .progress-bar > span { display: block; height: 100%; background: linear-gradient(90deg,#6366f1,#22d3ee); animation: load 1.2s ease infinite; }
+        table.hub-table th { text-align: left; font-size: .7rem; letter-spacing: .08em; text-transform: uppercase; color: var(--text-secondary); padding: .85rem 1rem; border-bottom: 1px solid var(--nova-glass-border); }
+        table.hub-table td { padding: .85rem 1rem; border-bottom: 1px solid var(--nova-glass-border); font-size: .9rem; color: var(--text-primary); }
+        .drop-over { outline: 2px dashed var(--nova-violet); background: color-mix(in srgb, var(--nova-violet) 12%, transparent); }
+        .progress-bar { height: 4px; border-radius: 99px; overflow: hidden; background: color-mix(in srgb, var(--nova-violet) 18%, transparent); }
+        .progress-bar > span { display: block; height: 100%; background: var(--nova-gradient); animation: load 1.2s ease infinite; }
         @keyframes load { 0% { width: 12%; } 50% { width: 78%; } 100% { width: 12%; } }
+        .hub-pick { border: 1px solid var(--nova-glass-border); border-radius: .9rem; padding: .7rem .8rem; background: var(--bg-secondary); }
+        .hub-pick.disabled { opacity: .55; }
+        .hub-muted { color: var(--text-secondary); }
+        .hub-kicker { color: var(--nova-violet); }
+        .hub-nav {
+            display: inline-flex; border-radius: 1rem; padding: .25rem;
+            border: 1px solid var(--nova-glass-border); background: var(--bg-card); box-shadow: var(--nova-shadow);
+        }
+        .hub-nav a, .hub-nav span {
+            border-radius: .75rem; padding: .5rem 1rem; font-size: .875rem; font-weight: 700;
+            color: var(--text-primary);
+        }
+        .hub-nav a { opacity: .78; }
+        .hub-nav a:hover { opacity: 1; background: var(--bg-tertiary); }
+        .hub-nav .is-active { opacity: 1; background: var(--nova-violet); color: #fff; }
+        .hub-drawer { background: var(--bg-card); color: var(--text-primary); }
+        .hub-select-all {
+            display: inline-flex; align-items: center; gap: .5rem;
+            border-radius: .75rem; border: 1px solid var(--nova-glass-border);
+            background: var(--bg-card); padding: .5rem .75rem; font-size: .875rem; font-weight: 600;
+            color: var(--text-primary);
+        }
+        body .text-slate-400, body .text-slate-500 { color: var(--text-secondary) !important; }
+        body .text-slate-800 { color: var(--text-primary) !important; }
+        body .bg-white { background: var(--bg-card) !important; }
+        body .bg-slate-50 { background: var(--bg-tertiary) !important; }
+        body .border-slate-100, body .border-slate-200 { border-color: var(--nova-glass-border) !important; }
+        html.dark .bg-indigo-50, html[data-theme="dark"] .bg-indigo-50,
+        html[data-theme="eco"] .bg-indigo-50, html[data-theme="neon"] .bg-indigo-50 {
+            background: color-mix(in srgb, var(--nova-violet) 18%, transparent) !important;
+        }
+        html.dark .hub-btn-danger, html[data-theme="dark"] .hub-btn-danger,
+        html[data-theme="eco"] .hub-btn-danger, html[data-theme="neon"] .hub-btn-danger {
+            border-color: rgba(248,113,113,.35); color: #fecaca;
+        }
+        html.dark .hub-btn-danger:hover, html[data-theme="dark"] .hub-btn-danger:hover,
+        html[data-theme="eco"] .hub-btn-danger:hover, html[data-theme="neon"] .hub-btn-danger:hover {
+            background: rgba(127,29,29,.35);
+        }
     </style>
 </head>
-<body class="min-h-screen bg-[#f6f8fc] text-slate-900" x-data="gestionHub()" x-init="init()">
+<body class="min-h-screen" x-data="gestionHub()" x-init="init()">
     <div class="mx-auto max-w-7xl px-5 py-6 lg:px-8">
         <header class="mb-8 flex flex-wrap items-start justify-between gap-4">
             <div>
-                <p class="text-[11px] font-bold uppercase tracking-[.28em] text-indigo-500">Colegio</p>
+                <p class="hub-kicker text-[11px] font-bold uppercase tracking-[.28em]">Colegio</p>
                 <h1 class="text-3xl font-extrabold tracking-tight">Gestión</h1>
-                <p class="mt-1 max-w-xl text-sm text-slate-500">Plantel, nómina y materias. Los cursos de un profesor eliminado quedan huérfanos para reasignarlos.</p>
-                <div class="mt-4 inline-flex rounded-2xl border border-slate-200 bg-white p-1 shadow-sm">
-                    <a href="{{ route('director.dashboard') }}" class="rounded-xl px-4 py-2 text-sm font-semibold text-slate-500 hover:bg-slate-50">Resumen</a>
-                    <span class="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-bold text-white">Gestión</span>
+                <p class="hub-muted mt-1 max-w-xl text-sm">Plantel, nómina y materias. Los cursos de un profesor eliminado quedan huérfanos para reasignarlos.</p>
+                <div class="hub-nav mt-4">
+                    <a href="{{ route('director.dashboard') }}">Resumen</a>
+                    <span class="is-active">Gestión</span>
                 </div>
             </div>
             @include('components.user-control-panel')
@@ -89,7 +131,23 @@
             <div class="progress-bar"><span></span></div>
         </div>
 
-        <div class="mb-6 grid gap-4 md:grid-cols-3">
+        <div class="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <button type="button" @click="openPanel('materias')" class="hub-card p-6 text-left" :class="panel === 'materias' && 'active'">
+                <div class="mb-6 flex items-center justify-between">
+                    <span class="flex h-11 w-11 items-center justify-center rounded-2xl bg-amber-100 text-amber-700"><i class="fa-solid fa-book"></i></span>
+                    <span class="text-xs font-semibold uppercase tracking-wide text-slate-400">Catálogo</span>
+                </div>
+                <p class="text-4xl font-extrabold tabular-nums" x-text="counts.materias">0</p>
+                <p class="mt-1 text-sm font-medium text-slate-500">Materias</p>
+            </button>
+            <button type="button" @click="openPanel('courses')" class="hub-card p-6 text-left" :class="panel === 'courses' && 'active'">
+                <div class="mb-6 flex items-center justify-between">
+                    <span class="flex h-11 w-11 items-center justify-center rounded-2xl bg-violet-100 text-violet-700"><i class="fa-solid fa-book-open"></i></span>
+                    <span class="text-xs font-semibold uppercase tracking-wide text-slate-400">Oferta</span>
+                </div>
+                <p class="text-4xl font-extrabold tabular-nums" x-text="counts.courses">0</p>
+                <p class="mt-1 text-sm font-medium text-slate-500">Cursos</p>
+            </button>
             <button type="button" @click="openPanel('teachers')" class="hub-card p-6 text-left" :class="panel === 'teachers' && 'active'">
                 <div class="mb-6 flex items-center justify-between">
                     <span class="flex h-11 w-11 items-center justify-center rounded-2xl bg-cyan-100 text-cyan-700"><i class="fa-solid fa-chalkboard-user"></i></span>
@@ -107,14 +165,6 @@
                 <p class="text-4xl font-extrabold tabular-nums" x-text="counts.students">0</p>
                 <p class="mt-1 text-sm font-medium text-slate-500">Alumnos</p>
             </button>
-            <button type="button" @click="openPanel('courses')" class="hub-card p-6 text-left" :class="panel === 'courses' && 'active'">
-                <div class="mb-6 flex items-center justify-between">
-                    <span class="flex h-11 w-11 items-center justify-center rounded-2xl bg-violet-100 text-violet-700"><i class="fa-solid fa-book-open"></i></span>
-                    <span class="text-xs font-semibold uppercase tracking-wide text-slate-400">Estructura</span>
-                </div>
-                <p class="text-4xl font-extrabold tabular-nums" x-text="counts.courses">0</p>
-                <p class="mt-1 text-sm font-medium text-slate-500">Cursos</p>
-            </button>
         </div>
 
         <section class="hub-card p-5 md:p-6" style="transform:none">
@@ -124,7 +174,7 @@
                     <p class="text-sm text-slate-500" x-text="panelHint"></p>
                 </div>
                 <div class="flex flex-wrap items-center gap-2">
-                    <label class="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-600">
+                    <label class="hub-select-all">
                         <input type="checkbox" class="h-4 w-4 accent-indigo-600" :checked="allVisibleSelected" @change="toggleSelectAll($event.target.checked)">
                         Seleccionar todo
                     </label>
@@ -214,56 +264,47 @@
                     </tbody>
                 </table>
 
-                <div x-show="panel === 'courses'" x-cloak class="p-4">
-                    <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                        <template x-for="card in gradeCards" :key="card.key">
-                            <article class="overflow-hidden rounded-2xl border border-slate-100 shadow-sm" :style="'background:' + card.soft">
-                                <button type="button" class="w-full p-5 text-left" @click="expandedGrade = expandedGrade === card.key ? null : card.key">
-                                    <div class="mb-4 flex items-center justify-between">
-                                        <span class="flex h-12 w-12 items-center justify-center rounded-2xl text-lg font-black text-white" :style="'background:' + card.color" x-text="card.short"></span>
-                                        <span class="text-xs font-semibold uppercase tracking-wide text-slate-500" x-text="card.subjects.length + ' materia(s)'"></span>
-                                    </div>
-                                    <p class="text-xl font-extrabold text-slate-800" x-text="card.label"></p>
-                                    <p class="mt-1 text-sm text-slate-500" x-text="card.orphanCount ? card.orphanCount + ' sin docente' : 'Listo para desglosar'"></p>
-                                </button>
-                                <div x-show="expandedGrade === card.key" x-cloak class="border-t border-white/70 bg-white/70 px-4 py-3">
-                                    <p class="mb-2 text-xs text-slate-400" x-show="!card.subjects.length">Todavía no hay materias en este grado.</p>
-                                    <template x-for="subject in card.subjects" :key="card.key + subject.name">
-                                        <div class="mb-3 rounded-xl bg-white p-3 shadow-sm">
-                                            <div class="mb-2 flex items-center justify-between gap-2">
-                                                <p class="font-bold text-slate-800" x-text="subject.name"></p>
-                                                <button type="button" class="text-xs font-semibold text-rose-500 hover:text-rose-700" @click.stop="deleteSubject(subject.name, card.grade)">
-                                                    Borrar materia
-                                                </button>
-                                            </div>
-                                            <ul class="space-y-1">
-                                                <template x-for="item in subject.items" :key="item.id">
-                                                    <li class="flex items-center justify-between gap-2 rounded-lg px-1 py-1 text-sm">
-                                                        <label class="flex min-w-0 flex-1 items-center gap-2">
-                                                            <input type="checkbox" class="h-4 w-4 accent-indigo-600" :checked="isSelected('course', item.id)" @change="toggleSelected('course', item.id)">
-                                                            <span class="min-w-0 truncate">
-                                                                <span x-text="item.section ? 'Sección ' + item.section : 'Sección única'"></span>
-                                                                <span class="text-slate-400"> · </span>
-                                                                <span x-text="item.teacher_name || 'Sin docente'"></span>
-                                                            </span>
-                                                            <span x-show="item.orphan" class="hub-chip shrink-0" style="background:#fff7ed;color:#c2410c">Huérfano</span>
-                                                        </label>
-                                                        <button type="button" class="shrink-0 text-rose-400 hover:text-rose-600" @click.stop="queueDelete(item, 'course')" title="Borrar este curso">
-                                                            <i class="fa-solid fa-trash-can text-xs"></i>
-                                                        </button>
-                                                    </li>
-                                                </template>
-                                            </ul>
-                                        </div>
-                                    </template>
-                                    <button type="button" class="mt-1 text-xs font-semibold text-rose-500" x-show="card.courses.length" @click="deleteGradeCourses(card)">
-                                        Eliminar todo el grado
-                                    </button>
-                                </div>
-                            </article>
+                <table class="hub-table" x-show="panel === 'materias'" x-cloak>
+                    <thead><tr>
+                        <th class="w-10"></th>
+                        <th>Materia</th><th>Cursos asociados</th><th></th>
+                    </tr></thead>
+                    <tbody>
+                        <template x-for="row in filteredMaterias" :key="'m'+row.id">
+                            <tr class="hub-row" :class="highlights['materia'+row.id] && 'just-in'">
+                                <td><input type="checkbox" class="h-4 w-4 accent-indigo-600" :checked="isSelected('materia', row.id)" @change="toggleSelected('materia', row.id)"></td>
+                                <td class="font-semibold" x-text="row.name"></td>
+                                <td><span class="text-sm text-slate-500" x-text="row.courses_count + ' curso(s)'"></span></td>
+                                <td class="text-right"><button class="hub-btn hub-btn-danger !py-1.5 !text-xs" @click="queueDelete(row, 'materia')"><i class="fa-solid fa-trash-can"></i></button></td>
+                            </tr>
                         </template>
-                    </div>
-                </div>
+                    </tbody>
+                </table>
+
+                <table class="hub-table" x-show="panel === 'courses'" x-cloak>
+                    <thead><tr>
+                        <th class="w-10"></th>
+                        <th>Curso</th><th>Grado</th><th>Sección</th><th>Profesor</th><th></th>
+                    </tr></thead>
+                    <tbody>
+                        <template x-for="row in filteredCourses" :key="'c'+row.id">
+                            <tr class="hub-row" :class="highlights['course'+row.id] && 'just-in'" @dblclick="selectCourse(row)">
+                                <td><input type="checkbox" class="h-4 w-4 accent-indigo-600" :checked="isSelected('course', row.id)" @change="toggleSelected('course', row.id)"></td>
+                                <td class="font-semibold" x-text="row.subject_name"></td>
+                                <td x-text="row.grade || '—'"></td>
+                                <td x-text="row.section || '—'"></td>
+                                <td>
+                                    <span x-show="row.orphan" class="text-xs font-bold" style="color:#dc2626">Sin profesor</span>
+                                    <span x-show="!row.orphan" class="text-sm" x-text="row.teacher_name"></span>
+                                </td>
+                                <td class="text-right whitespace-nowrap">
+                                    <button class="hub-btn hub-btn-ghost !py-1.5 !text-xs" @click="selectCourse(row)"><i class="fa-solid fa-users"></i></button>
+                                    <button class="hub-btn hub-btn-danger !py-1.5 !text-xs" @click="queueDelete(row, 'course')"><i class="fa-solid fa-trash-can"></i></button>
+                                </td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
             </div>
             <p class="px-2 py-4 text-sm text-slate-400" x-show="emptyState" x-text="emptyCopy"></p>
         </section>
@@ -271,7 +312,7 @@
 
     {{-- Drawer asignación --}}
     <div x-show="selected" x-cloak class="fixed inset-0 z-40 flex justify-end bg-slate-900/20 backdrop-blur-sm" @click.self="selected = null">
-        <aside class="h-full w-full max-w-md overflow-y-auto bg-white p-6 shadow-2xl" @click.stop>
+        <aside class="hub-drawer h-full w-full max-w-md overflow-y-auto p-6 shadow-2xl" @click.stop>
             <div class="mb-5 flex items-start justify-between">
                 <div>
                     <p class="text-xs font-bold uppercase tracking-widest text-indigo-500">Perfil</p>
@@ -318,7 +359,7 @@
 
     {{-- Course people drawer --}}
     <div x-show="selectedCourse" x-cloak class="fixed inset-0 z-40 flex justify-end bg-slate-900/20 backdrop-blur-sm" @click.self="selectedCourse = null">
-        <aside class="h-full w-full max-w-md overflow-y-auto bg-white p-6 shadow-2xl">
+        <aside class="hub-drawer h-full w-full max-w-md overflow-y-auto p-6 shadow-2xl">
             <div class="mb-5 flex items-start justify-between">
                 <div>
                     <p class="text-xs font-bold uppercase tracking-widest text-violet-500">Curso</p>
@@ -338,42 +379,104 @@
     </div>
 
     {{-- Create modal --}}
-    <div x-show="creating" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 px-4" @keydown.escape.window="creating = false">
-        <div class="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl">
+    <div x-show="creating" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 px-4 py-6" @keydown.escape.window="creating = false">
+        <div class="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-3xl p-6 shadow-2xl" style="background:var(--bg-card);color:var(--text-primary)">
             <div class="mb-4 flex items-center justify-between">
-                <h3 class="text-lg font-extrabold" x-text="'Nuevo ' + (panel === 'teachers' ? 'profesor' : panel === 'students' ? 'alumno' : 'curso')"></h3>
+                <h3 class="text-lg font-extrabold" x-text="createTitle"></h3>
                 <button class="hub-btn hub-btn-ghost !px-3" @click="creating = false"><i class="fa-solid fa-xmark"></i></button>
             </div>
             <form class="space-y-3" @submit.prevent="submitCreate()">
+                <template x-if="panel === 'materias'">
+                    <div class="space-y-3">
+                        <label class="text-xs font-bold uppercase tracking-wide text-slate-400">Nombre de la materia</label>
+                        <input class="hub-input" x-model="form.name" required placeholder="Ej. Biología">
+                        <p class="text-xs text-slate-400">Solo el catálogo. Los grados y secciones se crean después como cursos.</p>
+                    </div>
+                </template>
                 <template x-if="panel === 'teachers'">
                     <div class="space-y-3">
                         <input class="hub-input" x-model="form.name" required placeholder="Nombre del docente">
                         <input class="hub-input" x-model="form.email" type="email" placeholder="Correo (opcional)">
-                        <input class="hub-input" x-model="form.subject_name" placeholder="Materia (opcional)">
-                        <input class="hub-input" x-model="form.grade" placeholder="Grado, ej. 1ro">
+                        <p class="text-xs font-bold uppercase tracking-wide text-slate-400">Asignar cursos existentes</p>
+                        <div class="max-h-56 space-y-2 overflow-y-auto rounded-2xl border p-2" style="border-color:var(--nova-glass-border)">
+                            <p class="px-1 py-6 text-center text-sm text-slate-400" x-show="!courses.length">Primero crea la oferta de cursos.</p>
+                            <template x-for="course in courses" :key="'pick-t'+course.id">
+                                <label class="hub-pick flex items-center justify-between gap-2" :class="!course.orphan && 'disabled'">
+                                    <span class="flex min-w-0 items-center gap-2">
+                                        <input type="checkbox" class="h-4 w-4 accent-indigo-600" :disabled="!course.orphan"
+                                               :checked="form.course_ids.includes(course.id)"
+                                               @change="toggleFormCourse(course.id, $event.target.checked)">
+                                        <span class="truncate text-sm font-semibold" x-text="course.label"></span>
+                                    </span>
+                                    <span class="shrink-0 text-xs font-bold" :style="course.orphan ? 'color:#dc2626' : 'color:#059669'"
+                                          x-text="course.orphan ? 'Sin profesor' : ('Asignado · ' + (course.teacher_name || 'ocupado'))"></span>
+                                </label>
+                            </template>
+                        </div>
+                        <p class="text-xs text-slate-500"><span x-text="form.course_ids.length"></span> curso(s) seleccionados. Los ocupados no se pueden tomar.</p>
                     </div>
                 </template>
                 <template x-if="panel === 'students'">
                     <div class="space-y-3">
                         <input class="hub-input" x-model="form.name" required placeholder="Nombre del alumno">
                         <div class="grid grid-cols-2 gap-2">
-                            <input class="hub-input" x-model="form.grade" placeholder="Grado">
-                            <input class="hub-input" x-model="form.section" placeholder="Sección">
+                            <select class="hub-input" x-model="form.grade">
+                                <option value="">Todos los grados</option>
+                                <template x-for="g in gradeMeta" :key="'fg'+g.key"><option :value="g.grade" x-text="g.label"></option></template>
+                            </select>
+                            <select class="hub-input" x-model="form.subject_filter">
+                                <option value="">Todas las materias</option>
+                                <template x-for="m in materias" :key="'fm'+m.id"><option :value="m.name" x-text="m.name"></option></template>
+                            </select>
                         </div>
+                        <p class="text-xs font-bold uppercase tracking-wide text-slate-400">Matricular en cursos</p>
+                        <div class="max-h-56 space-y-2 overflow-y-auto rounded-2xl border p-2" style="border-color:var(--nova-glass-border)">
+                            <p class="px-1 py-6 text-center text-sm text-slate-400" x-show="!studentCourseOptions.length">No hay cursos para ese filtro. Crea la oferta primero.</p>
+                            <template x-for="course in studentCourseOptions" :key="'pick-s'+course.id">
+                                <label class="hub-pick flex items-center justify-between gap-2">
+                                    <span class="flex min-w-0 items-center gap-2">
+                                        <input type="checkbox" class="h-4 w-4 accent-indigo-600"
+                                               :checked="form.course_ids.includes(course.id)"
+                                               @change="toggleFormCourse(course.id, $event.target.checked)">
+                                        <span class="truncate text-sm font-semibold" x-text="course.label"></span>
+                                    </span>
+                                    <span class="shrink-0 text-xs text-slate-500" x-text="course.teacher_name || 'Sin docente'"></span>
+                                </label>
+                            </template>
+                        </div>
+                        <p class="text-xs text-slate-500"><span x-text="form.course_ids.length"></span> curso(s) seleccionados.</p>
                     </div>
                 </template>
                 <template x-if="panel === 'courses'">
                     <div class="space-y-3">
-                        <input class="hub-input" x-model="form.subject_name" required placeholder="Materia">
+                        <select class="hub-input" x-model="form.materia_id">
+                            <option value="">Materia del catálogo…</option>
+                            <template x-for="m in materias" :key="'cm'+m.id"><option :value="m.id" x-text="m.name"></option></template>
+                        </select>
+                        <input class="hub-input" x-model="form.subject_name" placeholder="O escribe una materia nueva">
                         <div class="grid grid-cols-2 gap-2">
-                            <input class="hub-input" x-model="form.grade" required placeholder="Grado">
-                            <input class="hub-input" x-model="form.section" placeholder="Sección">
+                            <select class="hub-input" x-model="form.grade" required>
+                                <option value="">Grado</option>
+                                <template x-for="g in gradeMeta" :key="'cg'+g.key"><option :value="g.grade" x-text="g.label"></option></template>
+                            </select>
+                            <select class="hub-input" x-model="form.section">
+                                <option value="">Sección</option>
+                                <option value="A">A</option>
+                                <option value="B">B</option>
+                                <option value="C">C</option>
+                            </select>
                         </div>
+                        <select class="hub-input" x-model="form.teacher_id">
+                            <option value="">Profesor (opcional)</option>
+                            <template x-for="row in people" :key="'pt'+row.kind+row.id">
+                                <option :value="row.kind === 'teacher' ? row.id : ('invite:'+row.id)" x-text="row.name + (row.kind === 'invite' ? ' (pendiente)' : '')"></option>
+                            </template>
+                        </select>
                     </div>
                 </template>
                 <div class="flex gap-2 pt-2">
                     <button type="button" class="hub-btn hub-btn-ghost flex-1 justify-center" @click="creating = false">Cancelar</button>
-                    <button class="hub-btn hub-btn-solid flex-1 justify-center" :disabled="saving"><i class="fa-solid fa-check"></i> Crear</button>
+                    <button class="hub-btn hub-btn-solid flex-1 justify-center" :disabled="saving"><i class="fa-solid fa-check"></i> <span x-text="createAction"></span></button>
                 </div>
             </form>
         </div>
@@ -398,6 +501,8 @@
                 unassign: (id) => @json(url('/director/gestion/courses')).replace(/\/$/, '') + '/' + id + '/unassign',
                 bulkDestroy: @json(route('director.gestion.bulk-destroy')),
                 destroySubject: @json(route('director.gestion.courses.destroy-subject')),
+                materias: @json(route('director.gestion.materias.store')),
+                destroyMateria: (id) => @json(url('/director/gestion/materias')).replace(/\/$/, '') + '/' + id,
                 destroyTeacher: (id) => @json(url('/director/profesores')).replace(/\/$/, '') + '/' + id,
                 destroyInvite: (id) => @json(url('/director/profesores/invite')).replace(/\/$/, '') + '/' + id,
                 destroyStudent: (id) => @json(url('/director/students')).replace(/\/$/, '') + '/' + id,
@@ -413,10 +518,11 @@
             ];
             const gradeLabels = { 1: '1ro', 2: '2do', 3: '3ro', 4: '4to', 5: '5to', 6: '6to' };
             return {
-                panel: new URLSearchParams(location.search).get('panel') || 'teachers',
+                gradeMeta,
+                panel: new URLSearchParams(location.search).get('panel') || 'materias',
                 query: '',
-                counts: { teachers: 0, teachers_active: 0, teachers_pending: 0, students: 0, courses: 0 },
-                teachers: [], invites: [], students: [], courses: [], grades: [],
+                counts: { teachers: 0, teachers_active: 0, teachers_pending: 0, students: 0, courses: 0, materias: 0 },
+                teachers: [], invites: [], students: [], courses: [], materias: [], grades: [],
                 highlights: {},
                 selected: null,
                 selectedCourse: null,
@@ -437,15 +543,22 @@
                 aiDetail: '',
                 get people() { return [...this.invites, ...this.teachers]; },
                 get panelTitle() {
-                    return this.panel === 'teachers' ? 'Plantel docente' : this.panel === 'students' ? 'Alumnos' : 'Oferta por grado';
+                    return { teachers: 'Plantel docente', students: 'Alumnos', courses: 'Oferta por grado', materias: 'Catálogo de materias' }[this.panel] || 'Gestión';
                 },
                 get panelHint() {
-                    if (this.panel === 'courses') return 'Seis tarjetas, una por grado. Ábrelas para ver secciones, borrar una materia o dejar un curso huérfano listo para reasignar.';
-                    if (this.panel === 'teachers') return 'Si eliminas un profesor, sus cursos quedan huérfanos (sin docente) para reasignarlos. Arrastra una materia agrupada sobre el docente.';
-                    return 'Doble clic para editar. Usa seleccionar todo para borrar la nómina visible.';
+                    if (this.panel === 'materias') return 'Las materias son el catálogo. No se crean desde el profesor.';
+                    if (this.panel === 'courses') return 'Un curso es materia + grado + sección + profesor opcional. No se duplica si ya existe.';
+                    if (this.panel === 'teachers') return 'Invita al docente y asígnalo a cursos existentes. Si lo eliminas, los cursos quedan huérfanos.';
+                    return 'Matricula al alumno en uno o varios cursos del mismo grado.';
                 },
                 get createLabel() {
-                    return this.panel === 'teachers' ? 'Invitar profesor' : this.panel === 'students' ? 'Matricular alumno' : 'Crear curso';
+                    return { teachers: 'Invitar profesor', students: 'Matricular alumno', courses: 'Crear curso', materias: 'Nueva materia' }[this.panel];
+                },
+                get createTitle() {
+                    return { teachers: 'Nuevo profesor', students: 'Nuevo alumno', courses: 'Nuevo curso', materias: 'Nueva materia' }[this.panel];
+                },
+                get createAction() {
+                    return { teachers: 'Crear profesor', students: 'Matricular alumno', courses: 'Crear curso', materias: 'Crear materia' }[this.panel];
                 },
                 get filteredPeople() {
                     const q = this.query.toLowerCase();
@@ -459,9 +572,23 @@
                     const q = this.query.toLowerCase();
                     return this.courses.filter(p => JSON.stringify(p).toLowerCase().includes(q));
                 },
+                get filteredMaterias() {
+                    const q = this.query.toLowerCase();
+                    return this.materias.filter(p => JSON.stringify(p).toLowerCase().includes(q));
+                },
+                get studentCourseOptions() {
+                    const grade = this.form.grade || '';
+                    const subject = this.form.subject_filter || '';
+                    return this.courses.filter((course) => {
+                        if (grade && String(this.gradeNumber(course.grade)) !== String(this.gradeNumber(grade)) && course.grade !== grade) return false;
+                        if (subject && course.subject_name !== subject) return false;
+                        return true;
+                    });
+                },
                 get visibleRows() {
                     if (this.panel === 'teachers') return this.filteredPeople.map(p => ({ kind: p.kind, id: p.id }));
                     if (this.panel === 'students') return this.filteredStudents.map(p => ({ kind: 'student', id: p.id }));
+                    if (this.panel === 'materias') return this.filteredMaterias.map(p => ({ kind: 'materia', id: p.id }));
                     return this.filteredCourses.map(p => ({ kind: 'course', id: p.id }));
                 },
                 get allVisibleSelected() {
@@ -469,14 +596,15 @@
                     return rows.length > 0 && rows.every(row => this.isSelected(row.kind, row.id));
                 },
                 get emptyState() {
-                    if (this.panel === 'courses') return false;
                     if (this.panel === 'teachers') return this.filteredPeople.length === 0;
+                    if (this.panel === 'materias') return this.filteredMaterias.length === 0;
+                    if (this.panel === 'courses') return this.filteredCourses.length === 0;
                     return this.filteredStudents.length === 0;
                 },
                 get emptyCopy() { return this.query ? 'Nada coincide con esa búsqueda.' : 'Todavía no hay registros. Crea el primero o pídeselo a AulaSync.'; },
                 get assignableCourses() {
                     const taken = new Set((this.selected?.courses || []).map(c => c.id).concat(this.pendingTags));
-                    return this.courses.filter(c => !taken.has(c.id) && (!this.gradeFilter || c.grade === this.gradeFilter));
+                    return this.courses.filter(c => c.orphan && !taken.has(c.id) && (!this.gradeFilter || c.grade === this.gradeFilter));
                 },
                 get groupedDragCourses() {
                     return this.groupCourses(this.courses);
@@ -595,11 +723,12 @@
                 async bulkDelete() {
                     if (!this.selectedIds.length) return;
                     if (!confirm('¿Eliminar lo seleccionado? Los cursos de un profesor quedan huérfanos para reasignarlos.')) return;
-                    const payload = { teachers: [], invites: [], students: [], courses: [] };
+                    const payload = { teachers: [], invites: [], students: [], courses: [], materias: [] };
                     this.selectedIds.forEach((item) => {
                         if (item.kind === 'teacher') payload.teachers.push(item.id);
                         else if (item.kind === 'invite') payload.invites.push(item.id);
                         else if (item.kind === 'student') payload.students.push(item.id);
+                        else if (item.kind === 'materia') payload.materias.push(item.id);
                         else payload.courses.push(item.id);
                     });
                     const json = await this.api('POST', routes.bulkDestroy, payload);
@@ -638,6 +767,7 @@
                     this.invites = json.invites;
                     this.students = json.students;
                     this.courses = json.courses;
+                    this.materias = json.materias || [];
                     this.grades = json.grades;
                     if (this.selected) {
                         const next = this.people.find(p => p.kind === this.selected.kind && p.id === this.selected.id);
@@ -685,18 +815,50 @@
                     await this.refresh();
                 },
                 openCreate() {
-                    this.form = { name: '', email: '', subject_name: '', grade: '', section: '' };
+                    this.form = { name: '', email: '', subject_name: '', grade: '', section: 'A', materia_id: '', teacher_id: '', course_ids: [], subject_filter: '' };
                     this.creating = true;
+                },
+                toggleFormCourse(id, checked) {
+                    const n = Number(id);
+                    if (checked) {
+                        if (!this.form.course_ids.includes(n)) this.form.course_ids.push(n);
+                    } else {
+                        this.form.course_ids = this.form.course_ids.filter((x) => x !== n);
+                    }
                 },
                 async submitCreate() {
                     this.saving = true;
                     try {
-                        if (this.panel === 'teachers') await this.api('POST', routes.teachers, this.form);
-                        if (this.panel === 'students') await this.api('POST', routes.students, this.form);
-                        if (this.panel === 'courses') await this.api('POST', routes.courses, this.form);
+                        if (this.panel === 'materias') await this.api('POST', routes.materias, { name: this.form.name });
+                        if (this.panel === 'teachers') {
+                            await this.api('POST', routes.teachers, {
+                                name: this.form.name,
+                                email: this.form.email,
+                                course_ids: this.form.course_ids,
+                            });
+                        }
+                        if (this.panel === 'students') {
+                            await this.api('POST', routes.students, {
+                                name: this.form.name,
+                                grade: this.form.grade,
+                                course_ids: this.form.course_ids,
+                            });
+                        }
+                        if (this.panel === 'courses') {
+                            const raw = String(this.form.teacher_id || '');
+                            const payload = {
+                                materia_id: this.form.materia_id || null,
+                                subject_name: this.form.subject_name || null,
+                                grade: this.form.grade,
+                                section: this.form.section,
+                            };
+                            if (raw.startsWith('invite:')) payload.invite_id = Number(raw.slice(7));
+                            else if (raw) payload.teacher_id = Number(raw);
+                            await this.api('POST', routes.courses, payload);
+                        }
                         this.creating = false;
                         await this.refresh();
-                        this.showToast('Creado.');
+                        this.showToast('Listo.');
                     } finally { this.saving = false; }
                 },
                 startEdit(row, field) { this.editKey = 's' + row.id + '.' + field; this.editValue = row[field] || ''; },
@@ -742,6 +904,7 @@
                     if (kind === 'teacher') url = routes.destroyTeacher(row.id);
                     else if (kind === 'invite') url = routes.destroyInvite(row.id);
                     else if (kind === 'student') url = routes.destroyStudent(row.id);
+                    else if (kind === 'materia') url = routes.destroyMateria(row.id);
                     else url = routes.destroyCourse(row.id);
                     await this.api('DELETE', url);
                     await this.refresh();

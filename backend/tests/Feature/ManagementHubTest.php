@@ -25,7 +25,7 @@ class ManagementHubTest extends TestCase
             ->assertSee('Resumen')
             ->assertSee('Profesores')
             ->assertSee('Alumnos')
-            ->assertSee('1er grado')
+            ->assertSee('Materias')
             ->assertSee('Seleccionar todo');
     }
 
@@ -80,7 +80,7 @@ class ManagementHubTest extends TestCase
             'colegio_id' => $colegio->id,
             'name' => 'Carlos Baute',
         ]);
-        $this->assertSame(2, Course::where('colegio_id', $colegio->id)->where('subject_name', 'Música')->count());
+        $this->assertSame(0, Course::where('colegio_id', $colegio->id)->where('subject_name', 'Música')->count());
 
         $this->actingAs($director)
             ->postJson(route('director.gestion.students.store'), [
@@ -89,6 +89,58 @@ class ManagementHubTest extends TestCase
             ])
             ->assertOk()
             ->assertJsonPath('student.name', 'Marta Gomez');
+    }
+
+    public function test_catalog_course_teacher_and_student_enrollment_flow(): void
+    {
+        [$director, $colegio] = $this->directorContext();
+
+        $this->actingAs($director)
+            ->postJson(route('director.gestion.materias.store'), ['name' => 'Biología'])
+            ->assertOk()
+            ->assertJsonPath('materia.name', 'Biología');
+
+        $this->actingAs($director)
+            ->postJson(route('director.gestion.courses.store'), [
+                'subject_name' => 'Biología',
+                'grade' => '3ro',
+                'section' => 'A',
+            ])
+            ->assertOk();
+
+        $this->actingAs($director)
+            ->postJson(route('director.gestion.courses.store'), [
+                'subject_name' => 'Biología',
+                'grade' => '3ro',
+                'section' => 'A',
+            ])
+            ->assertOk();
+
+        $this->assertSame(1, Course::where('colegio_id', $colegio->id)->where('subject_name', 'Biología')->count());
+        $this->assertSame(1, \App\Models\Materia::where('colegio_id', $colegio->id)->where('name', 'Biología')->count());
+
+        $course = Course::where('colegio_id', $colegio->id)->first();
+        $invite = $this->actingAs($director)
+            ->postJson(route('director.gestion.teachers.store'), [
+                'name' => 'Ana Rodríguez',
+                'course_ids' => [$course->id],
+            ])
+            ->assertOk()
+            ->json();
+
+        $this->assertTrue($invite['success']);
+        $this->assertSame($invite['invite']['id'], $course->fresh()->teacher_invite_id);
+
+        $this->actingAs($director)
+            ->postJson(route('director.gestion.students.store'), [
+                'name' => 'Luis Guerra',
+                'grade' => '3ro',
+                'course_ids' => [$course->id],
+            ])
+            ->assertOk()
+            ->assertJsonPath('student.name', 'Luis Guerra');
+
+        $this->assertTrue($course->fresh()->students()->where('name', 'Luis Guerra')->exists());
     }
 
     public function test_assign_courses_to_teacher_and_update_student(): void
