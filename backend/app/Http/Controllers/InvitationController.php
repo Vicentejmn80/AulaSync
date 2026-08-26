@@ -14,12 +14,15 @@ class InvitationController extends Controller
 {
     public function __construct(private InvitationService $invitations) {}
 
-    public function show(string $token): View
+    public function show(Request $request, ?string $token = null): View
     {
-        $invitation = Invitation::query()->where('token', $token)->first();
+        $token = $token ?: (string) $request->query('token', '');
+        $invitation = $token !== ''
+            ? Invitation::query()->with(['colegio', 'teacherInvite'])->where('token', $token)->first()
+            : null;
 
         if (! $invitation || ! $invitation->isPending()) {
-            return view('invitations.expired');
+            return view('invitations.expired', compact('invitation'));
         }
 
         return view('invitations.show', compact('invitation'));
@@ -37,7 +40,7 @@ class InvitationController extends Controller
 
         if (! $invitation->isPending()) {
             return redirect()
-                ->route('invitations.show', $invitation->token)
+                ->route('onboarding.teacher', ['token' => $invitation->token])
                 ->with('error', 'Esta invitación ya no es válida.');
         }
 
@@ -55,7 +58,9 @@ class InvitationController extends Controller
                 ->with('success', 'Tu cuenta quedó lista. Completa tu perfil para entrar al panel.');
         }
 
-        return redirect($this->invitations->dashboardUrl($user))
-            ->with('success', 'Tu cuenta quedó lista. Desde ahora entra por Iniciar sesión.');
+        $hub = $this->invitations->dashboardUrl($user);
+
+        return redirect($hub)
+            ->with('success', '¡Cuenta activada exitosamente! Ya puedes iniciar sesión con tu email y contraseña.');
     }
 }

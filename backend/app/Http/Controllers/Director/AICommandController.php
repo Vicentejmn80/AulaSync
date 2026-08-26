@@ -992,13 +992,29 @@ class AICommandController extends Controller
 
         /** @var Collection<int,Course> $courses */
         $courses = $result['courses'];
+        $invitation = $result['invitation'] ?? null;
+        $link = $invitation?->acceptUrl();
+        $mailSent = (bool) ($result['mail_sent'] ?? false);
+        $message = "Profesor {$invite->name} creado exitosamente. Código {$invite->invite_code}.";
+        if ($mailSent && $invite->email) {
+            $message .= " Se envió un email de invitación a {$invite->email}.";
+        }
+        if ($link) {
+            $message .= " Link: {$link}";
+        }
+        if (! empty($result['invitation_warning'])) {
+            $message .= ' '.$result['invitation_warning'];
+        }
 
         return [
-            'message' => "Profesor {$invite->name} invitado correctamente. Código DOC-: {$invite->invite_code}.",
+            'message' => $message,
             'data' => [
                 'invite_code' => $invite->invite_code,
                 'teacher_name' => $invite->name,
                 'invite_id' => $invite->id,
+                'email' => $invite->email,
+                'invitation_link' => $link,
+                'mail_sent' => $mailSent,
                 'status' => 'invitado',
                 'subject_name' => $courses->first()?->subject_name,
                 'grades' => $courses->pluck('grade')->unique()->values()->all(),

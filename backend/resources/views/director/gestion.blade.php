@@ -234,6 +234,7 @@
                                     </div>
                                 </td>
                                 <td class="text-right whitespace-nowrap">
+                                    <button class="hub-btn hub-btn-ghost !py-1.5 !text-xs" x-show="row.kind === 'invite'" @click="openShare(row)"><i class="fa-solid fa-share-nodes"></i> Compartir</button>
                                     <button class="hub-btn hub-btn-ghost !py-1.5 !text-xs" @click="select(row)"><i class="fa-solid fa-link"></i> Asignar</button>
                                     <button class="hub-btn hub-btn-danger !py-1.5 !text-xs" @click="queueDelete(row)"><i class="fa-solid fa-trash-can"></i></button>
                                 </td>
@@ -347,6 +348,16 @@
                 </div>
                 <button class="hub-btn hub-btn-ghost !px-3" @click="selected = null"><i class="fa-solid fa-xmark"></i></button>
             </div>
+            <div class="mb-5 rounded-2xl border p-4" style="border-color:var(--nova-glass-border)" x-show="selected?.kind === 'invite'">
+                <p class="mb-2 text-xs font-bold uppercase tracking-wide text-slate-400">Invitación</p>
+                <p class="mb-1 text-sm font-semibold" x-text="'Código: ' + (selected?.invite_code || '')"></p>
+                <p class="mb-3 break-all text-xs text-slate-500" x-text="selected?.invitation_link || 'Sin link. Agrega un correo y reenvía.'"></p>
+                <div class="flex flex-wrap gap-2">
+                    <button type="button" class="hub-btn hub-btn-ghost !py-1.5 !text-xs" @click="copyText(selected?.invite_code, 'Código copiado.')">Copiar código</button>
+                    <button type="button" class="hub-btn hub-btn-ghost !py-1.5 !text-xs" x-show="selected?.invitation_link" @click="copyText(selected?.invitation_link, 'Link copiado.')">Copiar link</button>
+                    <button type="button" class="hub-btn hub-btn-solid !py-1.5 !text-xs" x-show="selected?.email" @click="resendInvite(selected)">Reenviar email</button>
+                </div>
+            </div>
             <div class="mb-5">
                 <p class="mb-2 text-xs font-bold uppercase tracking-wide text-slate-400">Cursos que imparte</p>
                 <div class="flex flex-wrap gap-2">
@@ -422,7 +433,8 @@
                 <template x-if="panel === 'teachers'">
                     <div class="space-y-3">
                         <input class="hub-input" x-model="form.name" required placeholder="Nombre del docente">
-                        <input class="hub-input" x-model="form.email" type="email" placeholder="Correo (opcional)">
+                        <input class="hub-input" x-model="form.email" type="email" placeholder="Correo (recomendado para enviar el enlace)">
+                        <p class="text-xs text-slate-400">Con el correo se envía el link de activación. Sin correo, comparte el código DOC-.</p>
                         <p class="text-xs font-bold uppercase tracking-wide text-slate-400">Asignar cursos existentes</p>
                         <div class="max-h-56 space-y-2 overflow-y-auto rounded-2xl border p-2" style="border-color:var(--nova-glass-border)">
                             <p class="px-1 py-6 text-center text-sm text-slate-400" x-show="!courses.length">Primero crea la oferta de cursos.</p>
@@ -508,6 +520,32 @@
         </div>
     </div>
 
+    {{-- Share invite --}}
+    <div x-show="inviteShare" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 px-4 py-6" @keydown.escape.window="inviteShare = null">
+        <div class="w-full max-w-lg rounded-3xl p-6 shadow-2xl" style="background:var(--bg-card);color:var(--text-primary)">
+            <p class="text-xs font-bold uppercase tracking-widest text-indigo-500">Profesor creado</p>
+            <h3 class="mt-1 text-xl font-extrabold" x-text="(inviteShare?.name || '') + ' listo'"></h3>
+            <p class="mt-2 text-sm text-slate-500" x-show="inviteShare?.email" x-text="'Se envió un email de invitación a ' + inviteShare.email"></p>
+            <p class="mt-2 text-sm text-slate-500" x-show="!inviteShare?.email">Sin correo: comparte el código para que active su cuenta.</p>
+            <div class="mt-4 space-y-3 rounded-2xl border p-4" style="border-color:var(--nova-glass-border)">
+                <div>
+                    <p class="text-xs font-bold uppercase tracking-wide text-slate-400">Código de invitación</p>
+                    <p class="mt-1 font-mono text-lg font-extrabold" x-text="inviteShare?.invite_code"></p>
+                </div>
+                <div x-show="inviteShare?.invitation_link">
+                    <p class="text-xs font-bold uppercase tracking-wide text-slate-400">Link de invitación</p>
+                    <p class="mt-1 break-all text-sm text-indigo-600" x-text="inviteShare?.invitation_link"></p>
+                </div>
+            </div>
+            <div class="mt-5 flex flex-wrap gap-2">
+                <button type="button" class="hub-btn hub-btn-ghost" @click="copyText(inviteShare?.invitation_link || inviteShare?.invite_code, 'Copiado.')">Copiar link</button>
+                <button type="button" class="hub-btn hub-btn-ghost" @click="copyText(inviteShare?.invite_code, 'Código copiado.')">Copiar código</button>
+                <button type="button" class="hub-btn hub-btn-solid" x-show="inviteShare?.email" @click="resendInvite(inviteShare)">Reenviar email</button>
+                <button type="button" class="hub-btn hub-btn-ghost ml-auto" @click="inviteShare = null; openPanel('teachers')">Menú principal</button>
+            </div>
+        </div>
+    </div>
+
     <div x-show="toast" x-cloak class="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-2xl bg-slate-900 px-4 py-3 text-sm text-white shadow-xl">
         <span x-text="toast?.message"></span>
         <button class="ml-3 font-bold text-cyan-300" x-show="toast?.undo" @click="undoDelete()">Deshacer</button>
@@ -519,6 +557,7 @@
             const routes = {
                 snapshot: @json(route('director.gestion.snapshot')),
                 teachers: @json(route('director.gestion.teachers.store')),
+                resendInvite: (id) => @json(url('/director/gestion/teachers')).replace(/\/$/, '') + '/' + id + '/resend-invitation',
                 students: @json(route('director.gestion.students.store')),
                 student: (id) => @json(url('/director/gestion/students')).replace(/\/$/, '') + '/' + id,
                 courses: @json(route('director.gestion.courses.store')),
@@ -557,6 +596,7 @@
                 gradeFilter: '',
                 expandedGrade: null,
                 creating: false,
+                inviteShare: null,
                 saving: false,
                 form: {},
                 editKey: '',
@@ -858,11 +898,13 @@
                     try {
                         if (this.panel === 'materias') await this.api('POST', routes.materias, { name: this.form.name });
                         if (this.panel === 'teachers') {
-                            await this.api('POST', routes.teachers, {
+                            const json = await this.api('POST', routes.teachers, {
                                 name: this.form.name,
                                 email: this.form.email,
                                 course_ids: this.form.course_ids,
                             });
+                            this.inviteShare = json.invite || null;
+                            this.showToast(json.message || 'Profesor creado.');
                         }
                         if (this.panel === 'students') {
                             await this.api('POST', routes.students, {
@@ -885,7 +927,7 @@
                         }
                         this.creating = false;
                         await this.refresh();
-                        this.showToast('Listo.');
+                        if (!this.inviteShare) this.showToast('Listo.');
                     } finally { this.saving = false; }
                 },
                 startEdit(row, field) { this.editKey = 's' + row.id + '.' + field; this.editValue = row[field] || ''; },
@@ -941,6 +983,28 @@
                 showToast(message) {
                     this.toast = { message, undo: false };
                     setTimeout(() => { if (this.toast && !this.toast.undo) this.toast = null; }, 2800);
+                },
+                openShare(row) {
+                    this.inviteShare = row;
+                },
+                async copyText(value, label) {
+                    if (!value) return;
+                    try {
+                        await navigator.clipboard.writeText(value);
+                        this.showToast(label || 'Copiado.');
+                    } catch {
+                        this.showToast('No se pudo copiar.');
+                    }
+                },
+                async resendInvite(row) {
+                    if (!row?.id) return;
+                    const json = await this.api('POST', routes.resendInvite(row.id), {});
+                    if (json.invite) {
+                        this.inviteShare = json.invite;
+                        if (this.selected?.kind === 'invite' && this.selected.id === row.id) this.selected = json.invite;
+                    }
+                    await this.refresh();
+                    this.showToast(json.message || 'Email reenviado.');
                 },
                 async api(method, url, body) {
                     const headers = {

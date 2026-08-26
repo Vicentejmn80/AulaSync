@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class TeacherInvite extends Model
 {
@@ -53,6 +54,25 @@ class TeacherInvite extends Model
     public function courses(): HasMany
     {
         return $this->hasMany(Course::class, 'teacher_invite_id');
+    }
+
+    public function invitations(): HasMany
+    {
+        return $this->hasMany(Invitation::class, 'teacher_invite_id');
+    }
+
+    public function latestInvitation(): HasOne
+    {
+        return $this->hasOne(Invitation::class, 'teacher_invite_id')->latestOfMany();
+    }
+
+    public function pendingMagicInvitation(): ?Invitation
+    {
+        $latest = $this->relationLoaded('latestInvitation')
+            ? $this->latestInvitation
+            : $this->latestInvitation()->first();
+
+        return $latest && $latest->isPending() ? $latest : null;
     }
 
     public function isClaimed(): bool

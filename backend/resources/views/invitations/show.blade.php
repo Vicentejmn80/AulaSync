@@ -39,16 +39,30 @@
             background: #fff;
         }
         input[readonly] { background: #f8f5fb; color: #4c1d95; }
-        button {
-            width: 100%;
+        .hint { font-size: .75rem; color: #7c6b8a; margin: -8px 0 12px; }
+        .actions { display:flex; gap:8px; margin-top: 6px; }
+        button, .ghost {
+            flex: 1;
             border: 0;
             border-radius: 12px;
             padding: 12px;
             font-weight: 800;
-            color: #fff;
+            font-size: .9rem;
+            text-align: center;
+            text-decoration: none;
             cursor: pointer;
+        }
+        button {
+            color: #fff;
             background: linear-gradient(135deg, #8b5cf6, #d946ef);
-            margin-top: 6px;
+        }
+        .ghost {
+            color: #6B4D87;
+            background: #f8f5fb;
+            border: 1px solid #eddcf7;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
         }
         .error { background:#fef2f2; color:#991b1b; border:1px solid #fecaca; padding:10px 12px; border-radius:12px; margin-bottom:12px; font-size:.9rem; }
         .badge { display:inline-block; background:#ede9fe; color:#5b21b6; font-size:.75rem; font-weight:800; padding:4px 8px; border-radius:999px; margin-bottom:10px; }
@@ -57,31 +71,44 @@
 <body>
     <div class="card">
         <span class="badge">{{ $invitation->roleLabel() }}</span>
-        <h1>Activa tu cuenta</h1>
-        <p>
-            Completa tu nombre y contraseña. El correo ya está asignado a esta invitación
-            @if($invitation->colegio)
-                de <strong>{{ $invitation->colegio->name }}</strong>
+        <h1>
+            @if($invitation->role === \App\Models\Invitation::ROLE_DOCENTE)
+                Activa tu cuenta de profesor
+            @else
+                Activa tu cuenta
             @endif
-            y vence el {{ $invitation->expires_at?->format('d/m/Y H:i') }}.
+        </h1>
+        <p>
+            Bienvenido a AulaSync. Completa tu registro para comenzar
+            @if($invitation->colegio)
+                en <strong>{{ $invitation->colegio->name }}</strong>
+            @endif
+            . El enlace vence el {{ $invitation->expires_at?->format('d/m/Y H:i') }}.
         </p>
 
         @if ($errors->any())
             <div class="error">{{ $errors->first() }}</div>
         @endif
+        @if (session('error'))
+            <div class="error">{{ session('error') }}</div>
+        @endif
 
-        <form method="POST" action="{{ url('/accept-invitation') }}">
+        <form method="POST" action="{{ $invitation->role === \App\Models\Invitation::ROLE_DOCENTE ? route('onboarding.teacher.store') : url('/accept-invitation') }}">
             @csrf
             <input type="hidden" name="token" value="{{ $invitation->token }}">
-            <label>Correo</label>
+            <label>Nombre</label>
+            <input id="name" name="name" value="{{ old('name', $invitation->name) }}" required maxlength="255" autocomplete="name" @if($invitation->name) readonly @endif>
+            <label>Email</label>
             <input type="email" value="{{ $invitation->email }}" readonly>
-            <label for="name">Nombre completo</label>
-            <input id="name" name="name" value="{{ old('name') }}" required maxlength="255" autocomplete="name">
             <label for="password">Contraseña</label>
             <input id="password" type="password" name="password" required minlength="8" autocomplete="new-password">
+            <p class="hint">La contraseña debe tener al menos 8 caracteres.</p>
             <label for="password_confirmation">Confirmar contraseña</label>
             <input id="password_confirmation" type="password" name="password_confirmation" required minlength="8" autocomplete="new-password">
-            <button type="submit">Crear cuenta y entrar</button>
+            <div class="actions">
+                <a class="ghost" href="{{ url('/login') }}">Cancelar</a>
+                <button type="submit">Activar cuenta</button>
+            </div>
         </form>
     </div>
 </body>

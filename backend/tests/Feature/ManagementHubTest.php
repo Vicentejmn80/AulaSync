@@ -4,10 +4,12 @@ namespace Tests\Feature;
 
 use App\Models\Colegio;
 use App\Models\Course;
+use App\Models\Invitation;
 use App\Models\Student;
 use App\Models\TeacherInvite;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Mail;
 use Tests\TestCase;
 
 class ManagementHubTest extends TestCase
@@ -81,6 +83,7 @@ class ManagementHubTest extends TestCase
             'name' => 'Carlos Baute',
         ]);
         $this->assertSame(0, Course::where('colegio_id', $colegio->id)->where('subject_name', 'Música')->count());
+        $this->assertSame(0, Invitation::query()->count());
 
         $this->actingAs($director)
             ->postJson(route('director.gestion.students.store'), [

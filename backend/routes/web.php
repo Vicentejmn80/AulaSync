@@ -58,6 +58,12 @@ Route::get('/accept-invitation/{token}', [InvitationController::class, 'show'])
     ->name('invitations.show');
 Route::post('/accept-invitation', [InvitationController::class, 'accept'])
     ->name('invitations.accept');
+Route::get('/onboarding/profesor', [InvitationController::class, 'show'])
+    ->name('onboarding.teacher');
+Route::get('/onboarding/teacher', [InvitationController::class, 'show']);
+Route::post('/onboarding/profesor', [InvitationController::class, 'accept'])
+    ->name('onboarding.teacher.store');
+Route::post('/onboarding/teacher', [InvitationController::class, 'accept']);
 
 Route::get('/e/{token}', [EvaluationController::class, 'take'])->name('evaluations.take');
 Route::post('/e/{token}', [EvaluationController::class, 'submitTake'])->name('evaluations.take.submit');
@@ -105,6 +111,8 @@ Route::middleware('auth')->group(function () {
                     ->name('gestion.materias.destroy');
                 Route::post('/gestion/teachers', [DirectorManagementHubController::class, 'storeTeacher'])
                     ->name('gestion.teachers.store');
+                Route::post('/gestion/teachers/{invite}/resend-invitation', [DirectorManagementHubController::class, 'resendInvitation'])
+                    ->name('gestion.teachers.resend-invitation');
                 Route::post('/gestion/students', [DirectorManagementHubController::class, 'storeStudent'])
                     ->name('gestion.students.store');
                 Route::patch('/gestion/students/{student}', [DirectorManagementHubController::class, 'updateStudent'])

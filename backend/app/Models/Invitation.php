@@ -4,7 +4,6 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Support\Str;
 
 class Invitation extends Model
 {
@@ -14,9 +13,11 @@ class Invitation extends Model
 
     protected $fillable = [
         'email',
+        'name',
         'role',
         'colegio_id',
         'student_id',
+        'teacher_invite_id',
         'invited_by',
         'token',
         'expires_at',
@@ -45,7 +46,7 @@ class Invitation extends Model
     public static function makeToken(): string
     {
         do {
-            $token = Str::random(40);
+            $token = bin2hex(random_bytes(32));
         } while (static::query()->where('token', $token)->exists());
 
         return $token;
@@ -59,6 +60,11 @@ class Invitation extends Model
     public function student(): BelongsTo
     {
         return $this->belongsTo(Student::class);
+    }
+
+    public function teacherInvite(): BelongsTo
+    {
+        return $this->belongsTo(TeacherInvite::class, 'teacher_invite_id');
     }
 
     public function inviter(): BelongsTo
@@ -78,6 +84,10 @@ class Invitation extends Model
 
     public function acceptUrl(): string
     {
+        if ($this->role === self::ROLE_DOCENTE) {
+            return url('/onboarding/profesor?token='.$this->token);
+        }
+
         return url('/accept-invitation/'.$this->token);
     }
 

@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Helpers\InviteCodeHelper;
 use App\Models\Course;
+use App\Models\Invitation;
 use App\Models\Materia;
 use App\Models\Student;
 use App\Models\TeacherInvite;
@@ -11,6 +12,7 @@ use App\Models\User;
 use App\Support\GradeLabel;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 
 class DirectorActionService
@@ -18,6 +20,7 @@ class DirectorActionService
     public function __construct(
         private StudentEnrollmentService $enrollmentService,
         private PersonNameMatcher $nameMatcher,
+        private InvitationService $invitations,
     ) {}
 
     /**
@@ -39,7 +42,7 @@ class DirectorActionService
             ]);
         }
 
-        return DB::transaction(function () use ($director, $payload, $colegioId) {
+        $result = DB::transaction(function () use ($director, $payload, $colegioId) {
             $sanitizer = app(PersonNameSanitizer::class);
             $rawName = trim((string) $payload['teacher_name']);
             $teacherName = $sanitizer->displayName($rawName) ?: $rawName;
@@ -55,17 +58,22 @@ class DirectorActionService
                 ->latest('id')
                 ->first();
 
+            $email = isset($payload['email']) ? trim((string) $payload['email']) : '';
+            $email = $email !== '' ? mb_strtolower($email) : null;
+
             if (! $invite) {
                 $invite = TeacherInvite::create([
                     'colegio_id' => $colegioId,
                     'created_by' => $director->id,
                     'name' => $teacherName,
-                    'email' => isset($payload['email']) ? trim((string) $payload['email']) : null,
+                    'email' => $email,
                     'invite_code' => InviteCodeHelper::generateTeacherInvite(),
                     'expires_at' => ! empty($payload['expires_in_days'])
                         ? now()->addDays((int) $payload['expires_in_days'])
                         : now()->addDays(30),
                 ]);
+            } elseif ($email) {
+                $invite->update(['email' => $email]);
             }
 
             $courseIds = collect($invite->course_ids ?? [])
@@ -168,6 +176,64 @@ class DirectorActionService
                 'created_courses_count' => count($createdCourses),
             ];
         });
+
+        return $this->issueTeacherInvitationIfNeeded($director, $result);
+    }
+
+    /**
+     * @param  array{invite:TeacherInvite,courses:Collection,created_courses_count:int}  $result
+     * @return array{invite:TeacherInvite,courses:Collection,created_courses_count:int,invitation?:Invitation|null,mail_sent?:bool,invitation_warning?:string}
+     */
+    private function issueTeacherInvitationIfNeeded(User $director, array $result): array
+    {
+        $invite = $result['invite'];
+        $email = trim((string) ($invite->email ?? ''));
+        if ($email === '') {
+            $result['invitation'] = null;
+            $result['mail_sent'] = false;
+
+            return $result;
+        }
+
+        $pending = Invitation::query()
+            ->where('teacher_invite_id', $invite->id)
+            ->whereNull('accepted_at')
+            ->where('expires_at', '>', now())
+            ->latest('id')
+            ->first();
+
+        if ($pending) {
+            $this->invitations->notify($pending);
+            $result['invitation'] = $pending;
+            $result['mail_sent'] = true;
+
+            return $result;
+        }
+
+        try {
+            $invitation = $this->invitations->issue([
+                'email' => $email,
+                'name' => $invite->display_name ?: $invite->name,
+                'role' => Invitation::ROLE_DOCENTE,
+                'colegio_id' => $invite->colegio_id,
+                'teacher_invite_id' => $invite->id,
+                'expires_in_days' => 7,
+            ], $director);
+            $result['invitation'] = $invitation;
+            $result['mail_sent'] = true;
+        } catch (ValidationException $e) {
+            $warning = collect($e->errors())->flatten()->first() ?: 'No se pudo enviar el enlace de activación.';
+            Log::warning('teacher_invite.magic_link_failed', [
+                'invite_id' => $invite->id,
+                'email' => $email,
+                'error' => $warning,
+            ]);
+            $result['invitation'] = null;
+            $result['mail_sent'] = false;
+            $result['invitation_warning'] = $warning;
+        }
+
+        return $result;
     }
 
     /**

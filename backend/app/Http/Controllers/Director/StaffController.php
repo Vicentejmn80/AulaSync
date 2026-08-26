@@ -131,8 +131,31 @@ class StaffController extends Controller
             ]);
         }
 
-        return redirect()->route('director.profesores')
-            ->with('success', "Invitación lista. Comparte el código {$invite->invite_code} con {$invite->display_name}. El curso y los alumnos que prepares quedan vinculados a ese código.");
+        $invitationUrl = null;
+        if (trim((string) $invite->email) !== '') {
+            try {
+                $invitation = $this->invitations->issue([
+                    'email' => $invite->email,
+                    'name' => $invite->display_name ?: $invite->name,
+                    'role' => Invitation::ROLE_DOCENTE,
+                    'colegio_id' => $director->colegio_id,
+                    'teacher_invite_id' => $invite->id,
+                    'expires_in_days' => 7,
+                ], $director);
+                $invitationUrl = $invitation->acceptUrl();
+            } catch (\Illuminate\Validation\ValidationException $e) {
+                $invitationUrl = null;
+            }
+        }
+
+        $redirect = redirect()->route('director.profesores')
+            ->with('success', $invitationUrl
+                ? "Profesor {$invite->display_name} creado. Código {$invite->invite_code}. Se envió el email de activación."
+                : "Invitación lista. Comparte el código {$invite->invite_code} con {$invite->display_name}. El curso y los alumnos que prepares quedan vinculados a ese código.");
+
+        return $invitationUrl
+            ? $redirect->with('invitation_url', $invitationUrl)
+            : $redirect;
     }
 
     public function inviteLink(Request $request): RedirectResponse
@@ -148,6 +171,7 @@ class StaffController extends Controller
             'email' => $data['email'],
             'role' => Invitation::ROLE_DOCENTE,
             'colegio_id' => $director->colegio_id,
+            'expires_in_days' => 7,
         ], $director);
 
         return redirect()->route('director.profesores')

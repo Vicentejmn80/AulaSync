@@ -10,6 +10,7 @@ use App\Models\Student;
 use App\Models\TeacherInvite;
 use App\Models\User;
 use App\Services\DirectorActionService;
+use App\Services\InvitationService;
 use App\Services\PersonNameSanitizer;
 use App\Services\StudentEnrollmentService;
 use App\Support\GradeLabel;
@@ -23,6 +24,7 @@ class ManagementHubController extends Controller
         private DirectorActionService $actions,
         private StudentEnrollmentService $enrollment,
         private PersonNameSanitizer $names,
+        private InvitationService $invitations,
     ) {}
 
     public function index(): View
@@ -54,7 +56,7 @@ class ManagementHubController extends Controller
             })
             ->with(['courses' => function ($query) {
                 $query->withCount('students')->orderBy('subject_name')->orderBy('grade');
-            }])
+            }, 'latestInvitation'])
             ->latest('id')
             ->get()
             ->map(fn (TeacherInvite $invite) => $this->serializeInvite($invite));
@@ -132,10 +134,44 @@ class ManagementHubController extends Controller
             $this->assignCoursesToInvite($request->user()->colegio_id, $invite, $courseIds->all());
         }
 
+        $invite = $invite->fresh(['courses', 'latestInvitation']);
+        $serialized = $this->serializeInvite($invite);
+        $mailNote = $serialized['invitation_link']
+            ? " Se ha enviado un email de invitación a {$invite->email}."
+            : ($invite->email
+                ? ' '.($result['invitation_warning'] ?? 'No se pudo generar el enlace de activación.')
+                : ' Comparte el código '.$invite->invite_code.' para que active su cuenta.');
+
         return response()->json([
             'success' => true,
-            'message' => "Invitación lista para {$invite->display_name}. Código {$invite->invite_code}.",
-            'invite' => $this->serializeInvite($invite->fresh(['courses'])),
+            'message' => "Profesor {$invite->display_name} creado exitosamente.{$mailNote}",
+            'details' => [
+                'name' => $invite->display_name,
+                'email' => $invite->email,
+                'invitation_code' => $invite->invite_code,
+                'invitation_link' => $serialized['invitation_link'],
+                'cursos' => $serialized['courses'],
+            ],
+            'invite' => $serialized,
+            'buttons' => [
+                ['id' => 'resend_invitation', 'label' => 'Reenviar email', 'color' => 'blue'],
+                ['id' => 'copy_link', 'label' => 'Copiar link', 'color' => 'green'],
+                ['id' => 'menu_main', 'label' => 'Menú principal', 'color' => 'gray'],
+            ],
+        ]);
+    }
+
+    public function resendInvitation(Request $request, TeacherInvite $invite): JsonResponse
+    {
+        abort_unless((int) $invite->colegio_id === (int) $request->user()->colegio_id, 404);
+
+        $invitation = $this->invitations->resendForTeacherInvite($invite, $request->user());
+
+        return response()->json([
+            'success' => true,
+            'message' => "Email reenviado a {$invite->email}.",
+            'invitation_link' => $invitation->acceptUrl(),
+            'invite' => $this->serializeInvite($invite->fresh(['courses', 'latestInvitation'])),
         ]);
     }
 
@@ -572,12 +608,18 @@ class ManagementHubController extends Controller
             ? $invite->courses
             : Course::query()->where('teacher_invite_id', $invite->id)->withCount('students')->get();
 
+        $magic = $invite->pendingMagicInvitation();
+
         return [
             'id' => $invite->id,
             'kind' => 'invite',
             'name' => $invite->display_name ?? $invite->name,
             'email' => $invite->email,
             'invite_code' => $invite->invite_code,
+            'invitation_code' => $invite->invite_code,
+            'invitation_link' => $magic?->acceptUrl(),
+            'invitation_expires_at' => $magic?->expires_at?->toIso8601String(),
+            'mail_sent' => $magic !== null,
             'status' => 'pendiente',
             'courses' => $courses->map(fn (Course $course) => $this->courseChip($course))->values()->all(),
         ];

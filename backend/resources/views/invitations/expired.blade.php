@@ -13,7 +13,13 @@
 <body>
     <div class="card">
         <h1>Este enlace ya no sirve</h1>
-        <p>La invitación no existe, ya fue usada o venció (valen 48 horas). Pide un enlace nuevo a quien te invitó e inicia sesión después en /login.</p>
+        <p>
+            @if($invitation?->role === \App\Models\Invitation::ROLE_DOCENTE)
+                La invitación no existe, ya fue usada o venció (valen 7 días). Pide un enlace nuevo a la dirección de tu colegio e inicia sesión después en /login.
+            @else
+                La invitación no existe, ya fue usada o venció (valen 48 horas). Pide un enlace nuevo a quien te invitó e inicia sesión después en /login.
+            @endif
+        </p>
         <p><a href="{{ url('/login') }}">Ir a iniciar sesión</a></p>
     </div>
 </body>
