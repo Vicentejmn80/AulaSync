@@ -11,6 +11,7 @@ class DirectorAIInterpreterService
     public function __construct(
         private SchoolRosterContextService $rosterContext,
         private DirectorUnifiedAgentService $unifiedAgent,
+        private DirectorIntentExtractorService $intentExtractor,
     ) {}
 
     /**
@@ -86,6 +87,15 @@ class DirectorAIInterpreterService
 
             $content = trim((string) ($message['content'] ?? ''));
             if ($actions === []) {
+                $local = $this->extractLocalIntentions($text);
+                if ($local !== []) {
+                    return [
+                        'actions' => $local,
+                        'message' => $content !== '' ? $content : null,
+                        'clarification' => null,
+                    ];
+                }
+
                 return [
                     'actions' => [],
                     'message' => $content !== '' ? $content : null,
@@ -104,7 +114,11 @@ class DirectorAIInterpreterService
                 'message' => $e->getMessage(),
             ]);
 
-            return null;
+            $local = $this->extractLocalIntentions($text);
+
+            return $local !== []
+                ? ['actions' => $local, 'message' => null, 'clarification' => null]
+                : null;
         }
     }
 
@@ -120,6 +134,32 @@ class DirectorAIInterpreterService
         $key = trim((string) config('services.openai.key'));
 
         return $key !== '' && ! str_contains($key, 'your_openai');
+    }
+
+    /**
+     * Fallback determinista cuando el LLM no devuelve tool_calls o falla.
+     * Mapea los nombres de intención del extractor local al catálogo unificado.
+     *
+     * @return array<int,array{intent:string,data:array<string,mixed>}>
+     */
+    private function extractLocalIntentions(string $text): array
+    {
+        $actions = $this->intentExtractor->extractMultipleIntentions($text);
+
+        return collect($actions)->map(function (array $action) {
+            $intent = $action['intent'];
+            if ($intent === 'enroll_students') {
+                $intent = 'enroll_students_course';
+            }
+            if (! in_array($intent, $this->allowedIntents(), true)) {
+                return null;
+            }
+
+            return [
+                'intent' => $intent,
+                'data' => $this->normalizeArguments($intent, $action['data']),
+            ];
+        })->filter()->values()->all();
     }
 
     private function systemPrompt(User $director, array $memory): string

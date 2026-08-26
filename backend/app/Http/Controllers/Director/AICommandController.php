@@ -15,13 +15,15 @@ use App\Models\User;
 use App\Services\DirectorActionService;
 use App\Services\DirectorAIInterpreterService;
 use App\Services\DirectorAnalyticsQueryService;
+use App\Services\DirectorCommandFocusService;
 use App\Services\DirectorConfirmationManager;
 use App\Services\DirectorConversationContextService;
 use App\Services\DirectorDataAgentService;
-use App\Services\DirectorCommandFocusService;
+use App\Services\DirectorIntentExtractorService;
 use App\Services\DirectorUnifiedAgentService;
 use App\Services\PersonNameMatcher;
 use App\Services\PersonNameSanitizer;
+use App\Services\ProductTelemetry;
 use App\Services\SpeechToTextService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -34,10 +36,15 @@ use Illuminate\Validation\ValidationException;
 class AICommandController extends Controller
 {
     private const PENDING_SESSION_KEY = 'director_ai_pending_actions';
+
     private const PENDING_BATCH_SESSION_KEY = 'chat_pending_batch';
+
     private const BATCH_QUEUE_KEY = 'director_ai_batch_queue';
+
     private const CHAT_MODE_KEY = 'chat_mode';
+
     private const CHAT_SUBJECT_KEY = 'chat_subject';
+
     private const CHAT_HISTORY_KEY = 'chat_history';
 
     public function __construct(
@@ -50,6 +57,7 @@ class AICommandController extends Controller
         private SpeechToTextService $speechToText,
         private DirectorCommandFocusService $commandFocus,
         private DirectorUnifiedAgentService $unifiedAgent,
+        private DirectorIntentExtractorService $intentExtractor,
     ) {}
 
     public function transcribe(Request $request): JsonResponse
@@ -150,7 +158,7 @@ class AICommandController extends Controller
         // ── FASE HÍBRIDA: estados de sesión ──
         $buttonAction = $request->input('button_action');
         // Compatibilidad: algunos clientes envían buttonAction
-        if (!$buttonAction && $request->has('buttonAction')) {
+        if (! $buttonAction && $request->has('buttonAction')) {
             $buttonAction = $request->input('buttonAction');
         }
         $chatMode = session()->get(self::CHAT_MODE_KEY, 'main_menu');
@@ -180,6 +188,7 @@ class AICommandController extends Controller
             $this->conversationContext->clearPendingReferences();
             session()->put(self::CHAT_MODE_KEY, 'main_menu');
             session()->forget(self::CHAT_SUBJECT_KEY);
+
             return response()->json([
                 'success' => true,
                 'cancelled' => true,
@@ -213,9 +222,10 @@ class AICommandController extends Controller
                 // Dejar que caiga al flujo normal (data agent)
             } elseif ($detected === 'reporting') {
                 $plan = $this->dataAgent->plan($text, $screenContext);
-                if (!empty($plan['tools'])) {
+                if (! empty($plan['tools'])) {
                     return $this->respondWithDataAgent($director, $text, $screenContext, null);
                 }
+
                 return $this->askForSubject($detected);
             } elseif ($detected !== 'unknown') {
                 // Para creating/deleting/modifying con texto corto, pedir subject
@@ -281,6 +291,13 @@ class AICommandController extends Controller
             $actions = $this->enrichActionsFromText((array) ($interpreted['actions'] ?? []), $text);
             $localBatch = $this->extractMultipleActions($director, $text);
             $actions = $this->preferLocalTeacherBatch($actions, $localBatch);
+
+            // Fallback determinista para frases con varias intenciones (ej. crear profesor + matricular alumnos).
+            $localIntentions = $this->mapLocalIntentions(
+                $this->intentExtractor->extractMultipleIntentions($text)
+            );
+            $actions = $this->preferLocalMultipleIntentions($actions, $localIntentions);
+
             if ($actions !== [] && count($localBatch) < 2) {
                 $actions = $this->mergeMissingIntentsFromText($director, $actions, $text);
             }
@@ -340,6 +357,7 @@ class AICommandController extends Controller
                         if ($slotResponse !== null) {
                             return $slotResponse;
                         }
+
                         return response()->json([
                             'success' => false,
                             'needs_clarification' => true,
@@ -630,7 +648,7 @@ class AICommandController extends Controller
             'timestamp' => now()->toIso8601String(),
         ]);
 
-        app(\App\Services\ProductTelemetry::class)->record([
+        app(ProductTelemetry::class)->record([
             'user' => $director,
             'source' => 'director_ai',
             'event' => 'ai_action',
@@ -2197,6 +2215,16 @@ class AICommandController extends Controller
     private function detectMultiIntentActions(User $director, string $text): array
     {
         $actions = [];
+
+        // Nuevo extractor determinista: si detecta varias intenciones claras,
+        // las usa directamente. Esto evita que el LLM confunda alumnos con profesores.
+        $localIntentions = $this->mapLocalIntentions(
+            $this->intentExtractor->extractMultipleIntentions($text)
+        );
+        if (count($localIntentions) >= 2) {
+            return $this->dedupeDetectedActions($localIntentions);
+        }
+
         $batch = $this->extractMultipleActions($director, $text);
         if (count($batch) >= 2) {
             $actions = $batch;
@@ -2253,29 +2281,29 @@ class AICommandController extends Controller
                         && ! empty($action['data']['grades'])
                 );
                 if (! $createAlreadyHasCourses) {
-                $assignSegments = preg_split(
-                    '/\s+y\s+(?=a\s+[A-Za-zÁÉÍÓÚáéíóúÑñ]|as[ií]gna(?:le)?\s+|dara\s+|dará\s+|agrega(?:le)?\s+)/iu',
-                    $clause,
-                    -1,
-                    PREG_SPLIT_NO_EMPTY
-                );
-                if ($assignSegments === [] || count($assignSegments) === 1) {
-                    [$data, $msg] = $this->parseAssignTeacher($director, $clause);
-                    if (! $msg && ! empty($data['teacher_name']) && ! empty($data['subject_name']) && $data['grades'] !== []) {
-                        $actions[] = ['intent' => 'assign_teacher', 'data' => $data];
-                    }
-                } else {
-                    foreach ($assignSegments as $segment) {
-                        $segment = trim((string) $segment);
-                        if ($segment === '') {
-                            continue;
-                        }
-                        [$data, $msg] = $this->parseAssignTeacher($director, $segment);
+                    $assignSegments = preg_split(
+                        '/\s+y\s+(?=a\s+[A-Za-zÁÉÍÓÚáéíóúÑñ]|as[ií]gna(?:le)?\s+|dara\s+|dará\s+|agrega(?:le)?\s+)/iu',
+                        $clause,
+                        -1,
+                        PREG_SPLIT_NO_EMPTY
+                    );
+                    if ($assignSegments === [] || count($assignSegments) === 1) {
+                        [$data, $msg] = $this->parseAssignTeacher($director, $clause);
                         if (! $msg && ! empty($data['teacher_name']) && ! empty($data['subject_name']) && $data['grades'] !== []) {
                             $actions[] = ['intent' => 'assign_teacher', 'data' => $data];
                         }
+                    } else {
+                        foreach ($assignSegments as $segment) {
+                            $segment = trim((string) $segment);
+                            if ($segment === '') {
+                                continue;
+                            }
+                            [$data, $msg] = $this->parseAssignTeacher($director, $segment);
+                            if (! $msg && ! empty($data['teacher_name']) && ! empty($data['subject_name']) && $data['grades'] !== []) {
+                                $actions[] = ['intent' => 'assign_teacher', 'data' => $data];
+                            }
+                        }
                     }
-                }
                 }
             }
 
@@ -2299,6 +2327,30 @@ class AICommandController extends Controller
         }
 
         return $this->dedupeDetectedActions($actions);
+    }
+
+    /**
+     * Mapea los nombres de intención del extractor local al catálogo de tools.
+     *
+     * @param  array<int,array{intent:string,data:array<string,mixed>}>  $actions
+     * @return array<int,array{intent:string,data:array<string,mixed>}>
+     */
+    private function mapLocalIntentions(array $actions): array
+    {
+        return collect($actions)->map(function (array $action) {
+            $intent = $action['intent'];
+            if ($intent === 'enroll_students') {
+                $intent = 'enroll_students_course';
+            }
+            if (! in_array($intent, DirectorUnifiedAgentService::TOOLS, true)) {
+                return null;
+            }
+
+            return [
+                'intent' => $intent,
+                'data' => $action['data'],
+            ];
+        })->filter()->values()->all();
     }
 
     /**
@@ -3766,6 +3818,35 @@ class AICommandController extends Controller
     }
 
     /**
+     * Si el extractor local encuentra varias intenciones claras, reemplaza las
+     * acciones de nómina del LLM por las locales. Evita que "Carlos Gutiérrez"
+     * se confunda con profesor cuando en realidad es alumno a matricular.
+     *
+     * @param  array<int,array{intent:string,data:array}>  $actions
+     * @param  array<int,array{intent:string,data:array}>  $localIntentions
+     * @return array<int,array{intent:string,data:array}>
+     */
+    private function preferLocalMultipleIntentions(array $actions, array $localIntentions): array
+    {
+        if (count($localIntentions) < 2) {
+            return $actions;
+        }
+
+        $writableIntents = [
+            'create_teacher', 'create_students_batch', 'enroll_students_course',
+            'assign_teacher', 'create_course', 'update_student', 'delete_student',
+            'unenroll_students_course', 'unassign_teacher', 'update_course', 'delete_course',
+        ];
+
+        $kept = array_values(array_filter(
+            $actions,
+            fn ($action) => ! in_array($action['intent'] ?? '', $writableIntents, true)
+        ));
+
+        return array_values(array_merge($localIntentions, $kept));
+    }
+
+    /**
      * Extrae todas las acciones de un mensaje con varias personas (texto o voz).
      *
      * @return array<int,array{intent:string,data:array}>
@@ -4646,7 +4727,7 @@ class AICommandController extends Controller
     private function detectHybridIntent(string $text): string
     {
         $t = $this->normalizedText($text);
-        if (preg_match('/\b(?:crea|crear|nuevo|nueva|agregar|agrega|insertar)\b/u', $t) && !preg_match('/\b(?:cuantos|como|quien|quienes|dime|dame|listado|ver|mostrar)\b/u', $t)) {
+        if (preg_match('/\b(?:crea|crear|nuevo|nueva|agregar|agrega|insertar)\b/u', $t) && ! preg_match('/\b(?:cuantos|como|quien|quienes|dime|dame|listado|ver|mostrar)\b/u', $t)) {
             return 'creating';
         }
         if (preg_match('/\b(?:elimina|eliminar|borrar|borra|quitar|sacar|remove|delete)\b/u', $t)) {
@@ -4664,6 +4745,7 @@ class AICommandController extends Controller
         if (preg_match('/\b(?:revisa|verifica|confirma|es|son|esta|existe)\b/u', $t) && preg_match('/\b(?:profesor|alumno|estudiante|docente|curso)\b/u', $t)) {
             return 'consulting';
         }
+
         return 'unknown';
     }
 
@@ -4699,6 +4781,7 @@ class AICommandController extends Controller
         if ($buttonAction === 'back' || $buttonAction === 'menu_main') {
             session()->put(self::CHAT_MODE_KEY, 'main_menu');
             session()->forget(self::CHAT_SUBJECT_KEY);
+
             return $this->showMainMenu(null);
         }
         if ($buttonAction === 'confirm_one_by_one' && session()->has(self::PENDING_SESSION_KEY)) {
@@ -4712,6 +4795,7 @@ class AICommandController extends Controller
             $this->conversationContext->clearPendingReferences();
             session()->put(self::CHAT_MODE_KEY, 'main_menu');
             session()->forget(self::CHAT_SUBJECT_KEY);
+
             return response()->json(['success' => true, 'cancelled' => true, 'message' => 'Operación cancelada. No hice cambios.', 'buttons' => $this->mainMenuButtons(), 'mode' => 'main_menu']);
         }
         $modeMap = ['menu_consult' => 'consulting', 'menu_create' => 'creating', 'menu_modify' => 'modifying', 'menu_delete' => 'deleting', 'menu_report' => 'reporting', 'consult_' => 'consulting', 'create_' => 'creating', 'modify_' => 'modifying', 'delete_' => 'deleting'];
@@ -4728,6 +4812,7 @@ class AICommandController extends Controller
                 break;
             }
         }
+
         // Si el botón ya trae toda la info, intentar ejecutar directo si es creación simple
         return $this->handleInMode($textToSend, session()->get(self::CHAT_MODE_KEY, 'main_menu'), session()->get(self::CHAT_SUBJECT_KEY), $director, $screenContext) ?? $this->askForSubject(session()->get(self::CHAT_MODE_KEY, 'main_menu'));
     }
@@ -4749,8 +4834,10 @@ class AICommandController extends Controller
         if (in_array($mode, ['creating', 'modifying', 'deleting'], true) && $subject && mb_strlen(trim($text)) < 20 && preg_match('/^(?:quiero|crear|modificar|eliminar).*'.preg_quote($subject, '/').'/iu', $this->normalizedText($text))) {
             $labels = ['students' => 'alumno', 'teachers' => 'profesor', 'courses' => 'curso', 'grades' => 'nota', 'attendance' => 'asistencia'];
             $label = $labels[$subject] ?? $subject;
+
             return response()->json(['success' => false, 'needs_clarification' => true, 'message' => "Perfecto, dime los datos para {$label}. Por ejemplo: \"Crea al profesor Jose Marrero\" o \"Elimina al profesor Luis\".", 'buttons' => $this->subjectButtons($mode), 'mode' => $mode, 'subject' => $subject]);
         }
+
         return null;
     }
 
@@ -4758,6 +4845,7 @@ class AICommandController extends Controller
     {
         session()->put(self::CHAT_MODE_KEY, 'main_menu');
         session()->forget(self::CHAT_SUBJECT_KEY);
+
         return response()->json([
             'success' => true,
             'message' => $message ?? '¡Hola! Soy tu asistente. ¿Qué necesitas hacer?',
@@ -4768,7 +4856,7 @@ class AICommandController extends Controller
 
     public function askForSubject(string $mode): JsonResponse
     {
-        $subjectButtons = match($mode) {
+        $subjectButtons = match ($mode) {
             'consulting' => [['id' => 'consult_students', 'label' => '👨‍🎓 Alumnos', 'color' => 'blue'], ['id' => 'consult_teachers', 'label' => '👨‍🏫 Profesores', 'color' => 'blue'], ['id' => 'consult_courses', 'label' => '📚 Cursos', 'color' => 'blue'], ['id' => 'consult_grades', 'label' => '📝 Notas', 'color' => 'blue'], ['id' => 'consult_attendance', 'label' => '📅 Asistencia', 'color' => 'blue'], ['id' => 'back', 'label' => '◀️ Volver', 'color' => 'gray']],
             'creating' => [['id' => 'create_student', 'label' => '👨‍🎓 Alumno', 'color' => 'green'], ['id' => 'create_teacher', 'label' => '👨‍🏫 Profesor', 'color' => 'green'], ['id' => 'create_course', 'label' => '📚 Curso', 'color' => 'green'], ['id' => 'create_activity', 'label' => '📝 Actividad', 'color' => 'green'], ['id' => 'back', 'label' => '◀️ Volver', 'color' => 'gray']],
             'modifying' => [['id' => 'modify_student', 'label' => '👨‍🎓 Alumno', 'color' => 'orange'], ['id' => 'modify_teacher', 'label' => '👨‍🏫 Profesor', 'color' => 'orange'], ['id' => 'modify_course', 'label' => '📚 Curso', 'color' => 'orange'], ['id' => 'modify_grade', 'label' => '📝 Notas', 'color' => 'orange'], ['id' => 'back', 'label' => '◀️ Volver', 'color' => 'gray']],
@@ -4777,6 +4865,7 @@ class AICommandController extends Controller
             default => [],
         };
         $modeLabels = ['consulting' => 'consultar', 'creating' => 'crear', 'modifying' => 'modificar', 'deleting' => 'eliminar', 'reporting' => 'generar informe'];
+
         return response()->json([
             'success' => true,
             'message' => "¿Qué quieres {$modeLabels[$mode]}? Puedes tocar un botón o escribir lo que necesitas.",
@@ -4799,7 +4888,7 @@ class AICommandController extends Controller
 
     private function subjectButtons(string $mode): array
     {
-        return match($mode) {
+        return match ($mode) {
             'consulting' => [['id' => 'consult_students', 'label' => '👨‍🎓 Alumnos'], ['id' => 'consult_teachers', 'label' => '👨‍🏫 Profesores'], ['id' => 'consult_courses', 'label' => '📚 Cursos']],
             'creating' => [['id' => 'create_student', 'label' => '👨‍🎓 Alumno'], ['id' => 'create_teacher', 'label' => '👨‍🏫 Profesor'], ['id' => 'create_course', 'label' => '📚 Curso']],
             'deleting' => [['id' => 'delete_student', 'label' => '👨‍🎓 Alumno'], ['id' => 'delete_teacher', 'label' => '👨‍🏫 Profesor'], ['id' => 'delete_course', 'label' => '📚 Curso']],
