@@ -8,6 +8,7 @@ use App\Models\Materia;
 use App\Models\Student;
 use App\Models\TeacherInvite;
 use App\Models\User;
+use App\Support\GradeLabel;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -1358,19 +1359,7 @@ class DirectorActionService
 
     public function normalizeGradeKey(string $grade): string
     {
-        $raw = mb_strtolower(trim($grade));
-        $raw = strtr($raw, [
-            'á' => 'a', 'é' => 'e', 'í' => 'i', 'ó' => 'o', 'ú' => 'u', 'ñ' => 'n',
-        ]);
-        $raw = preg_replace('/\s+/', '', $raw) ?? '';
-        $raw = str_replace(['primero', '1ero', '1ro', '1°', '1º'], '1', $raw);
-        $raw = str_replace(['segundo', '2do', '2°', '2º'], '2', $raw);
-        $raw = str_replace(['tercero', '3ero', '3ro', '3°', '3º'], '3', $raw);
-        $raw = str_replace(['cuarto', '4to', '4°', '4º'], '4', $raw);
-        $raw = str_replace(['quinto', '5to', '5°', '5º'], '5', $raw);
-        $raw = str_replace(['sexto', '6to', '6°', '6º'], '6', $raw);
-
-        return preg_replace('/[^a-z0-9]/', '', $raw) ?? '';
+        return GradeLabel::key($grade);
     }
 
     /**
@@ -1609,12 +1598,20 @@ class DirectorActionService
 
     private function findCourseByAcademicKey(int $colegioId, string $subject, string $grade, ?string $section): ?Course
     {
+        $gradeKey = GradeLabel::key($grade);
+        $sectionKey = $this->academicKey((string) $section);
+
         return Course::query()
             ->where('colegio_id', $colegioId)
             ->whereRaw('LOWER(subject_name) = ?', [mb_strtolower($subject)])
-            ->whereRaw('LOWER(grade) = ?', [mb_strtolower($grade)])
-            ->whereRaw('LOWER(COALESCE(section, ?)) = ?', ['', mb_strtolower((string) $section)])
-            ->first();
+            ->get()
+            ->first(function (Course $course) use ($gradeKey, $sectionKey) {
+                if ($gradeKey === '' || GradeLabel::key($course->grade) !== $gradeKey) {
+                    return false;
+                }
+
+                return $this->academicKey((string) $course->section) === $sectionKey;
+            });
     }
 
     private function resolveUniqueStudent(int $colegioId, string $name): Student

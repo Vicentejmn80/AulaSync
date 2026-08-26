@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\GradeLabel;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -25,6 +26,16 @@ class Student extends Model
         return [
             'birthdate' => 'date',
         ];
+    }
+
+    protected static function booted(): void
+    {
+        static::saving(function (Student $student) {
+            $canonical = GradeLabel::canonical($student->grade);
+            if ($canonical) {
+                $student->grade = $canonical;
+            }
+        });
     }
 
     public function teacher(): BelongsTo

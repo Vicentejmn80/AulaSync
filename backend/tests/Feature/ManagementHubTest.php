@@ -143,6 +143,48 @@ class ManagementHubTest extends TestCase
         $this->assertTrue($course->fresh()->students()->where('name', 'Luis Guerra')->exists());
     }
 
+    public function test_grade_aliases_collapse_into_one_label(): void
+    {
+        [$director, $colegio] = $this->directorContext();
+        $teacher = User::factory()->create([
+            'role' => 'profesor',
+            'colegio_id' => $colegio->id,
+            'name' => 'Manuel Vazquez',
+            'onboarding_completed' => true,
+        ]);
+        Course::create([
+            'colegio_id' => $colegio->id,
+            'subject_name' => 'biologia',
+            'grade' => '3er grado',
+            'section' => 'A',
+            'invite_code' => 'CUR-BIO-3A',
+        ]);
+        Course::create([
+            'teacher_id' => $teacher->id,
+            'colegio_id' => $colegio->id,
+            'subject_name' => 'biologia',
+            'grade' => 'tercer grado',
+            'invite_code' => 'CUR-BIO-3U',
+        ]);
+        Course::create([
+            'colegio_id' => $colegio->id,
+            'subject_name' => 'Matematica',
+            'grade' => 'tercero',
+            'section' => 'B',
+            'invite_code' => 'CUR-MAT-3B',
+        ]);
+
+        $this->assertSame(3, Course::where('colegio_id', $colegio->id)->where('grade', '3ro')->count());
+
+        $snapshot = $this->actingAs($director)
+            ->getJson(route('director.gestion.snapshot'))
+            ->assertOk()
+            ->json();
+
+        $this->assertSame(['3ro'], collect($snapshot['courses'])->pluck('grade')->unique()->values()->all());
+        $this->assertSame(['3ro'], $snapshot['grades']);
+    }
+
     public function test_assign_courses_to_teacher_and_update_student(): void
     {
         [$director, $colegio] = $this->directorContext();

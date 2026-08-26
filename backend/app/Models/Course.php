@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use App\Models\Subject;
+use App\Support\GradeLabel;
 use App\Support\GradingScale;
 
 class Course extends Model
@@ -27,6 +28,16 @@ class Course extends Model
     protected $attributes = [
         'grading_scale' => GradingScale::SCALE_1_20,
     ];
+
+    protected static function booted(): void
+    {
+        static::saving(function (Course $course) {
+            $canonical = GradeLabel::canonical($course->grade);
+            if ($canonical) {
+                $course->grade = $canonical;
+            }
+        });
+    }
 
     public function teacher(): BelongsTo
     {

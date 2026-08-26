@@ -12,6 +12,7 @@ use App\Models\User;
 use App\Services\DirectorActionService;
 use App\Services\PersonNameSanitizer;
 use App\Services\StudentEnrollmentService;
+use App\Support\GradeLabel;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -85,7 +86,12 @@ class ManagementHubController extends Controller
                 'courses_count' => $materia->courses_count,
             ]);
 
-        $grades = $courses->pluck('grade')->merge($students->pluck('grade'))->filter()->unique()->values();
+        $grades = $courses->pluck('grade')
+            ->merge($students->pluck('grade'))
+            ->map(fn ($grade) => GradeLabel::canonical((string) $grade))
+            ->filter()
+            ->unique()
+            ->values();
 
         return response()->json([
             'success' => true,
@@ -582,7 +588,7 @@ class ManagementHubController extends Controller
         return [
             'id' => $student->id,
             'name' => $student->name,
-            'grade' => $student->grade,
+            'grade' => GradeLabel::canonical($student->grade) ?: $student->grade,
             'section' => $student->section,
             'family_code' => $student->family_code,
             'courses_count' => $student->relationLoaded('courses') ? $student->courses->count() : ($student->courses_count ?? 0),
@@ -597,11 +603,13 @@ class ManagementHubController extends Controller
         $teacherName = $course->teacher?->name ?: $course->pendingInvite?->name;
         $students = $course->relationLoaded('students') ? $course->students : collect();
 
+        $grade = GradeLabel::canonical($course->grade) ?: $course->grade;
+
         return [
             'id' => $course->id,
             'materia_id' => $course->materia_id,
             'subject_name' => $course->subject_name,
-            'grade' => $course->grade,
+            'grade' => $grade,
             'section' => $course->section,
             'invite_code' => $course->invite_code,
             'teacher_id' => $course->teacher_id,
@@ -614,50 +622,29 @@ class ManagementHubController extends Controller
             'students' => $students->map(fn (Student $student) => [
                 'id' => $student->id,
                 'name' => $student->name,
-                'grade' => $student->grade,
+                'grade' => GradeLabel::canonical($student->grade) ?: $student->grade,
                 'section' => $student->section,
             ])->values()->all(),
-            'label' => trim($course->subject_name.' · '.$course->grade.($course->section ? ' '.$course->section : '')),
+            'label' => trim($course->subject_name.' · '.$grade.($course->section ? ' '.$course->section : '')),
         ];
     }
 
     private function courseChip(Course $course): array
     {
+        $grade = GradeLabel::canonical($course->grade) ?: $course->grade;
+
         return [
             'id' => $course->id,
             'subject_name' => $course->subject_name,
-            'grade' => $course->grade,
+            'grade' => $grade,
             'section' => $course->section,
             'students_count' => $course->students_count ?? null,
-            'label' => trim($course->subject_name.' · '.$course->grade.($course->section ? ' '.$course->section : '')),
+            'label' => trim($course->subject_name.' · '.$grade.($course->section ? ' '.$course->section : '')),
         ];
     }
 
     private function gradeBucket(?string $grade): ?int
     {
-        $value = mb_strtolower(trim((string) $grade));
-        if ($value === '') {
-            return null;
-        }
-
-        $named = [
-            'primero' => 1, 'primer' => 1, '1ro' => 1, '1ero' => 1, '1er' => 1,
-            'segundo' => 2, '2do' => 2,
-            'tercero' => 3, 'tercer' => 3, '3ro' => 3, '3er' => 3,
-            'cuarto' => 4, '4to' => 4,
-            'quinto' => 5, '5to' => 5,
-            'sexto' => 6, '6to' => 6,
-        ];
-        foreach ($named as $needle => $bucket) {
-            if ($value === $needle || str_contains($value, $needle)) {
-                return $bucket;
-            }
-        }
-
-        if (preg_match('/[1-6]/', $value, $match)) {
-            return (int) $match[0];
-        }
-
-        return null;
+        return GradeLabel::number($grade);
     }
 }
