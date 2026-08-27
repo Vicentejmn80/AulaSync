@@ -10,6 +10,8 @@ class DirectorAiOperationLog extends Model
     protected $fillable = [
         'director_user_id',
         'colegio_id',
+        'action_plan_id',
+        'action_id',
         'intent',
         'status',
         'input_payload',

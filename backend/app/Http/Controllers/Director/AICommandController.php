@@ -12,6 +12,7 @@ use App\Models\Grade;
 use App\Models\Student;
 use App\Models\TeacherInvite;
 use App\Models\User;
+use App\Services\DirectorActionPlannerService;
 use App\Services\DirectorActionService;
 use App\Services\DirectorAIInterpreterService;
 use App\Services\DirectorAnalyticsQueryService;
@@ -31,6 +32,7 @@ use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class AICommandController extends Controller
@@ -38,6 +40,8 @@ class AICommandController extends Controller
     private const PENDING_SESSION_KEY = 'director_ai_pending_actions';
 
     private const PENDING_BATCH_SESSION_KEY = 'chat_pending_batch';
+
+    private const PENDING_META_SESSION_KEY = 'director_ai_pending_meta';
 
     private const BATCH_QUEUE_KEY = 'director_ai_batch_queue';
 
@@ -58,6 +62,7 @@ class AICommandController extends Controller
         private DirectorCommandFocusService $commandFocus,
         private DirectorUnifiedAgentService $unifiedAgent,
         private DirectorIntentExtractorService $intentExtractor,
+        private DirectorActionPlannerService $actionPlanner,
     ) {}
 
     public function transcribe(Request $request): JsonResponse
@@ -280,31 +285,71 @@ class AICommandController extends Controller
 
         try {
             $focus = $this->commandFocus->extract($text);
-            $interpreted = $this->interpreter->interpret(
-                $director,
-                $focus['for_model'],
-                (array) ($payload['conversation'] ?? []),
-                $this->conversationContext->current(),
-            );
-            $text = $focus['working'];
+            $workingText = $focus['working'];
+            $llmReply = '';
+            $actions = [];
+            $planSummary = null;
+            $actionPlan = null;
 
-            $actions = $this->enrichActionsFromText((array) ($interpreted['actions'] ?? []), $text);
-            $localBatch = $this->extractMultipleActions($director, $text);
-            $actions = $this->preferLocalTeacherBatch($actions, $localBatch);
+            // NUEVO: planificador multi-intención con Structured Outputs (solo si OpenAI está habilitado).
+            if ($this->actionPlanner->enabled()) {
+                $plan = $this->actionPlanner->plan(
+                    $director,
+                    $workingText,
+                    [
+                        'conversation' => (array) ($payload['conversation'] ?? []),
+                        'memory' => $this->conversationContext->current(),
+                        'screen_context' => $screenContext,
+                        'raw_text' => $text,
+                    ],
+                );
 
-            // Fallback determinista para frases con varias intenciones (ej. crear profesor + matricular alumnos).
-            $localIntentions = $this->mapLocalIntentions(
-                $this->intentExtractor->extractMultipleIntentions($text)
-            );
-            $actions = $this->preferLocalMultipleIntentions($actions, $localIntentions);
+                // Si faltan slots, guardar plan y preguntar por el siguiente.
+                if (($plan['status'] ?? '') === 'needs_info' || $this->planHasPendingSlots($plan)) {
+                    $this->confirmationManager->startPlan($plan);
 
-            if ($actions !== [] && count($localBatch) < 2) {
-                $actions = $this->mergeMissingIntentsFromText($director, $actions, $text);
+                    return $this->pendingSlotsResponse($plan);
+                }
+
+                // Convertir ActionPlan al formato de acciones existente.
+                $actions = $this->planToActions($plan);
+                $this->logSkippedActions($director, $plan, $text);
+                $planSummary = $plan['summary'] ?? null;
+                $actionPlan = $plan;
+
+                // Fallback legado solo si el planificador no devolvió nada.
+                if ($actions === []) {
+                    $composite = $this->detectMultiIntentActions($director, $text);
+                    if ($composite !== []) {
+                        $actions = $this->enrichActionsFromText($composite, $text);
+                    }
+                }
+            } else {
+                // Flujo legado para entornos sin OpenAI (tests locales).
+                $interpreted = $this->interpreter->interpret(
+                    $director,
+                    $focus['for_model'],
+                    (array) ($payload['conversation'] ?? []),
+                    $this->conversationContext->current(),
+                );
+
+                $actions = $this->enrichActionsFromText((array) ($interpreted['actions'] ?? []), $text);
+                $localBatch = $this->extractMultipleActions($director, $text);
+                $actions = $this->preferLocalTeacherBatch($actions, $localBatch);
+
+                $localIntentions = $this->mapLocalIntentions(
+                    $this->intentExtractor->extractMultipleIntentions($text)
+                );
+                $actions = $this->preferLocalMultipleIntentions($actions, $localIntentions);
+
+                if ($actions !== [] && count($localBatch) < 2) {
+                    $actions = $this->mergeMissingIntentsFromText($director, $actions, $text);
+                }
+
+                $llmReply = is_array($interpreted)
+                    ? trim((string) ($interpreted['message'] ?? $interpreted['clarification'] ?? ''))
+                    : '';
             }
-
-            $llmReply = is_array($interpreted)
-                ? trim((string) ($interpreted['message'] ?? $interpreted['clarification'] ?? ''))
-                : '';
 
             if ($actions === []) {
                 $contextualAction = $this->contextualFallbackAction($text);
@@ -421,7 +466,7 @@ class AICommandController extends Controller
                 return $this->respondWithDataAgent($director, $text, $screenContext, $actions);
             }
 
-            return $this->prepareActions($director, $actions, $text);
+            return $this->prepareActions($director, $actions, $text, $planSummary, $plan['all_or_nothing'] ?? false, $actionPlan);
         } catch (ValidationException $e) {
             $msg = collect($e->errors())->flatten()->first() ?: 'No se pudo procesar la instrucción.';
             $this->conversationContext->rememberError($msg);
@@ -549,7 +594,7 @@ class AICommandController extends Controller
     /**
      * @param  array<int,array{intent:string,data:array}>  $actions
      */
-    private function prepareActions(User $director, array $actions, string $rawText): JsonResponse
+    private function prepareActions(User $director, array $actions, string $rawText, ?string $summary = null, bool $allOrNothing = true, ?array $actionPlan = null): JsonResponse
     {
         $actions = $this->enrichActionsFromText($actions, $rawText);
         $hasStudentAction = collect($actions)->contains(
@@ -569,7 +614,12 @@ class AICommandController extends Controller
             }
             $data = $this->resolveDeleteTarget($director, $intent, $data);
             $this->validateActionReferences($director, $intent, $data);
-            $prepared[] = ['intent' => $intent, 'data' => $data];
+            $prepared[] = [
+                'intent' => $intent,
+                'data' => $data,
+                'action_plan_id' => $action['action_plan_id'] ?? null,
+                'action_id' => $action['action_id'] ?? null,
+            ];
         }
 
         $this->conversationContext->rememberPlan($prepared, $rawText);
@@ -581,7 +631,15 @@ class AICommandController extends Controller
             foreach ($prepared as $action) {
                 $intent = $action['intent'];
                 $data = $action['data'];
-                $log = $this->createAuditLog($director, $intent, 'received', $rawText, $data);
+                $log = $this->createAuditLog(
+                    $director,
+                    $intent,
+                    'received',
+                    $rawText,
+                    $data,
+                    $action['action_plan_id'] ?? null,
+                    $action['action_id'] ?? null,
+                );
                 $result = $this->runIntent($director, $intent, $data);
                 $summary = $this->verifyResult($director, $intent, $result);
                 $log->update([
@@ -619,18 +677,46 @@ class AICommandController extends Controller
                 'pending_confirmation',
                 $rawText,
                 $action['data'],
+                $action['action_plan_id'] ?? null,
+                $action['action_id'] ?? null,
             );
             $pending[] = [
                 'intent' => $action['intent'],
                 'data' => $action['data'],
+                'action_plan_id' => $action['action_plan_id'] ?? null,
+                'action_id' => $action['action_id'] ?? null,
                 'audit_log_id' => $log->id,
             ];
         }
 
-        $this->rememberPendingActions($pending);
-        $this->conversationContext->addTurn($rawText, $this->formatPendingConfirmation($pending), []);
+        $this->rememberPendingActions($pending, $allOrNothing);
+        $confirmationMessage = $summary ?? $this->formatPendingConfirmation($pending);
+        $this->conversationContext->addTurn($rawText, $confirmationMessage, []);
 
-        return $this->pendingConfirmationResponse($pending);
+        return $this->pendingConfirmationResponse($pending, null, $summary, $actionPlan);
+    }
+
+    /**
+     * @param  array<string,mixed>  $plan
+     */
+    private function logSkippedActions(User $director, array $plan, string $rawText): void
+    {
+        $planId = $plan['id'] ?? null;
+        foreach ($plan['actions'] ?? [] as $action) {
+            if (($action['status'] ?? '') !== 'skipped') {
+                continue;
+            }
+
+            $this->createAuditLog(
+                $director,
+                (string) ($action['type'] ?? 'unknown'),
+                'skipped',
+                $rawText,
+                (array) ($action['params'] ?? []),
+                $planId,
+                $action['id'] ?? null,
+            );
+        }
     }
 
     private function createAuditLog(
@@ -639,6 +725,8 @@ class AICommandController extends Controller
         string $status,
         string $rawText,
         array $data,
+        ?string $actionPlanId = null,
+        ?string $actionId = null,
     ): DirectorAiOperationLog {
         Log::info('nova_ai_write', [
             'user_id' => $director->id,
@@ -665,6 +753,8 @@ class AICommandController extends Controller
         return DirectorAiOperationLog::create([
             'director_user_id' => $director->id,
             'colegio_id' => $director->colegio_id,
+            'action_plan_id' => $actionPlanId,
+            'action_id' => $actionId,
             'intent' => $intent,
             'status' => $status,
             'input_payload' => [
@@ -831,7 +921,9 @@ class AICommandController extends Controller
             ], 422);
         }
 
-        $results = [];
+        $meta = (array) session(self::PENDING_META_SESSION_KEY, []);
+        $allOrNothing = (bool) ($meta['all_or_nothing'] ?? true);
+
         $logMap = [];
         foreach ($actions as $idx => $action) {
             $logId = Arr::get($action, 'audit_log_id');
@@ -847,120 +939,188 @@ class AICommandController extends Controller
                     'pending_actions' => 'La acción pendiente no pertenece a este director o colegio.',
                 ]);
             }
-            $logMap[(int) $idx] = $log;
+            $logMap[(int) $idx] = $log ?? $this->createAuditLog(
+                $director,
+                (string) Arr::get($action, 'intent', 'unknown'),
+                'pending_confirmation',
+                (string) ($this->conversationContext->current()['last_user_text'] ?? ''),
+                (array) Arr::get($action, 'data', []),
+                $action['action_plan_id'] ?? null,
+                $action['action_id'] ?? null,
+            );
         }
+
+        if ($allOrNothing) {
+            return $this->executePendingAllOrNothing($actions, $logMap, $director);
+        }
+
+        return $this->executePendingBestEffort($actions, $logMap, $director);
+    }
+
+    /**
+     * Ejecuta todas las acciones dentro de una sola transacción. Si una falla,
+     * se revierte todo y se reporta el error.
+     *
+     * @param  Collection<int,array<string,mixed>>  $actions
+     * @param  array<int,DirectorAiOperationLog|null>  $logMap
+     */
+    private function executePendingAllOrNothing(Collection $actions, array $logMap, User $director): JsonResponse
+    {
+        $results = [];
 
         try {
             DB::transaction(function () use ($actions, &$results, $logMap, $director): void {
                 foreach ($actions as $idx => $action) {
-                    $intent = (string) Arr::get($action, 'intent', '');
-                    $data = (array) Arr::get($action, 'data', []);
-                    /** @var DirectorAiOperationLog|null $log */
-                    $log = $logMap[(int) $idx] ?? null;
-
-                    if ($log) {
-                        $log->update([
-                            'status' => 'confirmed',
-                            'confirmed_at' => now(),
-                        ]);
-                    }
-
-                    $result = $this->runIntent($director, $intent, $data);
-                    $summary = $this->verifyResult($director, $intent, $result);
-
-                    if ($log) {
-                        $log->update([
-                            'status' => 'verified',
-                            'executed_at' => now(),
-                            'verified_at' => now(),
-                            'result_payload' => $summary,
-                        ]);
-                    }
-
-                    $results[] = [
-                        'success' => true,
-                        'action_type' => $intent,
-                        'message' => $summary['message'] ?? 'Operación ejecutada.',
-                        'data' => $summary['data'] ?? [],
-                    ];
+                    $results[] = $this->runPendingAction($director, $action, $logMap[(int) $idx] ?? null);
                 }
             });
         } catch (ValidationException $e) {
-            $msg = collect($e->errors())->flatten()->first() ?: 'Error de validación.';
-            foreach ($logMap as $log) {
-                if ($log) {
-                    $log->update([
-                        'status' => 'failed',
-                        'executed_at' => now(),
-                        'error_payload' => ['message' => $msg],
-                    ]);
-                }
-            }
-            $this->conversationContext->rememberError($msg);
-            session([self::PENDING_SESSION_KEY => $actions->all()]);
-
-            $rollbackMessage = 'La operación falló y se revirtieron todos los cambios. '.$msg;
-            $this->conversationContext->addTurn(
-                (string) ($this->conversationContext->current()['last_user_text'] ?? ''),
-                $rollbackMessage,
-                []
-            );
-
-            return response()->json([
-                'success' => false,
-                'any_success' => false,
-                'requires_clarification' => true,
-                'pending_actions' => $actions->all(),
-                'actions' => [[
-                    'success' => false,
-                    'message' => $rollbackMessage,
-                    'action_type' => 'batch',
-                ]],
-                'message' => $rollbackMessage,
-                'timeline' => $this->mutationTimeline('rollback', $rollbackMessage),
-                'buttons' => $this->confirmationButtons($actions->count()),
-            ], 422);
+            return $this->handleExecutionFailure($actions, $logMap, $director, $e, 'validation');
         } catch (\Throwable $e) {
-            Log::error('Director AI execution failed', [
-                'director_id' => $director->id,
-                'message' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
-            ]);
-            foreach ($logMap as $log) {
-                if ($log) {
-                    $log->update([
-                        'status' => 'failed',
-                        'executed_at' => now(),
-                        'error_payload' => ['message' => $e->getMessage()],
-                    ]);
-                }
-            }
-            $this->conversationContext->rememberError('Falló la ejecución de la operación.');
-            session([self::PENDING_SESSION_KEY => $actions->all()]);
-
-            $rollbackMessage = 'La operación falló y se revirtieron todos los cambios.';
-            $this->conversationContext->addTurn(
-                (string) ($this->conversationContext->current()['last_user_text'] ?? ''),
-                $rollbackMessage,
-                []
-            );
-
-            return response()->json([
-                'success' => false,
-                'any_success' => false,
-                'requires_clarification' => true,
-                'pending_actions' => $actions->all(),
-                'actions' => [[
-                    'success' => false,
-                    'message' => $rollbackMessage,
-                    'action_type' => 'batch',
-                ]],
-                'message' => $rollbackMessage,
-                'timeline' => $this->mutationTimeline('rollback', $rollbackMessage),
-                'buttons' => $this->confirmationButtons($actions->count()),
-            ], 500);
+            return $this->handleExecutionFailure($actions, $logMap, $director, $e, 'exception');
         }
 
+        return $this->finalizePendingExecution($results, $director);
+    }
+
+    /**
+     * Ejecuta cada acción por separado y continúa aunque una falle. Las acciones
+     * exitosas quedan confirmadas; las fallidas se reportan individualmente.
+     *
+     * @param  Collection<int,array<string,mixed>>  $actions
+     * @param  array<int,DirectorAiOperationLog|null>  $logMap
+     */
+    private function executePendingBestEffort(Collection $actions, array $logMap, User $director): JsonResponse
+    {
+        $results = [];
+
+        foreach ($actions as $idx => $action) {
+            try {
+                $results[] = $this->runPendingAction($director, $action, $logMap[(int) $idx] ?? null);
+            } catch (ValidationException $e) {
+                $msg = collect($e->errors())->flatten()->first() ?: 'Error de validación.';
+                $results[] = $this->markActionFailed($action, $logMap[(int) $idx] ?? null, $msg);
+            } catch (\Throwable $e) {
+                Log::error('Director AI action failed (best-effort)', [
+                    'director_id' => $director->id,
+                    'intent' => $action['intent'] ?? '',
+                    'message' => $e->getMessage(),
+                ]);
+                $results[] = $this->markActionFailed($action, $logMap[(int) $idx] ?? null, $e->getMessage());
+            }
+        }
+
+        return $this->finalizePendingExecution($results, $director);
+    }
+
+    /**
+     * @param  array<string,mixed>  $action
+     */
+    private function runPendingAction(User $director, array $action, ?DirectorAiOperationLog $log): array
+    {
+        $intent = (string) Arr::get($action, 'intent', '');
+        $data = (array) Arr::get($action, 'data', []);
+
+        if ($log) {
+            $log->update([
+                'status' => 'confirmed',
+                'confirmed_at' => now(),
+            ]);
+        }
+
+        $result = $this->runIntent($director, $intent, $data);
+        $summary = $this->verifyResult($director, $intent, $result);
+
+        if ($log) {
+            $log->update([
+                'status' => 'verified',
+                'executed_at' => now(),
+                'verified_at' => now(),
+                'result_payload' => $summary,
+            ]);
+        }
+
+        return [
+            'success' => true,
+            'action_type' => $intent,
+            'message' => $summary['message'] ?? 'Operación ejecutada.',
+            'data' => $summary['data'] ?? [],
+        ];
+    }
+
+    /**
+     * @param  array<string,mixed>  $action
+     */
+    private function markActionFailed(array $action, ?DirectorAiOperationLog $log, string $message): array
+    {
+        if ($log) {
+            $log->update([
+                'status' => 'failed',
+                'executed_at' => now(),
+                'error_payload' => ['message' => $message],
+            ]);
+        }
+
+        return [
+            'success' => false,
+            'action_type' => $action['intent'] ?? 'unknown',
+            'message' => $message,
+            'data' => [],
+        ];
+    }
+
+    /**
+     * @param  Collection<int,array<string,mixed>>  $actions
+     * @param  array<int,DirectorAiOperationLog|null>  $logMap
+     */
+    private function handleExecutionFailure(Collection $actions, array $logMap, User $director, \Throwable $e, string $type): JsonResponse
+    {
+        $isValidation = $type === 'validation';
+        $msg = $isValidation
+            ? (collect($e instanceof ValidationException ? $e->errors() : [])->flatten()->first() ?: 'Error de validación.')
+            : $e->getMessage();
+
+        foreach ($logMap as $log) {
+            if ($log) {
+                $log->update([
+                    'status' => 'failed',
+                    'executed_at' => now(),
+                    'error_payload' => ['message' => $msg],
+                ]);
+            }
+        }
+
+        $this->conversationContext->rememberError($msg);
+        session([self::PENDING_SESSION_KEY => $actions->all()]);
+
+        $rollbackMessage = 'La operación falló y se revirtieron todos los cambios.'.($isValidation ? ' '.$msg : '');
+        $this->conversationContext->addTurn(
+            (string) ($this->conversationContext->current()['last_user_text'] ?? ''),
+            $rollbackMessage,
+            []
+        );
+
+        return response()->json([
+            'success' => false,
+            'any_success' => false,
+            'requires_clarification' => true,
+            'pending_actions' => $actions->all(),
+            'actions' => [[
+                'success' => false,
+                'message' => $rollbackMessage,
+                'action_type' => 'batch',
+            ]],
+            'message' => $rollbackMessage,
+            'timeline' => $this->mutationTimeline('rollback', $rollbackMessage),
+            'buttons' => $this->confirmationButtons($actions->count()),
+        ], $isValidation ? 422 : 500);
+    }
+
+    /**
+     * @param  array<int,array<string,mixed>>  $results
+     */
+    private function finalizePendingExecution(array $results, User $director): JsonResponse
+    {
         foreach ($results as $row) {
             $this->conversationContext->rememberResult(
                 (string) ($row['action_type'] ?? ''),
@@ -968,6 +1128,8 @@ class AICommandController extends Controller
                 $row
             );
         }
+
+        $anySuccess = collect($results)->contains(fn ($row) => ($row['success'] ?? false) === true);
 
         if ($results !== []) {
             $this->conversationContext->addTurn(
@@ -997,8 +1159,8 @@ class AICommandController extends Controller
         $batchMessage = $this->formatBatchResults($results);
 
         return response()->json([
-            'success' => true,
-            'any_success' => true,
+            'success' => $anySuccess,
+            'any_success' => $anySuccess,
             'requires_clarification' => false,
             'pending_actions' => null,
             'actions' => $results,
@@ -1006,7 +1168,10 @@ class AICommandController extends Controller
                 (string) ($this->conversationContext->current()['last_user_text'] ?? ''),
                 $results,
             ),
-            'timeline' => $this->mutationTimeline('completed', 'Cambios aplicados correctamente.'),
+            'timeline' => $this->mutationTimeline(
+                $anySuccess ? 'completed' : 'rollback',
+                $anySuccess ? 'Cambios aplicados correctamente.' : 'No se pudo aplicar ningún cambio.'
+            ),
             'buttons' => [['id' => 'menu_main', 'label' => '🏠 Menú principal']],
         ]);
     }
@@ -1501,23 +1666,34 @@ class AICommandController extends Controller
     /**
      * @param  array<int,array{intent:string,data:array,audit_log_id?:int}>  $pending
      */
-    private function pendingConfirmationResponse(array $pending, ?string $prefix = null): JsonResponse
+    private function pendingConfirmationResponse(array $pending, ?string $prefix = null, ?string $message = null, ?array $actionPlan = null): JsonResponse
     {
-        $message = $this->formatPendingConfirmation($pending);
-        if ($prefix !== null && $prefix !== '') {
-            $message = $prefix."\n\n".$message;
+        if ($message !== null && $message !== '') {
+            if (! str_contains($message, '¿Confirmas')) {
+                $message .= "\n\n¿Confirmas que quieres ejecutar estas acciones?";
+            }
+        } else {
+            $message = $this->formatPendingConfirmation($pending);
+            if ($prefix !== null && $prefix !== '') {
+                $message = $prefix."\n\n".$message;
+            }
         }
 
         $queued = count(session(self::BATCH_QUEUE_KEY, []));
-
-        return response()->json([
+        $response = [
             'success' => true,
             'requires_confirmation' => true,
             'message' => $message,
             'pending_actions' => $pending,
             'timeline' => $this->mutationTimeline('confirming', 'Esperando tu confirmación para ejecutar.'),
             'buttons' => $this->confirmationButtons(count($pending) + $queued),
-        ]);
+        ];
+
+        if ($actionPlan !== null) {
+            $response['action_plan'] = $actionPlan;
+        }
+
+        return response()->json($response);
     }
 
     /**
@@ -1641,7 +1817,7 @@ class AICommandController extends Controller
     /**
      * @param  array<int,array{intent:string,data:array,audit_log_id?:int}>  $pending
      */
-    private function rememberPendingActions(array $pending): void
+    private function rememberPendingActions(array $pending, bool $allOrNothing = false): void
     {
         $items = collect($pending)->map(function ($action) {
             $data = (array) ($action['data'] ?? []);
@@ -1664,6 +1840,7 @@ class AICommandController extends Controller
         session([
             self::PENDING_SESSION_KEY => $pending,
             self::PENDING_BATCH_SESSION_KEY => $payload,
+            self::PENDING_META_SESSION_KEY => ['all_or_nothing' => $allOrNothing],
             'chat_pending' => $payload,
         ]);
     }
@@ -1673,6 +1850,7 @@ class AICommandController extends Controller
         $this->confirmationManager->clear();
         session()->forget(self::PENDING_SESSION_KEY);
         session()->forget(self::PENDING_BATCH_SESSION_KEY);
+        session()->forget(self::PENDING_META_SESSION_KEY);
         session()->forget(self::BATCH_QUEUE_KEY);
         session()->forget('chat_pending');
     }
@@ -1758,58 +1936,107 @@ class AICommandController extends Controller
             return null;
         }
 
-        $missingBefore = $this->confirmationManager->missingSlots();
-        foreach ($missingBefore as $slot) {
-            $value = $this->extractSlotValue((string) $slot, $text);
+        // Compatibilidad con planes antiguos de una sola acción (intent/data/slots).
+        $isLegacy = isset($plan['intent']) && ! isset($plan['actions']);
+        if ($isLegacy) {
+            $plan = $this->legacyPlanToActionPlan($plan);
+            $this->confirmationManager->startPlan($plan);
+        }
+
+        $pendingBefore = $this->confirmationManager->getPendingSlots();
+        foreach ($pendingBefore as $item) {
+            $value = $this->extractSlotValue((string) $item['slot'], $text);
             if ($value === null || $value === '') {
                 continue;
             }
-            $this->confirmationManager->fillSlot((string) $slot, $value);
+            $this->confirmationManager->fillSlot($item['action_id'], $item['slot'], $value);
         }
 
+        $plan = $this->confirmationManager->getPlan() ?? $plan;
+        $this->confirmationManager->applySlots($plan);
+        $this->confirmationManager->startPlan($plan);
+
         if (! $this->confirmationManager->isComplete()) {
-            $missingAfter = $this->confirmationManager->missingSlots();
-            if ($this->isAffirmativeText($text)) {
-                $missingLabel = implode(', ', $missingAfter);
+            $plan = $this->confirmationManager->getPlan() ?? $plan;
 
-                return response()->json([
-                    'success' => false,
-                    'needs_clarification' => true,
-                    'pending_plan' => $this->confirmationManager->getPlan(),
-                    'message' => "Aún faltan datos ({$missingLabel}). ".$this->nextSlotQuestion($missingAfter),
-                ]);
-            }
-
-            return response()->json([
-                'success' => false,
-                'needs_clarification' => true,
-                'pending_plan' => $this->confirmationManager->getPlan(),
-                'message' => $this->nextSlotQuestion($missingAfter) ?? 'Necesito un dato adicional para continuar.',
-            ]);
+            return $this->pendingSlotsResponse($plan, $isLegacy);
         }
 
         $completed = $this->confirmationManager->getPlan();
-        if (! $completed) {
-            $this->confirmationManager->clear();
+        $this->confirmationManager->clear();
 
+        if (! $completed) {
             return null;
         }
 
-        $intent = (string) ($completed['intent'] ?? '');
-        $data = (array) ($completed['data'] ?? []);
-        $slots = (array) ($completed['slots'] ?? []);
-        $data = array_merge($data, [
-            'grade' => (string) ($slots['grade'] ?? $data['grade'] ?? ''),
-            'section' => $slots['section'] ?? $data['section'] ?? null,
-        ]);
-        $data['missing_grades'] = $this->missingGradesFor($director, [(string) ($data['grade'] ?? '')]);
+        return $this->prepareActions(
+            $director,
+            $this->planToActions($completed),
+            $text,
+            $completed['summary'] ?? null,
+            $completed['all_or_nothing'] ?? false,
+            $completed
+        );
+    }
 
-        $this->confirmationManager->clear();
+    /**
+     * @param  array<string,mixed>  $legacy
+     * @return array<string,mixed>
+     */
+    private function legacyPlanToActionPlan(array $legacy): array
+    {
+        $data = (array) ($legacy['data'] ?? []);
+        $slots = (array) ($legacy['slots'] ?? []);
+        $missing = [];
+        foreach ($slots as $name => $value) {
+            $missing[] = [
+                'name' => (string) $name,
+                'description' => $this->slotDescription((string) $name),
+                'required' => true,
+                'value' => $value,
+                'source' => 'user',
+            ];
+        }
 
-        return $this->prepareActions($director, [[
-            'intent' => $intent,
-            'data' => $data,
-        ]], (string) ($data['raw_text'] ?? $text));
+        return [
+            'id' => (string) Str::uuid(),
+            'status' => 'needs_info',
+            'actions' => [
+                [
+                    'id' => 'legacy',
+                    'type' => (string) ($legacy['intent'] ?? ''),
+                    'entity' => $this->entityForIntent((string) ($legacy['intent'] ?? '')),
+                    'params' => $data,
+                    'status' => 'needs_info',
+                    'missing_slots' => $missing,
+                    'depends_on' => [],
+                    'confirmation_required' => DirectorUnifiedAgentService::isWriteTool((string) ($legacy['intent'] ?? '')),
+                ],
+            ],
+            'summary' => 'Plan pendiente de una sola acción.',
+            'requires_confirmation' => true,
+            'all_or_nothing' => false,
+        ];
+    }
+
+    private function slotDescription(string $slot): string
+    {
+        return match ($slot) {
+            'grade' => '¿En qué grado?',
+            'section' => '¿En qué sección?',
+            'subject_name' => '¿De qué materia se trata?',
+            default => "¿Cuál es el valor de {$slot}?",
+        };
+    }
+
+    private function entityForIntent(string $intent): string
+    {
+        return match (true) {
+            str_contains($intent, 'teacher') || str_contains($intent, 'course') => 'teacher',
+            str_contains($intent, 'student') || str_contains($intent, 'enroll') => 'student',
+            str_starts_with($intent, 'get_') => 'analytics',
+            default => 'general',
+        };
     }
 
     /**
@@ -1832,6 +2059,7 @@ class AICommandController extends Controller
         return match ($slot) {
             'grade' => $this->extractTargetGrade($text),
             'section' => $this->extractSection($text) ?? $this->extractLooseSectionToken($text),
+            'subject_name' => $this->extractKnownSubject($text),
             default => null,
         };
     }
@@ -2351,6 +2579,169 @@ class AICommandController extends Controller
                 'data' => $action['data'],
             ];
         })->filter()->values()->all();
+    }
+
+    /**
+     * @param  array<string,mixed>  $plan
+     */
+    private function planHasPendingSlots(array $plan): bool
+    {
+        foreach ($plan['actions'] ?? [] as $action) {
+            foreach ($action['missing_slots'] ?? [] as $slot) {
+                if (($slot['required'] ?? true)
+                    && (($slot['value'] ?? null) === null || ($slot['value'] ?? '') === '')) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Convierte un ActionPlan en el formato de acciones del controlador.
+     *
+     * @param  array<string,mixed>  $plan
+     * @return array<int,array{intent:string,data:array<string,mixed>}>
+     */
+    private function planToActions(array $plan): array
+    {
+        $validTools = DirectorUnifiedAgentService::TOOLS;
+        $validTools[] = 'create_subject';
+
+        $errors = [];
+        $actions = collect($plan['actions'] ?? [])
+            ->filter(fn (array $action) => ! in_array(($action['status'] ?? ''), ['needs_info', 'skipped'], true))
+            ->map(function (array $action) use ($validTools, &$errors, $plan) {
+                $intent = (string) ($action['type'] ?? '');
+                if ($intent === 'enroll_students') {
+                    $intent = 'enroll_students_course';
+                }
+
+                if ($intent === '') {
+                    $errors[] = 'Una acción del plan no tiene tipo.';
+
+                    return null;
+                }
+
+                if (! in_array($intent, $validTools, true)) {
+                    $errors[] = "La acción '{$intent}' no está soportada.";
+
+                    return null;
+                }
+
+                $data = (array) ($action['params'] ?? []);
+                $missingRequired = $this->missingRequiredParams($intent, $data);
+                if ($missingRequired !== []) {
+                    $errors[] = "La acción '{$intent}' necesita: ".implode(', ', $missingRequired).'.';
+                }
+
+                return [
+                    'intent' => $intent,
+                    'data' => $data,
+                    'action_plan_id' => $plan['id'] ?? null,
+                    'action_id' => $action['id'] ?? null,
+                ];
+            })
+            ->filter()
+            ->values()
+            ->all();
+
+        if ($errors !== []) {
+            throw ValidationException::withMessages([
+                'prompt' => "No pude usar el plan del asistente:\n".implode("\n", $errors),
+            ]);
+        }
+
+        return $actions;
+    }
+
+    /**
+     * @return array<int,string>
+     */
+    private function missingRequiredParams(string $intent, array $data): array
+    {
+        $required = match ($intent) {
+            'create_teacher' => ['teacher_name'],
+            'create_students_batch' => ['names'],
+            'enroll_students_course' => ['names', 'subject_name'],
+            'update_student' => ['student_name'],
+            'delete_teacher', 'delete_teacher_invite' => ['teacher_name'],
+            'delete_student' => ['student_name'],
+            'create_subject' => ['subject_name'],
+            'create_course' => ['subject_name'],
+            'assign_teacher' => ['teacher_name', 'subject_name'],
+            'unassign_teacher' => ['teacher_name', 'subject_name'],
+            'delete_course' => ['subject_name'],
+            default => [],
+        };
+
+        $missing = [];
+        foreach ($required as $param) {
+            $value = $data[$param] ?? null;
+            if ($value === null || $value === '' || (is_array($value) && $value === [])) {
+                $missing[] = $param;
+            }
+        }
+
+        return $missing;
+    }
+
+    /**
+     * @param  array<string,mixed>  $plan
+     */
+    private function pendingSlotsResponse(array $plan, bool $isLegacy = false): JsonResponse
+    {
+        $pending = $this->confirmationManager->getPendingSlots();
+        $next = $pending[0] ?? null;
+
+        if ($next === null) {
+            // No hay slots pendientes a pesar del flag; continuar con el plan.
+            return $this->prepareActions(
+                auth()->user(),
+                $this->planToActions($plan),
+                (string) ($plan['raw_text'] ?? ''),
+                $plan['summary'] ?? null,
+                $plan['all_or_nothing'] ?? false,
+                $plan
+            );
+        }
+
+        $message = $next['description'];
+        $summary = $plan['summary'] ?? '';
+        if ($summary !== '') {
+            $message = "{$summary}\n\nPara continuar: {$message}";
+        }
+
+        $responsePlan = $plan;
+        if ($isLegacy) {
+            // Compatibilidad: los clientes antiguos esperan pending_plan.slots.
+            $firstAction = $plan['actions'][0] ?? [];
+            $slots = [];
+            foreach ($firstAction['missing_slots'] ?? [] as $slot) {
+                $slots[$slot['name']] = $slot['value'] ?? null;
+            }
+            $responsePlan = array_merge($plan, [
+                'intent' => $firstAction['type'] ?? '',
+                'data' => $firstAction['params'] ?? [],
+                'slots' => $slots,
+            ]);
+        }
+
+        $response = [
+            'success' => false,
+            'needs_clarification' => true,
+            'pending_plan' => $responsePlan,
+            'next_slot' => $next,
+            'message' => $message,
+            'buttons' => $this->mainMenuButtons(),
+        ];
+
+        if (! $isLegacy) {
+            $response['action_plan'] = $plan;
+        }
+
+        return response()->json($response);
     }
 
     /**
