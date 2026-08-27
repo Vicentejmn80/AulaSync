@@ -373,6 +373,68 @@ class DirectorActionPlannerFlowTest extends TestCase
         ]);
     }
 
+    public function test_planner_exception_fallback_is_explicitly_marked_in_response(): void
+    {
+        [$director] = $this->directorContext();
+
+        Http::fake(function () {
+            throw new \Illuminate\Http\Client\ConnectionException('planner network error');
+        });
+
+        $response = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'Crea al profesor Junior Vázquez como profesor de biología.',
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath('requires_confirmation', true)
+            ->assertJsonPath('planner_source', 'fallback_exception')
+            ->assertJsonPath('action_plan.planner_source', 'fallback_exception');
+    }
+
+    public function test_invalid_action_type_from_planner_returns_validation_error(): void
+    {
+        [$director] = $this->directorContext();
+
+        $this->fakePlannerPlan([
+            'status' => 'pending',
+            'actions' => [
+                [
+                    'id' => 'bad1',
+                    'type' => '',
+                    'entity' => 'teacher',
+                    'params' => [
+                        'teacher_name' => 'Junior Vázquez',
+                        'student_name' => null,
+                        'names' => null,
+                        'grade' => null,
+                        'section' => null,
+                        'subject_name' => null,
+                        'new_grade' => null,
+                        'new_section' => null,
+                        'new_name' => null,
+                        'operation' => null,
+                        'all_in_grade' => null,
+                        'invite_code' => null,
+                    ],
+                    'status' => 'pending',
+                    'missing_slots' => [],
+                    'depends_on' => [],
+                    'confirmation_required' => true,
+                ],
+            ],
+            'summary' => 'Plan inválido',
+            'requires_confirmation' => true,
+            'all_or_nothing' => false,
+        ]);
+
+        $response = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'Crea al profesor Junior Vázquez.',
+        ]);
+
+        $response->assertStatus(422);
+        $this->assertStringContainsString('no tiene tipo', mb_strtolower((string) $response->json('message')));
+    }
+
     private function fakePlannerPlan(array $plan): void
     {
         Http::fake([

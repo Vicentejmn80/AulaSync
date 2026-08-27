@@ -335,7 +335,7 @@ class AICommandController extends Controller
 
                 $actions = $this->enrichActionsFromText((array) ($interpreted['actions'] ?? []), $text);
                 $localBatch = $this->extractMultipleActions($director, $text);
-                $actions = $this->preferLocalTeacherBatch($actions, $localBatch);
+                $actions = $this->preferLocalTeacherBatch($actions, $localBatch, $text);
 
                 $localIntentions = $this->mapLocalIntentions(
                     $this->intentExtractor->extractMultipleIntentions($text)
@@ -1691,6 +1691,7 @@ class AICommandController extends Controller
 
         if ($actionPlan !== null) {
             $response['action_plan'] = $actionPlan;
+            $response['planner_source'] = $actionPlan['planner_source'] ?? null;
         }
 
         return response()->json($response);
@@ -2750,7 +2751,7 @@ class AICommandController extends Controller
     private function splitIntentClauses(string $text): array
     {
         $parts = preg_split(
-            '/\s+(?:y\s+)?(?:tambien|también|ademas|además)\s+|\s+y\s+(?=crea(?:r|me)?\s+(?:al?\s+)?(?:alumn[oa]|estudiante|profesor|docente))/iu',
+            '/\s+(?:y\s+)?(?:tambien|también|ademas|además|adicional)\s*,?\s+|\s+y\s+(?=crea(?:r|me)?\s+(?:al?\s+)?(?:alumn[oa]|estudiante|profesor|docente))/iu',
             $text,
             -1,
             PREG_SPLIT_NO_EMPTY
@@ -4194,9 +4195,12 @@ class AICommandController extends Controller
      * @param  array<int,array{intent:string,data:array}>  $localBatch
      * @return array<int,array{intent:string,data:array}>
      */
-    private function preferLocalTeacherBatch(array $actions, array $localBatch): array
+    private function preferLocalTeacherBatch(array $actions, array $localBatch, string $text): array
     {
         if (count($localBatch) < 2) {
+            return $actions;
+        }
+        if (preg_match('/\b(?:alumn[oa]s?|estudiantes?)\b/iu', $text)) {
             return $actions;
         }
 
@@ -4245,6 +4249,13 @@ class AICommandController extends Controller
     private function extractMultipleActions(User $director, string $text): array
     {
         $span = $this->teacherListSpan($text);
+        $normalizedSpan = $this->normalizedText($span);
+        if (
+            preg_match('/\b(?:alumn[oa]s?|estudiantes?)\b/u', $normalizedSpan)
+            && ! $this->looksLikeStaffingList($span)
+        ) {
+            return [];
+        }
         $roster = $this->parseTeacherRosterList($director, $span);
         if (count($roster) >= 2) {
             return $roster;

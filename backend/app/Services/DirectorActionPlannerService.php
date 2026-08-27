@@ -30,7 +30,7 @@ class DirectorActionPlannerService
     public function plan(User $director, string $text, array $context = []): array
     {
         if (! $this->enabled()) {
-            return $this->fromFallback($text);
+            return $this->fromFallback($text, 'fallback_disabled');
         }
 
         $director->loadMissing('colegio');
@@ -67,25 +67,25 @@ class DirectorActionPlannerService
                     'director_id' => $director->id,
                     'status' => $response->status(),
                 ]);
-
-                return $this->fromFallback($text);
+                return $this->fromFallback($text, 'fallback_http_failed');
             }
 
             $raw = (string) $response->json('choices.0.message.content', '');
             $plan = json_decode($raw, true);
 
             if (! is_array($plan)) {
-                return $this->fromFallback($text);
+                return $this->fromFallback($text, 'fallback_invalid_json');
             }
+            $normalized = $this->normalizePlan($plan, $text);
+            $normalized['planner_source'] = 'llm_structured';
 
-            return $this->normalizePlan($plan, $text);
+            return $normalized;
         } catch (\Throwable $e) {
             Log::warning('Director action planner failed; using fallback', [
                 'director_id' => $director->id,
                 'message' => $e->getMessage(),
             ]);
-
-            return $this->fromFallback($text);
+            return $this->fromFallback($text, 'fallback_exception');
         }
     }
 
@@ -225,11 +225,11 @@ PROMPT;
     /**
      * @return array<string,mixed>
      */
-    private function fromFallback(string $text): array
+    private function fromFallback(string $text, string $source = 'fallback_unknown'): array
     {
         $actions = $this->intentExtractor->extractMultipleIntentions($text);
 
-        return $this->normalizePlan([
+        $plan = $this->normalizePlan([
             'status' => 'pending',
             'actions' => collect($actions)->map(function (array $action) {
                 $intent = $action['intent'];
@@ -254,6 +254,9 @@ PROMPT;
             ),
             'all_or_nothing' => false,
         ], $text);
+        $plan['planner_source'] = $source;
+
+        return $plan;
     }
 
     /**

@@ -50,6 +50,9 @@ class DirectorIntentExtractorService
 
             // Si el segmento no trae materia/grados pero hay contexto previo, herédalo.
             $action = $this->mergeWithContext($action, $context);
+            if ($action['intent'] === 'create_students_batch' && $this->looksLikeStudentEnrollment($segment)) {
+                $action['data']['_needs_enrollment'] = true;
+            }
             $actions[] = $action;
 
             // La última acción completa se convierte en contexto para pronombres/referencias.
@@ -232,17 +235,17 @@ class DirectorIntentExtractorService
             ];
         }
 
-        if ($this->looksLikeStudentEnrollment($segment)) {
-            return [
-                'intent' => 'enroll_students',
-                'data' => $this->extractStudentEnrollmentData($segment, $context),
-            ];
-        }
-
         if ($this->looksLikeStudentCreation($segment)) {
             return [
                 'intent' => 'create_students_batch',
                 'data' => $this->extractStudentCreationData($segment, $context),
+            ];
+        }
+
+        if ($this->looksLikeStudentEnrollment($segment)) {
+            return [
+                'intent' => 'enroll_students',
+                'data' => $this->extractStudentEnrollmentData($segment, $context),
             ];
         }
 
@@ -263,7 +266,7 @@ class DirectorIntentExtractorService
 
         $enrollmentVerbs = (bool) preg_match('/\b(?:agrega(?:r|le|lo|s|n)?|agregues?|inscribe(?:r|s|n)?|inscribes?|matricula(?:r|s|n)?|matricules?)\b/iu', $segment);
         $studentMention = (bool) preg_match('/\b(?:alumnos?|estudiantes?)\b/iu', $segment);
-        $existingStudents = (bool) preg_match('/\b(?:a\s+su\s+materia|a\s+la\s+materia|a\s+la\s+clase|en\s+(?:el|la)\s+(?:materia|clase|asignatura))\b/iu', $segment);
+        $existingStudents = (bool) preg_match('/\b(?:a\s+su\s+(?:materia|curso)|a\s+la\s+(?:materia|clase)|en\s+(?:el|la)\s+(?:materia|clase|asignatura|curso))\b/iu', $segment);
 
         return $enrollmentVerbs && ($studentMention || $existingStudents);
     }
@@ -307,11 +310,11 @@ class DirectorIntentExtractorService
         // Patrones ordenados por especificidad.
         $patterns = [
             // "profesor de matemáticas llamado Vicente José"
-            '/profesor(?:a)?\s+(?:de\s+(?:la\s+|el\s+)?)?(?:'.self::SUBJECT_PATTERN.')\s+(?:llamad[oa]\s+)?(.+?)(?:\s+(?:desde|de\s+\d|que\s+va|va\s+a|asigna|materia|grado|curso|\(|,\s*(?:desde|que|y\s+(?:es|va)))|$)/iu',
+            '/profesor(?:a)?\s+(?:de\s+(?:la\s+|el\s+)?)?(?:'.self::SUBJECT_PATTERN.')\s+(?:llamad[oa]\s+)?(.+?)(?:\s+(?:como\s+profesor|desde|de\s+\d|que\s+va|va\s+a|asigna|materia|grado|curso|\(|,\s*(?:desde|que|y\s+(?:es|va)))|$)/iu',
             // "profesor llamado Vicente José"
-            '/profesor(?:a)?\s+(?:llamad[oa]\s+)?(.+?)(?:\s+(?:de\s+(?:la\s+|el\s+)?(?:'.self::SUBJECT_PATTERN.')|desde|que\s+va|va\s+a|asigna|materia|grado|curso|\(|,\s*(?:desde|que|y\s+(?:es|va)))|$)/iu',
+            '/profesor(?:a)?\s+(?:llamad[oa]\s+)?(.+?)(?:\s+(?:como\s+profesor|de\s+(?:la\s+|el\s+)?(?:'.self::SUBJECT_PATTERN.')|desde|que\s+va|va\s+a|asigna|materia|grado|curso|\(|,\s*(?:desde|que|y\s+(?:es|va)))|$)/iu',
             // "crea al profesor Vicente José"
-            '/(?:crea(?:r|me|s)?|crees|cree|invita(?:r|s)?|invites?)\s+(?:a\s+)?(?:el\s+|la\s+)?profesor(?:a)?\s+(.+?)(?:\s+(?:de\s+(?:la\s+|el\s+)?(?:'.self::SUBJECT_PATTERN.')|desde|que\s+va|va\s+a|asigna|materia|grado|curso|\(|,\s*(?:desde|que|y\s+(?:es|va)))|$)/iu',
+            '/(?:crea(?:r|me|s)?|crees|cree|invita(?:r|s)?|invites?)\s+(?:a\s+)?(?:el\s+|la\s+)?profesor(?:a)?\s+(.+?)(?:\s+(?:como\s+profesor|de\s+(?:la\s+|el\s+)?(?:'.self::SUBJECT_PATTERN.')|desde|que\s+va|va\s+a|asigna|materia|grado|curso|\(|,\s*(?:desde|que|y\s+(?:es|va)))|$)/iu',
         ];
 
         foreach ($patterns as $pattern) {
@@ -366,7 +369,7 @@ class DirectorIntentExtractorService
      */
     private function extractStudentNames(string $segment): array
     {
-        $endOfNames = '(?:a\s+(?:su|la|el)\s+(?:materia|clase|asignatura)|en\s+(?:el|la|los|las)\s+(?:materia|clase|asignatura|curso|grado)|en\s+(?:\d|primer|primero|segundo|tercer|tercero|cuarto|quinto|sexto)|que\s+(?:ambos|son|est[áa]n)|,\s*que|\(|$)';
+        $endOfNames = '(?:a\s+(?:su|la|el)\s+(?:materia|clase|asignatura|curso)|en\s+(?:el|la|los|las)\s+(?:materia|clase|asignatura|curso|grado)|en\s+(?:\d|primer|primero|segundo|tercer|tercero|cuarto|quinto|sexto)|que\s+(?:ambos|son|est[áa]n)|y\s+los\s+(?:agrega(?:r|s)?|agregues?|inscribe(?:r|s)?|matricula(?:r|s)?)|,\s*que|\(|$)';
         $patterns = [
             // "alumnos Carlos Gutiérrez y Salvador Pérez a su materia..."
             '/(?:alumnos?|estudiantes?)\s+(.+?)(?:\s+'.$endOfNames.')/iu',
@@ -639,11 +642,30 @@ class DirectorIntentExtractorService
         $result = [];
         foreach ($actions as $action) {
             $data = $this->cleanData($action['data']);
+            $needsEnrollment = (bool) ($data['_needs_enrollment'] ?? false);
+            unset($data['_needs_enrollment']);
             if ($this->isActionValid($action['intent'], $data)) {
                 $result[] = [
                     'intent' => $action['intent'],
                     'data' => $data,
                 ];
+                if (
+                    $needsEnrollment
+                    && $action['intent'] === 'create_students_batch'
+                    && ! empty($data['names'])
+                    && ! empty($data['subject_name'])
+                    && ! empty($data['grade'])
+                ) {
+                    $result[] = [
+                        'intent' => 'enroll_students',
+                        'data' => [
+                            'names' => (array) ($data['names'] ?? []),
+                            'subject_name' => $data['subject_name'] ?? null,
+                            'grade' => $data['grade'] ?? null,
+                            'teacher_name' => $data['teacher_name'] ?? null,
+                        ],
+                    ];
+                }
             }
         }
 

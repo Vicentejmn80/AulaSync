@@ -2771,6 +2771,60 @@ class DirectorAICommandTest extends TestCase
         $this->assertSame('Computación', $byName['Miguel Zambrano']['data']['subject_name'] ?? null);
     }
 
+    public function test_real_phrase_with_adicional_creates_teacher_students_and_enrollment_in_legacy_flow(): void
+    {
+        [$director] = $this->directorContext();
+        config([
+            'services.openai.key' => '',
+            'services.openai.director_enabled' => false,
+            'services.openai.director_test_enabled' => false,
+        ]);
+
+        $prompt = 'Crea al profesor Junior Vázquez como profesor de biología. Adicional, crea a los alumnos Jason David y Vicente José y los agregas a su curso de biología. Ellos son de 3ro.';
+        $draft = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => $prompt,
+        ]);
+
+        $draft->assertOk(json_encode($draft->json(), JSON_UNESCAPED_UNICODE))
+            ->assertJsonPath('requires_confirmation', true);
+
+        $pending = collect($draft->json('pending_actions'));
+        $this->assertCount(3, $pending, json_encode($draft->json(), JSON_UNESCAPED_UNICODE));
+        $this->assertSame(
+            ['create_teacher', 'create_students_batch', 'enroll_students_course'],
+            $pending->pluck('intent')->values()->all()
+        );
+        $this->assertSame('Junior Vázquez', $pending[0]['data']['teacher_name'] ?? null);
+        $this->assertSame('Biología', $pending[0]['data']['subject_name'] ?? null);
+        $this->assertEqualsCanonicalizing(['Jason David', 'Vicente José'], $pending[1]['data']['names'] ?? []);
+        $this->assertSame('3ro', $pending[1]['data']['grade'] ?? null);
+        $this->assertSame('Biología', $pending[2]['data']['subject_name'] ?? null);
+        $this->assertSame('3ro', $pending[2]['data']['grade'] ?? null);
+    }
+
+    public function test_mixed_actions_confirmation_summary_is_not_hardcoded_as_professors(): void
+    {
+        [$director] = $this->directorContext();
+        config([
+            'services.openai.key' => '',
+            'services.openai.director_enabled' => false,
+            'services.openai.director_test_enabled' => false,
+        ]);
+
+        $prompt = 'Crea al profesor Junior Vázquez como profesor de biología. Adicional, crea a los alumnos Jason David y Vicente José y los agregas a su curso de biología. Ellos son de 3ro.';
+        $draft = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => $prompt,
+        ]);
+
+        $draft->assertOk();
+        $message = (string) $draft->json('message');
+        $this->assertStringContainsString('He identificado 3 acciones', $message);
+        $this->assertStringNotContainsString('profesores para crear', $message);
+        $this->assertTrue(
+            collect($draft->json('pending_actions'))->every(fn ($a) => is_string($a['intent'] ?? null) && $a['intent'] !== '')
+        );
+    }
+
     public function test_director_can_transcribe_a_voice_note(): void
     {
         [$director] = $this->directorContext();
