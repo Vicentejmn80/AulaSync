@@ -675,6 +675,190 @@ class DirectorActionService
     }
 
     /**
+     * Creación masiva de cursos: N materias × N grados en una sola transacción.
+     * El docente es opcional por materia; un curso sin docente queda pendiente
+     * de asignación (courses.teacher_id es nullable desde la migración
+     * 2026_08_18_004500_allow_pending_teacher_course_assignment).
+     *
+     * @param  array{courses_data:array<int,array<string,mixed>>}  $payload
+     * @return array{
+     *   courses:Collection<int,Course>,
+     *   created_count:int,
+     *   existing_count:int,
+     *   subjects_count:int,
+     *   teacher_labels:array<int,string>
+     * }
+     */
+    public function createCoursesBatch(User $director, array $payload): array
+    {
+        $colegioId = $this->requireColegioId($director);
+        $items = $this->normalizeCoursesData($payload['courses_data'] ?? []);
+
+        if ($items === []) {
+            throw ValidationException::withMessages([
+                'course' => 'Debes indicar al menos una materia con su grado.',
+            ]);
+        }
+
+        // Pre-pass: resolver TODOS los docentes antes de escribir nada, para que
+        // un nombre inexistente rechace el lote completo en vez de dejarlo a medias.
+        $assignees = [];
+        foreach ($items as $item) {
+            if ($item['teacher_name'] === null) {
+                continue;
+            }
+            $key = mb_strtolower($item['teacher_name']);
+            if (! array_key_exists($key, $assignees)) {
+                $assignees[$key] = $this->resolveAssigneeByName($colegioId, $item['teacher_name']);
+            }
+        }
+
+        return DB::transaction(function () use ($colegioId, $items, $assignees) {
+            $courses = collect();
+            $created = 0;
+            $existing = 0;
+            $inviteCourseIds = [];
+            $teacherLabels = [];
+
+            foreach ($items as $item) {
+                [$teacherId, $inviteId, $teacherLabel] = $item['teacher_name'] !== null
+                    ? $assignees[mb_strtolower($item['teacher_name'])]
+                    : [null, null, null];
+
+                if ($teacherLabel !== null) {
+                    $teacherLabels[$teacherLabel] = true;
+                }
+
+                foreach ($item['grades'] as $grade) {
+                    $existingCourse = $this->findExistingCourse($colegioId, $item['subject_name'], $grade, $item['section']);
+
+                    if ($existingCourse) {
+                        if (($teacherId !== null || $inviteId !== null)
+                            && ! $this->courseOccupiedByOther($existingCourse, $teacherId, $inviteId)) {
+                            $existingCourse->update([
+                                'teacher_id' => $teacherId,
+                                'teacher_invite_id' => $inviteId,
+                            ]);
+                        }
+                        $courses->push($existingCourse->fresh());
+                        $existing++;
+                        if ($inviteId) {
+                            $inviteCourseIds[$inviteId][] = $existingCourse->id;
+                        }
+
+                        continue;
+                    }
+
+                    $materia = $this->findOrCreateMateria($colegioId, $item['subject_name']);
+                    $course = Course::create([
+                        'teacher_id' => $teacherId,
+                        'teacher_invite_id' => $inviteId,
+                        'colegio_id' => $colegioId,
+                        'materia_id' => $materia->id,
+                        'subject_name' => $materia->name,
+                        'grade' => $grade,
+                        'section' => $item['section'],
+                        'school_year' => date('Y').'-'.(date('Y') + 1),
+                        'invite_code' => InviteCodeHelper::generateCourseCode($materia->name, $grade, $item['section']),
+                    ]);
+                    $courses->push($course);
+                    $created++;
+                    if ($inviteId) {
+                        $inviteCourseIds[$inviteId][] = $course->id;
+                    }
+                }
+            }
+
+            // Una sola escritura por invitación, no una por curso.
+            foreach ($inviteCourseIds as $inviteId => $ids) {
+                $invite = TeacherInvite::find($inviteId);
+                if ($invite) {
+                    $invite->update([
+                        'course_ids' => collect($invite->course_ids ?? [])->merge($ids)->unique()->values()->all(),
+                    ]);
+                }
+            }
+
+            $verified = Course::query()
+                ->where('colegio_id', $colegioId)
+                ->whereIn('id', $courses->pluck('id')->all())
+                ->withCount('students')
+                ->get(['id', 'colegio_id', 'subject_name', 'grade', 'section', 'teacher_id', 'teacher_invite_id', 'invite_code']);
+
+            if ($verified->count() !== $courses->unique('id')->count()) {
+                throw ValidationException::withMessages([
+                    'course' => 'No se pudieron verificar todos los cursos creados.',
+                ]);
+            }
+
+            return [
+                'courses' => $verified,
+                'created_count' => $created,
+                'existing_count' => $existing,
+                'subjects_count' => count($items),
+                'teacher_labels' => array_keys($teacherLabels),
+            ];
+        });
+    }
+
+    /**
+     * Normaliza `courses_data`: materia recortada, grados canónicos y sin
+     * repetir, sección vacía => null. Descarta items sin materia o sin grados y
+     * fusiona items de la misma materia + sección.
+     *
+     * @return array<int,array{subject_name:string,grades:array<int,string>,section:?string,teacher_name:?string}>
+     */
+    public function normalizeCoursesData(mixed $raw): array
+    {
+        $merged = [];
+
+        foreach ((array) $raw as $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+
+            $subject = trim((string) ($item['subject_name'] ?? ''));
+            if ($subject === '') {
+                continue;
+            }
+
+            $grades = collect($item['grades'] ?? [])
+                ->map(fn ($grade) => GradeLabel::canonical((string) $grade))
+                ->filter(fn (?string $grade) => $grade !== null && $grade !== '')
+                ->unique()
+                ->values()
+                ->all();
+
+            if ($grades === []) {
+                continue;
+            }
+
+            $section = trim((string) ($item['section'] ?? ''));
+            $section = $section !== '' ? $section : null;
+            $teacher = trim((string) ($item['teacher_name'] ?? ''));
+            $teacher = $teacher !== '' ? $teacher : null;
+
+            $key = mb_strtolower($subject).'|'.mb_strtolower((string) $section);
+
+            if (isset($merged[$key])) {
+                $merged[$key]['grades'] = array_values(array_unique(array_merge($merged[$key]['grades'], $grades)));
+                $merged[$key]['teacher_name'] ??= $teacher;
+
+                continue;
+            }
+
+            $merged[$key] = [
+                'subject_name' => $subject,
+                'grades' => $grades,
+                'section' => $section,
+                'teacher_name' => $teacher,
+            ];
+        }
+
+        return array_values($merged);
+    }
+
+    /**
      * @param array{
      *   names:array<int,string>,
      *   subject_name:string,
@@ -1625,7 +1809,7 @@ class DirectorActionService
         ]);
     }
 
-    private function findOrCreateMateria(int $colegioId, string $name): Materia
+    public function findOrCreateMateria(int $colegioId, string $name): Materia
     {
         $name = trim($name);
         $existing = Materia::query()

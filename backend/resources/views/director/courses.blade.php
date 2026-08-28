@@ -59,9 +59,9 @@
                       @submit="submitting = true">
                     @csrf
                     <div class="lg:col-span-2">
-                        <label class="director-label" for="course-assignee">Docente *</label>
-                        <select id="course-assignee" name="assignee" required class="director-select">
-                            <option value="">Seleccionar docente…</option>
+                        <label class="director-label" for="course-assignee">Docente</label>
+                        <select id="course-assignee" name="assignee" class="director-select">
+                            <option value="">Sin asignar</option>
                             @if($pendingInvites->isNotEmpty())
                                 <optgroup label="Pendientes de registro">
                                     @foreach($pendingInvites as $invite)
@@ -170,8 +170,8 @@
                             </form>
                             <form method="POST" action="{{ route('director.courses.assign', $course) }}" class="flex flex-wrap gap-2">
                                 @csrf
-                                <select name="assignee" required class="director-select min-w-[12rem] text-xs">
-                                    <option value="">Elegir docente…</option>
+                                <select name="assignee" class="director-select min-w-[12rem] text-xs">
+                                    <option value="">Sin asignar</option>
                                     @foreach($pendingInvites as $invite)
                                         <option value="invite:{{ $invite->id }}" @selected((int) $course->teacher_invite_id === (int) $invite->id && ! $course->teacher_id)>{{ $invite->display_name }} · {{ $invite->invite_code }}</option>
                                     @endforeach

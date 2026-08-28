@@ -46,12 +46,23 @@ class DirectorCommandFocusService
 
     private function fromFirstCue(string $text): ?string
     {
-        if (! preg_match('/\b(?:'.self::CUES.')\b.+/iu', $text, $match)) {
+        if (! preg_match('/\b(?:'.self::CUES.')\b.+/iu', $text, $match, PREG_OFFSET_CAPTURE)) {
             return null;
         }
 
-        $slice = trim((string) $match[0]);
+        $slice = trim((string) $match[0][0]);
         if (mb_strlen($slice) < 12) {
+            return null;
+        }
+
+        // Nunca recortar si el texto anterior al "cue" ya contiene una orden.
+        // Antes se perdían acciones completas ("Crea al profesor X. Necesito que
+        // agregues a Y") porque solo viajaba al LLM el trozo posterior al cue.
+        $prefix = substr($text, 0, (int) $match[0][1]);
+        if ($prefix !== '' && (
+            preg_match('/\b(?:'.self::VERBS.')\b/iu', $prefix)
+            || preg_match('/\b(?:profesor(?:a)?|docente|maestr[oa]|alumn[oa]|estudiante)s?\b/iu', $prefix)
+        )) {
             return null;
         }
 

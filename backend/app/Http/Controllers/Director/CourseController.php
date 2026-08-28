@@ -8,6 +8,7 @@ use App\Models\Course;
 use App\Models\Student;
 use App\Models\TeacherInvite;
 use App\Models\User;
+use App\Services\DirectorActionService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -15,6 +16,8 @@ use Illuminate\View\View;
 
 class CourseController extends Controller
 {
+    public function __construct(private DirectorActionService $actionService) {}
+
     public function index(Request $request): View
     {
         $colegioId = $request->user()->colegio_id;
@@ -68,7 +71,9 @@ class CourseController extends Controller
     public function store(Request $request): RedirectResponse
     {
         $data = $request->validate([
-            'assignee' => ['required', 'string', 'max:40'],
+            // El docente es opcional: courses.teacher_id es nullable y el curso
+            // puede quedar pendiente de asignación.
+            'assignee' => ['nullable', 'string', 'max:40'],
             'subject_name' => ['required', 'string', 'max:120'],
             'grade' => ['required', 'string', 'max:60'],
             'section' => ['nullable', 'string', 'max:10'],
@@ -79,13 +84,21 @@ class CourseController extends Controller
         $director = $request->user();
         [$teacherId, $inviteId, $assigneeLabel] = $this->resolveAssignee(
             $director->colegio_id,
-            $data['assignee']
+            $data['assignee'] ?? null
+        );
+
+        // Mismo catálogo de materias que usa el asistente de IA, para que los
+        // cursos creados desde la UI no queden fuera de `materias`.
+        $materia = $this->actionService->findOrCreateMateria(
+            (int) $director->colegio_id,
+            $data['subject_name']
         );
 
         $course = Course::create([
             'teacher_id' => $teacherId,
             'teacher_invite_id' => $inviteId,
             'colegio_id' => $director->colegio_id,
+            'materia_id' => $materia->id,
             'subject_name' => $data['subject_name'],
             'grade' => $data['grade'],
             'section' => ($data['section'] ?? null) ?: null,
@@ -112,8 +125,11 @@ class CourseController extends Controller
 
         $suffix = $enrolled > 0 ? " Se inscribieron {$enrolled} alumno(s) del grado." : '';
 
-        return redirect()->route('director.courses')
-            ->with('success', "Curso creado y asignado a {$assigneeLabel}.{$suffix}");
+        $message = $teacherId === null && $inviteId === null
+            ? "Curso creado sin docente asignado.{$suffix}"
+            : "Curso creado y asignado a {$assigneeLabel}.{$suffix}";
+
+        return redirect()->route('director.courses')->with('success', $message);
     }
 
     public function destroy(Request $request, Course $course): RedirectResponse|JsonResponse
@@ -158,12 +174,12 @@ class CourseController extends Controller
         abort_unless((int) $course->colegio_id === (int) $request->user()->colegio_id, 403);
 
         $data = $request->validate([
-            'assignee' => ['required', 'string', 'max:40'],
+            'assignee' => ['nullable', 'string', 'max:40'],
         ]);
 
         [$teacherId, $inviteId, $assigneeLabel] = $this->resolveAssignee(
             $request->user()->colegio_id,
-            $data['assignee']
+            $data['assignee'] ?? null
         );
 
         $course->update([
@@ -179,7 +195,11 @@ class CourseController extends Controller
             }
         }
 
-        return back()->with('success', "{$course->subject_name} quedó asignado a {$assigneeLabel}.");
+        $message = $teacherId === null && $inviteId === null
+            ? "{$course->subject_name} quedó sin docente asignado."
+            : "{$course->subject_name} quedó asignado a {$assigneeLabel}.";
+
+        return back()->with('success', $message);
     }
 
     public function enrollByRoster(Request $request, Course $course): RedirectResponse
@@ -198,8 +218,13 @@ class CourseController extends Controller
     /**
      * @return array{0: int|null, 1: int|null, 2: string}
      */
-    private function resolveAssignee(int $colegioId, string $assignee): array
+    private function resolveAssignee(int $colegioId, ?string $assignee): array
     {
+        $assignee = trim((string) $assignee);
+        if ($assignee === '') {
+            return [null, null, 'sin asignar'];
+        }
+
         if (str_starts_with($assignee, 'invite:')) {
             $invite = TeacherInvite::where('colegio_id', $colegioId)
                 ->where('id', (int) substr($assignee, 7))

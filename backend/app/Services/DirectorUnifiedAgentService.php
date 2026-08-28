@@ -36,6 +36,7 @@ class DirectorUnifiedAgentService
     public const WRITE_TOOLS = [
         'create_teacher',
         'create_course',
+        'create_courses_batch',
         'assign_teacher',
         'create_students_batch',
         'enroll_students_course',
@@ -67,7 +68,7 @@ class DirectorUnifiedAgentService
         'get_declining_students', 'get_academic_trends', 'generate_school_report',
         'get_rankings', 'get_section_counts', 'query_academic',
         // Escritura
-        'create_teacher', 'create_course', 'assign_teacher',
+        'create_teacher', 'create_course', 'create_courses_batch', 'assign_teacher',
         'create_students_batch', 'enroll_students_course', 'unenroll_students_course',
         'unassign_teacher', 'update_course', 'update_student',
         'delete_teacher', 'delete_teacher_invite', 'delete_all_teachers',
@@ -158,6 +159,26 @@ class DirectorUnifiedAgentService
                     'teacher_name' => ['type' => ['string', 'null']],
                 ],
                 'required' => ['subject_name', 'grades'],
+            ],
+            'create_courses_batch' => [
+                'description' => 'Crear cursos/materias EN LOTE. Es la ÚNICA tool para crear cursos: úsala también cuando haya una sola materia y un solo grado. courses_data es un ARRAY con un item por materia; cada item lleva su propio array grades con TODOS los grados pedidos (rangos ya expandidos). El docente es OPCIONAL: si el director no lo menciona, deja teacher_name en null y NO lo preguntes.',
+                'properties' => [
+                    'courses_data' => [
+                        'type' => 'array',
+                        'items' => [
+                            'type' => 'object',
+                            'properties' => [
+                                'subject_name' => ['type' => 'string'],
+                                'grades' => ['type' => 'array', 'items' => ['type' => 'string']],
+                                'section' => ['type' => ['string', 'null']],
+                                'teacher_name' => ['type' => ['string', 'null']],
+                            ],
+                            'required' => ['subject_name', 'grades'],
+                            'additionalProperties' => false,
+                        ],
+                    ],
+                ],
+                'required' => ['courses_data'],
             ],
             'assign_teacher' => [
                 'description' => 'Asignar una materia y grados a un profesor registrado o invitación pendiente.',
@@ -746,6 +767,7 @@ PROMPT;
             'create_course' => count($data['grades'] ?? []) > 1
                 ? $this->actionService->createCourses($director, $data)
                 : $this->actionService->createCourse($director, $data),
+            'create_courses_batch' => $this->actionService->createCoursesBatch($director, $data),
             'assign_teacher' => $this->actionService->assignTeacherToGradesSubject($director, $data),
             'create_students_batch' => $this->actionService->createStudentsBatch($director, $data),
             'enroll_students_course' => $this->actionService->enrollStudentsToCourse($director, $data),

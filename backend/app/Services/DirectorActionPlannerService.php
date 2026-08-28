@@ -96,6 +96,7 @@ class DirectorActionPlannerService
     {
         $attempt = 0;
         $delayMs = 500;
+        $lastException = null;
 
         while ($attempt < $maxAttempts) {
             $attempt++;
@@ -133,6 +134,7 @@ class DirectorActionPlannerService
                 ]);
             } catch (\Throwable $e) {
                 // ConnectionException cubre timeouts y errores SSL transitorios.
+                $lastException = $e;
                 Log::warning('Director action planner connection issue; retrying', [
                     'director_id' => $director->id,
                     'attempt' => $attempt,
@@ -144,6 +146,14 @@ class DirectorActionPlannerService
                 usleep($delayMs * 1000);
                 $delayMs *= 2;
             }
+        }
+
+        // Un fallo de transporte (ConnectionException, timeout, SSL) no es lo mismo
+        // que una respuesta HTTP de error: al tragarlo y devolver null se reportaba
+        // 'fallback_http_failed' y se perdía la causa real. Se propaga para que
+        // plan() lo registre como 'fallback_exception'.
+        if ($lastException !== null) {
+            throw $lastException;
         }
 
         return null;
@@ -235,6 +245,27 @@ class DirectorActionPlannerService
                                         'items' => ['type' => 'string'],
                                     ],
                                     'grade' => ['type' => ['string', 'null']],
+                                    'grades' => [
+                                        'type' => ['array', 'null'],
+                                        'items' => ['type' => 'string'],
+                                    ],
+                                    'courses_data' => [
+                                        'type' => ['array', 'null'],
+                                        'items' => [
+                                            'type' => 'object',
+                                            'properties' => [
+                                                'subject_name' => ['type' => 'string'],
+                                                'grades' => [
+                                                    'type' => 'array',
+                                                    'items' => ['type' => 'string'],
+                                                ],
+                                                'section' => ['type' => ['string', 'null']],
+                                                'teacher_name' => ['type' => ['string', 'null']],
+                                            ],
+                                            'required' => ['subject_name', 'grades', 'section', 'teacher_name'],
+                                            'additionalProperties' => false,
+                                        ],
+                                    ],
                                     'section' => ['type' => ['string', 'null']],
                                     'subject_name' => ['type' => ['string', 'null']],
                                     'new_grade' => ['type' => ['string', 'null']],
@@ -245,7 +276,8 @@ class DirectorActionPlannerService
                                     'invite_code' => ['type' => ['string', 'null']],
                                 ],
                                 'required' => [
-                                    'teacher_name', 'student_name', 'names', 'grade', 'section',
+                                    'teacher_name', 'student_name', 'names', 'grade', 'grades',
+                                    'courses_data', 'section',
                                     'subject_name', 'new_grade', 'new_section', 'new_name',
                                     'operation', 'all_in_grade', 'invite_code',
                                 ],
@@ -315,6 +347,8 @@ REGLAS CRÍTICAS:
 6. GRADOS — RANGOS EXPANDIDOS: Los grados válidos son 1ro, 2do, 3ro, 4to, 5to, 6to. Un rango como "de 1ro a 6to", "desde 1ro hasta 6to", "desde 1ro a 6to", "1ro a 6to" DEBE expandirse al array completo: ["1ro","2do","3ro","4to","5to","6to"]. Para create_teacher/create_course/assign_teacher usa el array grades completo. Para create_students_batch/enroll usa grade individual o el grado relevante. NUNCA dejes un rango sin expandir ni como texto libre ni como grade=null.
 7. Genera un resumen natural en "summary" numerando las acciones, usando nombres limpios y rangos expandidos (ej. "1ro a 6to").
 8. Si no hay acciones, devuelve actions=[] y summary="No entendí ninguna acción. ¿Puedes reformular?".
+9. CURSOS — SIEMPRE EN LOTE: para crear materias/cursos usa SIEMPRE create_courses_batch, incluso si es una sola materia en un solo grado. NUNCA uses create_course. params.courses_data es un array con UN item por materia y cada item lleva su propio array grades con todos los grados pedidos. Ejemplo — "crea matemática, lenguaje y biología para 3ro y 4to" es UNA sola acción: courses_data=[{"subject_name":"matemática","grades":["3ro","4to"],"section":null,"teacher_name":null},{"subject_name":"lenguaje","grades":["3ro","4to"],"section":null,"teacher_name":null},{"subject_name":"biología","grades":["3ro","4to"],"section":null,"teacher_name":null}]. No la partas en tres acciones.
+10. DOCENTE OPCIONAL EN CURSOS: teacher_name es opcional dentro de courses_data. Si el director no menciona profesor, deja teacher_name=null y NO crees ningún missing_slot pidiéndolo: el curso se crea sin docente y se asigna después.
 
 Datos del colegio:
 {$roster}
@@ -390,6 +424,9 @@ PROMPT;
 
         // Deduplicación global: misma persona no debe aparecer dos veces en el plan.
         $plan['actions'] = $this->deduplicatePlanActions($plan['actions']);
+
+        // Batch como único camino para cursos, independientemente de lo que emitió el LLM.
+        $plan['actions'] = $this->canonicalizeCourseActions($plan['actions']);
 
         if (collect($plan['actions'])->contains(fn (array $a) => $a['status'] === 'needs_info')) {
             $plan['status'] = 'needs_info';
@@ -501,6 +538,85 @@ PROMPT;
     }
 
     /**
+     * Batch como único camino: toda acción de creación de cursos —venga del LLM
+     * o del extractor de fallback— se reescribe a create_courses_batch, y las
+     * acciones de curso consecutivas se fusionan en una sola. Así "matemática,
+     * lenguaje y biología para 3ro y 4to" pide UNA confirmación en vez de tres,
+     * y no depende de que el prompt se respete al pie de la letra.
+     *
+     * @param  array<int,array<string,mixed>>  $actions
+     * @return array<int,array<string,mixed>>
+     */
+    private function canonicalizeCourseActions(array $actions): array
+    {
+        $result = [];
+
+        foreach ($actions as $action) {
+            $type = (string) ($action['type'] ?? '');
+
+            if (! in_array($type, ['create_course', 'create_courses_batch'], true)) {
+                $result[] = $action;
+
+                continue;
+            }
+
+            $params = (array) ($action['params'] ?? []);
+            $items = $type === 'create_courses_batch'
+                ? array_values(array_filter((array) ($params['courses_data'] ?? []), 'is_array'))
+                : [[
+                    'subject_name' => $params['subject_name'] ?? null,
+                    'grades' => (array) ($params['grades'] ?? array_filter([$params['grade'] ?? null])),
+                    'section' => $params['section'] ?? null,
+                    'teacher_name' => $params['teacher_name'] ?? null,
+                ]];
+
+            $items = array_values(array_filter(
+                $items,
+                fn (array $item) => trim((string) ($item['subject_name'] ?? '')) !== ''
+            ));
+
+            if ($items === []) {
+                // Sin materia utilizable: se conserva la acción tal cual para que
+                // el gate de parámetros obligatorios le pida el dato al director.
+                $result[] = $action;
+
+                continue;
+            }
+
+            $previous = array_key_last($result);
+            $mergeable = $previous !== null
+                && ($result[$previous]['type'] ?? '') === 'create_courses_batch'
+                && ($result[$previous]['status'] ?? 'pending') !== 'needs_info'
+                && ($action['status'] ?? 'pending') !== 'needs_info';
+
+            if ($mergeable) {
+                $result[$previous]['params']['courses_data'] = array_merge(
+                    (array) $result[$previous]['params']['courses_data'],
+                    $items
+                );
+
+                continue;
+            }
+
+            unset(
+                $params['subject_name'],
+                $params['grades'],
+                $params['grade'],
+                $params['section'],
+                $params['teacher_name'],
+            );
+            $params['courses_data'] = $items;
+
+            $action['type'] = 'create_courses_batch';
+            $action['params'] = $params;
+            $action['confirmation_required'] = true;
+            $result[] = $action;
+        }
+
+        return $result;
+    }
+
+    /**
      * @param  array<int,array<string,mixed>>  $actions
      */
     private function buildSummary(array $actions): string
@@ -512,6 +628,7 @@ PROMPT;
         $lines = collect($actions)->map(function (array $action, int $index) {
             $desc = match ($action['intent'] ?? $action['type'] ?? '') {
                 'create_teacher' => 'Crear profesor '.($action['data']['teacher_name'] ?? ''),
+                'create_course', 'create_courses_batch' => $this->summarizeCourseAction($action),
                 'assign_teacher' => 'Asignar materia a '.($action['data']['teacher_name'] ?? ''),
                 'create_students_batch' => 'Crear alumnos '.implode(', ', $action['data']['names'] ?? []),
                 'enroll_students_course', 'enroll_students' => 'Matricular alumnos '.implode(', ', $action['data']['names'] ?? []),
@@ -525,5 +642,36 @@ PROMPT;
         });
 
         return "Voy a hacer:\n".$lines->implode("\n");
+    }
+
+    /**
+     * Resumen legible de una acción de cursos. Acepta las dos formas que circulan
+     * en el proyecto: `data` (fallback/legado) y `params` (ActionPlan).
+     *
+     * @param  array<string,mixed>  $action
+     */
+    private function summarizeCourseAction(array $action): string
+    {
+        $payload = (array) ($action['data'] ?? $action['params'] ?? []);
+        $items = array_values(array_filter((array) ($payload['courses_data'] ?? []), 'is_array'));
+
+        if ($items === []) {
+            $items = [[
+                'subject_name' => $payload['subject_name'] ?? '',
+                'grades' => (array) ($payload['grades'] ?? array_filter([$payload['grade'] ?? null])),
+            ]];
+        }
+
+        $parts = collect($items)
+            ->map(function (array $item) {
+                $subject = trim((string) ($item['subject_name'] ?? ''));
+                $grades = implode(', ', array_filter((array) ($item['grades'] ?? [])));
+
+                return $grades !== '' ? "{$subject} ({$grades})" : $subject;
+            })
+            ->filter(fn (string $part) => $part !== '')
+            ->implode('; ');
+
+        return $parts !== '' ? 'Crear cursos: '.$parts : 'Crear cursos';
     }
 }

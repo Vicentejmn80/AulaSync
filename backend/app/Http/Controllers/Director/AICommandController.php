@@ -51,6 +51,18 @@ class AICommandController extends Controller
 
     private const CHAT_HISTORY_KEY = 'chat_history';
 
+    /**
+     * Correlación por request: enlaza director.ai.routing, director.ai.command_focus,
+     * director.ai.planner_source y director.ai.handle_failed de un mismo mensaje.
+     */
+    private ?string $requestTraceId = null;
+
+    /**
+     * planner_source del request en curso, para persistirlo en el audit log
+     * (hasta ahora solo existía en storage/logs y en algunas respuestas HTTP).
+     */
+    private ?string $requestPlannerSource = null;
+
     public function __construct(
         private DirectorActionService $actionService,
         private DirectorAIInterpreterService $interpreter,
@@ -152,6 +164,9 @@ class AICommandController extends Controller
             return $this->executePending($request, $director);
         }
 
+        $this->requestTraceId = (string) Str::uuid();
+        $this->requestPlannerSource = null;
+
         $text = trim((string) ($payload['prompt'] ?? $payload['message'] ?? ''));
         if ($text === '') {
             return response()->json([
@@ -246,6 +261,8 @@ class AICommandController extends Controller
 
         $routeDecision = $this->dataAgent->routeDecision($text);
         Log::info('director.ai.routing', [
+            'trace_id' => $this->requestTraceId,
+            'planner_enabled' => $this->actionPlanner->enabled(),
             'path' => $request->path(),
             'method' => $request->method(),
             'route_name' => $request->route()?->getName(),
@@ -286,10 +303,35 @@ class AICommandController extends Controller
         try {
             $focus = $this->commandFocus->extract($text);
             $workingText = $focus['working'];
+
+            // Instrumentación: el texto que llega al LLM es $workingText, no $text.
+            // Si commandFocus recorta, las acciones anteriores al "cue" se pierden
+            // antes de que el planificador vea la frase.
+            $wasTruncated = $workingText !== $text;
+            Log::info('director.ai.command_focus', [
+                'trace_id' => $this->requestTraceId,
+                'director_id' => $director->id,
+                'truncated' => $wasTruncated,
+                'original_len' => mb_strlen($text),
+                'working_len' => mb_strlen($workingText),
+                'dropped_chars' => max(0, mb_strlen($text) - mb_strlen($workingText)),
+                'dropped_prefix' => $wasTruncated && str_ends_with($text, $workingText)
+                    ? mb_substr($text, 0, mb_strlen($text) - mb_strlen($workingText))
+                    : null,
+                'original' => mb_substr($text, 0, 240),
+                'working' => mb_substr($workingText, 0, 240),
+            ]);
+
             $llmReply = '';
             $actions = [];
             $planSummary = null;
             $actionPlan = null;
+            // Ambas variables se leen más abajo fuera de su rama de origen
+            // ($interpreted en el fallback CRUD, $plan en prepareActions).
+            // Sin inicializar, la rama del planificador provocaba un 500
+            // ("Ocurrió un error al preparar la operación").
+            $interpreted = null;
+            $plan = null;
 
             // NUEVO: planificador multi-intención con Structured Outputs (solo si OpenAI está habilitado).
             if ($this->actionPlanner->enabled()) {
@@ -301,8 +343,11 @@ class AICommandController extends Controller
                         'memory' => $this->conversationContext->current(),
                         'screen_context' => $screenContext,
                         'raw_text' => $text,
+                        'trace_id' => $this->requestTraceId,
                     ],
                 );
+
+                $this->requestPlannerSource = $plan['planner_source'] ?? null;
 
                 // Si faltan slots, guardar plan y preguntar por el siguiente.
                 if (($plan['status'] ?? '') === 'needs_info' || $this->planHasPendingSlots($plan)) {
@@ -321,8 +366,12 @@ class AICommandController extends Controller
                 // incierto ante texto complejo (múltiples verbos/entidades, conectores
                 // como "adicional"/"además"), no presentar un plan adivinado con
                 // confianza — pedir aclaración.
+                // Solo pedimos aclaración cuando el plan quedó en UNA sola acción:
+                // si ya hay 2+ acciones, colapsarlas a una pregunta genérica era
+                // exactamente el bug de multi-acción (3 → 1). Con 2+ acciones
+                // mostramos el plan y el director confirma.
                 $isFallback = str_starts_with((string) ($plan['planner_source'] ?? ''), 'fallback_');
-                if ($isFallback && $actions !== [] && $this->intentExtractor->isUncertainExtraction($text, collect($actions)->map(fn ($a) => ['intent' => $a['intent'], 'data' => $a['data']])->all())) {
+                if ($isFallback && count($actions) === 1 && $this->intentExtractor->isUncertainExtraction($text, collect($actions)->map(fn ($a) => ['intent' => $a['intent'], 'data' => $a['data']])->all())) {
                     return response()->json([
                         'success' => false,
                         'needs_clarification' => true,
@@ -339,7 +388,7 @@ class AICommandController extends Controller
                         $actions = $this->enrichActionsFromText($composite, $text);
                     }
                     // Si el fallback sigue incierto tras el segundo intento, pedir aclaración.
-                    if ($actions !== [] && $this->intentExtractor->isUncertainExtraction($text, $actions)) {
+                    if (count($actions) === 1 && $this->intentExtractor->isUncertainExtraction($text, $actions)) {
                         return response()->json([
                             'success' => false,
                             'needs_clarification' => true,
@@ -351,6 +400,17 @@ class AICommandController extends Controller
                 }
             } else {
                 // Flujo legado para entornos sin OpenAI (tests locales).
+                // OJO: esta rama es la que ejecutan los tests; producción ejecuta la de arriba.
+                $this->requestPlannerSource = 'legacy_interpreter';
+                Log::info('director.ai.planner_source', [
+                    'trace_id' => $this->requestTraceId,
+                    'director_id' => $director->id,
+                    'planner_source' => 'legacy_interpreter',
+                    'reason' => 'planner_disabled_in_controller',
+                    'environment' => app()->environment(),
+                    'prompt_preview' => mb_substr($text, 0, 120),
+                ]);
+
                 $interpreted = $this->interpreter->interpret(
                     $director,
                     $focus['for_model'],
@@ -376,7 +436,8 @@ class AICommandController extends Controller
                     : '';
 
                 // Honestidad en flujo legado sin LLM: si complejo e incierto, pedir aclaración.
-                if ($actions !== [] && $this->intentExtractor->isUncertainExtraction($text, $actions)) {
+                // Igual que en el planificador: solo si quedó una sola acción.
+                if (count($actions) === 1 && $this->intentExtractor->isUncertainExtraction($text, $actions)) {
                     return response()->json([
                         'success' => false,
                         'needs_clarification' => true,
@@ -810,6 +871,15 @@ class AICommandController extends Controller
             }
             $data['missing_grades'] = $this->missingGradesFor($director, $data['grades']);
         }
+        if ($intent === 'create_courses_batch') {
+            $data['courses_data'] = $this->actionService->normalizeCoursesData($data['courses_data'] ?? []);
+            $data['grades'] = collect($data['courses_data'])
+                ->flatMap(fn (array $item) => $item['grades'])
+                ->unique()
+                ->values()
+                ->all();
+            $data['missing_grades'] = $this->missingGradesFor($director, $data['grades']);
+        }
         if ($intent === 'create_teacher') {
             $data['subject_name'] = $data['subject_name'] ?? null;
             $data['expires_in_days'] = 30;
@@ -841,6 +911,15 @@ class AICommandController extends Controller
     {
         if (in_array($intent, ['create_course', 'assign_teacher', 'unassign_teacher'], true) && ! empty($data['teacher_name'])) {
             $this->actionService->resolveAssigneeForDirector($director, (string) $data['teacher_name']);
+        }
+
+        if ($intent === 'create_courses_batch') {
+            foreach ((array) ($data['courses_data'] ?? []) as $item) {
+                $teacherName = is_array($item) ? trim((string) ($item['teacher_name'] ?? '')) : '';
+                if ($teacherName !== '') {
+                    $this->actionService->resolveAssigneeForDirector($director, $teacherName);
+                }
+            }
         }
     }
 
@@ -1247,6 +1326,7 @@ class AICommandController extends Controller
             'create_course' => isset($result['courses'])
                 ? $this->verifyCreateCourses($director, $result)
                 : $this->verifyCreateCourse($director, $result),
+            'create_courses_batch' => $this->verifyCreateCoursesBatch($director, $result),
             'assign_teacher' => $this->verifyAssignTeacher($director, $result),
             'create_students_batch' => $this->verifyCreateStudentsBatch($director, $result),
             'enroll_students_course' => $this->verifyEnrollStudentsToCourse($director, $result),
@@ -1303,6 +1383,64 @@ class AICommandController extends Controller
                 ])->values()->all(),
                 'created_count' => $created,
                 'existing_count' => $existing,
+            ],
+        ];
+    }
+
+    /**
+     * @param  array<string,mixed>  $result
+     * @return array{message:string,data:array<string,mixed>}
+     */
+    private function verifyCreateCoursesBatch(User $director, array $result): array
+    {
+        /** @var Collection<int,Course> $courses */
+        $courses = $result['courses'];
+        foreach ($courses as $course) {
+            if ((int) $course->colegio_id !== (int) $director->colegio_id) {
+                throw ValidationException::withMessages([
+                    'course' => 'Un curso creado no pertenece al colegio del director.',
+                ]);
+            }
+        }
+
+        $bySubject = $courses->groupBy('subject_name')
+            ->map(fn ($group, $subject) => $subject.' ('.$group->pluck('grade')->unique()->values()->implode(', ').')')
+            ->values()
+            ->implode('; ');
+
+        $created = (int) ($result['created_count'] ?? 0);
+        $existing = (int) ($result['existing_count'] ?? 0);
+        $labels = array_values((array) ($result['teacher_labels'] ?? []));
+
+        $parts = [];
+        if ($created > 0) {
+            $parts[] = "{$created} creado(s)";
+        }
+        if ($existing > 0) {
+            $parts[] = "{$existing} ya existía(n) y quedó(aron) actualizado(s)";
+        }
+
+        $message = 'Cursos listos: '.$bySubject.'.'
+            .($parts !== [] ? ' '.implode(', ', $parts).'.' : '')
+            .($labels !== []
+                ? ' Docente(s): '.implode(', ', $labels).'.'
+                : ' Quedaron sin docente asignado; puedes asignarlo cuando quieras.');
+
+        return [
+            'message' => $message,
+            'data' => [
+                'courses' => $courses->map(fn (Course $course) => [
+                    'course_id' => $course->id,
+                    'subject_name' => $course->subject_name,
+                    'grade' => $course->grade,
+                    'section' => $course->section,
+                    'teacher_id' => $course->teacher_id,
+                    'students_count' => $course->students_count,
+                ])->values()->all(),
+                'created_count' => $created,
+                'existing_count' => $existing,
+                'subjects_count' => (int) ($result['subjects_count'] ?? 0),
+                'teacher_labels' => $labels,
             ],
         ];
     }
@@ -1665,6 +1803,7 @@ class AICommandController extends Controller
             'create_course' => count($data['grades'] ?? []) > 1
                 ? 'Crear los cursos de '.$data['subject_name'].' para '.implode(', ', $data['grades']).(($data['section'] ?? null) ? " sección {$data['section']}" : '').'.'
                 : "Crear el curso {$data['subject_name']} para {$data['grade']}".(($data['section'] ?? null) ? " sección {$data['section']}" : '').'.',
+            'create_courses_batch' => $this->summarizeCreateCoursesBatch($data),
             'assign_teacher' => "Asignar a {$data['teacher_name']} la materia {$data['subject_name']} en ".$this->formatGradeSpan((array) ($data['grades'] ?? [])).'.',
             'create_students_batch' => $this->summarizeCreateStudents($data),
             'enroll_students_course' => ! empty($data['all_in_grade'])
@@ -1692,6 +1831,43 @@ class AICommandController extends Controller
         };
 
         return $message.$createdGrades;
+    }
+
+    /**
+     * Resumen de confirmación para create_courses_batch: una línea por materia
+     * y una nota explícita cuando ningún curso lleva docente.
+     *
+     * @param  array<string,mixed>  $data
+     */
+    private function summarizeCreateCoursesBatch(array $data): string
+    {
+        $items = array_values(array_filter((array) ($data['courses_data'] ?? []), 'is_array'));
+        $total = 0;
+        $lines = [];
+        $assigned = [];
+
+        foreach ($items as $item) {
+            $grades = array_values(array_filter((array) ($item['grades'] ?? [])));
+            $total += count($grades);
+            $subject = trim((string) ($item['subject_name'] ?? ''));
+            $section = trim((string) ($item['section'] ?? ''));
+            $teacher = trim((string) ($item['teacher_name'] ?? ''));
+
+            if ($teacher !== '') {
+                $assigned[$teacher] = true;
+            }
+
+            $lines[] = '- '.$subject.': '.implode(', ', $grades)
+                .($section !== '' ? ' (sección '.$section.')' : '')
+                .($teacher !== '' ? ' — docente '.$teacher : '');
+        }
+
+        if ($lines === []) {
+            return 'Crear los cursos indicados.';
+        }
+
+        return 'Voy a crear '.$total.' curso(s):'."\n".implode("\n", $lines)
+            .($assigned === [] ? "\nSin docente asignado (puedes asignarlo después)." : '');
     }
 
     /**
@@ -2703,6 +2879,7 @@ class AICommandController extends Controller
             'delete_student' => ['student_name'],
             'create_subject' => ['subject_name'],
             'create_course' => ['subject_name'],
+            'create_courses_batch' => ['courses_data'],
             'assign_teacher' => ['teacher_name', 'subject_name'],
             'unassign_teacher' => ['teacher_name', 'subject_name'],
             'delete_course' => ['subject_name'],
@@ -5063,6 +5240,7 @@ class AICommandController extends Controller
             'create_teacher',
             'create_subject',
             'create_course',
+            'create_courses_batch',
             'assign_teacher',
             'create_students_batch',
             'enroll_students_course',

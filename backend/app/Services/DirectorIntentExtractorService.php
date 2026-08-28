@@ -48,6 +48,24 @@ class DirectorIntentExtractorService
                 continue;
             }
 
+            // Segmento de matrícula sin nombres propios ("y los agregas a su curso
+            // de biología"): no es una acción independiente, es la matrícula de los
+            // alumnos que acabamos de crear. Antes se registraba como acción vacía,
+            // se descartaba en finalize() y además robaba el contexto de grado a la
+            // creación de alumnos: el plan de 3 acciones colapsaba a 1.
+            if ($action['intent'] === 'enroll_students' && empty($action['data']['names'])) {
+                $lastIndex = array_key_last($actions);
+                if ($lastIndex !== null && $actions[$lastIndex]['intent'] === 'create_students_batch') {
+                    $actions[$lastIndex]['data']['_needs_enrollment'] = true;
+                    if (empty($actions[$lastIndex]['data']['subject_name']) && ! empty($action['data']['subject_name'])) {
+                        $actions[$lastIndex]['data']['subject_name'] = $action['data']['subject_name'];
+                    }
+                    $this->updateContext($segment, $context);
+
+                    continue;
+                }
+            }
+
             // Si el segmento no trae materia/grados pero hay contexto previo, herédalo.
             $action = $this->mergeWithContext($action, $context);
             if ($action['intent'] === 'create_students_batch' && $this->looksLikeStudentEnrollment($segment)) {
@@ -195,9 +213,13 @@ class DirectorIntentExtractorService
 
         $parts = [];
         for ($i = 0; $i < count($verbs); $i++) {
+            // PREG_OFFSET_CAPTURE devuelve offsets en BYTES: hay que cortar con
+            // substr, no con mb_substr. Mezclarlos partía palabras a la mitad en
+            // frases con acentos ("...y los a" / "gregas a su curso de biología")
+            // y con ello se perdían las acciones de alumnos.
             $start = (int) $verbs[$i][1];
-            $end = isset($verbs[$i + 1]) ? (int) $verbs[$i + 1][1] : mb_strlen($sentence);
-            $part = trim(mb_substr($sentence, $start, $end - $start));
+            $end = isset($verbs[$i + 1]) ? (int) $verbs[$i + 1][1] : strlen($sentence);
+            $part = trim(substr($sentence, $start, $end - $start));
             if ($part !== '') {
                 $parts[] = $part;
             }
@@ -314,14 +336,92 @@ class DirectorIntentExtractorService
 
         foreach ($patterns as $pattern) {
             if (preg_match($pattern, $segment, $match)) {
-                $candidate = $this->nameSanitizer->clean($match[1]);
+                $candidate = $this->nameSanitizer->clean($this->stripStopWords($match[1]));
                 if ($candidate !== null) {
+                    $candidate = $this->stripStopWords($candidate);
+                }
+                if ($candidate !== null && $candidate !== '') {
                     return $candidate;
                 }
             }
         }
 
         return null;
+    }
+
+    /**
+     * Palabras que nunca forman parte de un nombre propio: pronombres y
+     * conectores que el regex arrastra al capturar ".+?" ("Vicente José él
+     * dará Biología" → "Vicente José").
+     *
+     * Ojo: no se incluyen "de/la/los/del" porque sí aparecen dentro de
+     * apellidos reales ("María de la Cruz").
+     */
+    private const NAME_STOP_WORDS = [
+        'el', 'ella', 'ellos', 'ellas', 'ello',
+        'que', 'quien', 'quienes', 'cual', 'cuales',
+        'ademas', 'tambien', 'asimismo', 'luego', 'ahora', 'entonces',
+        'este', 'esta', 'esto', 'estos', 'estas',
+        'ese', 'esa', 'eso', 'esos', 'esas',
+        'ambos', 'ambas', 'mismo', 'misma', 'dicho', 'dicha',
+        'y', 'o', 'pero', 'para', 'con', 'su', 'sus', 'al', 'a', 'en', 'como',
+    ];
+
+    /**
+     * Artículos y pronombres que pueden aparecer DENTRO de un apellido real
+     * ("María de la Cruz"), así que solo se descartan cuando son el candidato
+     * completo ("y los" → "los").
+     */
+    private const NAME_ONLY_ARTICLES = [
+        'el', 'la', 'los', 'las', 'lo', 'le', 'les', 'de', 'del',
+        'su', 'sus', 'un', 'una', 'unos', 'unas',
+    ];
+
+    /**
+     * Elimina pronombres y conectores del inicio del candidato y corta el
+     * nombre en el primer stop word que aparece después de un token válido.
+     * Insensible a mayúsculas y acentos ("Él", "el", "ÉL" → stop word).
+     */
+    private function stripStopWords(string $candidate): string
+    {
+        $tokens = preg_split('/\s+/u', trim($candidate), -1, PREG_SPLIT_NO_EMPTY) ?: [];
+        $kept = [];
+
+        foreach ($tokens as $token) {
+            $isStop = in_array($this->foldToken((string) $token), self::NAME_STOP_WORDS, true);
+
+            if ($isStop) {
+                if ($kept === []) {
+                    continue; // stop word inicial: se descarta.
+                }
+
+                break; // stop word tras el nombre: aquí termina el nombre.
+            }
+
+            $kept[] = trim((string) $token, " \t\n\r\0\x0B,;:");
+        }
+
+        $kept = array_values(array_filter($kept));
+
+        // Candidato compuesto solo por artículos/pronombres: no es un nombre.
+        $allArticles = $kept !== [] && array_reduce(
+            $kept,
+            fn ($carry, $token) => $carry && in_array($this->foldToken((string) $token), self::NAME_ONLY_ARTICLES, true),
+            true
+        );
+
+        return $allArticles ? '' : trim(implode(' ', $kept));
+    }
+
+    private function foldToken(string $token): string
+    {
+        $value = mb_strtolower(trim($token, " \t\n\r\0\x0B.,;:()¿?¡!\"'"));
+
+        return strtr($value, [
+            'á' => 'a', 'é' => 'e', 'í' => 'i', 'ó' => 'o', 'ú' => 'u', 'ü' => 'u',
+            'à' => 'a', 'è' => 'e', 'ì' => 'i', 'ò' => 'o', 'ù' => 'u',
+            'â' => 'a', 'ê' => 'e', 'î' => 'i', 'ô' => 'o', 'û' => 'u',
+        ]);
     }
 
     /**
@@ -367,9 +467,9 @@ class DirectorIntentExtractorService
         $endOfNames = '(?:a\s+(?:su|la|el)\s+(?:materia|clase|asignatura|curso)|en\s+(?:el|la|los|las)\s+(?:materia|clase|asignatura|curso|grado)|en\s+(?:\d|primer|primero|segundo|tercer|tercero|cuarto|quinto|sexto)|que\s+(?:ambos|son|est[áa]n)|y\s+los\s+(?:agrega(?:r|s)?|agregues?|inscribe(?:r|s)?|matricula(?:r|s)?)|,\s*que|\(|$)';
         $patterns = [
             // "alumnos Carlos Gutiérrez y Salvador Pérez a su materia..."
-            '/(?:alumnos?|estudiantes?)\s+(.+?)(?:\s+'.$endOfNames.')/iu',
+            '/(?:alumnos?|estudiantes?)\s+(.+?)(?:\s+'.$endOfNames.'|\s*$)/iu',
             // "agrega a Carlos Gutiérrez y Salvador Pérez"
-            '/(?:agrega(?:r|le|lo|s)?|agregues?|a[nñ]ade)\s+(?:a\s+)?(.+?)(?:\s+'.$endOfNames.')/iu',
+            '/(?:agrega(?:r|le|lo|s)?|agregues?|a[nñ]ade)\s+(?:a\s+)?(.+?)(?:\s+'.$endOfNames.'|\s*$)/iu',
         ];
 
         foreach ($patterns as $pattern) {
@@ -397,8 +497,11 @@ class DirectorIntentExtractorService
         $names = [];
         foreach ($parts as $part) {
             foreach (preg_split('/\s*,\s*/u', $part, -1, PREG_SPLIT_NO_EMPTY) ?: [$part] as $candidate) {
-                $candidate = $this->nameSanitizer->clean($candidate);
+                $candidate = $this->nameSanitizer->clean($this->stripStopWords($candidate));
                 if ($candidate !== null) {
+                    $candidate = $this->stripStopWords($candidate);
+                }
+                if ($candidate !== null && $candidate !== '') {
                     $names[] = $this->nameSanitizer->titleCase($candidate);
                 }
             }
@@ -680,14 +783,15 @@ class DirectorIntentExtractorService
         $filtered = [];
         foreach ($actions as $action) {
             if (in_array($action['intent'], ['create_students_batch', 'enroll_students'], true)) {
-                $names = collect($action['data']['names'] ?? [])
-                    ->map(fn ($n) => mb_strtolower(trim((string) $n)))
-                    ->filter()
-                    ->all();
+                // La deduplicación es POR INTENCIÓN, no global: crear a un alumno y
+                // matricularlo son dos acciones legítimas con el mismo nombre. Antes,
+                // el registro global borraba la matrícula y colapsaba el plan
+                // multi-acción (3 acciones → 1).
+                $scope = $action['intent'].':';
                 $uniqueInAction = [];
                 foreach ((array) ($action['data']['names'] ?? []) as $orig) {
-                    $key = mb_strtolower(trim((string) $orig));
-                    if ($key === '' || isset($globalNames[$key])) {
+                    $key = $scope.mb_strtolower(trim((string) $orig));
+                    if (trim((string) $orig) === '' || isset($globalNames[$key])) {
                         continue;
                     }
                     $globalNames[$key] = true;
