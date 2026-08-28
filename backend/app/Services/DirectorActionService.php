@@ -1656,6 +1656,15 @@ class DirectorActionService
             return false;
         }
         if ($course->teacher_id || $course->teacher_invite_id) {
+            // Los cursos asignados al director (role director) se consideran libres
+            // para reasignar a un profesor real — el director no es docente.
+            if ($course->teacher_id) {
+                $owner = User::find($course->teacher_id);
+                if ($owner && $owner->role === 'director') {
+                    return false;
+                }
+            }
+
             return true;
         }
 

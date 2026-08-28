@@ -317,11 +317,36 @@ class AICommandController extends Controller
                 $planSummary = $plan['summary'] ?? null;
                 $actionPlan = $plan;
 
+                // Honestidad del fallback: si el LLM falló y el extractor está
+                // incierto ante texto complejo (múltiples verbos/entidades, conectores
+                // como "adicional"/"además"), no presentar un plan adivinado con
+                // confianza — pedir aclaración.
+                $isFallback = str_starts_with((string) ($plan['planner_source'] ?? ''), 'fallback_');
+                if ($isFallback && $actions !== [] && $this->intentExtractor->isUncertainExtraction($text, collect($actions)->map(fn ($a) => ['intent' => $a['intent'], 'data' => $a['data']])->all())) {
+                    return response()->json([
+                        'success' => false,
+                        'needs_clarification' => true,
+                        'message' => 'Tu orden parece tener varias acciones y no estoy seguro de haber entendido todas correctamente ('.count($actions).' detectada(s)). ¿Podrías confirmar separando cada acción? Ejemplo: "1. Crea al profesor X de Biología de 1ro a 6to. 2. Agrega a Vicente José y Gabriela Pernal a 3ro."',
+                        'planner_source' => $plan['planner_source'],
+                        'action_plan' => $plan,
+                    ], 422);
+                }
+
                 // Fallback legado solo si el planificador no devolvió nada.
                 if ($actions === []) {
                     $composite = $this->detectMultiIntentActions($director, $text);
                     if ($composite !== []) {
                         $actions = $this->enrichActionsFromText($composite, $text);
+                    }
+                    // Si el fallback sigue incierto tras el segundo intento, pedir aclaración.
+                    if ($actions !== [] && $this->intentExtractor->isUncertainExtraction($text, $actions)) {
+                        return response()->json([
+                            'success' => false,
+                            'needs_clarification' => true,
+                            'message' => 'Detecté una orden con múltiples acciones pero no estoy seguro de la segmentación. ¿Podrías escribir cada acción en una línea separada? Ejemplo:\n1. Crea al profesor Vicente José de Biología de 1ro a 6to\n2. Agrega a Vicente José y Gabriela Pernal a 3ro',
+                            'planner_source' => $plan['planner_source'] ?? 'fallback_uncertain',
+                            'action_plan' => $plan,
+                        ], 422);
                     }
                 }
             } else {
@@ -349,6 +374,16 @@ class AICommandController extends Controller
                 $llmReply = is_array($interpreted)
                     ? trim((string) ($interpreted['message'] ?? $interpreted['clarification'] ?? ''))
                     : '';
+
+                // Honestidad en flujo legado sin LLM: si complejo e incierto, pedir aclaración.
+                if ($actions !== [] && $this->intentExtractor->isUncertainExtraction($text, $actions)) {
+                    return response()->json([
+                        'success' => false,
+                        'needs_clarification' => true,
+                        'message' => 'Tu orden tiene varias acciones y no estoy seguro de haber captado todas ('.count($actions).' detectada(s)). ¿Podrías separar cada pedido en una línea? Ejemplo:\n1. Crea al profesor X de Biología de 1ro a 6to\n2. Agrega a Vicente José y Gabriela Pernal a 3ro',
+                        'planner_source' => 'fallback_uncertain',
+                    ], 422);
+                }
             }
 
             if ($actions === []) {
@@ -619,6 +654,7 @@ class AICommandController extends Controller
                 'data' => $data,
                 'action_plan_id' => $action['action_plan_id'] ?? null,
                 'action_id' => $action['action_id'] ?? null,
+                'planner_source' => $action['planner_source'] ?? null,
             ];
         }
 
@@ -657,7 +693,7 @@ class AICommandController extends Controller
                 ];
             }
 
-            $narrative = $this->interpreter->narrate($rawText, $results);
+            $narrative = $this->interpreter->narrate($results);
             $this->conversationContext->addTurn($rawText, $narrative, $results);
 
             return response()->json([
@@ -685,6 +721,7 @@ class AICommandController extends Controller
                 'data' => $action['data'],
                 'action_plan_id' => $action['action_plan_id'] ?? null,
                 'action_id' => $action['action_id'] ?? null,
+                'planner_source' => $action['planner_source'] ?? null,
                 'audit_log_id' => $log->id,
             ];
         }
@@ -1134,10 +1171,7 @@ class AICommandController extends Controller
         if ($results !== []) {
             $this->conversationContext->addTurn(
                 (string) ($this->conversationContext->current()['last_user_text'] ?? ''),
-                $this->formatBatchResults($results) ?? $this->interpreter->narrate(
-                    (string) ($this->conversationContext->current()['last_user_text'] ?? ''),
-                    $results,
-                ),
+                $this->formatBatchResults($results) ?? $this->interpreter->narrate($results),
                 $results
             );
         }
@@ -1164,10 +1198,7 @@ class AICommandController extends Controller
             'requires_clarification' => false,
             'pending_actions' => null,
             'actions' => $results,
-            'message' => $batchMessage ?? $this->interpreter->narrate(
-                (string) ($this->conversationContext->current()['last_user_text'] ?? ''),
-                $results,
-            ),
+            'message' => $batchMessage ?? $this->interpreter->narrate($results),
             'timeline' => $this->mutationTimeline(
                 $anySuccess ? 'completed' : 'rollback',
                 $anySuccess ? 'Cambios aplicados correctamente.' : 'No se pudo aplicar ningún cambio.'
@@ -2642,6 +2673,7 @@ class AICommandController extends Controller
                     'data' => $data,
                     'action_plan_id' => $plan['id'] ?? null,
                     'action_id' => $action['id'] ?? null,
+                    'planner_source' => $plan['planner_source'] ?? null,
                 ];
             })
             ->filter()
@@ -3095,7 +3127,19 @@ class AICommandController extends Controller
     private function parseAssignTeacher(User $director, string $text): array
     {
         $context = $this->conversationContext->current();
-        $name = $this->sanitizePersonName($this->extractTeacherName($text) ?? ($context['teacher_name'] ?? null));
+        $rawName = $this->extractTeacherName($text);
+        // Fallback para segmentos tipo "a Mariano Guevara lenguaje ..." sin palabra "profesor"
+        // y para "a Mariano Guevara asignale el curso de lenguaje ..." donde el nombre precede al verbo.
+        if ($rawName === null) {
+            if (preg_match('/\ba\s+([A-Za-zÁÉÍÓÚáéíóúÑñ]+(?:\s+[A-Za-zÁÉÍÓÚáéíóúÑñ]+){0,2})\s+(?:asigna|asígnale|dara|dará|imparte)?\s*(?:el\s+curso\s+de\s+)?(?:robotica|rob[oó]tica|computaci[oó]n|matem[aá]tica|ingl[eé]s|lenguaje|biolog[ií]a|ciencias|historia|geograf[ií]a|f[ií]sica|qu[ií]mica|educaci[oó]n|religi[oó]n|arte|m[uú]sica)\b/iu', $text, $m)) {
+                $rawName = trim($m[1]);
+            } elseif (preg_match('/\ba\s+([A-Za-zÁÉÍÓÚáéíóúÑñ]+(?:\s+[A-Za-zÁÉÍÓÚáéíóúÑñ]+){0,2})\s+asigna/iu', $text, $m)) {
+                $rawName = trim($m[1]);
+            } elseif (preg_match('/\ba\s+([A-Za-zÁÉÍÓÚáéíóúÑñ]+(?:\s+[A-Za-zÁÉÍÓÚáéíóúÑñ]+){0,2})\s+de\s+[1-6]/iu', $text, $m)) {
+                $rawName = trim($m[1]);
+            }
+        }
+        $name = $this->sanitizePersonName($rawName ?? ($context['teacher_name'] ?? null));
         if (! $name) {
             return [[], '¿A qué profesor deseas asignar la materia?'];
         }

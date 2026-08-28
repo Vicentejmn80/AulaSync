@@ -182,11 +182,6 @@ class DirectorIntentExtractorService
      */
     private function splitByActionVerbs(string $sentence): array
     {
-        // Evitamos cortar listas de alumnos como "Carlos, Juan y Pedro".
-        if (preg_match('/\b(?:alumnos?|estudiantes?)\b/iu', $sentence)) {
-            return [$sentence];
-        }
-
         $verbPattern = '\b(?:crea(?:r|me|s|n)?|crees|cree|agrega(?:r|le|lo|s|n)?|agregues?|inscribe(?:r|s|n)?|inscribes?|matricula(?:r|s|n)?|matricules?|asigna(?:r|le|lo|s|n)?|asignes?|invita(?:r|s|n)?|invites?|modifica(?:r|s|n)?|modifiques?|elimina(?:r|s|n)?|elimines?|borra(?:r|s)?|mueve(?:r|s)?|cambia(?:r|s)?|actualiza(?:r)?)\b';
 
         if (! preg_match_all('/'.$verbPattern.'/iu', $sentence, $matches, PREG_OFFSET_CAPTURE)) {
@@ -669,7 +664,82 @@ class DirectorIntentExtractorService
             }
         }
 
-        return $result;
+        return $this->deduplicateActions($result);
+    }
+
+    /**
+     * Deduplica entidades repetidas dentro del mismo plan (correcciones a media frase).
+     * Ej: "a Vicente José, al alumno Vicente José y a la alumna Gabriela Pernal" → 2 alumnos únicos.
+     *
+     * @param  array<int,array{intent:string,data:array<string,mixed>}>  $actions
+     * @return array<int,array{intent:string,data:array<string,mixed>}>
+     */
+    private function deduplicateActions(array $actions): array
+    {
+        $globalNames = [];
+        $filtered = [];
+        foreach ($actions as $action) {
+            if (in_array($action['intent'], ['create_students_batch', 'enroll_students'], true)) {
+                $names = collect($action['data']['names'] ?? [])
+                    ->map(fn ($n) => mb_strtolower(trim((string) $n)))
+                    ->filter()
+                    ->all();
+                $uniqueInAction = [];
+                foreach ((array) ($action['data']['names'] ?? []) as $orig) {
+                    $key = mb_strtolower(trim((string) $orig));
+                    if ($key === '' || isset($globalNames[$key])) {
+                        continue;
+                    }
+                    $globalNames[$key] = true;
+                    $uniqueInAction[] = $orig;
+                }
+                if ($uniqueInAction === [] && ($action['data']['names'] ?? []) !== []) {
+                    // Todo era duplicado, omitir esta acción redundante.
+                    continue;
+                }
+                if ($uniqueInAction !== ($action['data']['names'] ?? [])) {
+                    $action['data']['names'] = array_values($uniqueInAction);
+                }
+            }
+            if ($action['intent'] === 'create_teacher') {
+                $key = mb_strtolower(trim((string) ($action['data']['teacher_name'] ?? '')));
+                if ($key !== '' && isset($globalNames['teacher:'.$key])) {
+                    continue;
+                }
+                if ($key !== '') {
+                    $globalNames['teacher:'.$key] = true;
+                }
+            }
+            $filtered[] = $action;
+        }
+
+        return $filtered;
+    }
+
+    /**
+     * Detecta si el texto es complejo y la extracción probablemente está incompleta.
+     * Si true, el caller debe pedir aclaración en vez de presentar plan adivinado.
+     */
+    public function isUncertainExtraction(string $text, array $actions): bool
+    {
+        $lower = mb_strtolower($text);
+        $hasComplexConnector = (bool) preg_match('/\b(?:adicional|adema?s|tambien|también)\b/u', $lower);
+        $verbCount = preg_match_all('/\b(?:crea(?:r|me|s|n)?|agrega(?:r|le|lo|s)?|inscribe|matricula|asigna|invita|modifica|elimina|mueve|cambia)\b/iu', $text);
+        $segmentCount = count($this->segment($text));
+        $entityMentions = preg_match_all('/\b(?:profesor(?:a)?|alumn[oa]|estudiante)s?\b/iu', $text);
+
+        if ($hasComplexConnector && $verbCount >= 2 && count($actions) < $verbCount) {
+            return true;
+        }
+        if ($entityMentions >= 3 && $verbCount >= 2 && count($actions) <= 1) {
+            return true;
+        }
+        // Si se detectaron múltiples segmentos pero solo 1 acción válida, probablemente se perdió algo.
+        if ($segmentCount >= 3 && count($actions) <= 1 && $verbCount >= 2) {
+            return true;
+        }
+
+        return false;
     }
 
     /**

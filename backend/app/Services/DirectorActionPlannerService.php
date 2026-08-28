@@ -33,60 +33,160 @@ class DirectorActionPlannerService
             return $this->fromFallback($text, 'fallback_disabled');
         }
 
-        $director->loadMissing('colegio');
-
         try {
-            $response = Http::timeout(45)
-                ->withToken((string) config('services.openai.key'))
-                ->post('https://api.openai.com/v1/chat/completions', [
-                    'model' => (string) config('services.openai.director_model', 'gpt-4o-mini'),
-                    'temperature' => 0.2,
-                    'top_p' => 0.9,
-                    'response_format' => [
-                        'type' => 'json_schema',
-                        'json_schema' => [
-                            'name' => 'action_plan',
-                            'strict' => true,
-                            'schema' => $this->actionPlanSchema(),
-                        ],
-                    ],
-                    'messages' => [
-                        [
-                            'role' => 'system',
-                            'content' => $this->systemPrompt($director, $context),
-                        ],
-                        [
-                            'role' => 'user',
-                            'content' => $text,
-                        ],
-                    ],
+            $director->loadMissing('colegio');
+
+            $messages = [
+                ['role' => 'system', 'content' => $this->systemPrompt($director, $context)],
+                ['role' => 'user', 'content' => $text],
+            ];
+
+            $response = $this->sendWithRetry($director, $messages);
+
+            if ($response === null || $response->failed()) {
+                Log::warning('Director action planner unavailable after retries', [
+                    'director_id' => $director->id,
+                    'status' => $response?->status(),
                 ]);
 
-            if ($response->failed()) {
-                Log::warning('Director action planner unavailable', [
-                    'director_id' => $director->id,
-                    'status' => $response->status(),
-                ]);
                 return $this->fromFallback($text, 'fallback_http_failed');
             }
 
             $raw = (string) $response->json('choices.0.message.content', '');
             $plan = json_decode($raw, true);
 
-            if (! is_array($plan)) {
-                return $this->fromFallback($text, 'fallback_invalid_json');
+            if (! is_array($plan) || ! isset($plan['actions'])) {
+                // Self-repair: una segunda llamada pidiendo explícitamente corregir
+                // el plan inválido antes de degradar al extractor legado.
+                $plan = $this->selfRepair($director, $text, $raw, $context);
+                if ($plan === null) {
+                    return $this->fromFallback($text, 'fallback_invalid_json');
+                }
+                $plan['planner_source'] = 'llm_structured_repaired';
             }
+
             $normalized = $this->normalizePlan($plan, $text);
-            $normalized['planner_source'] = 'llm_structured';
+            $normalized['planner_source'] = $plan['planner_source'] ?? 'llm_structured';
+
+            Log::info('director.ai.planner_source', [
+                'director_id' => $director->id,
+                'planner_source' => $normalized['planner_source'],
+                'actions_count' => count($normalized['actions'] ?? []),
+                'prompt_preview' => mb_substr($text, 0, 120),
+            ]);
 
             return $normalized;
         } catch (\Throwable $e) {
-            Log::warning('Director action planner failed; using fallback', [
+            Log::warning('Director action planner exception fallback', [
                 'director_id' => $director->id,
-                'message' => $e->getMessage(),
+                'error' => $e->getMessage(),
             ]);
+
             return $this->fromFallback($text, 'fallback_exception');
         }
+    }
+
+    /**
+     * Envía la petición al planificador con reintentos y backoff exponencial
+     * ante errores transitorios (timeouts, rate limits, SSL, 5xx).
+     *
+     * @param  array<int,array<string,string>>  $messages
+     */
+    private function sendWithRetry(User $director, array $messages, int $maxAttempts = 3): ?\Illuminate\Http\Client\Response
+    {
+        $attempt = 0;
+        $delayMs = 500;
+
+        while ($attempt < $maxAttempts) {
+            $attempt++;
+            try {
+                $response = Http::timeout(45)
+                    ->withToken((string) config('services.openai.key'))
+                    ->post('https://api.openai.com/v1/chat/completions', [
+                        'model' => (string) config('services.openai.director_model', 'gpt-4o-mini'),
+                        'temperature' => 0.2,
+                        'top_p' => 0.9,
+                        'response_format' => [
+                            'type' => 'json_schema',
+                            'json_schema' => [
+                                'name' => 'action_plan',
+                                'strict' => true,
+                                'schema' => $this->actionPlanSchema(),
+                            ],
+                        ],
+                        'messages' => $messages,
+                    ]);
+
+                if ($response->successful()) {
+                    return $response;
+                }
+
+                // 4xx (excepto 429) son errores definitivos: no reintentar.
+                if (! in_array($response->status(), [429, 500, 502, 503, 504], true)) {
+                    return $response;
+                }
+
+                Log::warning('Director action planner transient HTTP error; retrying', [
+                    'director_id' => $director->id,
+                    'status' => $response->status(),
+                    'attempt' => $attempt,
+                ]);
+            } catch (\Throwable $e) {
+                // ConnectionException cubre timeouts y errores SSL transitorios.
+                Log::warning('Director action planner connection issue; retrying', [
+                    'director_id' => $director->id,
+                    'attempt' => $attempt,
+                    'message' => $e->getMessage(),
+                ]);
+            }
+
+            if ($attempt < $maxAttempts) {
+                usleep($delayMs * 1000);
+                $delayMs *= 2;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Segunda llamada al LLM pidiendo corregir un plan inválido.
+     *
+     * @param  array<string,mixed>  $context
+     * @return array<string,mixed>|null
+     */
+    private function selfRepair(User $director, string $text, string $invalidRaw, array $context): ?array
+    {
+        $reason = json_decode($invalidRaw, true) === null
+            ? 'no es JSON válido'
+            : 'le falta la clave requerida "actions"';
+
+        Log::warning('Director action planner invalid plan; attempting self-repair', [
+            'director_id' => $director->id,
+            'reason' => $reason,
+        ]);
+
+        $messages = [
+            ['role' => 'system', 'content' => $this->systemPrompt($director, $context)],
+            ['role' => 'user', 'content' => $text],
+            ['role' => 'assistant', 'content' => mb_substr($invalidRaw, 0, 4000)],
+            [
+                'role' => 'user',
+                'content' => "Tu respuesta anterior no fue un ActionPlan válido ({$reason}). "
+                    .'Corrígela y devuelve SOLO el JSON válido que cumpla el schema action_plan. '
+                    .'No agregues explicaciones ni texto fuera del JSON.',
+            ],
+        ];
+
+        $response = $this->sendWithRetry($director, $messages, 2);
+
+        if ($response === null || $response->failed()) {
+            return null;
+        }
+
+        $plan = json_decode((string) $response->json('choices.0.message.content', ''), true);
+
+        return is_array($plan) && isset($plan['actions']) ? $plan : null;
     }
 
     public function enabled(): bool
@@ -206,16 +306,15 @@ class DirectorActionPlannerService
         return <<<PROMPT
 Eres el planificador de acciones de AulaSync. Tu trabajo es analizar la orden del director y devolver un ActionPlan JSON con TODAS las acciones necesarias.
 
-REGLAS:
-1. Identifica CADA acción en la frase. Nunca te quedes solo con la primera.
+REGLAS CRÍTICAS:
+1. MULTI-ACCIÓN OBLIGATORIA: Identifica CADA acción en la frase. Nunca te quedes solo con la primera. Frases con "y además", "adicional", "también" contienen 2-4 acciones separadas.
 2. Usa los nombres exactos de herramientas del catálogo: {$tools}.
-3. Para acciones de escritura (crear, modificar, eliminar, matricular), confirmation_required = true.
-4. Para acciones de lectura (get_*), confirmation_required = false.
-5. Si falta algún dato obligatorio, crea un slot en missing_slots con una pregunta clara para el director.
-6. Los nombres propios van en params tal cual los dice el usuario (sin conectores como "también", "llamado", "el que te dije").
-7. Los grados: 1ro, 2do, 3ro, 4to, 5to, 6to. Los rangos "de 1ro a 6to" se representan como grade=null y el rango en missing_slots, o si la tool lo soporta, incluye el grado inicial.
-8. Genera un resumen natural en "summary" numerando las acciones.
-9. Si no hay acciones, devuelve actions=[] y summary="No entendí ninguna acción. ¿Puedes reformular?".
+3. Para acciones de escritura (crear, modificar, eliminar, matricular), confirmation_required = true. Para lectura (get_*), false.
+4. Si falta algún dato obligatorio, crea un slot en missing_slots con una pregunta clara.
+5. NOMBRES: params.teacher_name / student_name / names son SOLO el nombre propio (ej. "Mariano", "Vicente José") sin "también", "llamado", "el que te dije", "profesor de...", "alumno". DEDUPLICA: si el usuario repite el mismo nombre ("a Vicente José, al alumno Vicente José y a Gabriela Pernal" → Vicente José una sola vez, Gabriela Pernal una vez), cada persona aparece UNA sola vez en el plan.
+6. GRADOS — RANGOS EXPANDIDOS: Los grados válidos son 1ro, 2do, 3ro, 4to, 5to, 6to. Un rango como "de 1ro a 6to", "desde 1ro hasta 6to", "desde 1ro a 6to", "1ro a 6to" DEBE expandirse al array completo: ["1ro","2do","3ro","4to","5to","6to"]. Para create_teacher/create_course/assign_teacher usa el array grades completo. Para create_students_batch/enroll usa grade individual o el grado relevante. NUNCA dejes un rango sin expandir ni como texto libre ni como grade=null.
+7. Genera un resumen natural en "summary" numerando las acciones, usando nombres limpios y rangos expandidos (ej. "1ro a 6to").
+8. Si no hay acciones, devuelve actions=[] y summary="No entendí ninguna acción. ¿Puedes reformular?".
 
 Datos del colegio:
 {$roster}
@@ -271,6 +370,13 @@ PROMPT;
 
         $plan['actions'] = collect($plan['actions'] ?? [])->map(function (array $action) {
             $action['params'] = $this->cleanParams($action['params'] ?? []);
+            // Deduplica nombres dentro de cada acción y normaliza grades
+            if (isset($action['params']['names']) && is_array($action['params']['names'])) {
+                $action['params']['names'] = array_values(array_unique(array_filter(array_map(fn ($n) => trim((string) $n), $action['params']['names']))));
+            }
+            if (isset($action['params']['grades']) && is_array($action['params']['grades'])) {
+                $action['params']['grades'] = array_values(array_unique(array_filter(array_map(fn ($g) => trim((string) $g), $action['params']['grades']))));
+            }
             $action['missing_slots'] = $this->normalizeSlots($action['missing_slots'] ?? []);
             $action['depends_on'] = array_values(array_filter((array) ($action['depends_on'] ?? [])));
             $action['confirmation_required'] = (bool) ($action['confirmation_required'] ?? DirectorUnifiedAgentService::isWriteTool($action['type'] ?? ''));
@@ -281,6 +387,9 @@ PROMPT;
 
             return $action;
         })->all();
+
+        // Deduplicación global: misma persona no debe aparecer dos veces en el plan.
+        $plan['actions'] = $this->deduplicatePlanActions($plan['actions']);
 
         if (collect($plan['actions'])->contains(fn (array $a) => $a['status'] === 'needs_info')) {
             $plan['status'] = 'needs_info';
@@ -349,6 +458,46 @@ PROMPT;
             str_starts_with($intent, 'get_') => 'analytics',
             default => 'general',
         };
+    }
+
+    /**
+     * Deduplica personas repetidas en el plan (corrección a media frase).
+     *
+     * @param  array<int,array<string,mixed>>  $actions
+     * @return array<int,array<string,mixed>>
+     */
+    private function deduplicatePlanActions(array $actions): array
+    {
+        $seen = [];
+        $filtered = [];
+        foreach ($actions as $action) {
+            $type = $action['type'] ?? '';
+            if (in_array($type, ['create_students_batch', 'enroll_students_course'], true)) {
+                $names = (array) ($action['params']['names'] ?? []);
+                $unique = [];
+                foreach ($names as $n) {
+                    $key = mb_strtolower(trim((string) $n));
+                    if ($key === '' || isset($seen['student:'.$key])) {
+                        continue;
+                    }
+                    $seen['student:'.$key] = true;
+                    $unique[] = $n;
+                }
+                if ($unique === [] && $names !== []) {
+                    continue;
+                }
+                $action['params']['names'] = array_values($unique);
+            } elseif ($type === 'create_teacher' && isset($action['params']['teacher_name'])) {
+                $key = mb_strtolower(trim((string) $action['params']['teacher_name']));
+                if ($key !== '' && isset($seen['teacher:'.$key])) {
+                    continue;
+                }
+                $seen['teacher:'.$key] = true;
+            }
+            $filtered[] = $action;
+        }
+
+        return $filtered;
     }
 
     /**

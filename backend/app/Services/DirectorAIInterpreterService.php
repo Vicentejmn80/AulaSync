@@ -386,13 +386,17 @@ PROMPT;
     /**
      * @param  array<int,array{success?:bool,message?:string}>  $results
      */
-    public function narrate(string $userText, array $results, bool $pendingConfirmation = false): string
+    public function narrate(array $results, bool $pendingConfirmation = false): string
     {
         $fallback = $this->composeReply($results, $pendingConfirmation);
         if ($pendingConfirmation || ! $this->enabled()) {
             return $fallback;
         }
 
+        // Integridad de datos: el mensaje final se construye EXCLUSIVAMENTE a
+        // partir de los resultados reales de ejecución. El texto original del
+        // usuario NO se envía al LLM para que no pueda inventar acciones que
+        // no estaban en el plan ejecutado.
         try {
             $response = Http::timeout(20)
                 ->withToken((string) config('services.openai.key'))
@@ -403,13 +407,17 @@ PROMPT;
                     'messages' => [
                         [
                             'role' => 'system',
-                            'content' => 'Eres AulaSync, el asistente del director. Responde en español natural y cercano. Aplica: emoji cálido + dato exacto (solo lo que está en el resultado, sin inventar códigos ni cantidades) + siguiente paso útil. Prohibido tono robótico. Nunca te llames Nova.',
+                            'content' => 'Eres AulaSync, el asistente del director. Responde en español natural y cercano. '
+                                .'REGLA ESTRICTA DE INTEGRIDAD: describe ÚNICAMENTE las acciones presentes en executed_results. '
+                                .'No agregues, asumas ni infieras ninguna acción que no esté en esa lista, aunque el mensaje original del usuario la haya mencionado. '
+                                .'Si una acción tiene success=false, repórtala como pendiente/fallida sin inventar que se hizo. '
+                                .'Formato: emoji cálido + dato exacto (solo lo que está en el resultado, sin inventar códigos ni cantidades) + siguiente paso útil. '
+                                .'Prohibido tono robótico. Nunca te llames Nova.',
                         ],
                         [
                             'role' => 'user',
                             'content' => json_encode([
-                                'pedido' => $userText,
-                                'resultado' => $results,
+                                'executed_results' => $results,
                             ], JSON_UNESCAPED_UNICODE),
                         ],
                     ],
