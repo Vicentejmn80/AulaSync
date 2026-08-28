@@ -191,15 +191,25 @@ class DirectorUnifiedAgentService
                 'required' => ['teacher_name', 'subject_name', 'grades'],
             ],
             'create_students_batch' => [
-                'description' => 'Crear uno o varios alumnos (o alumnas) y, si hay materia/profesor, matricularlos en course_student. names es un ARRAY de nombres propios completos. Incluye subject_name y teacher_name cuando el director mencione el curso o el docente.',
+                'description' => 'Crear uno o varios alumnos EN LOTE. Es la ÚNICA tool para crear alumnos: úsala también cuando sea un solo alumno. students_data es un ARRAY con un item por alumno; cada item lleva su propio grade (así puedes crear alumnos de grados distintos en una sola acción). Incluye subject_name y teacher_name en el item cuando el director mencione el curso o el docente de ESE alumno; si no los menciona, déjalos en null y no matricules a ese alumno en ningún curso.',
                 'properties' => [
-                    'names' => ['type' => 'array', 'items' => ['type' => 'string']],
-                    'grade' => ['type' => 'string'],
-                    'section' => ['type' => ['string', 'null']],
-                    'subject_name' => ['type' => ['string', 'null']],
-                    'teacher_name' => ['type' => ['string', 'null']],
+                    'students_data' => [
+                        'type' => 'array',
+                        'items' => [
+                            'type' => 'object',
+                            'properties' => [
+                                'name' => ['type' => 'string'],
+                                'grade' => ['type' => 'string'],
+                                'section' => ['type' => ['string', 'null']],
+                                'subject_name' => ['type' => ['string', 'null']],
+                                'teacher_name' => ['type' => ['string', 'null']],
+                            ],
+                            'required' => ['name', 'grade'],
+                            'additionalProperties' => false,
+                        ],
+                    ],
                 ],
-                'required' => ['names', 'grade'],
+                'required' => ['students_data'],
             ],
             'enroll_students_course' => [
                 'description' => 'Matricular alumnos existentes en un curso. Usa all_in_grade=true para inscribir a todo un grado (ej. "los alumnos de 1ro").',

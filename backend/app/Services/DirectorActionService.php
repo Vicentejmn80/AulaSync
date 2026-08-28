@@ -366,88 +366,119 @@ class DirectorActionService
      *   course_id?:int|null
      * } $payload
      */
+    /**
+     * @param array{
+     *   students_data?:array<int,array{name:string,grade:string,section?:?string,subject_name?:?string,teacher_name?:?string}>,
+     *   names?:array<int,string>,
+     *   grade?:string,
+     *   section?:?string,
+     *   subject_name?:?string,
+     *   teacher_name?:?string
+     * } $payload
+     * @return array{
+     *   created:Collection<int,Student>,
+     *   duplicates:array<int,string>,
+     *   courses:array<int,array{grade:string,section:?string,course:?Course,enrolled_count:int,course_created:bool,placement_note:?string}>
+     * }
+     */
     public function createStudentsBatch(User $director, array $payload): array
     {
-        $colegioId = (int) $director->colegio_id;
-        if (! $colegioId) {
-            throw ValidationException::withMessages([
-                'colegio_id' => 'Tu usuario no está vinculado a un colegio.',
-            ]);
-        }
+        $colegioId = $this->requireColegioId($director);
+        $items = $this->normalizeStudentsData($payload);
 
-        $grade = trim((string) $payload['grade']);
-        $section = trim((string) ($payload['section'] ?? ''));
-        $section = $section !== '' ? $section : null;
-        $sanitizer = app(PersonNameSanitizer::class);
-        $names = collect($payload['names'] ?? [])
-            ->map(function ($name) use ($sanitizer) {
-                $clean = $sanitizer->clean((string) $name);
-
-                return $clean ? $sanitizer->titleCase($clean) : trim((string) $name);
-            })
-            ->filter()
-            ->unique()
-            ->values();
-
-        if ($grade === '' || $names->isEmpty()) {
+        if ($items === []) {
             throw ValidationException::withMessages([
                 'students' => 'Debes indicar nombres y grado para crear estudiantes.',
             ]);
         }
 
-        $course = null;
-        if (! empty($payload['course_id'])) {
-            $course = Course::query()
-                ->where('colegio_id', $colegioId)
-                ->where('id', (int) $payload['course_id'])
-                ->first();
-        }
-
-        $placementNote = null;
-        $courseCreated = false;
-        $subject = trim((string) ($payload['subject_name'] ?? ''));
-        $teacherName = trim((string) ($payload['teacher_name'] ?? ''));
-        if (! $course && ($subject !== '' || $teacherName !== '')) {
-            $placement = $this->resolveCourseForPlacement(
-                $colegioId,
-                $subject !== '' ? $subject : null,
-                $grade,
-                $section,
-                $teacherName !== '' ? $teacherName : null,
-                $director,
-                $subject !== '' && $teacherName !== '',
-            );
-            $course = $placement['course'];
-            $placementNote = $placement['note'];
-            $courseCreated = $placement['created'];
+        // Agrupar por (grado, sección, materia, docente) para resolver o crear
+        // el curso UNA sola vez por grupo, no por cada alumno del lote.
+        $groups = [];
+        foreach ($items as $item) {
+            $key = implode('|', [
+                mb_strtolower($item['grade']),
+                mb_strtolower((string) $item['section']),
+                mb_strtolower((string) $item['subject_name']),
+                mb_strtolower((string) $item['teacher_name']),
+            ]);
+            $groups[$key]['grade'] ??= $item['grade'];
+            $groups[$key]['section'] ??= $item['section'];
+            $groups[$key]['subject_name'] ??= $item['subject_name'];
+            $groups[$key]['teacher_name'] ??= $item['teacher_name'];
+            $groups[$key]['students'][] = $item;
         }
 
         $created = collect();
         $duplicates = [];
+        $courseGroups = [];
 
-        DB::transaction(function () use ($names, $colegioId, $grade, $section, $director, $course, &$created, &$duplicates) {
-            foreach ($names as $name) {
-                $exists = Student::query()
-                    ->where('colegio_id', $colegioId)
-                    ->whereRaw('LOWER(name) = ?', [mb_strtolower($name)])
-                    ->whereRaw('LOWER(grade) = ?', [mb_strtolower($grade)])
-                    ->whereRaw('LOWER(COALESCE(section, ?)) = ?', ['', mb_strtolower((string) $section)])
-                    ->exists();
+        DB::transaction(function () use ($groups, $colegioId, $director, &$created, &$duplicates, &$courseGroups) {
+            foreach ($groups as $group) {
+                $grade = $group['grade'];
+                $section = $group['section'];
+                $subject = $group['subject_name'];
+                $teacherName = $group['teacher_name'];
 
-                if ($exists) {
-                    $duplicates[] = $name;
-
-                    continue;
+                $course = null;
+                $placementNote = null;
+                $courseCreated = false;
+                if ($subject !== null || $teacherName !== null) {
+                    $placement = $this->resolveCourseForPlacement(
+                        $colegioId,
+                        $subject,
+                        $grade,
+                        $section,
+                        $teacherName,
+                        $director,
+                        $subject !== null && $teacherName !== null,
+                    );
+                    $course = $placement['course'];
+                    $placementNote = $placement['note'];
+                    $courseCreated = $placement['created'];
                 }
 
-                $student = $this->enrollmentService->enroll($director, [
-                    'name' => $name,
+                $groupCreatedIds = [];
+                foreach ($group['students'] as $student) {
+                    $exists = Student::query()
+                        ->where('colegio_id', $colegioId)
+                        ->whereRaw('LOWER(name) = ?', [mb_strtolower($student['name'])])
+                        ->whereRaw('LOWER(grade) = ?', [mb_strtolower($grade)])
+                        ->whereRaw('LOWER(COALESCE(section, ?)) = ?', ['', mb_strtolower((string) $section)])
+                        ->exists();
+
+                    if ($exists) {
+                        $duplicates[] = $student['name'];
+
+                        continue;
+                    }
+
+                    $model = $this->enrollmentService->enroll($director, [
+                        'name' => $student['name'],
+                        'grade' => $grade,
+                        'section' => $section,
+                        'family_mode' => 'new',
+                    ], $course);
+
+                    $created->push($model);
+                    $groupCreatedIds[] = $model->id;
+                }
+
+                $enrolledCount = 0;
+                if ($course && $groupCreatedIds !== []) {
+                    $enrolledCount = $course->fresh()->students()
+                        ->whereIn('students.id', $groupCreatedIds)
+                        ->count();
+                }
+
+                $courseGroups[] = [
                     'grade' => $grade,
                     'section' => $section,
-                    'family_mode' => 'new',
-                ], $course);
-
-                $created->push($student);
+                    'course' => $course?->fresh(['teacher']),
+                    'enrolled_count' => $enrolledCount,
+                    'course_created' => $courseCreated,
+                    'placement_note' => $placementNote,
+                ];
             }
         });
 
@@ -463,21 +494,75 @@ class DirectorActionService
             ]);
         }
 
-        $enrolledCount = 0;
-        if ($course) {
-            $enrolledCount = $course->fresh()->students()
-                ->whereIn('students.id', $verified->pluck('id')->all())
-                ->count();
-        }
-
         return [
             'created' => $verified,
             'duplicates' => $duplicates,
-            'course' => $course?->fresh(['teacher']),
-            'enrolled_count' => $enrolledCount,
-            'course_created' => $courseCreated,
-            'placement_note' => $placementNote,
+            'courses' => $courseGroups,
         ];
+    }
+
+    /**
+     * Adaptador de entrada de `createStudentsBatch`: acepta el formato canónico
+     * `students_data` (un item por alumno, cada uno con su propio grado) y también
+     * el formato legado plano `names`+`grade` compartido, que siguen enviando el
+     * parser regex de AICommandController y DirectorIntentExtractorService.
+     *
+     * @return array<int,array{name:string,grade:string,section:?string,subject_name:?string,teacher_name:?string}>
+     */
+    private function normalizeStudentsData(array $payload): array
+    {
+        $sanitizer = app(PersonNameSanitizer::class);
+
+        $raw = isset($payload['students_data']) && is_array($payload['students_data'])
+            ? $payload['students_data']
+            : collect((array) ($payload['names'] ?? []))
+                ->map(fn ($name) => [
+                    'name' => $name,
+                    'grade' => $payload['grade'] ?? null,
+                    'section' => $payload['section'] ?? null,
+                    'subject_name' => $payload['subject_name'] ?? null,
+                    'teacher_name' => $payload['teacher_name'] ?? null,
+                ])
+                ->all();
+
+        $items = [];
+        $seen = [];
+        foreach ($raw as $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+
+            $name = trim((string) ($item['name'] ?? ''));
+            $clean = $sanitizer->clean($name);
+            $name = $clean !== null && $clean !== '' ? $sanitizer->titleCase($clean) : $name;
+            $grade = GradeLabel::canonical((string) ($item['grade'] ?? '')) ?? trim((string) ($item['grade'] ?? ''));
+            $section = trim((string) ($item['section'] ?? ''));
+            $section = $section !== '' ? $section : null;
+            $subject = trim((string) ($item['subject_name'] ?? ''));
+            $subject = $subject !== '' ? $subject : null;
+            $teacher = trim((string) ($item['teacher_name'] ?? ''));
+            $teacher = $teacher !== '' ? $teacher : null;
+
+            if ($name === '' || $grade === '') {
+                continue;
+            }
+
+            $key = implode('|', [mb_strtolower($name), mb_strtolower($grade), mb_strtolower((string) $section)]);
+            if (isset($seen[$key])) {
+                continue;
+            }
+            $seen[$key] = true;
+
+            $items[] = [
+                'name' => $name,
+                'grade' => $grade,
+                'section' => $section,
+                'subject_name' => $subject,
+                'teacher_name' => $teacher,
+            ];
+        }
+
+        return $items;
     }
 
     /**

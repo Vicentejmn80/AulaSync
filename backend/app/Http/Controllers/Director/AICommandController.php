@@ -1585,6 +1585,16 @@ class AICommandController extends Controller
             }
         }
 
+        $courseGroups = (array) ($result['courses'] ?? []);
+        foreach ($courseGroups as $group) {
+            $course = $group['course'] ?? null;
+            if ($course && (int) $course->colegio_id !== (int) $director->colegio_id) {
+                throw ValidationException::withMessages([
+                    'students' => 'Un curso de matrícula no pertenece al colegio del director.',
+                ]);
+            }
+        }
+
         return [
             'message' => $this->composeCreateStudentsVerifiedMessage($created, $result),
             'data' => [
@@ -1596,9 +1606,13 @@ class AICommandController extends Controller
                     'family_code' => $student->family_code,
                 ])->values()->all(),
                 'duplicates' => $result['duplicates'],
-                'enrolled_count' => (int) ($result['enrolled_count'] ?? 0),
-                'course_id' => $result['course']->id ?? null,
-                'students_count' => $result['course']?->students()->count(),
+                'courses' => collect($courseGroups)->map(fn (array $group) => [
+                    'grade' => $group['grade'],
+                    'section' => $group['section'],
+                    'course_id' => $group['course']->id ?? null,
+                    'enrolled_count' => (int) ($group['enrolled_count'] ?? 0),
+                    'course_created' => (bool) ($group['course_created'] ?? false),
+                ])->values()->all(),
             ],
         ];
     }
@@ -1607,21 +1621,30 @@ class AICommandController extends Controller
     {
         $count = $created->count();
         $message = "Creé {$count} estudiante(s) correctamente.";
-        /** @var Course|null $course */
-        $course = $result['course'] ?? null;
-        if ($course) {
-            $teacher = $course->teacher?->name;
-            $place = $course->subject_name.' '.$course->grade.($course->section ? ' / '.$course->section : '');
-            $enrolled = (int) ($result['enrolled_count'] ?? 0);
-            $total = (int) $course->students()->count();
-            if (! empty($result['course_created'])) {
-                $message .= " También creé el curso {$place}.";
+
+        $courseGroups = collect((array) ($result['courses'] ?? []));
+        $withCourse = $courseGroups->filter(fn (array $group) => ($group['course'] ?? null) !== null);
+
+        if ($withCourse->isNotEmpty()) {
+            $parts = $withCourse->map(function (array $group) {
+                /** @var Course $course */
+                $course = $group['course'];
+                $teacher = $course->teacher?->name;
+                $place = $course->subject_name.' '.$course->grade.($course->section ? ' / '.$course->section : '');
+                $enrolled = (int) ($group['enrolled_count'] ?? 0);
+                $total = (int) $course->students()->count();
+                $created = ! empty($group['course_created']) ? ' (curso nuevo)' : '';
+
+                return $enrolled > 0
+                    ? "quedó(aron) matriculado(s) en {$place}{$created}".($teacher ? " con {$teacher}" : '').". El curso tiene {$total} alumno(s)"
+                    : "todavía no pude matricularlos en {$place}{$created}";
+            });
+            $message .= ' '.$parts->implode('; ').'.';
+        } else {
+            $notes = $courseGroups->pluck('placement_note')->filter()->unique()->implode(' ');
+            if ($notes !== '') {
+                $message .= ' '.$notes;
             }
-            $message .= $enrolled > 0
-                ? " Quedó(aron) matriculado(s) en {$place}".($teacher ? " con {$teacher}" : '').". El curso tiene {$total} alumno(s)."
-                : " Todavía no pude matricularlos en {$place}.";
-        } elseif (! empty($result['placement_note'])) {
-            $message .= ' '.$result['placement_note'];
         }
 
         return $message;
@@ -2896,9 +2919,15 @@ class AICommandController extends Controller
      */
     private function missingRequiredParams(string $intent, array $data): array
     {
+        if ($intent === 'create_students_batch') {
+            $hasStudentsData = ! empty($data['students_data']);
+            $hasLegacy = ! empty($data['names']) && ! empty($data['grade']);
+
+            return $hasStudentsData || $hasLegacy ? [] : ['students_data'];
+        }
+
         $required = match ($intent) {
             'create_teacher' => ['teacher_name'],
-            'create_students_batch' => ['names'],
             'enroll_students_course' => ['names', 'subject_name'],
             'update_student' => ['student_name'],
             'delete_teacher', 'delete_teacher_invite' => ['teacher_name'],

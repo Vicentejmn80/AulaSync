@@ -3,6 +3,8 @@
 namespace Tests\Feature;
 
 use App\Models\Colegio;
+use App\Models\Course;
+use App\Models\Student;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
@@ -161,6 +163,107 @@ class DirectorActionPlanExecutionTest extends TestCase
         $this->assertDatabaseHas('students', [
             'colegio_id' => $colegio->id,
             'name' => 'Carlos Parcial',
+        ]);
+    }
+
+    public function test_create_students_batch_supports_multiple_grades_in_one_action(): void
+    {
+        [$director, $colegio] = $this->directorContext();
+        $teacher = User::factory()->create([
+            'role' => 'profesor',
+            'colegio_id' => $colegio->id,
+            'name' => 'Profesora Matemática',
+            'onboarding_completed' => true,
+        ]);
+
+        $this->fakePlannerPlan([
+            'status' => 'pending',
+            'actions' => [
+                [
+                    'id' => (string) Str::uuid(),
+                    'type' => 'create_students_batch',
+                    'entity' => 'student',
+                    'params' => [
+                        'students_data' => [
+                            ['name' => 'Juan Pérez', 'grade' => '1ro'],
+                            ['name' => 'María Gómez', 'grade' => '3ro', 'subject_name' => 'Matemática', 'teacher_name' => 'Profesora Matemática'],
+                            ['name' => 'Sofía Ruiz', 'grade' => '3ro', 'subject_name' => 'Matemática', 'teacher_name' => 'Profesora Matemática'],
+                        ],
+                    ],
+                    'status' => 'pending',
+                    'missing_slots' => [],
+                    'depends_on' => [],
+                    'confirmation_required' => true,
+                ],
+            ],
+            'summary' => 'Voy a crear a Juan Pérez en 1ro, y a María Gómez y Sofía Ruiz en 3ro con Matemática.',
+            'requires_confirmation' => true,
+            'all_or_nothing' => false,
+        ]);
+
+        $response = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'crea a Juan Pérez en 1ro, y a María Gómez y Sofía Ruiz en 3ro con Matemática con la Profesora Matemática',
+        ]);
+        $response->assertOk()->assertJsonPath('requires_confirmation', true);
+
+        $execute = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'sí',
+        ]);
+        $execute->assertOk()->assertJsonPath('success', true);
+
+        $juan = Student::query()->where('colegio_id', $colegio->id)->where('name', 'Juan Pérez')->firstOrFail();
+        $maria = Student::query()->where('colegio_id', $colegio->id)->where('name', 'María Gómez')->firstOrFail();
+        $sofia = Student::query()->where('colegio_id', $colegio->id)->where('name', 'Sofía Ruiz')->firstOrFail();
+
+        $this->assertSame('1ro', $juan->grade);
+        $this->assertSame('3ro', $maria->grade);
+        $this->assertSame('3ro', $sofia->grade);
+
+        $this->assertSame(0, $juan->courses()->count());
+
+        $mathCourses = Course::query()
+            ->where('colegio_id', $colegio->id)
+            ->where('subject_name', 'Matemática')
+            ->where('grade', '3ro')
+            ->get();
+        $this->assertCount(1, $mathCourses, 'No debe duplicar el curso de Matemática 3ro aunque dos alumnos compartan grado y materia.');
+        $this->assertTrue($maria->courses()->where('courses.id', $mathCourses->first()->id)->exists());
+        $this->assertTrue($sofia->courses()->where('courses.id', $mathCourses->first()->id)->exists());
+    }
+
+    public function test_create_students_batch_legacy_names_and_grade_format_still_works(): void
+    {
+        [$director, $colegio] = $this->directorContext();
+
+        $this->fakePlannerPlan([
+            'status' => 'pending',
+            'actions' => [
+                $this->createStudentsBatchAction(['Carlos Legado', 'Ana Legado'], '2do'),
+            ],
+            'summary' => 'Voy a crear a Carlos Legado y Ana Legado en 2do.',
+            'requires_confirmation' => true,
+            'all_or_nothing' => false,
+        ]);
+
+        $response = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'crea a Carlos Legado y Ana Legado en 2do',
+        ]);
+        $response->assertOk()->assertJsonPath('requires_confirmation', true);
+
+        $execute = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'sí',
+        ]);
+        $execute->assertOk()->assertJsonPath('success', true);
+
+        $this->assertDatabaseHas('students', [
+            'colegio_id' => $colegio->id,
+            'name' => 'Carlos Legado',
+            'grade' => '2do',
+        ]);
+        $this->assertDatabaseHas('students', [
+            'colegio_id' => $colegio->id,
+            'name' => 'Ana Legado',
+            'grade' => '2do',
         ]);
     }
 

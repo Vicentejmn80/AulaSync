@@ -266,6 +266,21 @@ class DirectorActionPlannerService
                                             'additionalProperties' => false,
                                         ],
                                     ],
+                                    'students_data' => [
+                                        'type' => ['array', 'null'],
+                                        'items' => [
+                                            'type' => 'object',
+                                            'properties' => [
+                                                'name' => ['type' => 'string'],
+                                                'grade' => ['type' => 'string'],
+                                                'section' => ['type' => ['string', 'null']],
+                                                'subject_name' => ['type' => ['string', 'null']],
+                                                'teacher_name' => ['type' => ['string', 'null']],
+                                            ],
+                                            'required' => ['name', 'grade', 'section', 'subject_name', 'teacher_name'],
+                                            'additionalProperties' => false,
+                                        ],
+                                    ],
                                     'section' => ['type' => ['string', 'null']],
                                     'subject_name' => ['type' => ['string', 'null']],
                                     'new_grade' => ['type' => ['string', 'null']],
@@ -277,7 +292,7 @@ class DirectorActionPlannerService
                                 ],
                                 'required' => [
                                     'teacher_name', 'student_name', 'names', 'grade', 'grades',
-                                    'courses_data', 'section',
+                                    'courses_data', 'students_data', 'section',
                                     'subject_name', 'new_grade', 'new_section', 'new_name',
                                     'operation', 'all_in_grade', 'invite_code',
                                 ],
@@ -344,11 +359,12 @@ REGLAS CRÍTICAS:
 3. Para acciones de escritura (crear, modificar, eliminar, matricular), confirmation_required = true. Para lectura (get_*), false.
 4. Si falta algún dato obligatorio, crea un slot en missing_slots con una pregunta clara.
 5. NOMBRES: params.teacher_name / student_name / names son SOLO el nombre propio (ej. "Mariano", "Vicente José") sin "también", "llamado", "el que te dije", "profesor de...", "alumno". DEDUPLICA: si el usuario repite el mismo nombre ("a Vicente José, al alumno Vicente José y a Gabriela Pernal" → Vicente José una sola vez, Gabriela Pernal una vez), cada persona aparece UNA sola vez en el plan.
-6. GRADOS — RANGOS EXPANDIDOS: Los grados válidos son 1ro, 2do, 3ro, 4to, 5to, 6to. Un rango como "de 1ro a 6to", "desde 1ro hasta 6to", "desde 1ro a 6to", "1ro a 6to" DEBE expandirse al array completo: ["1ro","2do","3ro","4to","5to","6to"]. Para create_teacher/create_course/assign_teacher usa el array grades completo. Para create_students_batch/enroll usa grade individual o el grado relevante. NUNCA dejes un rango sin expandir ni como texto libre ni como grade=null.
+6. GRADOS — RANGOS EXPANDIDOS: Los grados válidos son 1ro, 2do, 3ro, 4to, 5to, 6to. Un rango como "de 1ro a 6to", "desde 1ro hasta 6to", "desde 1ro a 6to", "1ro a 6to" DEBE expandirse al array completo: ["1ro","2do","3ro","4to","5to","6to"]. Para create_teacher/create_course/assign_teacher usa el array grades completo. Para enroll_students_course usa grade individual o el grado relevante. NUNCA dejes un rango sin expandir ni como texto libre ni como grade=null.
 7. Genera un resumen natural en "summary" numerando las acciones, usando nombres limpios y rangos expandidos (ej. "1ro a 6to").
 8. Si no hay acciones, devuelve actions=[] y summary="No entendí ninguna acción. ¿Puedes reformular?".
 9. CURSOS — SIEMPRE EN LOTE: para crear materias/cursos usa SIEMPRE create_courses_batch, incluso si es una sola materia en un solo grado. NUNCA uses create_course. params.courses_data es un array con UN item por materia y cada item lleva su propio array grades con todos los grados pedidos. Ejemplo — "crea matemática, lenguaje y biología para 3ro y 4to" es UNA sola acción: courses_data=[{"subject_name":"matemática","grades":["3ro","4to"],"section":null,"teacher_name":null},{"subject_name":"lenguaje","grades":["3ro","4to"],"section":null,"teacher_name":null},{"subject_name":"biología","grades":["3ro","4to"],"section":null,"teacher_name":null}]. No la partas en tres acciones.
 10. DOCENTE OPCIONAL EN CURSOS: teacher_name es opcional dentro de courses_data. Si el director no menciona profesor, deja teacher_name=null y NO crees ningún missing_slot pidiéndolo: el curso se crea sin docente y se asigna después.
+11. ALUMNOS — SIEMPRE EN LOTE CON GRADO POR ALUMNO: para create_students_batch usa SIEMPRE params.students_data, incluso si es un solo alumno. students_data es un array con UN item por alumno: {"name","grade","section","subject_name","teacher_name"}. Cada alumno lleva su propio grade, así que un mensaje como "crea a Juan Pérez en 1ro y a María Gómez en 3ro con Matemática" es UNA sola acción: students_data=[{"name":"Juan Pérez","grade":"1ro","section":null,"subject_name":null,"teacher_name":null},{"name":"María Gómez","grade":"3ro","section":null,"subject_name":"Matemática","teacher_name":null}]. No la partas en dos acciones ni fuerces un grade común para todos.
 
 Datos del colegio:
 {$roster}
@@ -410,6 +426,29 @@ PROMPT;
             }
             if (isset($action['params']['grades']) && is_array($action['params']['grades'])) {
                 $action['params']['grades'] = array_values(array_unique(array_filter(array_map(fn ($g) => trim((string) $g), $action['params']['grades']))));
+            }
+            // Normaliza students_data: recorta strings, descarta items sin name/grade
+            // y elimina duplicados exactos (mismo alumno, grado y sección).
+            if (isset($action['params']['students_data']) && is_array($action['params']['students_data'])) {
+                $action['params']['students_data'] = collect($action['params']['students_data'])
+                    ->filter(fn ($item) => is_array($item))
+                    ->map(function (array $item) {
+                        $section = trim((string) ($item['section'] ?? ''));
+                        $subject = trim((string) ($item['subject_name'] ?? ''));
+                        $teacher = trim((string) ($item['teacher_name'] ?? ''));
+
+                        return [
+                            'name' => trim((string) ($item['name'] ?? '')),
+                            'grade' => trim((string) ($item['grade'] ?? '')),
+                            'section' => $section !== '' ? $section : null,
+                            'subject_name' => $subject !== '' ? $subject : null,
+                            'teacher_name' => $teacher !== '' ? $teacher : null,
+                        ];
+                    })
+                    ->filter(fn (array $item) => $item['name'] !== '' && $item['grade'] !== '')
+                    ->unique(fn (array $item) => mb_strtolower($item['name']).'|'.mb_strtolower($item['grade']).'|'.mb_strtolower((string) $item['section']))
+                    ->values()
+                    ->all();
             }
             $action['missing_slots'] = $this->normalizeSlots($action['missing_slots'] ?? []);
             $action['depends_on'] = array_values(array_filter((array) ($action['depends_on'] ?? [])));
@@ -509,7 +548,22 @@ PROMPT;
         $filtered = [];
         foreach ($actions as $action) {
             $type = $action['type'] ?? '';
-            if (in_array($type, ['create_students_batch', 'enroll_students_course'], true)) {
+            if ($type === 'create_students_batch' && isset($action['params']['students_data'])) {
+                $items = (array) ($action['params']['students_data'] ?? []);
+                $unique = [];
+                foreach ($items as $item) {
+                    $key = mb_strtolower(trim((string) ($item['name'] ?? '')));
+                    if ($key === '' || isset($seen['student:'.$key])) {
+                        continue;
+                    }
+                    $seen['student:'.$key] = true;
+                    $unique[] = $item;
+                }
+                if ($unique === [] && $items !== []) {
+                    continue;
+                }
+                $action['params']['students_data'] = array_values($unique);
+            } elseif (in_array($type, ['create_students_batch', 'enroll_students_course'], true)) {
                 $names = (array) ($action['params']['names'] ?? []);
                 $unique = [];
                 foreach ($names as $n) {
@@ -630,7 +684,7 @@ PROMPT;
                 'create_teacher' => 'Crear profesor '.($action['data']['teacher_name'] ?? ''),
                 'create_course', 'create_courses_batch' => $this->summarizeCourseAction($action),
                 'assign_teacher' => 'Asignar materia a '.($action['data']['teacher_name'] ?? ''),
-                'create_students_batch' => 'Crear alumnos '.implode(', ', $action['data']['names'] ?? []),
+                'create_students_batch' => $this->summarizeStudentsAction($action),
                 'enroll_students_course', 'enroll_students' => 'Matricular alumnos '.implode(', ', $action['data']['names'] ?? []),
                 'update_student' => 'Cambiar a '.($action['data']['student_name'] ?? ''),
                 'delete_teacher' => 'Eliminar profesor '.($action['data']['teacher_name'] ?? ''),
@@ -673,5 +727,36 @@ PROMPT;
             ->implode('; ');
 
         return $parts !== '' ? 'Crear cursos: '.$parts : 'Crear cursos';
+    }
+
+    /**
+     * Resumen legible de una acción de alumnos. Acepta las dos formas que circulan
+     * en el proyecto: `students_data` (formato canónico) y `names`+`grade` (legado).
+     *
+     * @param  array<string,mixed>  $action
+     */
+    private function summarizeStudentsAction(array $action): string
+    {
+        $payload = (array) ($action['data'] ?? $action['params'] ?? []);
+        $items = array_values(array_filter((array) ($payload['students_data'] ?? []), 'is_array'));
+
+        if ($items === []) {
+            $grade = trim((string) ($payload['grade'] ?? ''));
+            $items = collect((array) ($payload['names'] ?? []))
+                ->map(fn ($name) => ['name' => $name, 'grade' => $grade])
+                ->all();
+        }
+
+        $parts = collect($items)
+            ->map(function (array $item) {
+                $name = trim((string) ($item['name'] ?? ''));
+                $grade = trim((string) ($item['grade'] ?? ''));
+
+                return $grade !== '' ? "{$name} ({$grade})" : $name;
+            })
+            ->filter(fn (string $part) => $part !== '')
+            ->implode(', ');
+
+        return $parts !== '' ? 'Crear alumnos: '.$parts : 'Crear alumnos';
     }
 }
