@@ -388,7 +388,9 @@ class AICommandController extends Controller
                         $actions = $this->enrichActionsFromText($composite, $text);
                     }
                     // Si el fallback sigue incierto tras el segundo intento, pedir aclaración.
-                    if (count($actions) === 1 && $this->intentExtractor->isUncertainExtraction($text, $actions)) {
+                    // <= 1: cubre también el caso de 0 acciones utilizables para no dejar
+                    // que un fallback posterior arme una confirmación con datos corruptos.
+                    if (count($actions) <= 1 && $this->intentExtractor->isUncertainExtraction($text, $actions)) {
                         return response()->json([
                             'success' => false,
                             'needs_clarification' => true,
@@ -421,11 +423,34 @@ class AICommandController extends Controller
                 $actions = $this->enrichActionsFromText((array) ($interpreted['actions'] ?? []), $text);
                 $localBatch = $this->extractMultipleActions($director, $text);
                 $actions = $this->preferLocalTeacherBatch($actions, $localBatch, $text);
+                // Si el LLM no devolvió nada pero el extractor local sí encontró
+                // exactamente una acción clara, úsala: exigir >=2 para "preferir" el
+                // batch local descartaba en silencio la única acción detectada
+                // (0 acciones utilizables) cuando antes ese hueco quedaba
+                // enmascarado por nombres fantasma que inflaban el conteo a 2.
+                if ($actions === [] && count($localBatch) === 1) {
+                    $actions = $localBatch;
+                }
 
                 $localIntentions = $this->mapLocalIntentions(
                     $this->intentExtractor->extractMultipleIntentions($text)
                 );
                 $actions = $this->preferLocalMultipleIntentions($actions, $localIntentions);
+                // Único caso seguro para adoptar una sola intención local suelta:
+                // creación de profesor sin ninguna mención de alumno/estudiante en el
+                // texto. Con alumnos presentes, looksLikeTeacherCreation() puede
+                // confundir "profesor" mencionado como referencia ("...con el
+                // profesor X") con el sujeto a crear, así que en ese caso dejamos
+                // que los fallbacks más específicos de más abajo (buildOperationData,
+                // detectMultiIntentActions) resuelvan la intención real.
+                if (
+                    $actions === []
+                    && count($localIntentions) === 1
+                    && ($localIntentions[0]['intent'] ?? null) === 'create_teacher'
+                    && ! preg_match('/\b(?:alumn[oa]s?|estudiantes?)\b/iu', $text)
+                ) {
+                    $actions = $localIntentions;
+                }
 
                 if ($actions !== [] && count($localBatch) < 2) {
                     $actions = $this->mergeMissingIntentsFromText($director, $actions, $text);
@@ -436,8 +461,9 @@ class AICommandController extends Controller
                     : '';
 
                 // Honestidad en flujo legado sin LLM: si complejo e incierto, pedir aclaración.
-                // Igual que en el planificador: solo si quedó una sola acción.
-                if (count($actions) === 1 && $this->intentExtractor->isUncertainExtraction($text, $actions)) {
+                // <= 1: igual que en el planificador, cubre también 0 acciones utilizables
+                // para no presentar luego una confirmación sobre un payload vacío/corrupto.
+                if (count($actions) <= 1 && $this->intentExtractor->isUncertainExtraction($text, $actions)) {
                     return response()->json([
                         'success' => false,
                         'needs_clarification' => true,

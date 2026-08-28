@@ -310,6 +310,8 @@
                                                         <label class="flex min-w-0 flex-1 items-center gap-2">
                                                             <input type="checkbox" class="h-4 w-4 accent-indigo-600" :checked="isSelected('course', item.id)" @change="toggleSelected('course', item.id)">
                                                             <span class="min-w-0 truncate">
+                                                                <span class="font-semibold" x-text="subject.name"></span>
+                                                                <span class="text-slate-400"> - </span>
                                                                 <span x-text="item.section ? 'Sección ' + item.section : 'Sección única'"></span>
                                                                 <span class="text-slate-400"> · </span>
                                                                 <span x-text="item.teacher_name || 'Sin docente'"></span>

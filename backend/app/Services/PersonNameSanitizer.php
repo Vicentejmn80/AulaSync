@@ -17,6 +17,12 @@ class PersonNameSanitizer
 
         $name = trim(preg_replace('/\s+/u', ' ', $name) ?? $name);
         $name = preg_replace('/\s*\([^)]*\)\s*/u', ' ', $name) ?? $name;
+
+        // Un nombre nunca cruza un punto final u otro cierre de oración: todo lo que
+        // venga después pertenece a la siguiente instrucción ("...Jorge Luis. Él va a
+        // dar Biología" no debe arrastrar "Él" ni nada de la segunda oración).
+        $name = preg_replace('/[.!?¡¿].*/su', '', $name) ?? $name;
+
         $name = trim($name, " \t\n\r\0\x0B,.;:");
 
         if (preg_match('/llamad[oa]\s+(.+)$/iu', $name, $called)) {
@@ -33,7 +39,7 @@ class PersonNameSanitizer
         $name = preg_replace('/\s+(?:'.self::SUBJECT_ALIASES.')\b.*$/iu', '', $name) ?? $name;
 
         $cutPattern = '/\s+(?:'
-            .'(?:y\s+)?(?:as[ií]gna(?:lo|le|r|les)?|inscr[ií]be(?:lo|le|r)?|matr[ií]cula(?:lo|le|r)?|agrega(?:lo|le)?|añade|anade|crea(?:r|me)?)'
+            .'(?:y\s+)?(?:as[ií]gna(?:le|lo|r|les)?|inscr[ií]be(?:le|lo|r|les)?|matr[ií]cula(?:le|lo|r|les)?|agr[eé]ga(?:le|lo|les)?|añad(?:e|ele|eles)?|anad(?:e|ele|eles)?|cre[aá](?:r|me|le|les)?)'
             .'|en\s+el|en\s+la|en\s+los|en\s+las'
             .'|al\s+curso|a\s+el\s+curso|del\s+curso|de\s+el\s+curso'
             .'|que\s+va(?:\s+a(?:\s+dar)?)?|va\s+a\s+dar'
@@ -51,6 +57,19 @@ class PersonNameSanitizer
             $name
         ) ?? $name;
 
+        // Pronombres/conectores arrastrados al final del nombre desde la
+        // siguiente instrucción ("Jorge Luis El" tras "...Jorge Luis. Él va a
+        // dar Biología" cuando el separador de oración no llegó a este punto).
+        // Se repite porque puede haber más de uno pegado ("Jorge Luis El Que").
+        do {
+            $before = $name;
+            $name = preg_replace(
+                '/\s+(?:el|ella|ellos|ellas|ello|que|quien|quienes|cual|cuales|este|esta|esto|estos|estas|ese|esa|eso|esos|esas|ambos|ambas|mismo|misma)$/iu',
+                '',
+                $name
+            ) ?? $name;
+        } while ($name !== $before);
+
         $name = trim($name, " \t\n\r\0\x0B,.;:");
         $name = trim(preg_replace('/\s+/u', ' ', $name) ?? $name);
 
@@ -59,6 +78,12 @@ class PersonNameSanitizer
         }
 
         if (preg_match('/^(?:en el|en la|en los|en las|en|de|del|el|la|los|las|al|a la|para|curso|grado|alumno|estudiante|profesor|profesora|docente|llamado|llamada|tambien|también|ademas|además|seccion|sección|siguientes?)$/iu', $name)) {
+            return null;
+        }
+
+        // Un verbo imperativo suelto (arrastrado de la siguiente instrucción) nunca
+        // es un nombre válido, aunque esté capitalizado al inicio de oración.
+        if (preg_match('/^(?:agr[eé]ga(?:le|les|lo)?|as[ií]gna(?:le|les|lo)?|cre[aá](?:r|me|le|les)?|inscr[ií]be(?:le|les|lo)?|matr[ií]cula(?:le|les|lo)?|invita(?:r)?|añad(?:e|ele|eles)?|anad(?:e|ele|eles)?)$/iu', $name)) {
             return null;
         }
 

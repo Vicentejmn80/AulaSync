@@ -327,11 +327,11 @@ class DirectorIntentExtractorService
         // Patrones ordenados por especificidad.
         $patterns = [
             // "profesor de matemáticas llamado Vicente José"
-            '/profesor(?:a)?\s+(?:de\s+(?:la\s+|el\s+)?)?(?:'.self::SUBJECT_PATTERN.')\s+(?:llamad[oa]\s+)?(.+?)(?:\s+(?:como\s+profesor|desde|de\s+\d|que\s+va|va\s+a|asigna|materia|grado|curso|\(|,\s*(?:desde|que|y\s+(?:es|va)))|$)/iu',
+            '/profesor(?:a)?\s+(?:de\s+(?:la\s+|el\s+)?)?(?:'.self::SUBJECT_PATTERN.')\s+(?:llamad[oa]\s+)?([^.!?¡¿]+?)(?:\s+(?:como\s+profesor|desde|de\s+\d|que\s+va|va\s+a|asigna|materia|grado|curso|\(|,\s*(?:desde|que|y\s+(?:es|va)))|[.!?¡¿]|$)/iu',
             // "profesor llamado Vicente José"
-            '/profesor(?:a)?\s+(?:llamad[oa]\s+)?(.+?)(?:\s+(?:como\s+profesor|de\s+(?:la\s+|el\s+)?(?:'.self::SUBJECT_PATTERN.')|desde|que\s+va|va\s+a|asigna|materia|grado|curso|\(|,\s*(?:desde|que|y\s+(?:es|va)))|$)/iu',
+            '/profesor(?:a)?\s+(?:llamad[oa]\s+)?([^.!?¡¿]+?)(?:\s+(?:como\s+profesor|de\s+(?:la\s+|el\s+)?(?:'.self::SUBJECT_PATTERN.')|desde|que\s+va|va\s+a|asigna|materia|grado|curso|\(|,\s*(?:desde|que|y\s+(?:es|va)))|[.!?¡¿]|$)/iu',
             // "crea al profesor Vicente José"
-            '/(?:crea(?:r|me|s)?|crees|cree|invita(?:r|s)?|invites?)\s+(?:a\s+)?(?:el\s+|la\s+)?profesor(?:a)?\s+(.+?)(?:\s+(?:como\s+profesor|de\s+(?:la\s+|el\s+)?(?:'.self::SUBJECT_PATTERN.')|desde|que\s+va|va\s+a|asigna|materia|grado|curso|\(|,\s*(?:desde|que|y\s+(?:es|va)))|$)/iu',
+            '/(?:crea(?:r|me|s)?|crees|cree|invita(?:r|s)?|invites?)\s+(?:a\s+)?(?:el\s+|la\s+)?profesor(?:a)?\s+([^.!?¡¿]+?)(?:\s+(?:como\s+profesor|de\s+(?:la\s+|el\s+)?(?:'.self::SUBJECT_PATTERN.')|desde|que\s+va|va\s+a|asigna|materia|grado|curso|\(|,\s*(?:desde|que|y\s+(?:es|va)))|[.!?¡¿]|$)/iu',
         ];
 
         foreach ($patterns as $pattern) {
@@ -365,6 +365,16 @@ class DirectorIntentExtractorService
         'ese', 'esa', 'eso', 'esos', 'esas',
         'ambos', 'ambas', 'mismo', 'misma', 'dicho', 'dicha',
         'y', 'o', 'pero', 'para', 'con', 'su', 'sus', 'al', 'a', 'en', 'como',
+        // Verbos imperativos que el director usa para arrancar la siguiente
+        // instrucción y que el regex ".+?" arrastra al nombre si queda
+        // pegado ("Jorge Luis Agrega a Vicente..." -> "Jorge Luis").
+        'crea', 'crear', 'creame', 'creale', 'creales',
+        'agrega', 'agregale', 'agregales', 'agreguen',
+        'asigna', 'asignale', 'asignales', 'asignele', 'asignenle',
+        'invita', 'invitale',
+        'matricula', 'matriculale', 'matriculales',
+        'inscribe', 'inscribele', 'inscribeles',
+        'anade', 'anadele', 'anadeles',
     ];
 
     /**
@@ -464,12 +474,12 @@ class DirectorIntentExtractorService
      */
     private function extractStudentNames(string $segment): array
     {
-        $endOfNames = '(?:a\s+(?:su|la|el)\s+(?:materia|clase|asignatura|curso)|en\s+(?:el|la|los|las)\s+(?:materia|clase|asignatura|curso|grado)|en\s+(?:\d|primer|primero|segundo|tercer|tercero|cuarto|quinto|sexto)|que\s+(?:ambos|son|est[áa]n)|y\s+los\s+(?:agrega(?:r|s)?|agregues?|inscribe(?:r|s)?|matricula(?:r|s)?)|,\s*que|\(|$)';
+        $endOfNames = '(?:a\s+(?:su|la|el)\s+(?:materia|clase|asignatura|curso)|en\s+(?:el|la|los|las)\s+(?:materia|clase|asignatura|curso|grado)|en\s+(?:\d|primer|primero|segundo|tercer|tercero|cuarto|quinto|sexto)|que\s+(?:ambos|son|est[áa]n)|y\s+los\s+(?:agrega(?:r|s)?|agregues?|inscribe(?:r|s)?|matricula(?:r|s)?)|,\s*que|\(|[.!?¡¿]|$)';
         $patterns = [
             // "alumnos Carlos Gutiérrez y Salvador Pérez a su materia..."
-            '/(?:alumnos?|estudiantes?)\s+(.+?)(?:\s+'.$endOfNames.'|\s*$)/iu',
+            '/(?:alumnos?|estudiantes?)\s+([^.!?¡¿]+?)(?:\s+'.$endOfNames.'|\s*$)/iu',
             // "agrega a Carlos Gutiérrez y Salvador Pérez"
-            '/(?:agrega(?:r|le|lo|s)?|agregues?|a[nñ]ade)\s+(?:a\s+)?(.+?)(?:\s+'.$endOfNames.'|\s*$)/iu',
+            '/(?:agrega(?:r|le|lo|s)?|agregues?|a[nñ]ade)\s+(?:a\s+)?([^.!?¡¿]+?)(?:\s+'.$endOfNames.'|\s*$)/iu',
         ];
 
         foreach ($patterns as $pattern) {
