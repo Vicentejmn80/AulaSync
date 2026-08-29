@@ -121,6 +121,7 @@ class DirectorActionService
                     ]);
                     $courseIds[] = $course->id;
                     $createdCourses[] = $course;
+                    $this->enrollGradeStudentsInCourse($colegioId, $course, $director);
                 }
             }
 
@@ -460,6 +461,7 @@ class DirectorActionService
                         'family_mode' => 'new',
                     ], $course);
 
+                    $this->enrollStudentInGradeCourses($colegioId, $model, $director);
                     $created->push($model);
                     $groupCreatedIds[] = $model->id;
                 }
@@ -597,7 +599,7 @@ class DirectorActionService
             ]);
         }
 
-        return DB::transaction(function () use ($colegioId, $subject, $section, $grades, $payload) {
+        return DB::transaction(function () use ($colegioId, $subject, $section, $grades, $payload, $director) {
             $teacherId = null;
             $inviteId = null;
             $teacherLabel = null;
@@ -642,6 +644,7 @@ class DirectorActionService
                 ]);
                 $courses->push($course);
                 $created++;
+                $this->enrollGradeStudentsInCourse($colegioId, $course, $director);
             }
 
             if ($inviteId) {
@@ -695,7 +698,7 @@ class DirectorActionService
             ]);
         }
 
-        return DB::transaction(function () use ($colegioId, $subject, $grade, $section, $payload) {
+        return DB::transaction(function () use ($colegioId, $subject, $grade, $section, $payload, $director) {
             $teacherId = null;
             $inviteId = null;
             $teacherLabel = null;
@@ -728,6 +731,7 @@ class DirectorActionService
                     'school_year' => date('Y').'-'.(date('Y') + 1),
                     'invite_code' => InviteCodeHelper::generateCourseCode($materia->name, $grade, $section),
                 ]);
+                $this->enrollGradeStudentsInCourse($colegioId, $course, $director);
             }
 
             if ($inviteId) {
@@ -798,7 +802,7 @@ class DirectorActionService
             }
         }
 
-        return DB::transaction(function () use ($colegioId, $items, $assignees) {
+        return DB::transaction(function () use ($colegioId, $items, $assignees, $director) {
             $courses = collect();
             $created = 0;
             $existing = 0;
@@ -848,6 +852,7 @@ class DirectorActionService
                     ]);
                     $courses->push($course);
                     $created++;
+                    $this->enrollGradeStudentsInCourse($colegioId, $course, $director);
                     if ($inviteId) {
                         $inviteCourseIds[$inviteId][] = $course->id;
                     }
@@ -1972,6 +1977,98 @@ class DirectorActionService
         $student = $match->model;
 
         return $student;
+    }
+
+    /**
+     * Sincroniza matrículas del colegio: cada alumno se asocia a todos los
+     * cursos de su mismo grado que aún no tenga.
+     *
+     * @return array{links_created:int,already_synced:int,students_count:int,courses_count:int}
+     */
+    public function syncAllEnrollments(User $director): array
+    {
+        $colegioId = $this->requireColegioId($director);
+        $students = Student::query()->where('colegio_id', $colegioId)->get();
+        $courses = Course::query()->where('colegio_id', $colegioId)->get();
+
+        $linksCreated = 0;
+        $alreadySynced = 0;
+
+        foreach ($students as $student) {
+            foreach ($courses as $course) {
+                if (! $this->sameGradeEnrollment($student, $course)) {
+                    continue;
+                }
+                if ($course->students()->where('students.id', $student->id)->exists()) {
+                    $alreadySynced++;
+
+                    continue;
+                }
+                $this->enrollmentService->attachExisting($course, $student, $director);
+                $linksCreated++;
+            }
+        }
+
+        return [
+            'links_created' => $linksCreated,
+            'already_synced' => $alreadySynced,
+            'students_count' => $students->count(),
+            'courses_count' => $courses->count(),
+        ];
+    }
+
+    private function enrollStudentInGradeCourses(int $colegioId, Student $student, User $director): int
+    {
+        $linked = 0;
+        $courses = Course::query()->where('colegio_id', $colegioId)->get();
+        foreach ($courses as $course) {
+            if (! $this->sameGradeEnrollment($student, $course)) {
+                continue;
+            }
+            if ($course->students()->where('students.id', $student->id)->exists()) {
+                continue;
+            }
+            $this->enrollmentService->attachExisting($course, $student, $director);
+            $linked++;
+        }
+
+        return $linked;
+    }
+
+    private function enrollGradeStudentsInCourse(int $colegioId, Course $course, User $director): int
+    {
+        $linked = 0;
+        $students = Student::query()->where('colegio_id', $colegioId)->get();
+        foreach ($students as $student) {
+            if (! $this->sameGradeEnrollment($student, $course)) {
+                continue;
+            }
+            if ($course->students()->where('students.id', $student->id)->exists()) {
+                continue;
+            }
+            $this->enrollmentService->attachExisting($course, $student, $director);
+            $linked++;
+        }
+
+        return $linked;
+    }
+
+    private function sameGradeEnrollment(Student $student, Course $course): bool
+    {
+        $studentGrade = GradeLabel::canonical((string) $student->grade) ?? trim((string) $student->grade);
+        $courseGrade = GradeLabel::canonical((string) $course->grade) ?? trim((string) $course->grade);
+        if ($studentGrade === '' || $courseGrade === '' || $studentGrade !== $courseGrade) {
+            return false;
+        }
+
+        $studentSection = trim((string) ($student->section ?? ''));
+        $courseSection = trim((string) ($course->section ?? ''));
+        if ($studentSection !== '' && $courseSection !== ''
+            && mb_strtolower($studentSection) !== mb_strtolower($courseSection)) {
+            return false;
+        }
+
+        return true;
     }
 
     private function requireColegioId(User $director): int

@@ -130,4 +130,12 @@ class DirectorIntentExtractorServiceTest extends TestCase
         $this->assertSame(['Vicente José', 'Valeria Navarro'], $actions[1]['data']['names']);
         $this->assertSame('2do', $actions[1]['data']['grade']);
     }
+
+    public function test_detects_enrollment_sync_command(): void
+    {
+        $actions = $this->extractor->extractMultipleIntentions('sincroniza las matrículas de todos los alumnos');
+
+        $this->assertCount(1, $actions);
+        $this->assertSame('sync_all_enrollments', $actions[0]['intent']);
+    }
 }

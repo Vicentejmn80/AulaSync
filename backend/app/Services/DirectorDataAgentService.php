@@ -73,7 +73,7 @@ class DirectorDataAgentService
     {
         $value = $this->normalized($text);
         $isMutation = (bool) preg_match(
-            '/\b(?:crea(?:r|me|lo|los|s)?|cree(?:s)?|agrega(?:r)?|modifica(?:r)?|invita|elimina|borrar|borra|quita(?:r)?|remover|matricula|inscribe|asigna(?:le|lo)?|desmatricula|actualiza|edita|mueve|cambia|aumenta(?:r)?|disminu(?:ye|ir)|incrementa|reduce|cancel[ae]|anula|va a dar)\b/u',
+            '/\b(?:crea(?:r|me|lo|los|s)?|cree(?:s)?|agrega(?:r)?|modifica(?:r)?|invita|elimina|borrar|borra|quita(?:r)?|remover|matricula|inscribe|asigna(?:le|lo)?|desmatricula|sincroniza(?:r)?|actualiza|edita|mueve|cambia|aumenta(?:r)?|disminu(?:ye|ir)|incrementa|reduce|cancel[ae]|anula|va a dar)\b/u',
             $value
         ) || (
             (bool) preg_match('/\b(?:profesor|docente|maestro)s?\s+llamad/u', $value)
@@ -573,9 +573,9 @@ class DirectorDataAgentService
 
         $memory = $this->conversationContext->snapshot();
         $facts = $this->factsForLlm($actions);
-        $style = $this->wantsExecutiveReport($text) || $this->wantsStructuredFormat($text)
-            ? 'informe'
-            : ($this->wantsDiagnosis($text) || $intent === 'diagnose_school' ? 'panorama' : 'natural');
+        $style = $this->wantsStrategicAdvisory($text) || $intent === 'diagnose_school'
+            ? ($this->wantsExecutiveReport($text) || $this->wantsStructuredFormat($text) ? 'informe' : 'panorama')
+            : 'factual';
 
         try {
             $response = \Illuminate\Support\Facades\Http::timeout(12)
@@ -583,7 +583,7 @@ class DirectorDataAgentService
                 ->post('https://api.openai.com/v1/chat/completions', [
                     'model' => (string) config('services.openai.director_model', 'gpt-4o-mini'),
                     'temperature' => 0.3,
-                    'max_tokens' => $style === 'informe' ? 700 : 350,
+                    'max_tokens' => $style === 'informe' ? 700 : ($style === 'factual' ? 90 : 350),
                     'messages' => [
                         ['role' => 'system', 'content' => $this->synthesisSystemPrompt($style)],
                         ['role' => 'user', 'content' => json_encode([
@@ -621,13 +621,18 @@ class DirectorDataAgentService
         $format = match ($style) {
             'informe' => 'Estructura de informe ejecutivo con subtítulos, riesgos y plan de acción.',
             'panorama' => 'Respuesta tipo panorama del colegio, orientada a toma de decisiones.',
+            'factual' => 'factual_lookup_mode: 1 o 2 oraciones, solo el dato pedido. Sin recomendaciones ni cierre estratégico.',
             default => 'Respuesta conversacional natural, breve cuando aplique y accionable cuando haya riesgos.',
         };
+
+        $roleLine = $style === 'factual'
+            ? 'Estás en factual_lookup_mode: responde SOLO el dato pedido, en 1 o 2 oraciones. PROHIBIDO recomendaciones, hipótesis, riesgos, oportunidades o análisis de marketing.'
+            : 'Estás en strategic_advisory_mode: puedes interpretar patrones y recomendar porque el director pidió análisis, diagnóstico, informe, recomendaciones o la salud del colegio.';
 
         return <<<PROMPT
 Eres "AulaSync", asistente inteligente del director escolar. Redactas la respuesta final en español.
 
-No eres un traductor de datos: eres un asesor estratégico.
+{$roleLine}
 
 Reglas:
 1. Nunca inventes alumnos, notas, profesores, cursos, asistencia ni ningún dato.
@@ -635,15 +640,15 @@ Reglas:
 3. Si un dato no existe, di que no está disponible.
 4. No menciones tools, SQL, backend, agentes ni arquitectura interna.
 5. No digas que los números son registros reales ni menciones verificaciones internas.
-6. Nunca respondas en formato robótico ni solo listado de números; interpreta qué significan.
-7. Conecta patrones cuando sea posible (notas, asistencia, tendencia, riesgo) sin afirmar causalidad absoluta.
-8. Si detectas riesgo, incluye recomendación concreta y prioridad (alta/media/baja).
+6. En factual_lookup_mode no interpretes ni agregues "siguiente paso". En strategic_advisory_mode sí puedes interpretar.
+7. Conecta patrones SOLO en strategic_advisory_mode (notas, asistencia, tendencia, riesgo) sin afirmar causalidad absoluta.
+8. Si detectas riesgo, incluye recomendación concreta SOLO en strategic_advisory_mode.
 9. Si el usuario pregunta "qué hacer", entrega acciones priorizadas y justificadas.
 10. Si el usuario pregunta "por qué", entrega hipótesis basadas en datos y explícitalas como hipótesis.
 11. Mantén tono natural, cálido y profesional, como conversación con un director.
-12. Sé conciso en preguntas simples y más detallado en diagnósticos e informes.
+12. Sé ultra-conciso en preguntas simples (factual_lookup_mode) y más detallado solo en diagnósticos e informes.
 13. Evita repetir plantillas rígidas; adapta la respuesta a la intención.
-14. Si aplica, cierra con una pregunta breve de seguimiento para profundizar.
+14. Cierra con pregunta de seguimiento SOLO en strategic_advisory_mode.
 15. {$format}
 
 Ejemplo de estilo esperado para panorama:
@@ -1154,6 +1159,16 @@ PROMPT;
         $value = $this->normalized($text);
 
         return (bool) preg_match('/\b(?:informe|reporte|resumen ejecutivo|analisis detallado|para la reunion)\b/u', $value);
+    }
+
+    private function wantsStrategicAdvisory(string $text): bool
+    {
+        $value = $this->normalized($text);
+
+        return $this->wantsExecutiveReport($text)
+            || $this->wantsStructuredFormat($text)
+            || $this->wantsDiagnosis($text)
+            || (bool) preg_match('/\b(?:analisis|diagnostico|informe|reporte|recomendacion(?:es)?|salud del colegio|panorama|oportunidades|que (?:debo |deberia )?hacer)\b/u', $value);
     }
 
     private function looksLikeTeacherOfStudentQuery(string $text): bool

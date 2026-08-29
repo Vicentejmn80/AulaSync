@@ -51,6 +51,7 @@ class DirectorUnifiedAgentService
         'delete_all_courses',
         'delete_student',
         'manage_invite_code',
+        'sync_all_enrollments',
     ];
 
     /**
@@ -73,7 +74,7 @@ class DirectorUnifiedAgentService
         'unassign_teacher', 'update_course', 'update_student',
         'delete_teacher', 'delete_teacher_invite', 'delete_all_teachers',
         'delete_course', 'delete_all_courses', 'delete_student',
-        'manage_invite_code',
+        'manage_invite_code', 'sync_all_enrollments',
     ];
 
     public function __construct(
@@ -309,6 +310,11 @@ class DirectorUnifiedAgentService
                     'invite_code' => ['type' => ['string', 'null']],
                 ],
                 'required' => ['operation'],
+            ],
+            'sync_all_enrollments' => [
+                'description' => 'Sincroniza matrículas de forma masiva: asocia a cada alumno con todos los cursos de su mismo grado que aún no tenga. Úsala cuando el director pida "sincroniza las matrículas", "agrega a todos los alumnos a los cursos disponibles" o equivalente. No requiere parámetros.',
+                'properties' => [],
+                'required' => [],
             ],
         ];
 
@@ -786,6 +792,7 @@ PROMPT;
             'update_course' => $this->actionService->updateCourse($director, $data),
             'update_student' => $this->actionService->updateStudent($director, $data),
             'manage_invite_code' => $this->actionService->manageInviteCode($director, $data),
+            'sync_all_enrollments' => $this->actionService->syncAllEnrollments($director),
             'delete_teacher' => $this->actionService->deleteTeacher($director, $data),
             'delete_teacher_invite' => $this->actionService->deleteTeacherInvite($director, $data),
             'delete_all_teachers' => $this->actionService->deleteAllTeachers($director, $data),

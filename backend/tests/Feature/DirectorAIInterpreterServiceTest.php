@@ -259,7 +259,8 @@ class DirectorAIInterpreterServiceTest extends TestCase
             return ($request['temperature'] ?? null) == 0.2
                 && ($request['top_p'] ?? null) == 0.9
                 && str_contains($system, 'Eres AulaSync')
-                && str_contains($system, 'REGLA DEL SÁNDWICH')
+                && str_contains($system, 'MODO DE RESPUESTA CONDICIONAL')
+                && str_contains($system, 'factual_lookup_mode')
                 && str_contains($system, 'Total de alumnos:')
                 && str_contains($system, 'Total de profesores activos:')
                 && str_contains($system, 'Colegio Central')

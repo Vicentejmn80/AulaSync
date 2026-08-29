@@ -246,6 +246,13 @@ class DirectorIntentExtractorService
     {
         $lower = mb_strtolower($segment);
 
+        if ($this->looksLikeEnrollmentSync($segment)) {
+            return [
+                'intent' => 'sync_all_enrollments',
+                'data' => [],
+            ];
+        }
+
         if ($this->looksLikeTeacherCreation($segment)) {
             return [
                 'intent' => 'create_teacher',
@@ -268,6 +275,14 @@ class DirectorIntentExtractorService
         }
 
         return null;
+    }
+
+    private function looksLikeEnrollmentSync(string $segment): bool
+    {
+        $value = mb_strtolower($segment);
+
+        return (bool) preg_match('/\b(?:sincroniza(?:r)?|sync)\b.+\b(?:matricul|cursos?|alumn|estudiante)/iu', $value)
+            || (bool) preg_match('/\b(?:agrega|matricula|inscribe)\b.+\btodos\b.+\b(?:alumn|estudiante).+\b(?:cursos?\s+disponibles|todos\s+los\s+cursos)/iu', $value);
     }
 
     private function looksLikeTeacherCreation(string $segment): bool
@@ -893,6 +908,7 @@ class DirectorIntentExtractorService
         return match ($intent) {
             'create_teacher' => ! empty($data['teacher_name']),
             'enroll_students', 'create_students_batch' => ! empty($data['names']) && ! empty($data['grade']),
+            'sync_all_enrollments' => true,
             default => false,
         };
     }

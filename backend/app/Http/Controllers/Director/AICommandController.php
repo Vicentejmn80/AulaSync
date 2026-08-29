@@ -295,8 +295,12 @@ class AICommandController extends Controller
             ]);
         }
 
-        // Consultas y follow-ups van SIEMPRE al data agent.
-        if ($this->dataAgent->shouldUseDataAgent($text) || $this->dataAgent->isOutOfScope($text)) {
+        // Consultas y follow-ups van SIEMPRE al data agent, salvo sincronización
+        // masiva de matrículas (parece consulta de alumnos/cursos pero es mutación).
+        if (
+            ! $this->looksLikeEnrollmentSync($this->normalizedText($text))
+            && ($this->dataAgent->shouldUseDataAgent($text) || $this->dataAgent->isOutOfScope($text))
+        ) {
             return $this->respondWithDataAgent($director, $text, $screenContext, null);
         }
 
@@ -372,13 +376,13 @@ class AICommandController extends Controller
                 // mostramos el plan y el director confirma.
                 $isFallback = str_starts_with((string) ($plan['planner_source'] ?? ''), 'fallback_');
                 if ($isFallback && count($actions) === 1 && $this->intentExtractor->isUncertainExtraction($text, collect($actions)->map(fn ($a) => ['intent' => $a['intent'], 'data' => $a['data']])->all())) {
-                    return response()->json([
-                        'success' => false,
-                        'needs_clarification' => true,
-                        'message' => 'Tu orden parece tener varias acciones y no estoy seguro de haber entendido todas correctamente ('.count($actions).' detectada(s)). ¿Podrías confirmar separando cada acción? Ejemplo: "1. Crea al profesor X de Biología de 1ro a 6to. 2. Agrega a Vicente José y Gabriela Pernal a 3ro."',
-                        'planner_source' => $plan['planner_source'],
-                        'action_plan' => $plan,
-                    ], 422);
+                    return $this->forgetPendingAndClarify(
+                        'Tu orden parece tener varias acciones y no estoy seguro de haber entendido todas correctamente ('.count($actions).' detectada(s)). ¿Podrías confirmar separando cada acción? Ejemplo: "1. Crea al profesor X de Biología de 1ro a 6to. 2. Agrega a Vicente José y Gabriela Pernal a 3ro."',
+                        [
+                            'planner_source' => $plan['planner_source'],
+                            'action_plan' => $plan,
+                        ],
+                    );
                 }
 
                 // Fallback legado solo si el planificador no devolvió nada.
@@ -391,13 +395,13 @@ class AICommandController extends Controller
                     // <= 1: cubre también el caso de 0 acciones utilizables para no dejar
                     // que un fallback posterior arme una confirmación con datos corruptos.
                     if (count($actions) <= 1 && $this->intentExtractor->isUncertainExtraction($text, $actions)) {
-                        return response()->json([
-                            'success' => false,
-                            'needs_clarification' => true,
-                            'message' => 'Detecté una orden con múltiples acciones pero no estoy seguro de la segmentación. ¿Podrías escribir cada acción en una línea separada? Ejemplo:\n1. Crea al profesor Vicente José de Biología de 1ro a 6to\n2. Agrega a Vicente José y Gabriela Pernal a 3ro',
-                            'planner_source' => $plan['planner_source'] ?? 'fallback_uncertain',
-                            'action_plan' => $plan,
-                        ], 422);
+                        return $this->forgetPendingAndClarify(
+                            'Detecté una orden con múltiples acciones pero no estoy seguro de la segmentación. ¿Podrías escribir cada acción en una línea separada? Ejemplo:\n1. Crea al profesor Vicente José de Biología de 1ro a 6to\n2. Agrega a Vicente José y Gabriela Pernal a 3ro',
+                            [
+                                'planner_source' => $plan['planner_source'] ?? 'fallback_uncertain',
+                                'action_plan' => $plan,
+                            ],
+                        );
                     }
                 }
             } else {
@@ -443,13 +447,16 @@ class AICommandController extends Controller
                 // profesor X") con el sujeto a crear, así que en ese caso dejamos
                 // que los fallbacks más específicos de más abajo (buildOperationData,
                 // detectMultiIntentActions) resuelvan la intención real.
-                if (
-                    $actions === []
-                    && count($localIntentions) === 1
-                    && ($localIntentions[0]['intent'] ?? null) === 'create_teacher'
-                    && ! preg_match('/\b(?:alumn[oa]s?|estudiantes?)\b/iu', $text)
-                ) {
-                    $actions = $localIntentions;
+                if ($actions === [] && count($localIntentions) === 1) {
+                    $onlyIntent = $localIntentions[0]['intent'] ?? null;
+                    if ($onlyIntent === 'sync_all_enrollments') {
+                        $actions = $localIntentions;
+                    } elseif (
+                        $onlyIntent === 'create_teacher'
+                        && ! preg_match('/\b(?:alumn[oa]s?|estudiantes?)\b/iu', $text)
+                    ) {
+                        $actions = $localIntentions;
+                    }
                 }
 
                 if ($actions !== [] && count($localBatch) < 2) {
@@ -464,12 +471,10 @@ class AICommandController extends Controller
                 // <= 1: igual que en el planificador, cubre también 0 acciones utilizables
                 // para no presentar luego una confirmación sobre un payload vacío/corrupto.
                 if (count($actions) <= 1 && $this->intentExtractor->isUncertainExtraction($text, $actions)) {
-                    return response()->json([
-                        'success' => false,
-                        'needs_clarification' => true,
-                        'message' => 'Tu orden tiene varias acciones y no estoy seguro de haber captado todas ('.count($actions).' detectada(s)). ¿Podrías separar cada pedido en una línea? Ejemplo:\n1. Crea al profesor X de Biología de 1ro a 6to\n2. Agrega a Vicente José y Gabriela Pernal a 3ro',
-                        'planner_source' => 'fallback_uncertain',
-                    ], 422);
+                    return $this->forgetPendingAndClarify(
+                        'Tu orden tiene varias acciones y no estoy seguro de haber captado todas ('.count($actions).' detectada(s)). ¿Podrías separar cada pedido en una línea? Ejemplo:\n1. Crea al profesor X de Biología de 1ro a 6to\n2. Agrega a Vicente José y Gabriela Pernal a 3ro',
+                        ['planner_source' => 'fallback_uncertain'],
+                    );
                 }
             }
 
@@ -575,13 +580,12 @@ class AICommandController extends Controller
                     'decision' => $this->dataAgent->routeDecision($text),
                 ]);
 
-                return response()->json([
-                    'success' => false,
-                    'needs_clarification' => true,
-                    'message' => $clarification
+                return $this->forgetPendingAndClarify(
+                    $clarification
                         ?: 'No entendí esa orden. Prueba con: "Crea al profesor Vicente y asígnale Matemática de 1ro a 6to".',
-                    'routing' => $this->dataAgent->routeDecision($text),
-                ]);
+                    ['routing' => $this->dataAgent->routeDecision($text)],
+                    200,
+                );
             }
 
             if ($this->dataAgent->areExclusiveDataActions($actions)) {
@@ -1055,8 +1059,12 @@ class AICommandController extends Controller
     private function executePending(Request $request, User $director): JsonResponse
     {
         // The client copy is display-only. Execute only the canonical server-side plan.
-        $actions = collect(session(self::PENDING_SESSION_KEY, []));
+        $actions = collect(session(self::PENDING_SESSION_KEY, []))
+            ->filter(fn ($action) => is_array($action) && trim((string) ($action['intent'] ?? '')) !== '')
+            ->values();
         if ($actions->isEmpty()) {
+            $this->forgetPendingActions();
+
             return response()->json([
                 'success' => false,
                 'message' => 'No hay acciones pendientes por confirmar.',
@@ -1360,6 +1368,7 @@ class AICommandController extends Controller
             'unassign_teacher', 'update_course', 'update_student' => $this->verifyGenericMutation($result),
             'get_teacher_invite_code' => $this->verifyGetTeacherInviteCode($result),
             'manage_invite_code' => $this->verifyManageInviteCode($director, $result),
+            'sync_all_enrollments' => $this->verifySyncAllEnrollments($result),
             'query_academic' => $this->verifyAcademicQueryResult($result),
             'delete_teacher' => $this->verifyDeletePeople($director, $result, 'profesor'),
             'delete_teacher_invite' => $this->verifyDeleteInvite($result),
@@ -1694,6 +1703,31 @@ class AICommandController extends Controller
         ];
     }
 
+    private function verifySyncAllEnrollments(array $result): array
+    {
+        $created = (int) ($result['links_created'] ?? 0);
+        $already = (int) ($result['already_synced'] ?? 0);
+        $students = (int) ($result['students_count'] ?? 0);
+        $courses = (int) ($result['courses_count'] ?? 0);
+
+        $message = $created > 0
+            ? "Sincronicé {$created} matrícula(s) nueva(s) entre {$students} alumno(s) y {$courses} curso(s)."
+            : "Las matrículas ya estaban al día ({$students} alumno(s), {$courses} curso(s)).";
+        if ($already > 0 && $created > 0) {
+            $message .= " {$already} vínculo(s) ya existían.";
+        }
+
+        return [
+            'message' => $message,
+            'data' => [
+                'links_created' => $created,
+                'already_synced' => $already,
+                'students_count' => $students,
+                'courses_count' => $courses,
+            ],
+        ];
+    }
+
     private function verifyManageInviteCode(User $director, array $result): array
     {
         /** @var TeacherInvite $invite */
@@ -1837,6 +1871,7 @@ class AICommandController extends Controller
             'delete_course' => $this->parseDeleteCourse($director, $text),
             'delete_all_courses' => $this->parseDeleteAllCourses($director),
             'delete_student' => $this->parseDeleteStudent($director, $text),
+            'sync_all_enrollments' => [[], null],
             default => [[], 'No pude convertir tu solicitud en una operación segura.'],
         };
     }
@@ -1865,6 +1900,7 @@ class AICommandController extends Controller
                 .(! empty($data['new_grade']) ? ' a '.$data['new_grade'] : '')
                 .(! empty($data['new_section']) ? ' sección '.$data['new_section'] : '').'.',
             'manage_invite_code' => 'Consultar el estado del código DOC-.',
+            'sync_all_enrollments' => 'Sincronizar las matrículas: agregar a cada alumno a los cursos disponibles de su mismo grado.',
             'delete_teacher' => 'Eliminar al profesor '.($data['teacher_name'] ?? '').'. Los cursos se desasignarán, no se borrarán.',
             'delete_teacher_invite' => 'Cancelar la invitación pendiente de '.($data['teacher_name'] ?? '').
                 (($data['invite_code'] ?? null) ? ' (código DOC- '.$data['invite_code'].')' : '').
@@ -2110,6 +2146,25 @@ class AICommandController extends Controller
         session()->forget(self::PENDING_META_SESSION_KEY);
         session()->forget(self::BATCH_QUEUE_KEY);
         session()->forget('chat_pending');
+    }
+
+    /**
+     * Limpia cualquier plan residual antes de devolver una aclaración.
+     * Evita que un "Sí" posterior ejecute una acción fantasma de turnos anteriores.
+     *
+     * @param  array<string,mixed>  $extra
+     */
+    private function forgetPendingAndClarify(string $message, array $extra = [], int $status = 422): JsonResponse
+    {
+        $this->forgetPendingActions();
+        $this->conversationContext->clearPendingReferences();
+
+        return response()->json([
+            'success' => false,
+            'needs_clarification' => true,
+            'message' => $message,
+            ...$extra,
+        ], $status);
     }
 
     /**
@@ -2527,6 +2582,10 @@ class AICommandController extends Controller
     {
         $value = $this->normalizedText($text);
 
+        if ($this->looksLikeEnrollmentSync($value)) {
+            return 'sync_all_enrollments';
+        }
+
         // Eliminar / borrar / quitar / remover / limpiar / cancelar (antes de crear, para no confundir verbos).
         if ($this->hasDeleteVerb($value)) {
             if (preg_match('/\b(?:invitacion|invitaci[oó]n|invitaciones|invite|invites)\b/', $value)) {
@@ -2692,6 +2751,12 @@ class AICommandController extends Controller
         return null;
     }
 
+    private function looksLikeEnrollmentSync(string $value): bool
+    {
+        return (bool) preg_match('/\b(?:sincroniza(?:r)?|sync)\b.+\b(?:matricul|cursos?|alumn|estudiante)/u', $value)
+            || (bool) preg_match('/\b(?:agrega|matricula|inscribe)\b.+\btodos\b.+\b(?:alumn|estudiante).+\b(?:cursos?\s+disponibles|todos\s+los\s+cursos)/u', $value);
+    }
+
     /**
      * Detecta varias intenciones en un mismo mensaje (profesor + cursos + alumno + matrícula).
      *
@@ -2699,6 +2764,10 @@ class AICommandController extends Controller
      */
     private function detectMultiIntentActions(User $director, string $text): array
     {
+        if ($this->looksLikeEnrollmentSync($this->normalizedText($text))) {
+            return [['intent' => 'sync_all_enrollments', 'data' => []]];
+        }
+
         $actions = [];
 
         // Nuevo extractor determinista: si detecta varias intenciones claras,
@@ -5309,6 +5378,7 @@ class AICommandController extends Controller
             'delete_course',
             'delete_all_courses',
             'delete_student',
+            'sync_all_enrollments',
         ], true);
     }
 

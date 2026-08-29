@@ -46,6 +46,7 @@ class DirectorUnifiedAgentServiceTest extends TestCase
         // Previously-missing tools completed by the unification (diagnosed gaps).
         $this->assertTrue($names->contains('get_section_counts'));
         $this->assertTrue($names->contains('manage_invite_code'));
+        $this->assertTrue($names->contains('sync_all_enrollments'));
 
         // Every name in the catalog is classified as exactly read xor write.
         foreach ($names as $name) {

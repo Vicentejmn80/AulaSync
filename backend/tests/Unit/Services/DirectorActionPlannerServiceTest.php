@@ -256,6 +256,8 @@ class DirectorActionPlannerServiceTest extends TestCase
         $this->assertStringContainsString('"type": "create_courses_batch"', $prompt);
         $this->assertStringContainsString('"type": "create_students_batch"', $prompt);
         $this->assertStringContainsString('Nunca conviertas "de segundo/de tercero/para cuarto" en nombres de persona', $prompt);
+        $this->assertStringContainsString('factual_lookup_mode', $prompt);
+        $this->assertStringContainsString('sync_all_enrollments', $prompt);
     }
 
     private function fakeOpenAiPlan(array $plan): void

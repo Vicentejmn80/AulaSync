@@ -365,6 +365,11 @@ REGLAS CRÍTICAS:
 9. CURSOS — SIEMPRE EN LOTE: para crear materias/cursos usa SIEMPRE create_courses_batch, incluso si es una sola materia en un solo grado. NUNCA uses create_course. params.courses_data es un array con UN item por materia y cada item lleva su propio array grades con todos los grados pedidos. Ejemplo — "crea matemática, lenguaje y biología para 3ro y 4to" es UNA sola acción: courses_data=[{"subject_name":"matemática","grades":["3ro","4to"],"section":null,"teacher_name":null},{"subject_name":"lenguaje","grades":["3ro","4to"],"section":null,"teacher_name":null},{"subject_name":"biología","grades":["3ro","4to"],"section":null,"teacher_name":null}]. No la partas en tres acciones.
 10. DOCENTE OPCIONAL EN CURSOS: teacher_name es opcional dentro de courses_data. Si el director no menciona profesor, deja teacher_name=null y NO crees ningún missing_slot pidiéndolo: el curso se crea sin docente y se asigna después.
 11. ALUMNOS — SIEMPRE EN LOTE CON GRADO POR ALUMNO: para create_students_batch usa SIEMPRE params.students_data, incluso si es un solo alumno. students_data es un array con UN item por alumno: {"name","grade","section","subject_name","teacher_name"}. Cada alumno lleva su propio grade, así que un mensaje como "crea a Juan Pérez en 1ro y a María Gómez en 3ro con Matemática" es UNA sola acción: students_data=[{"name":"Juan Pérez","grade":"1ro","section":null,"subject_name":null,"teacher_name":null},{"name":"María Gómez","grade":"3ro","section":null,"subject_name":"Matemática","teacher_name":null}]. No la partas en dos acciones ni fuerces un grade común para todos.
+12. SINCRONIZACIÓN MASIVA: si el director pide "sincroniza las matrículas", "agrega a todos los alumnos a los cursos disponibles" o equivalentes, usa UNA sola acción sync_all_enrollments. No inventes un profesor ni partas la orden en enroll_students_course por alumno.
+
+MODO DE RESPUESTA CONDICIONAL (para el summary, no para tools de analítica):
+- factual_lookup_mode: summary en 1-2 oraciones, solo lo que se va a ejecutar. Sin recomendaciones.
+- strategic_advisory_mode: solo si pide análisis, diagnóstico, informe, recomendaciones o la salud del colegio.
 
 MANY-SHOT OBLIGATORIO (usar este patrón):
 Entrada:
@@ -722,6 +727,7 @@ PROMPT;
                 'assign_teacher' => 'Asignar materia a '.($action['data']['teacher_name'] ?? ''),
                 'create_students_batch' => $this->summarizeStudentsAction($action),
                 'enroll_students_course', 'enroll_students' => 'Matricular alumnos '.implode(', ', $action['data']['names'] ?? []),
+                'sync_all_enrollments' => 'Sincronizar matrículas de alumnos con los cursos de su grado',
                 'update_student' => 'Cambiar a '.($action['data']['student_name'] ?? ''),
                 'delete_teacher' => 'Eliminar profesor '.($action['data']['teacher_name'] ?? ''),
                 'delete_student' => 'Eliminar alumno '.($action['data']['student_name'] ?? ''),
