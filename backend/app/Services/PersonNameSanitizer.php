@@ -5,6 +5,7 @@ namespace App\Services;
 class PersonNameSanitizer
 {
     private const SUBJECT_ALIASES = 'matem[aá]ticas?|ingl[eé]s|lenguaje|lengua|ciencias?|historia|geograf[ií]a|f[ií]sica|qu[ií]mica|biolog[ií]a|educaci[oó]n f[ií]sica|robotica|rob[oó]tica|computaci[oó]n|religi[oó]n';
+    private const GRADE_WORDS_PATTERN = '(?:primer|primero|segundo|tercer|tercero|cuarto|quinto|sexto|septim[oa]|octav[oa]|noven[oa]|[1-6](?:ro|ero|er|do|to|°|º)?)';
 
     /**
      * Extrae un nombre de persona limpio, sin preposiciones, grado, curso ni conectores.
@@ -73,6 +74,10 @@ class PersonNameSanitizer
         $name = trim($name, " \t\n\r\0\x0B,.;:");
         $name = trim(preg_replace('/\s+/u', ' ', $name) ?? $name);
 
+        if ($this->isGradeOnlyFragment($name)) {
+            return null;
+        }
+
         if ($name === '' || mb_strlen($name) < 2 || mb_strlen($name) > 80) {
             return null;
         }
@@ -132,6 +137,18 @@ class PersonNameSanitizer
         }
 
         return true;
+    }
+
+    private function isGradeOnlyFragment(string $name): bool
+    {
+        $normalized = mb_strtolower(trim($name));
+        $normalized = strtr($normalized, ['á' => 'a', 'é' => 'e', 'í' => 'i', 'ó' => 'o', 'ú' => 'u']);
+        $normalized = preg_replace('/\s+/u', ' ', $normalized) ?? $normalized;
+
+        return (bool) preg_match(
+            '/^(?:(?:de|del|en|para|al|a)\s+(?:el\s+|la\s+)?)?'.self::GRADE_WORDS_PATTERN.'(?:\s+grado)?$/u',
+            $normalized
+        );
     }
 
     public function cleanTeacher(?string $name): ?string

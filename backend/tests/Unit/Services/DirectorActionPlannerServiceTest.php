@@ -243,6 +243,21 @@ class DirectorActionPlannerServiceTest extends TestCase
         $this->assertSame('¿En qué grado va Vicente?', $plan['actions'][0]['missing_slots'][0]['description']);
     }
 
+    public function test_system_prompt_contains_many_shot_for_mixed_teacher_and_students_flow(): void
+    {
+        $director = $this->makeDirector();
+        $reflection = new \ReflectionClass($this->planner);
+        $method = $reflection->getMethod('systemPrompt');
+        $method->setAccessible(true);
+
+        $prompt = (string) $method->invoke($this->planner, $director, []);
+
+        $this->assertStringContainsString('Crea al profesor Junior Vázquez como profesor de biología de 1ro a 6to', $prompt);
+        $this->assertStringContainsString('"type": "create_courses_batch"', $prompt);
+        $this->assertStringContainsString('"type": "create_students_batch"', $prompt);
+        $this->assertStringContainsString('Nunca conviertas "de segundo/de tercero/para cuarto" en nombres de persona', $prompt);
+    }
+
     private function fakeOpenAiPlan(array $plan): void
     {
         Http::fake([

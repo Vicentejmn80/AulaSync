@@ -49,4 +49,17 @@ class PersonNameSanitizerTest extends TestCase
         $this->assertNull($sanitizer->clean('siguientes alumnos'));
         $this->assertSame('carlos duarte', $sanitizer->clean('carlos duarte'));
     }
+
+    public function test_rejects_grade_words_as_names(): void
+    {
+        $sanitizer = new PersonNameSanitizer();
+
+        $this->assertNull($sanitizer->clean('segundo'));
+        $this->assertNull($sanitizer->clean('tercero'));
+        $this->assertNull($sanitizer->clean('noveno'));
+        $this->assertNull($sanitizer->clean('2do'));
+        $this->assertNull($sanitizer->clean('6to'));
+        $this->assertNull($sanitizer->clean('de segundo grado'));
+        $this->assertNull($sanitizer->clean('para 3ro'));
+    }
 }

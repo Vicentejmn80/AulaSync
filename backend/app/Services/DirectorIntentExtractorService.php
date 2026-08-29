@@ -15,6 +15,7 @@ class DirectorIntentExtractorService
     private const SUBJECT_PATTERN = 'matem[aá]ticas?|ingl[eé]s|lenguaje|lengua|ciencias?\s*naturales?|ciencias?\s*sociales?|historia|geograf[ií]a|f[ií]sica|qu[ií]mica|biolog[ií]a|educaci[oó]n\s*f[ií]sica|robotica|rob[oó]tica|computaci[oó]n|religi[oó]n|arte|m[uú]sica|pl[aá]stica';
 
     private const GRADE_PATTERN = '(?:primer|primero|segundo|tercer|tercero|cuarto|quinto|sexto|[1-6](?:ro|ero|er|do|to|°|º)?)';
+    private const GRADE_WORD_PATTERN_EXTENDED = '(?:primer|primero|segundo|tercer|tercero|cuarto|quinto|sexto|septim[oa]|octav[oa]|noven[oa]|[1-9](?:ro|ero|er|do|to|mo|vo|no|°|º)?)';
 
     public function __construct(
         private PersonNameSanitizer $nameSanitizer,
@@ -324,14 +325,17 @@ class DirectorIntentExtractorService
 
     private function extractTeacherName(string $segment): ?string
     {
+        $gradeStop = '(?:de|del|para|en)\s+(?:el\s+|la\s+)?(?:'.self::GRADE_WORD_PATTERN_EXTENDED.')(?:\s+(?:grado|curso|secci[oó]n))?';
+        $tailStop = '(?:como\s+profesor|desde|'.$gradeStop.'|de\s+(?:la\s+|el\s+)?(?:'.self::SUBJECT_PATTERN.')|que\s+va|va\s+a|asigna|materia|grado|curso|\(|,\s*(?:desde|que|y\s+(?:es|va)))';
+
         // Patrones ordenados por especificidad.
         $patterns = [
             // "profesor de matemáticas llamado Vicente José"
-            '/profesor(?:a)?\s+(?:de\s+(?:la\s+|el\s+)?)?(?:'.self::SUBJECT_PATTERN.')\s+(?:llamad[oa]\s+)?([^.!?¡¿]+?)(?:\s+(?:como\s+profesor|desde|de\s+\d|que\s+va|va\s+a|asigna|materia|grado|curso|\(|,\s*(?:desde|que|y\s+(?:es|va)))|[.!?¡¿]|$)/iu',
+            '/profesor(?:a)?\s+(?:de\s+(?:la\s+|el\s+)?)?(?:'.self::SUBJECT_PATTERN.')\s+(?:llamad[oa]\s+)?([^.!?¡¿]+?)(?:\s+'.$tailStop.'|[.!?¡¿]|$)/iu',
             // "profesor llamado Vicente José"
-            '/profesor(?:a)?\s+(?:llamad[oa]\s+)?([^.!?¡¿]+?)(?:\s+(?:como\s+profesor|de\s+(?:la\s+|el\s+)?(?:'.self::SUBJECT_PATTERN.')|desde|que\s+va|va\s+a|asigna|materia|grado|curso|\(|,\s*(?:desde|que|y\s+(?:es|va)))|[.!?¡¿]|$)/iu',
+            '/profesor(?:a)?\s+(?:llamad[oa]\s+)?([^.!?¡¿]+?)(?:\s+'.$tailStop.'|[.!?¡¿]|$)/iu',
             // "crea al profesor Vicente José"
-            '/(?:crea(?:r|me|s)?|crees|cree|invita(?:r|s)?|invites?)\s+(?:a\s+)?(?:el\s+|la\s+)?profesor(?:a)?\s+([^.!?¡¿]+?)(?:\s+(?:como\s+profesor|de\s+(?:la\s+|el\s+)?(?:'.self::SUBJECT_PATTERN.')|desde|que\s+va|va\s+a|asigna|materia|grado|curso|\(|,\s*(?:desde|que|y\s+(?:es|va)))|[.!?¡¿]|$)/iu',
+            '/(?:crea(?:r|me|s)?|crees|cree|invita(?:r|s)?|invites?)\s+(?:a\s+)?(?:el\s+|la\s+)?profesor(?:a)?\s+([^.!?¡¿]+?)(?:\s+'.$tailStop.'|[.!?¡¿]|$)/iu',
         ];
 
         foreach ($patterns as $pattern) {
@@ -474,7 +478,14 @@ class DirectorIntentExtractorService
      */
     private function extractStudentNames(string $segment): array
     {
-        $endOfNames = '(?:a\s+(?:su|la|el)\s+(?:materia|clase|asignatura|curso)|en\s+(?:el|la|los|las)\s+(?:materia|clase|asignatura|curso|grado)|en\s+(?:\d|primer|primero|segundo|tercer|tercero|cuarto|quinto|sexto)|que\s+(?:ambos|son|est[áa]n)|y\s+los\s+(?:agrega(?:r|s)?|agregues?|inscribe(?:r|s)?|matricula(?:r|s)?)|,\s*que|\(|[.!?¡¿]|$)';
+        $endOfNames = '(?:'
+            .'a\s+(?:su|la|el)\s+(?:materia|clase|asignatura|curso)'
+            .'|en\s+(?:el|la|los|las)\s+(?:materia|clase|asignatura|curso|grado)'
+            .'|(?:en|de|del|para)\s+(?:el\s+|la\s+)?(?:'.self::GRADE_WORD_PATTERN_EXTENDED.')(?:\s+grado)?'
+            .'|que\s+(?:ambos|son|est[áa]n)'
+            .'|y\s+los\s+(?:agrega(?:r|s)?|agregues?|inscribe(?:r|s)?|matricula(?:r|s)?)'
+            .'|,\s*que|\(|[.!?¡¿]|$'
+            .')';
         $patterns = [
             // "alumnos Carlos Gutiérrez y Salvador Pérez a su materia..."
             '/(?:alumnos?|estudiantes?)\s+([^.!?¡¿]+?)(?:\s+'.$endOfNames.'|\s*$)/iu',

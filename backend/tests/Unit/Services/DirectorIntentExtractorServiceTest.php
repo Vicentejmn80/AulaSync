@@ -114,4 +114,20 @@ class DirectorIntentExtractorServiceTest extends TestCase
         $this->assertSame('Lenguaje', $actions[0]['data']['subject_name']);
         $this->assertSame(['1ro', '2do', '3ro', '4to', '5to', '6to'], $actions[0]['data']['grades']);
     }
+
+    public function test_does_not_parse_grade_words_as_teacher_name_and_keeps_student_list(): void
+    {
+        $text = 'Crea al profesor Junior Vázquez como profesor de matemática de segundo grado y crea a los alumnos Vicente José y Valeria Navarro de segundo grado.';
+
+        $actions = $this->extractor->extractMultipleIntentions($text);
+
+        $this->assertCount(2, $actions);
+        $this->assertSame('create_teacher', $actions[0]['intent']);
+        $this->assertSame('Junior Vázquez', $actions[0]['data']['teacher_name']);
+        $this->assertSame(['2do'], $actions[0]['data']['grades']);
+
+        $this->assertSame('create_students_batch', $actions[1]['intent']);
+        $this->assertSame(['Vicente José', 'Valeria Navarro'], $actions[1]['data']['names']);
+        $this->assertSame('2do', $actions[1]['data']['grade']);
+    }
 }

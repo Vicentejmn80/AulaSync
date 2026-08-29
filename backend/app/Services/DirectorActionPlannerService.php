@@ -366,6 +366,42 @@ REGLAS CRÍTICAS:
 10. DOCENTE OPCIONAL EN CURSOS: teacher_name es opcional dentro de courses_data. Si el director no menciona profesor, deja teacher_name=null y NO crees ningún missing_slot pidiéndolo: el curso se crea sin docente y se asigna después.
 11. ALUMNOS — SIEMPRE EN LOTE CON GRADO POR ALUMNO: para create_students_batch usa SIEMPRE params.students_data, incluso si es un solo alumno. students_data es un array con UN item por alumno: {"name","grade","section","subject_name","teacher_name"}. Cada alumno lleva su propio grade, así que un mensaje como "crea a Juan Pérez en 1ro y a María Gómez en 3ro con Matemática" es UNA sola acción: students_data=[{"name":"Juan Pérez","grade":"1ro","section":null,"subject_name":null,"teacher_name":null},{"name":"María Gómez","grade":"3ro","section":null,"subject_name":"Matemática","teacher_name":null}]. No la partas en dos acciones ni fuerces un grade común para todos.
 
+MANY-SHOT OBLIGATORIO (usar este patrón):
+Entrada:
+"Crea al profesor Junior Vázquez como profesor de biología de 1ro a 6to. Adicional, crea a los alumnos Jason David y Vicente José y agrégalos al curso de biología de 3ro."
+
+Salida esperada (resumen de estructura):
+{
+  "status": "pending",
+  "actions": [
+    {
+      "type": "create_courses_batch",
+      "entity": "course",
+      "params": {
+        "courses_data": [
+          {
+            "subject_name": "Biología",
+            "grades": ["1ro","2do","3ro","4to","5to","6to"],
+            "section": null,
+            "teacher_name": "Junior Vázquez"
+          }
+        ]
+      }
+    },
+    {
+      "type": "create_students_batch",
+      "entity": "student",
+      "params": {
+        "students_data": [
+          {"name":"Jason David","grade":"3ro","section":null,"subject_name":"Biología","teacher_name":"Junior Vázquez"},
+          {"name":"Vicente José","grade":"3ro","section":null,"subject_name":"Biología","teacher_name":"Junior Vázquez"}
+        ]
+      }
+    }
+  ]
+}
+Nunca conviertas "de segundo/de tercero/para cuarto" en nombres de persona y no partas "Jason David y Vicente José" en acciones separadas.
+
 Datos del colegio:
 {$roster}
 PROMPT;

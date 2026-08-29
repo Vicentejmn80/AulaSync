@@ -85,10 +85,10 @@ El `ActionPlan` es la estructura central que viaja entre el planificador (LLM co
       "type": "create_students_batch",
       "entity": "student",
       "params": {
-        "names": ["Vicente", "Georgina"],
-        "grade": "3ro",
-        "section": "A",
-        "subject_name": null
+        "students_data": [
+          { "name": "Vicente", "grade": "3ro", "section": "A", "subject_name": null, "teacher_name": null },
+          { "name": "Georgina", "grade": "1ro", "section": null, "subject_name": "Matemática", "teacher_name": null }
+        ]
       },
       "status": "confirmed",
       "missing_slots": [],
@@ -156,7 +156,7 @@ El `ActionPlan` es la estructura central que viaja entre el planificador (LLM co
       "confirmation_required": false
     }
   ],
-  "summary": "Voy a crear a Vicente y Georgina en 3ro A, cambiar a Carlos a 4to B, eliminar al profesor Salvador y luego mostrarte el rendimiento de 2do A.",
+  "summary": "Voy a crear a Vicente en 3ro A y a Georgina en 1ro con Matemática, cambiar a Carlos a 4to B, eliminar al profesor Salvador y luego mostrarte el rendimiento de 2do A.",
   "requires_confirmation": true,
   "all_or_nothing": false,
   "created_at": "2026-08-26T12:00:00Z",
@@ -209,6 +209,12 @@ Cada acción genera un registro en `director_ai_operation_logs` con:
 - `status`: `pending_confirmation`, `confirmed`, `verified`, `failed`, `skipped`.
 
 Si una acción pendiente no tiene log previo (por ejemplo, creada manualmente en sesión), `executePending` crea el log justo antes de ejecutarla.
+
+### `create_students_batch` — alumnos en lote con grado por alumno
+
+`params.students_data` es un array con UN item por alumno: `{name, grade, section?, subject_name?, teacher_name?}`. Cada alumno lleva su propio `grade`, así que una orden como "crea a Juan Pérez en 1ro y a María Gómez en 3ro con Matemática" se resuelve como UNA sola acción con dos items en `students_data`, sin forzar un grado común.
+
+`DirectorActionService::createStudentsBatch` acepta `students_data` como formato canónico y sigue aceptando el formato legado plano `names` + `grade` (compartido para todo el lote) mediante un adaptador interno, para no romper el parser regex de `AICommandController`/`DirectorIntentExtractorService`. Internamente agrupa los alumnos por `(grade, section, subject_name, teacher_name)` para resolver o crear el curso una sola vez por grupo, y devuelve `courses: [{grade, section, course, enrolled_count, course_created, placement_note}, ...]` en vez de un `course`/`enrolled_count` únicos.
 
 ## Compatibilidad con el sistema actual
 
