@@ -2706,28 +2706,43 @@ class AICommandHandlerController extends Controller
         }
     }
 
+    private function spanishMonthMap(): array
+    {
+        return [
+            'enero' => 1, 'ene' => 1,
+            'febrero' => 2, 'feb' => 2,
+            'marzo' => 3, 'mar' => 3,
+            'abril' => 4, 'abr' => 4,
+            'mayo' => 5,
+            'junio' => 6, 'jun' => 6,
+            'julio' => 7, 'jul' => 7,
+            'agosto' => 8, 'ago' => 8,
+            'septiembre' => 9, 'setiembre' => 9, 'sept' => 9, 'sep' => 9, 'set' => 9,
+            'octubre' => 10, 'oct' => 10,
+            'noviembre' => 11, 'nov' => 11,
+            'diciembre' => 12, 'dic' => 12,
+        ];
+    }
+
     private function parseDatesFromText(string $text): array
     {
-        $months = [
-            'enero' => 1, 'febrero' => 2, 'marzo' => 3,
-            'abril' => 4, 'mayo' => 5, 'junio' => 6,
-            'julio' => 7, 'agosto' => 8, 'septiembre' => 9, 'setiembre' => 9,
-            'octubre' => 10, 'noviembre' => 11, 'diciembre' => 12,
-        ];
+        $months = $this->spanishMonthMap();
+        $monthPattern = implode('|', array_keys($months));
         $found = [];
-        if (preg_match_all('/(\d{1,2})\s*(de\s*)?('.implode('|', array_keys($months)).')/iu', $text, $matches, PREG_SET_ORDER)) {
-            $year = now()->format('Y');
-            if (preg_match('/\b(20\d{2})\b/', $text, $yearMatch)) {
-                $year = (int) $yearMatch[1];
-            }
+        $year = (int) now()->format('Y');
+        if (preg_match('/\b(?:del?\s+)?(20\d{2})\b/u', $text, $yearMatch)) {
+            $year = (int) $yearMatch[1];
+        }
+
+        if (preg_match_all('/(\d{1,2})\s*(?:de\s+)?('.$monthPattern.')\b/iu', $text, $matches, PREG_SET_ORDER)) {
             foreach ($matches as $match) {
                 $day = (int) $match[1];
-                $monthName = mb_strtolower($match[3]);
-                $month = $months[$monthName] ?? now()->month;
-                try {
-                    $found[] = Carbon::createFromDate($year, $month, $day);
-                } catch (\Throwable) {
+                $monthName = mb_strtolower($match[2]);
+                $month = $months[$monthName] ?? null;
+                if ($month === null || ! checkdate($month, $day, $year)) {
+                    continue;
                 }
+                $found[] = Carbon::createFromDate($year, $month, $day)->startOfDay();
             }
         }
 
@@ -4040,8 +4055,6 @@ MD;
             $args['due_date'] = now()->toDateString();
         } elseif (preg_match('/\bma[nñ]ana\b/u', $lower)) {
             $args['due_date'] = now()->addDay()->toDateString();
-        } elseif (preg_match('/\b(\d{4}-\d{2}-\d{2})\b/', $intentText, $m)) {
-            $args['due_date'] = $m[1];
         } elseif ($parsedDate = $this->extractSingleDateFromText($intentText)) {
             $args['due_date'] = $parsedDate;
         }
@@ -4058,22 +4071,62 @@ MD;
 
     private function extractSingleDateFromText(string $text): ?string
     {
+        $text = trim($text);
+        if ($text === '') {
+            return null;
+        }
+
+        if (preg_match('/\b(\d{4})-(\d{2})-(\d{2})\b/', $text, $m)) {
+            return $this->normalizeCalendarDate((int) $m[1], (int) $m[2], (int) $m[3]);
+        }
+
+        $spanish = $this->parseDatesFromText($text);
+        if ($spanish !== []) {
+            $date = $spanish[0]->copy()->startOfDay();
+            $hasExplicitYear = (bool) preg_match('/\b(?:del?\s+)?(20\d{2}|\d{4}-\d{2}-\d{2})\b/u', $text);
+            if (! $hasExplicitYear && $date->lt(now()->startOfDay())) {
+                $date->addYear();
+            }
+
+            return $date->toDateString();
+        }
+
         if (! preg_match('/\b(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?\b/u', $text, $m)) {
             return null;
         }
 
         $day = (int) $m[1];
         $month = (int) $m[2];
-        $year = isset($m[3]) ? (int) $m[3] : (int) now()->format('Y');
+        $hasYear = isset($m[3]) && $m[3] !== '';
+        $year = $hasYear ? (int) $m[3] : (int) now()->format('Y');
         if ($year < 100) {
             $year += 2000;
         }
 
-        try {
-            return Carbon::createFromDate($year, $month, $day)->toDateString();
-        } catch (\Throwable) {
+        $normalized = $this->normalizeCalendarDate($year, $month, $day);
+        if ($normalized === null) {
             return null;
         }
+
+        if (! $hasYear) {
+            $date = Carbon::parse($normalized)->startOfDay();
+            if ($date->lt(now()->startOfDay())) {
+                $date->addYear();
+            }
+
+            return $date->toDateString();
+        }
+
+        return $normalized;
+    }
+
+    private function normalizeCalendarDate(int $year, int $month, int $day): ?string
+    {
+        if (! checkdate($month, $day, $year)) {
+            return null;
+        }
+
+        return sprintf('%04d-%02d-%02d', $year, $month, $day);
     }
 
     private function mergeEvaluationDraft(array $baseDraft, array $incomingDraft, string $intentText): array
@@ -4123,7 +4176,7 @@ MD;
     {
         return match ($missingField) {
             'course' => 'Para crearla bien, ¿en qué curso la registramos? Puedes decirme materia y grado (ej: Matemáticas 1er grado).',
-            'date' => 'Perfecto. ¿Qué fecha tendrá la evaluación? (ej: 2026-08-25, hoy o mañana).',
+            'date' => 'Perfecto. ¿Qué fecha tendrá la evaluación? Puedes decir 16 de septiembre, el miércoles 16, hoy, mañana o 2026-09-16.',
             'weight' => '¿Qué porcentaje/peso tendrá en la nota final? (ej: 25%).',
             'mode' => '¿La quieres digital o física imprimible?',
             default => 'Necesito un dato más para crear la evaluación. ¿Me lo compartes?',
