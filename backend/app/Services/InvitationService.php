@@ -208,6 +208,53 @@ class InvitationService
         });
     }
 
+    public function acceptTeacherInvite(TeacherInvite $invite, string $name, string $email, string $password): User
+    {
+        if ($invite->isClaimed() || ! $invite->isActive()) {
+            throw ValidationException::withMessages([
+                'code' => 'Esta invitación ya no es válida. Pide un enlace nuevo a la dirección.',
+            ]);
+        }
+
+        $email = mb_strtolower(trim($email));
+        if ($email === '' || ! filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            throw ValidationException::withMessages([
+                'email' => 'Indica un correo válido para crear la cuenta.',
+            ]);
+        }
+
+        if (User::query()->whereRaw('LOWER(email) = ?', [$email])->exists()) {
+            throw ValidationException::withMessages([
+                'email' => 'Ya existe una cuenta con este correo. Inicia sesión en /login.',
+            ]);
+        }
+
+        $resolvedName = trim($invite->display_name ?: $name);
+        if ($resolvedName === '') {
+            $resolvedName = trim($name);
+        }
+
+        return DB::transaction(function () use ($invite, $resolvedName, $email, $password) {
+            $user = new User();
+            $user->forceFill([
+                'name' => $resolvedName,
+                'email' => $email,
+                'password' => $password,
+                'role' => 'profesor',
+                'colegio_id' => $invite->colegio_id,
+            ])->save();
+
+            DB::table('users')->where('id', $user->id)->update([
+                'onboarding_completed' => DatabaseBoolean::bind(true),
+            ]);
+            $user->refresh();
+
+            app(TeacherInviteClaimService::class)->claimForUser($user->fresh(), $invite->fresh());
+
+            return $user->fresh();
+        });
+    }
+
     public function dashboardUrl(User $user): string
     {
         return match ($user->role) {

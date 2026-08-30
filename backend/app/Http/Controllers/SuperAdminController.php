@@ -25,22 +25,31 @@ class SuperAdminController extends Controller
 
     public function index(Request $request): View
     {
+        $filters = $this->analytics->filters($request->all());
+
         return $this->section($request, 'overview', 'super-admin.overview', [
-            'overview' => $this->analytics->overview($this->analytics->filters($request->all())),
+            'overview' => $this->analytics->overview($filters),
+            'schoolDossiers' => $this->analytics->schoolDossiers($filters, 'overview'),
         ]);
     }
 
     public function usage(Request $request): View
     {
+        $filters = $this->analytics->filters($request->all());
+
         return $this->section($request, 'usage', 'super-admin.usage', [
-            'usage' => $this->analytics->usage($this->analytics->filters($request->all())),
+            'usage' => $this->analytics->usage($filters),
+            'schoolDossiers' => $this->analytics->schoolDossiers($filters, 'usage'),
         ]);
     }
 
     public function intelligence(Request $request): View
     {
+        $filters = $this->analytics->filters($request->all());
+
         return $this->section($request, 'intelligence', 'super-admin.intelligence', [
-            'intelligence' => $this->analytics->intelligence($this->analytics->filters($request->all())),
+            'intelligence' => $this->analytics->intelligence($filters),
+            'schoolDossiers' => $this->analytics->schoolDossiers($filters, 'intelligence'),
         ]);
     }
 
@@ -112,15 +121,21 @@ class SuperAdminController extends Controller
 
     public function health(Request $request): View
     {
+        $filters = $this->analytics->filters($request->all());
+
         return $this->section($request, 'health', 'super-admin.health', [
-            'health' => $this->analytics->health($this->analytics->filters($request->all())),
+            'health' => $this->analytics->health($filters),
+            'schoolDossiers' => $this->analytics->schoolDossiers($filters, 'health'),
         ]);
     }
 
     public function insights(Request $request): View
     {
+        $filters = $this->analytics->filters($request->all());
+
         return $this->section($request, 'insights', 'super-admin.insights', [
-            'insights' => $this->analytics->insights($this->analytics->filters($request->all())),
+            'insights' => $this->analytics->insights($filters),
+            'schoolDossiers' => $this->analytics->schoolDossiers($filters, 'insights'),
         ]);
     }
 
@@ -129,6 +144,7 @@ class SuperAdminController extends Controller
         $users = User::query()
             ->with('colegio:id,name')
             ->orderByRaw("CASE WHEN role = 'super_admin' THEN 0 ELSE 1 END")
+            ->orderBy('colegio_id')
             ->orderBy('name')
             ->get(['id', 'name', 'email', 'role', 'colegio_id', 'onboarding_completed', 'last_login_at', 'created_at']);
 

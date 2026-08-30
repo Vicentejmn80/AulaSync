@@ -79,6 +79,10 @@ class ManagementHubTest extends TestCase
             ->json();
 
         $this->assertTrue($invite['success']);
+        $this->assertNotEmpty($invite['invite']['invitation_link']);
+        $this->assertNotSame($invite['invite']['invite_code'], $invite['invite']['invitation_link']);
+        $this->assertStringContainsString('/onboarding/profesor?', $invite['invite']['invitation_link']);
+        $this->assertStringContainsString('school=HUB-1001', $invite['invite']['invitation_link']);
         $this->assertDatabaseHas('teacher_invites', [
             'colegio_id' => $colegio->id,
             'name' => 'Carlos Baute',

@@ -507,10 +507,10 @@
             <div class="mb-5 rounded-2xl border p-4" style="border-color:var(--nova-glass-border)" x-show="selected?.kind === 'invite'">
                 <p class="mb-2 text-xs font-bold uppercase tracking-wide text-slate-400">Invitación</p>
                 <p class="mb-1 text-sm font-semibold" x-text="'Código: ' + (selected?.invite_code || '')"></p>
-                <p class="mb-3 break-all text-xs text-slate-500" x-text="selected?.invitation_link || 'Sin link. Agrega un correo y reenvía.'"></p>
+                <p class="mb-3 break-all text-xs text-slate-500" x-text="registrationLink(selected) || 'Generando link de registro…'"></p>
                 <div class="flex flex-wrap gap-2">
                     <button type="button" class="hub-btn hub-btn-ghost !py-1.5 !text-xs" @click="copyText(selected?.invite_code, 'Código copiado.')">Copiar código</button>
-                    <button type="button" class="hub-btn hub-btn-ghost !py-1.5 !text-xs" x-show="selected?.invitation_link" @click="copyText(selected?.invitation_link, 'Link copiado.')">Copiar link</button>
+                    <button type="button" class="hub-btn hub-btn-ghost !py-1.5 !text-xs" x-show="registrationLink(selected)" @click="copyRegistrationLink(selected)">Copiar link</button>
                     <button type="button" class="hub-btn hub-btn-solid !py-1.5 !text-xs" x-show="selected?.email" @click="resendInvite(selected)">Reenviar email</button>
                 </div>
             </div>
@@ -682,19 +682,19 @@
             <p class="text-xs font-bold uppercase tracking-widest text-indigo-500">Profesor creado</p>
             <h3 class="mt-1 text-xl font-extrabold" x-text="(inviteShare?.name || '') + ' listo'"></h3>
             <p class="mt-2 text-sm text-slate-500" x-show="inviteShare?.email" x-text="'Se envió un email de invitación a ' + inviteShare.email"></p>
-            <p class="mt-2 text-sm text-slate-500" x-show="!inviteShare?.email">Sin correo: comparte el código para que active su cuenta.</p>
+            <p class="mt-2 text-sm text-slate-500" x-show="!inviteShare?.email">Sin correo: comparte el link de registro para que el profesor cree su cuenta.</p>
             <div class="mt-4 space-y-3 rounded-2xl border p-4" style="border-color:var(--nova-glass-border)">
                 <div>
                     <p class="text-xs font-bold uppercase tracking-wide text-slate-400">Código de invitación</p>
                     <p class="mt-1 font-mono text-lg font-extrabold" x-text="inviteShare?.invite_code"></p>
                 </div>
-                <div x-show="inviteShare?.invitation_link">
-                    <p class="text-xs font-bold uppercase tracking-wide text-slate-400">Link de invitación</p>
-                    <p class="mt-1 break-all text-sm text-indigo-600" x-text="inviteShare?.invitation_link"></p>
+                <div x-show="registrationLink(inviteShare)">
+                    <p class="text-xs font-bold uppercase tracking-wide text-slate-400">Link de registro</p>
+                    <p class="mt-1 break-all text-sm text-indigo-600" x-text="registrationLink(inviteShare)"></p>
                 </div>
             </div>
             <div class="mt-5 flex flex-wrap gap-2">
-                <button type="button" class="hub-btn hub-btn-ghost" @click="copyText(inviteShare?.invitation_link || inviteShare?.invite_code, 'Copiado.')">Copiar link</button>
+                <button type="button" class="hub-btn hub-btn-ghost" x-show="registrationLink(inviteShare)" @click="copyRegistrationLink(inviteShare)">Copiar link</button>
                 <button type="button" class="hub-btn hub-btn-ghost" @click="copyText(inviteShare?.invite_code, 'Código copiado.')">Copiar código</button>
                 <button type="button" class="hub-btn hub-btn-solid" x-show="inviteShare?.email" @click="resendInvite(inviteShare)">Reenviar email</button>
                 <button type="button" class="hub-btn hub-btn-ghost ml-auto" @click="inviteShare = null; openPanel('teachers')">Menú principal</button>
@@ -753,6 +753,7 @@
                 expandedGrade: null,
                 creating: false,
                 inviteShare: null,
+                schoolInviteCode: '',
                 saving: false,
                 form: {},
                 editKey: '',
@@ -1019,6 +1020,7 @@
                     this.courses = json.courses;
                     this.materias = json.materias || [];
                     this.grades = json.grades;
+                    this.schoolInviteCode = json.school_invite_code || this.schoolInviteCode || '';
                     if (this.selected) {
                         const next = this.people.find(p => p.kind === this.selected.kind && p.id === this.selected.id);
                         if (next) this.selected = { ...next, key: next.kind + next.id };
@@ -1169,6 +1171,22 @@
                 },
                 openShare(row) {
                     this.inviteShare = row;
+                },
+                registrationLink(row) {
+                    const link = String(row?.invitation_link || '').trim();
+                    if (/^https?:\/\//i.test(link)) return link;
+                    const school = this.schoolInviteCode;
+                    const code = String(row?.invite_code || '').trim();
+                    if (!school || !code) return '';
+                    return `${window.location.origin}/onboarding/profesor?school=${encodeURIComponent(school)}&code=${encodeURIComponent(code)}`;
+                },
+                copyRegistrationLink(row) {
+                    const link = this.registrationLink(row);
+                    if (!link) {
+                        this.showToast('No hay link de registro.');
+                        return;
+                    }
+                    this.copyText(link, 'Link de registro copiado.');
                 },
                 async copyText(value, label) {
                     if (!value) return;

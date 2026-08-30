@@ -443,6 +443,56 @@ class SuperAdminAnalyticsService
         ];
     }
 
+    /**
+     * Métricas individuales por colegio. No promedia planteles.
+     *
+     * @return Collection<int, array<string, mixed>>
+     */
+    public function schoolDossiers(array $filters, string $section = 'overview'): Collection
+    {
+        $summaries = $this->schools($filters)->keyBy('id');
+        $colegios = Colegio::query()
+            ->with('director:id,name,email')
+            ->when($filters['colegio_id'], fn ($q) => $q->whereKey($filters['colegio_id']))
+            ->orderBy('name')
+            ->get();
+
+        return $colegios->map(function (Colegio $colegio) use ($filters, $section, $summaries) {
+            $scoped = array_merge($filters, ['colegio_id' => $colegio->id]);
+            $summary = $summaries[$colegio->id] ?? [];
+            $dossier = [
+                'id' => $colegio->id,
+                'name' => $colegio->name,
+                'director' => $colegio->director?->name,
+                'estado' => $summary['estado'] ?? 'inactivo',
+                'adopcion' => $summary['adopcion'] ?? 'nula',
+                'usuarios' => (int) ($summary['usuarios'] ?? 0),
+                'docentes' => (int) ($summary['docentes'] ?? 0),
+                'actividad' => (int) ($summary['actividad'] ?? 0),
+                'eventos' => (int) ($summary['eventos'] ?? 0),
+                'errores' => (int) ($summary['errores'] ?? 0),
+                'funciones' => (int) ($summary['funciones'] ?? 0),
+                'ultimo_acceso' => $summary['ultimo_acceso'] ?? null,
+            ];
+
+            if ($section === 'overview') {
+                $dossier['overview'] = $this->overview($scoped);
+                $dossier['usage'] = $this->usage($scoped);
+                $dossier['intelligence'] = $this->intelligence($scoped);
+            } elseif ($section === 'usage') {
+                $dossier['usage'] = $this->usage($scoped);
+            } elseif ($section === 'intelligence') {
+                $dossier['intelligence'] = $this->intelligence($scoped);
+            } elseif ($section === 'health') {
+                $dossier['health'] = $this->health($scoped);
+            } elseif ($section === 'insights') {
+                $dossier['insights'] = $this->insights($scoped);
+            }
+
+            return $dossier;
+        })->values();
+    }
+
     public function filterOptions(): array
     {
         return [

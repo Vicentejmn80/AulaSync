@@ -95,6 +95,28 @@ class TeacherInvite extends Model
         return ! $this->isRevoked() && ! $this->isExpired();
     }
 
+    /**
+     * Link público de registro con el código del colegio y el DOC- prellenados.
+     * Sirve aunque el profesor no tenga correo (no depende de un token mágico).
+     */
+    public function registrationUrl(): string
+    {
+        $this->loadMissing('colegio');
+
+        return url('/onboarding/profesor?'.http_build_query(array_filter([
+            'school' => $this->colegio?->invite_code,
+            'code' => $this->invite_code,
+        ])));
+    }
+
+    /**
+     * Preferir el enlace mágico si hay email; si no, el de registro por códigos.
+     */
+    public function shareableLink(): string
+    {
+        return $this->pendingMagicInvitation()?->acceptUrl() ?: $this->registrationUrl();
+    }
+
     public function getDisplayNameAttribute(): string
     {
         return app(\App\Services\PersonNameSanitizer::class)->displayName((string) ($this->attributes['name'] ?? ''));

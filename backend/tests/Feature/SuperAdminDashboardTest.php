@@ -61,6 +61,8 @@ class SuperAdminDashboardTest extends TestCase
         $this->actingAs($admin)->get('/super-admin')
             ->assertOk()
             ->assertSee('Colegios registrados')
+            ->assertSee('Colegio Central')
+            ->assertSee('school-card')
             ->assertSee('1');
 
         $this->actingAs($admin)->get('/super-admin/usage')
@@ -191,5 +193,68 @@ class SuperAdminDashboardTest extends TestCase
         $this->assertSame(1, $overview['directores_activos']);
         $this->assertSame(1, $overview['docentes_activos']);
         $this->actingAs($admin)->get('/super-admin')->assertOk();
+    }
+
+    public function test_school_dossiers_keep_metrics_per_colegio(): void
+    {
+        $alpha = Colegio::create([
+            'name' => 'Colegio Alpha',
+            'invite_code' => 'ALP-0001',
+            'codes_pin' => Colegio::hashPinFromInvite('ALP-0001'),
+        ]);
+        $beta = Colegio::create([
+            'name' => 'Colegio Beta',
+            'invite_code' => 'BET-0001',
+            'codes_pin' => Colegio::hashPinFromInvite('BET-0001'),
+        ]);
+        $directorA = User::factory()->create([
+            'role' => 'director',
+            'colegio_id' => $alpha->id,
+            'onboarding_completed' => true,
+            'last_login_at' => now(),
+        ]);
+        $directorB = User::factory()->create([
+            'role' => 'director',
+            'colegio_id' => $beta->id,
+            'onboarding_completed' => true,
+            'last_login_at' => now(),
+        ]);
+
+        ProductEvent::create([
+            'user_id' => $directorA->id,
+            'colegio_id' => $alpha->id,
+            'role' => 'director',
+            'source' => 'director_ai',
+            'event' => 'ai_action',
+            'action' => 'create_teacher',
+            'status' => 'success',
+        ]);
+        ProductEvent::create([
+            'user_id' => $directorB->id,
+            'colegio_id' => $beta->id,
+            'role' => 'director',
+            'source' => 'director_data_agent',
+            'event' => 'ai_action',
+            'action' => 'get_students',
+            'status' => 'success',
+        ]);
+
+        $analytics = app(SuperAdminAnalyticsService::class);
+        $dossiers = $analytics->schoolDossiers($analytics->filters([]), 'usage');
+        $alphaUsage = $dossiers->firstWhere('name', 'Colegio Alpha')['usage'];
+        $betaUsage = $dossiers->firstWhere('name', 'Colegio Beta')['usage'];
+
+        $this->assertTrue($alphaUsage['mas_usadas']->contains(fn ($row) => $row->action === 'create_teacher'));
+        $this->assertFalse($alphaUsage['mas_usadas']->contains(fn ($row) => $row->action === 'get_students'));
+        $this->assertTrue($betaUsage['mas_usadas']->contains(fn ($row) => $row->action === 'get_students'));
+        $this->assertFalse($betaUsage['mas_usadas']->contains(fn ($row) => $row->action === 'create_teacher'));
+
+        $this->actingAs(User::factory()->create(['role' => 'super_admin', 'onboarding_completed' => true]))
+            ->get('/super-admin/usage')
+            ->assertOk()
+            ->assertSee('Colegio Alpha')
+            ->assertSee('Colegio Beta')
+            ->assertSee('Crear docente')
+            ->assertSee('Consultó la lista de alumnos');
     }
 }

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Director;
 
 use App\Helpers\InviteCodeHelper;
 use App\Http\Controllers\Controller;
+use App\Models\Colegio;
 use App\Models\Course;
 use App\Models\Materia;
 use App\Models\Student;
@@ -56,7 +57,7 @@ class ManagementHubController extends Controller
             })
             ->with(['courses' => function ($query) {
                 $query->withCount('students')->orderBy('subject_name')->orderBy('grade');
-            }, 'latestInvitation'])
+            }, 'latestInvitation', 'colegio:id,invite_code'])
             ->latest('id')
             ->get()
             ->map(fn (TeacherInvite $invite) => $this->serializeInvite($invite));
@@ -111,6 +112,7 @@ class ManagementHubController extends Controller
             'courses' => $courses,
             'materias' => $materias,
             'grades' => $grades,
+            'school_invite_code' => Colegio::query()->whereKey($colegioId)->value('invite_code'),
         ]);
     }
 
@@ -134,13 +136,13 @@ class ManagementHubController extends Controller
             $this->assignCoursesToInvite($request->user()->colegio_id, $invite, $courseIds->all());
         }
 
-        $invite = $invite->fresh(['courses', 'latestInvitation']);
+        $invite = $invite->fresh(['courses', 'latestInvitation', 'colegio:id,invite_code']);
         $serialized = $this->serializeInvite($invite);
-        $mailNote = $serialized['invitation_link']
+        $mailNote = $serialized['mail_sent']
             ? " Se ha enviado un email de invitación a {$invite->email}."
             : ($invite->email
                 ? ' '.($result['invitation_warning'] ?? 'No se pudo generar el enlace de activación.')
-                : ' Comparte el código '.$invite->invite_code.' para que active su cuenta.');
+                : ' Comparte el link de registro o el código '.$invite->invite_code.' para que active su cuenta.');
 
         return response()->json([
             'success' => true,
@@ -171,7 +173,7 @@ class ManagementHubController extends Controller
             'success' => true,
             'message' => "Email reenviado a {$invite->email}.",
             'invitation_link' => $invitation->acceptUrl(),
-            'invite' => $this->serializeInvite($invite->fresh(['courses', 'latestInvitation'])),
+            'invite' => $this->serializeInvite($invite->fresh(['courses', 'latestInvitation', 'colegio:id,invite_code'])),
         ]);
     }
 
@@ -617,7 +619,7 @@ class ManagementHubController extends Controller
             'email' => $invite->email,
             'invite_code' => $invite->invite_code,
             'invitation_code' => $invite->invite_code,
-            'invitation_link' => $magic?->acceptUrl(),
+            'invitation_link' => $invite->shareableLink(),
             'invitation_expires_at' => $magic?->expires_at?->toIso8601String(),
             'mail_sent' => $magic !== null,
             'status' => 'pendiente',

@@ -70,9 +70,14 @@
 </head>
 <body>
     <div class="card">
-        <span class="badge">{{ $invitation->roleLabel() }}</span>
+        @php
+            $isTeacherCode = isset($teacherInvite) && $teacherInvite;
+            $schoolName = $colegio->name ?? $invitation?->colegio?->name;
+            $teacherName = $teacherInvite->display_name ?? $invitation?->name;
+        @endphp
+        <span class="badge">{{ $isTeacherCode ? 'Docente' : $invitation->roleLabel() }}</span>
         <h1>
-            @if($invitation->role === \App\Models\Invitation::ROLE_DOCENTE)
+            @if($isTeacherCode || $invitation?->role === \App\Models\Invitation::ROLE_DOCENTE)
                 Activa tu cuenta de profesor
             @else
                 Activa tu cuenta
@@ -80,10 +85,13 @@
         </h1>
         <p>
             Bienvenido a AulaSync. Completa tu registro para comenzar
-            @if($invitation->colegio)
-                en <strong>{{ $invitation->colegio->name }}</strong>
+            @if($schoolName)
+                en <strong>{{ $schoolName }}</strong>
             @endif
-            . El enlace vence el {{ $invitation->expires_at?->format('d/m/Y H:i') }}.
+            .
+            @if($invitation?->expires_at)
+                El enlace vence el {{ $invitation->expires_at->format('d/m/Y H:i') }}.
+            @endif
         </p>
 
         @if ($errors->any())
@@ -93,23 +101,45 @@
             <div class="error">{{ session('error') }}</div>
         @endif
 
-        <form method="POST" action="{{ $invitation->role === \App\Models\Invitation::ROLE_DOCENTE ? route('onboarding.teacher.store') : url('/accept-invitation') }}">
-            @csrf
-            <input type="hidden" name="token" value="{{ $invitation->token }}">
-            <label>Nombre</label>
-            <input id="name" name="name" value="{{ old('name', $invitation->name) }}" required maxlength="255" autocomplete="name" @if($invitation->name) readonly @endif>
-            <label>Email</label>
-            <input type="email" value="{{ $invitation->email }}" readonly>
-            <label for="password">Contraseña</label>
-            <input id="password" type="password" name="password" required minlength="8" autocomplete="new-password">
-            <p class="hint">La contraseña debe tener al menos 8 caracteres.</p>
-            <label for="password_confirmation">Confirmar contraseña</label>
-            <input id="password_confirmation" type="password" name="password_confirmation" required minlength="8" autocomplete="new-password">
-            <div class="actions">
-                <a class="ghost" href="{{ url('/login') }}">Cancelar</a>
-                <button type="submit">Activar cuenta</button>
-            </div>
-        </form>
+        @if ($isTeacherCode)
+            <form method="POST" action="{{ route('onboarding.teacher.store') }}">
+                @csrf
+                <input type="hidden" name="school" value="{{ $colegio->invite_code }}">
+                <input type="hidden" name="code" value="{{ $teacherInvite->invite_code }}">
+                <label>Nombre</label>
+                <input id="name" name="name" value="{{ old('name', $teacherName) }}" required maxlength="255" autocomplete="name" @if($teacherName) readonly @endif>
+                <label for="email">Email</label>
+                <input id="email" type="email" name="email" value="{{ old('email', $teacherInvite->email) }}" required maxlength="180" autocomplete="email">
+                <p class="hint">Usa este correo para iniciar sesión después.</p>
+                <label for="password">Contraseña</label>
+                <input id="password" type="password" name="password" required minlength="8" autocomplete="new-password">
+                <p class="hint">La contraseña debe tener al menos 8 caracteres.</p>
+                <label for="password_confirmation">Confirmar contraseña</label>
+                <input id="password_confirmation" type="password" name="password_confirmation" required minlength="8" autocomplete="new-password">
+                <div class="actions">
+                    <a class="ghost" href="{{ url('/login') }}">Cancelar</a>
+                    <button type="submit">Crear cuenta</button>
+                </div>
+            </form>
+        @else
+            <form method="POST" action="{{ $invitation->role === \App\Models\Invitation::ROLE_DOCENTE ? route('onboarding.teacher.store') : url('/accept-invitation') }}">
+                @csrf
+                <input type="hidden" name="token" value="{{ $invitation->token }}">
+                <label>Nombre</label>
+                <input id="name" name="name" value="{{ old('name', $invitation->name) }}" required maxlength="255" autocomplete="name" @if($invitation->name) readonly @endif>
+                <label>Email</label>
+                <input type="email" value="{{ $invitation->email }}" readonly>
+                <label for="password">Contraseña</label>
+                <input id="password" type="password" name="password" required minlength="8" autocomplete="new-password">
+                <p class="hint">La contraseña debe tener al menos 8 caracteres.</p>
+                <label for="password_confirmation">Confirmar contraseña</label>
+                <input id="password_confirmation" type="password" name="password_confirmation" required minlength="8" autocomplete="new-password">
+                <div class="actions">
+                    <a class="ghost" href="{{ url('/login') }}">Cancelar</a>
+                    <button type="submit">Activar cuenta</button>
+                </div>
+            </form>
+        @endif
     </div>
 </body>
 </html>

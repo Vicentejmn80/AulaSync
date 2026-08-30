@@ -194,6 +194,7 @@ class InvitationSystemTest extends TestCase
         $this->assertStringStartsWith('DOC-', $payload['invite']['invite_code']);
         $this->assertNotEmpty($payload['invite']['invitation_link']);
         $this->assertStringContainsString('/onboarding/profesor?token=', $payload['invite']['invitation_link']);
+        $this->assertNotSame($payload['invite']['invite_code'], $payload['invite']['invitation_link']);
 
         $invitation = Invitation::query()->where('email', 'carlos@email.com')->first();
         $this->assertNotNull($invitation);
@@ -289,5 +290,54 @@ class InvitationSystemTest extends TestCase
         $this->assertNotSame($oldToken, $fresh->token);
         $this->assertTrue($fresh->expires_at->greaterThan(now()->addDays(6)));
         Mail::assertSent(TeacherInvitationMail::class, 2);
+    }
+
+    public function test_teacher_invite_without_email_exposes_registration_link_not_the_code(): void
+    {
+        $colegio = Colegio::create([
+            'name' => 'Colegio Link',
+            'invite_code' => 'LNK-2001',
+            'codes_pin' => Colegio::hashPinFromInvite('LNK-2001'),
+        ]);
+        $director = User::factory()->create([
+            'role' => 'director',
+            'colegio_id' => $colegio->id,
+            'onboarding_completed' => true,
+        ]);
+
+        $payload = $this->actingAs($director)
+            ->postJson(route('director.gestion.teachers.store'), [
+                'name' => 'Carlos Gutiérrez',
+            ])
+            ->assertOk()
+            ->json();
+
+        $code = $payload['invite']['invite_code'];
+        $link = $payload['invite']['invitation_link'];
+        $this->assertNotSame($code, $link);
+        $this->assertStringContainsString('/onboarding/profesor?', $link);
+        $this->assertStringContainsString('school=LNK-2001', $link);
+        $this->assertStringContainsString('code='.$code, $link);
+
+        $this->get($link)
+            ->assertOk()
+            ->assertSee('Activa tu cuenta de profesor')
+            ->assertSee('Carlos Gutiérrez');
+
+        $this->post(route('onboarding.teacher.store'), [
+            'school' => 'LNK-2001',
+            'code' => $code,
+            'name' => 'Carlos Gutiérrez',
+            'email' => 'carlos.gutierrez@email.com',
+            'password' => 'password1',
+            'password_confirmation' => 'password1',
+        ])->assertRedirect('/teacher/hub');
+
+        $this->assertDatabaseHas('users', [
+            'email' => 'carlos.gutierrez@email.com',
+            'role' => 'profesor',
+            'colegio_id' => $colegio->id,
+        ]);
+        $this->assertNotNull(TeacherInvite::query()->where('invite_code', $code)->value('claimed_at'));
     }
 }

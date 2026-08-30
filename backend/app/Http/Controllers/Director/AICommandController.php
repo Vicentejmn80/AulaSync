@@ -1492,7 +1492,8 @@ class AICommandController extends Controller
         /** @var Collection<int,Course> $courses */
         $courses = $result['courses'];
         $invitation = $result['invitation'] ?? null;
-        $link = $invitation?->acceptUrl();
+        $invite->loadMissing('colegio');
+        $link = $invitation?->acceptUrl() ?: $invite->shareableLink();
         $mailSent = (bool) ($result['mail_sent'] ?? false);
         $message = "Profesor {$invite->name} creado exitosamente. Código {$invite->invite_code}.";
         if ($mailSent && $invite->email) {
