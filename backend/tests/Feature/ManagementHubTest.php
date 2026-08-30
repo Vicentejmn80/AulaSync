@@ -28,7 +28,8 @@ class ManagementHubTest extends TestCase
             ->assertSee('Profesores')
             ->assertSee('Alumnos')
             ->assertSee('Materias')
-            ->assertSee('Seleccionar todo');
+            ->assertSee('Seleccionar todo')
+            ->assertSee('grade-dossier');
     }
 
     public function test_snapshot_returns_counts_and_lists(): void

@@ -103,6 +103,85 @@
         html[data-theme="eco"] .hub-btn-danger:hover, html[data-theme="neon"] .hub-btn-danger:hover {
             background: rgba(127,29,29,.35);
         }
+        .grade-card {
+            position: relative;
+            overflow: hidden;
+            border-radius: 1.35rem;
+            border: 1px solid color-mix(in srgb, var(--nova-glass-border) 70%, transparent);
+            box-shadow: 0 16px 36px -24px rgba(15, 23, 42, .45);
+            transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
+        }
+        .grade-card:hover { transform: translateY(-3px); box-shadow: 0 22px 40px -22px rgba(15, 23, 42, .5); }
+        .grade-card.is-open { transform: none; box-shadow: 0 24px 48px -20px rgba(15, 23, 42, .35); }
+        .grade-chip {
+            display: inline-flex; align-items: center; max-width: 100%;
+            border-radius: 999px; padding: .18rem .55rem;
+            font-size: .68rem; font-weight: 700; letter-spacing: .01em;
+            background: rgba(255,255,255,.72); color: #334155;
+        }
+        html.dark .grade-chip, html[data-theme="dark"] .grade-chip,
+        html[data-theme="eco"] .grade-chip, html[data-theme="neon"] .grade-chip {
+            background: color-mix(in srgb, var(--bg-card) 80%, transparent); color: var(--text-primary);
+        }
+        .grade-expand {
+            border-top: 1px solid color-mix(in srgb, #fff 55%, transparent);
+            background: color-mix(in srgb, var(--bg-card) 88%, transparent);
+            padding: 1rem;
+        }
+        .grade-stats {
+            display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: .55rem; margin-bottom: .85rem;
+        }
+        .grade-stat {
+            border-radius: .9rem; padding: .65rem .7rem;
+            background: var(--bg-card);
+            border: 1px solid var(--nova-glass-border);
+        }
+        .grade-stat b { display: block; font-size: 1.15rem; line-height: 1.1; font-weight: 800; }
+        .grade-stat span { font-size: .65rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--text-secondary); }
+        .grade-inner {
+            background: var(--bg-card);
+            border: 1px solid var(--nova-glass-border);
+            border-radius: 1.05rem;
+            padding: .9rem;
+            min-height: 12rem;
+            box-shadow: 0 10px 24px -18px rgba(15, 23, 42, .4);
+        }
+        .grade-inner-head {
+            display: flex; align-items: center; justify-content: space-between; gap: .6rem;
+            margin-bottom: .75rem;
+        }
+        .grade-inner-title {
+            display: flex; align-items: center; gap: .55rem;
+            font-size: .78rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
+        }
+        .grade-inner-ico {
+            width: 1.85rem; height: 1.85rem; border-radius: .65rem;
+            display: inline-flex; align-items: center; justify-content: center; color: #fff; font-size: .75rem;
+        }
+        .subject-row {
+            display: flex; align-items: flex-start; justify-content: space-between; gap: .6rem;
+            border-radius: .85rem; padding: .7rem .75rem; margin-bottom: .5rem;
+            background: var(--bg-secondary); border: 1px solid var(--nova-glass-border);
+        }
+        .subject-row:last-child { margin-bottom: 0; }
+        .student-grid { display: grid; gap: .45rem; }
+        .student-pill {
+            display: flex; align-items: center; gap: .55rem;
+            border-radius: .8rem; padding: .45rem .55rem;
+            background: var(--bg-secondary); border: 1px solid var(--nova-glass-border);
+        }
+        .student-av {
+            width: 1.85rem; height: 1.85rem; border-radius: .6rem; flex-shrink: 0;
+            display: inline-flex; align-items: center; justify-content: center;
+            font-size: .65rem; font-weight: 800; color: #fff;
+        }
+        .grade-empty {
+            border: 1px dashed var(--nova-glass-border);
+            border-radius: .9rem; padding: 1.1rem .8rem; text-align: center;
+            color: var(--text-secondary); font-size: .8rem;
+        }
+        .grade-roster { max-height: 17.5rem; overflow: auto; padding-right: .15rem; }
     </style>
 </head>
 <body class="min-h-screen" x-data="gestionHub()" x-init="init()">
@@ -283,50 +362,125 @@
                 </table>
 
                 <div x-show="panel === 'courses'" x-cloak class="p-4">
-                    <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                    <div class="grade-dossier grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                         <template x-for="card in gradeCards" :key="card.key">
-                            <article class="overflow-hidden rounded-2xl border shadow-sm" :style="'background:' + card.soft + ';border-color:transparent'">
+                            <article class="grade-card" :class="expandedGrade === card.key && 'is-open sm:col-span-2 xl:col-span-3'" :style="'background:' + card.soft">
                                 <button type="button" class="w-full p-5 text-left" @click="expandedGrade = expandedGrade === card.key ? null : card.key">
                                     <div class="mb-4 flex items-center justify-between">
-                                        <span class="flex h-12 w-12 items-center justify-center rounded-2xl text-lg font-black text-white" :style="'background:' + card.color" x-text="card.short"></span>
-                                        <span class="text-xs font-semibold uppercase tracking-wide text-slate-600" x-text="card.subjects.length + ' materia(s)'"></span>
+                                        <span class="flex h-12 w-12 items-center justify-center rounded-2xl text-lg font-black text-white shadow-sm" :style="'background:' + card.color" x-text="card.short"></span>
+                                        <span class="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-600">
+                                            <span x-text="card.subjects.length + ' materias'"></span>
+                                            <i class="fa-solid fa-chevron-down text-[10px] transition-transform" :class="expandedGrade === card.key && 'rotate-180'"></i>
+                                        </span>
                                     </div>
                                     <p class="text-xl font-extrabold text-slate-800" x-text="card.label"></p>
-                                    <p class="mt-1 text-sm text-slate-600" x-text="card.orphanCount ? card.orphanCount + ' sin docente' : 'Listo para desglosar'"></p>
+                                    <p class="mt-1 text-sm text-slate-600" x-text="gradePulse(card)"></p>
+                                    <div class="mt-3 flex flex-wrap gap-1.5" x-show="card.subjects.length">
+                                        <template x-for="subject in card.subjects.slice(0, 3)" :key="card.key + 'prev' + subject.name">
+                                            <span class="grade-chip" x-text="subject.name"></span>
+                                        </template>
+                                        <span class="grade-chip" x-show="card.subjects.length > 3" x-text="'+' + (card.subjects.length - 3)"></span>
+                                    </div>
                                 </button>
-                                <div x-show="expandedGrade === card.key" x-cloak class="border-t border-white/70 bg-white/70 px-4 py-3">
-                                    <p class="mb-2 text-xs text-slate-500" x-show="!card.subjects.length">Todavía no hay materias en este grado.</p>
-                                    <template x-for="subject in card.subjects" :key="card.key + subject.name">
-                                        <div class="mb-3 rounded-xl bg-white p-3 shadow-sm">
-                                            <div class="mb-2 flex items-center justify-between gap-2">
-                                                <p class="font-bold text-slate-800" x-text="subject.name"></p>
-                                                <button type="button" class="text-xs font-semibold text-rose-500 hover:text-rose-700" @click.stop="deleteSubject(subject.name, card.grade)">
-                                                    Borrar materia
-                                                </button>
-                                            </div>
-                                            <ul class="space-y-1">
-                                                <template x-for="item in subject.items" :key="item.id">
-                                                    <li class="flex items-center justify-between gap-2 rounded-lg px-1 py-1 text-sm">
-                                                        <label class="flex min-w-0 flex-1 items-center gap-2">
-                                                            <input type="checkbox" class="h-4 w-4 accent-indigo-600" :checked="isSelected('course', item.id)" @change="toggleSelected('course', item.id)">
-                                                            <span class="min-w-0 truncate">
-                                                                <span class="font-semibold" x-text="subject.name"></span>
-                                                                <span class="text-slate-400"> - </span>
-                                                                <span x-text="item.section ? 'Sección ' + item.section : 'Sección única'"></span>
-                                                                <span class="text-slate-400"> · </span>
-                                                                <span x-text="item.teacher_name || 'Sin docente'"></span>
-                                                            </span>
-                                                            <span x-show="item.orphan" class="hub-chip shrink-0" style="background:#fff7ed;color:#c2410c">Huérfano</span>
-                                                        </label>
-                                                        <button type="button" class="shrink-0 text-rose-400 hover:text-rose-600" @click.stop="queueDelete(item, 'course')" title="Borrar este curso">
-                                                            <i class="fa-solid fa-trash-can text-xs"></i>
-                                                        </button>
-                                                    </li>
-                                                </template>
-                                            </ul>
+                                <div x-show="expandedGrade === card.key" x-cloak class="grade-expand">
+                                    <div class="grade-stats">
+                                        <div class="grade-stat">
+                                            <b x-text="card.subjects.length">0</b>
+                                            <span>Materias</span>
                                         </div>
-                                    </template>
-                                    <button type="button" class="mt-1 text-xs font-semibold text-rose-500" x-show="card.courses.length" @click="deleteGradeCourses(card)">
+                                        <div class="grade-stat">
+                                            <b x-text="card.teacherCount">0</b>
+                                            <span>Docentes</span>
+                                        </div>
+                                        <div class="grade-stat">
+                                            <b x-text="card.studentCount">0</b>
+                                            <span>Alumnos</span>
+                                        </div>
+                                    </div>
+
+                                    <div class="grid gap-3 md:grid-cols-2">
+                                        <section class="grade-inner">
+                                            <div class="grade-inner-head">
+                                                <p class="grade-inner-title">
+                                                    <span class="grade-inner-ico" :style="'background:' + card.color"><i class="fa-solid fa-book-open"></i></span>
+                                                    Materias
+                                                </p>
+                                                <span class="hub-chip" x-text="card.subjects.length"></span>
+                                            </div>
+                                            <div class="grade-empty" x-show="!card.subjects.length">
+                                                <i class="fa-regular fa-folder-open mb-2 block text-lg"></i>
+                                                Todavía no hay materias en este grado.
+                                            </div>
+                                            <div class="grade-roster" x-show="card.subjects.length">
+                                                <template x-for="subject in card.subjects" :key="card.key + subject.name">
+                                                    <div class="mb-3 last:mb-0">
+                                                        <div class="mb-1.5 flex items-center justify-between gap-2 px-0.5">
+                                                            <p class="text-sm font-extrabold" x-text="subject.name"></p>
+                                                            <button type="button" class="text-[11px] font-semibold text-rose-500 hover:text-rose-700" @click.stop="deleteSubject(subject.name, card.grade)">
+                                                                Borrar materia
+                                                            </button>
+                                                        </div>
+                                                        <template x-for="item in subject.items" :key="item.id">
+                                                            <div class="subject-row">
+                                                                <label class="flex min-w-0 flex-1 items-start gap-2">
+                                                                    <input type="checkbox" class="mt-1 h-4 w-4 accent-indigo-600" :checked="isSelected('course', item.id)" @change="toggleSelected('course', item.id)">
+                                                                    <span class="min-w-0">
+                                                                        <span class="flex items-center gap-2">
+                                                                            <span class="student-av" :style="'background:' + (item.orphan ? '#f97316' : card.color)" x-text="initials(item.teacher_name || subject.name)"></span>
+                                                                            <span class="min-w-0">
+                                                                                <span class="block truncate text-sm font-bold" x-text="item.teacher_name || 'Sin docente asignado'"></span>
+                                                                                <span class="block text-[11px] text-slate-500">
+                                                                                    <span x-text="item.section ? 'Sección ' + item.section : 'Sección única'"></span>
+                                                                                    <span> · </span>
+                                                                                    <span x-text="(item.students_count || 0) + ' alumnos'"></span>
+                                                                                </span>
+                                                                            </span>
+                                                                        </span>
+                                                                        <span x-show="item.orphan" class="hub-chip mt-2" style="background:#fff7ed;color:#c2410c">Huérfano</span>
+                                                                    </span>
+                                                                </label>
+                                                                <div class="flex shrink-0 items-center gap-1">
+                                                                    <button type="button" class="hub-btn hub-btn-ghost !px-2 !py-1 !text-[11px]" @click.stop="selectCourse(item)" title="Ver alumnos de esta materia">
+                                                                        Ver
+                                                                    </button>
+                                                                    <button type="button" class="shrink-0 text-rose-400 hover:text-rose-600" @click.stop="queueDelete(item, 'course')" title="Borrar este curso">
+                                                                        <i class="fa-solid fa-trash-can text-xs"></i>
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                        </template>
+                                                    </div>
+                                                </template>
+                                            </div>
+                                        </section>
+
+                                        <section class="grade-inner">
+                                            <div class="grade-inner-head">
+                                                <p class="grade-inner-title">
+                                                    <span class="grade-inner-ico" :style="'background:' + card.color"><i class="fa-solid fa-user-graduate"></i></span>
+                                                    Alumnos
+                                                </p>
+                                                <span class="hub-chip" x-text="card.studentCount"></span>
+                                            </div>
+                                            <div class="grade-empty" x-show="!card.roster.length">
+                                                <i class="fa-regular fa-user mb-2 block text-lg"></i>
+                                                Nadie en la nómina de este grado todavía.
+                                            </div>
+                                            <div class="grade-roster student-grid" x-show="card.roster.length">
+                                                <template x-for="student in card.roster" :key="'grst'+student.id">
+                                                    <div class="student-pill">
+                                                        <span class="student-av" :style="'background:' + card.color" x-text="initials(student.name)"></span>
+                                                        <span class="min-w-0">
+                                                            <span class="block truncate text-sm font-bold" x-text="student.name"></span>
+                                                            <span class="block text-[11px] text-slate-500" x-text="student.section ? 'Sección ' + student.section : 'Nómina del grado'"></span>
+                                                        </span>
+                                                    </div>
+                                                </template>
+                                            </div>
+                                        </section>
+                                    </div>
+
+                                    <button type="button" class="mt-3 text-xs font-semibold text-rose-500" x-show="card.courses.length" @click="deleteGradeCourses(card)">
                                         Eliminar todo el grado
                                     </button>
                                 </div>
@@ -615,7 +769,7 @@
                 },
                 get panelHint() {
                     if (this.panel === 'materias') return 'Las materias son el catálogo. No se crean desde el profesor.';
-                    if (this.panel === 'courses') return 'Seis tarjetas, una por grado. Ábrelas para ver secciones, borrar una materia o dejar un curso huérfano listo para reasignar.';
+                    if (this.panel === 'courses') return 'Vista global del colegio por grado. Abre una tarjeta para ver materias con su docente y la nómina de alumnos.';
                     if (this.panel === 'teachers') return 'Invita al docente y asígnalo a cursos existentes. Si lo eliminas, los cursos quedan huérfanos.';
                     return 'Matricula al alumno en uno o varios cursos del mismo grado.';
                 },
@@ -691,10 +845,21 @@
                             if (!subjects[key]) subjects[key] = { name, items: [] };
                             subjects[key].items.push(course);
                         });
+                        const roster = this.students
+                            .filter((student) => {
+                                if (String(this.gradeNumber(student.grade)) !== meta.key) return false;
+                                return !q || String(student.name || '').toLowerCase().includes(q);
+                            })
+                            .slice()
+                            .sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'es'));
+                        const teacherNames = [...new Set(courses.map((course) => course.teacher_name).filter(Boolean))];
                         return {
                             ...meta,
                             courses,
                             subjects: Object.values(subjects),
+                            roster,
+                            teacherCount: teacherNames.length,
+                            studentCount: roster.length,
                             orphanCount: courses.filter((course) => course.orphan).length,
                         };
                     });
@@ -732,6 +897,22 @@
                 flash(key) {
                     this.highlights[key] = true;
                     setTimeout(() => { const copy = { ...this.highlights }; delete copy[key]; this.highlights = copy; }, 1800);
+                },
+                initials(name) {
+                    const parts = String(name || '')
+                        .trim()
+                        .split(/\s+/)
+                        .filter(Boolean)
+                        .slice(0, 2);
+                    if (!parts.length) return '—';
+                    return parts.map((part) => part.charAt(0)).join('').toUpperCase();
+                },
+                gradePulse(card) {
+                    const bits = [];
+                    bits.push((card.studentCount || 0) + ' alumno' + (card.studentCount === 1 ? '' : 's'));
+                    bits.push((card.teacherCount || 0) + ' docente' + (card.teacherCount === 1 ? '' : 's'));
+                    if (card.orphanCount) bits.push(card.orphanCount + ' sin docente');
+                    return bits.join(' · ');
                 },
                 gradeNumber(grade) {
                     const value = String(grade || '').toLowerCase();
