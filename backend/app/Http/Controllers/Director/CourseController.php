@@ -9,6 +9,7 @@ use App\Models\Student;
 use App\Models\TeacherInvite;
 use App\Models\User;
 use App\Services\DirectorActionService;
+use App\Services\StudentEnrollmentService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -16,7 +17,10 @@ use Illuminate\View\View;
 
 class CourseController extends Controller
 {
-    public function __construct(private DirectorActionService $actionService) {}
+    public function __construct(
+        private DirectorActionService $actionService,
+        private StudentEnrollmentService $enrollment,
+    ) {}
 
     public function index(Request $request): View
     {
@@ -118,10 +122,7 @@ class CourseController extends Controller
             }
         }
 
-        $enrolled = 0;
-        if ($request->boolean('enroll_roster')) {
-            $enrolled = $this->attachRoster($course, $director->colegio_id);
-        }
+        $enrolled = $this->enrollment->syncCourseWithGradeStudents($course, $director);
 
         $suffix = $enrolled > 0 ? " Se inscribieron {$enrolled} alumno(s) del grado." : '';
 
@@ -186,6 +187,7 @@ class CourseController extends Controller
             'teacher_id' => $teacherId,
             'teacher_invite_id' => $inviteId,
         ]);
+        $this->enrollment->syncCourseWithGradeStudents($course, $request->user());
 
         if ($inviteId) {
             $invite = TeacherInvite::find($inviteId);
@@ -206,7 +208,7 @@ class CourseController extends Controller
     {
         abort_unless((int) $course->colegio_id === (int) $request->user()->colegio_id, 403);
 
-        $attached = $this->attachRoster($course, $request->user()->colegio_id);
+        $attached = $this->enrollment->syncCourseWithGradeStudents($course, $request->user());
 
         if ($attached === 0) {
             return back()->with('warning', "No se inscribieron alumnos. Revisa que existan estudiantes con grado parecido a \"{$course->grade}\"" . ($course->section ? " / {$course->section}" : '') . ' en Alumnos.');
@@ -251,48 +253,4 @@ class CourseController extends Controller
         return [$teacher->id, null, $teacher->name];
     }
 
-    private function attachRoster(Course $course, int $colegioId): int
-    {
-        $students = Student::where('colegio_id', $colegioId)->get(['id', 'grade', 'section']);
-        $courseGradeKey = $this->normalizeGradeKey($course->grade);
-        $courseSection = $course->section ? mb_strtolower(trim($course->section)) : null;
-
-        $attached = 0;
-        foreach ($students as $student) {
-            if ($this->normalizeGradeKey($student->grade) !== $courseGradeKey) {
-                continue;
-            }
-
-            if ($courseSection) {
-                $studentSection = $student->section ? mb_strtolower(trim($student->section)) : null;
-                if ($studentSection && $studentSection !== $courseSection) {
-                    continue;
-                }
-            }
-
-            if (! $course->students()->where('student_id', $student->id)->exists()) {
-                $course->students()->attach($student->id, ['enrolled_at' => now()]);
-                $attached++;
-            }
-        }
-
-        return $attached;
-    }
-
-    private function normalizeGradeKey(?string $grade): string
-    {
-        $raw = mb_strtolower(trim((string) $grade));
-        $raw = strtr($raw, [
-            'á' => 'a', 'é' => 'e', 'í' => 'i', 'ó' => 'o', 'ú' => 'u', 'ñ' => 'n',
-        ]);
-        $raw = preg_replace('/\s+/', '', $raw) ?? '';
-        $raw = str_replace(['primero', '1ero', '1ro', '1°', '1º'], '1', $raw);
-        $raw = str_replace(['segundo', '2do', '2do.', '2°', '2º'], '2', $raw);
-        $raw = str_replace(['tercero', '3ro', '3ero', '3°', '3º'], '3', $raw);
-        $raw = str_replace(['cuarto', '4to', '4to.', '4°', '4º'], '4', $raw);
-        $raw = str_replace(['quinto', '5to', '5to.', '5°', '5º'], '5', $raw);
-        $raw = str_replace(['sexto', '6to', '6to.', '6°', '6º'], '6', $raw);
-
-        return preg_replace('/[^a-z0-9]/', '', $raw) ?? '';
-    }
 }

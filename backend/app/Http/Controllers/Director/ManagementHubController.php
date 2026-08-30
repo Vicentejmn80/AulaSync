@@ -36,6 +36,7 @@ class ManagementHubController extends Controller
     public function snapshot(Request $request): JsonResponse
     {
         $colegioId = (int) $request->user()->colegio_id;
+        $this->enrollment->syncColegioEnrollments($colegioId, $request->user());
 
         $teachers = User::query()
             ->where('colegio_id', $colegioId)
@@ -393,6 +394,10 @@ class ManagementHubController extends Controller
                     'teacher_invite_id' => null,
                 ]);
             $label = $teacher->name;
+        }
+
+        foreach ($owned as $course) {
+            $this->enrollment->syncCourseWithGradeStudents($course->fresh(), $request->user());
         }
 
         return response()->json([

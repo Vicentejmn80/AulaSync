@@ -720,6 +720,7 @@ class DirectorActionService
                 }
 
                 $course = $existing->fresh();
+                $this->enrollGradeStudentsInCourse($colegioId, $course, $director);
             } else {
                 $materia = $this->findOrCreateMateria($colegioId, $subject);
                 $course = Course::create([
@@ -831,6 +832,7 @@ class DirectorActionService
                                 'teacher_invite_id' => $inviteId,
                             ]);
                         }
+                        $this->enrollGradeStudentsInCourse($colegioId, $existingCourse, $director);
                         $courses->push($existingCourse->fresh());
                         $existing++;
                         if ($inviteId) {
@@ -1301,20 +1303,13 @@ class DirectorActionService
             throw ValidationException::withMessages(['student' => 'Indica qué dato del alumno deseas cambiar.']);
         }
 
-        $oldGrade = (string) $student->grade;
-        $oldSection = $student->section;
         $student->update($updates);
         $student = $student->fresh();
 
         $moved = array_key_exists('grade', $updates) || array_key_exists('section', $updates);
         $reattached = 0;
         if ($moved) {
-            $reattached = $this->relinkStudentCoursesAfterMove(
-                $director,
-                $student,
-                $oldGrade,
-                $oldSection,
-            );
+            $reattached = $this->enrollmentService->relinkStudentAfterGradeChange($student, $director);
         }
 
         $place = trim($student->grade.($student->section ? ' / '.$student->section : ''));
@@ -1871,43 +1866,6 @@ class DirectorActionService
         return ['course' => null, 'created' => false, 'note' => $hint];
     }
 
-    private function relinkStudentCoursesAfterMove(User $director, Student $student, string $oldGrade, ?string $oldSection): int
-    {
-        $colegioId = (int) $student->colegio_id;
-        $newGradeKey = $this->academicKey((string) $student->grade);
-        $newSectionKey = $this->academicKey((string) $student->section);
-
-        $current = $student->courses()
-            ->where('courses.colegio_id', $colegioId)
-            ->get();
-
-        foreach ($current as $course) {
-            $sameGrade = $this->academicKey((string) $course->grade) === $newGradeKey;
-            $sameSection = $newSectionKey === ''
-                || $this->academicKey((string) $course->section) === $newSectionKey;
-            if (! $sameGrade || ! $sameSection) {
-                $student->courses()->detach($course->id);
-            }
-        }
-
-        $targets = Course::query()
-            ->where('colegio_id', $colegioId)
-            ->whereRaw('LOWER(grade) = ?', [mb_strtolower((string) $student->grade)])
-            ->when(
-                $student->section,
-                fn ($q) => $q->whereRaw('LOWER(COALESCE(section, ?)) = ?', ['', mb_strtolower((string) $student->section)])
-            )
-            ->get();
-
-        $attached = 0;
-        foreach ($targets as $course) {
-            $this->enrollmentService->attachExisting($course, $student, $director);
-            $attached++;
-        }
-
-        return $attached;
-    }
-
     private function academicKey(?string $value): string
     {
         $value = mb_strtolower(trim((string) $value));
@@ -2005,88 +1963,17 @@ class DirectorActionService
      */
     public function syncAllEnrollments(User $director): array
     {
-        $colegioId = $this->requireColegioId($director);
-        $students = Student::query()->where('colegio_id', $colegioId)->get();
-        $courses = Course::query()->where('colegio_id', $colegioId)->get();
-
-        $linksCreated = 0;
-        $alreadySynced = 0;
-
-        foreach ($students as $student) {
-            foreach ($courses as $course) {
-                if (! $this->sameGradeEnrollment($student, $course)) {
-                    continue;
-                }
-                if ($course->students()->where('students.id', $student->id)->exists()) {
-                    $alreadySynced++;
-
-                    continue;
-                }
-                $this->enrollmentService->attachExisting($course, $student, $director);
-                $linksCreated++;
-            }
-        }
-
-        return [
-            'links_created' => $linksCreated,
-            'already_synced' => $alreadySynced,
-            'students_count' => $students->count(),
-            'courses_count' => $courses->count(),
-        ];
+        return $this->enrollmentService->syncColegioEnrollments($this->requireColegioId($director), $director);
     }
 
     private function enrollStudentInGradeCourses(int $colegioId, Student $student, User $director): int
     {
-        $linked = 0;
-        $courses = Course::query()->where('colegio_id', $colegioId)->get();
-        foreach ($courses as $course) {
-            if (! $this->sameGradeEnrollment($student, $course)) {
-                continue;
-            }
-            if ($course->students()->where('students.id', $student->id)->exists()) {
-                continue;
-            }
-            $this->enrollmentService->attachExisting($course, $student, $director);
-            $linked++;
-        }
-
-        return $linked;
+        return $this->enrollmentService->syncStudentToGradeCourses($student, $director);
     }
 
     private function enrollGradeStudentsInCourse(int $colegioId, Course $course, User $director): int
     {
-        $linked = 0;
-        $students = Student::query()->where('colegio_id', $colegioId)->get();
-        foreach ($students as $student) {
-            if (! $this->sameGradeEnrollment($student, $course)) {
-                continue;
-            }
-            if ($course->students()->where('students.id', $student->id)->exists()) {
-                continue;
-            }
-            $this->enrollmentService->attachExisting($course, $student, $director);
-            $linked++;
-        }
-
-        return $linked;
-    }
-
-    private function sameGradeEnrollment(Student $student, Course $course): bool
-    {
-        $studentGrade = GradeLabel::canonical((string) $student->grade) ?? trim((string) $student->grade);
-        $courseGrade = GradeLabel::canonical((string) $course->grade) ?? trim((string) $course->grade);
-        if ($studentGrade === '' || $courseGrade === '' || $studentGrade !== $courseGrade) {
-            return false;
-        }
-
-        $studentSection = trim((string) ($student->section ?? ''));
-        $courseSection = trim((string) ($course->section ?? ''));
-        if ($studentSection !== '' && $courseSection !== ''
-            && mb_strtolower($studentSection) !== mb_strtolower($courseSection)) {
-            return false;
-        }
-
-        return true;
+        return $this->enrollmentService->syncCourseWithGradeStudents($course, $director);
     }
 
     private function requireColegioId(User $director): int

@@ -7,6 +7,7 @@ use App\Models\Notification;
 use App\Models\Student;
 use App\Models\User;
 use App\Observers\StudentObserver;
+use App\Support\GradeLabel;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\ValidationException;
@@ -45,6 +46,7 @@ class StudentEnrollmentService
             $this->attachExisting($course, $student, $actor);
         }
 
+        $this->syncStudentToGradeCourses($student, $actor);
         $this->notifyDirectors($actor, $student);
 
         return $student->fresh();
@@ -67,6 +69,145 @@ class StudentEnrollmentService
         }
 
         return $student;
+    }
+
+    public function matchesGradeAndSection(Student $student, Course $course): bool
+    {
+        $studentGrade = GradeLabel::canonical((string) $student->grade) ?? trim((string) $student->grade);
+        $courseGrade = GradeLabel::canonical((string) $course->grade) ?? trim((string) $course->grade);
+        if ($studentGrade === '' || $courseGrade === '' || $studentGrade !== $courseGrade) {
+            return false;
+        }
+
+        $studentSection = trim((string) ($student->section ?? ''));
+        $courseSection = trim((string) ($course->section ?? ''));
+        if ($studentSection !== '' && $courseSection !== ''
+            && mb_strtolower($studentSection) !== mb_strtolower($courseSection)) {
+            return false;
+        }
+
+        return true;
+    }
+
+    public function syncStudentToGradeCourses(Student $student, ?User $actor = null): int
+    {
+        $colegioId = (int) $student->colegio_id;
+        if ($colegioId <= 0) {
+            return 0;
+        }
+
+        $linked = 0;
+        $courses = Course::query()->where('colegio_id', $colegioId)->get();
+        foreach ($courses as $course) {
+            if (! $this->matchesGradeAndSection($student, $course)) {
+                continue;
+            }
+            if ($course->students()->where('students.id', $student->id)->exists()) {
+                continue;
+            }
+            $this->attachExisting($course, $student, $actor);
+            $linked++;
+        }
+
+        return $linked;
+    }
+
+    public function syncCourseWithGradeStudents(Course $course, ?User $actor = null): int
+    {
+        $colegioId = (int) $course->colegio_id;
+        if ($colegioId <= 0) {
+            return 0;
+        }
+
+        $linked = 0;
+        $students = Student::query()->where('colegio_id', $colegioId)->get();
+        foreach ($students as $student) {
+            if (! $this->matchesGradeAndSection($student, $course)) {
+                continue;
+            }
+            if ($course->students()->where('students.id', $student->id)->exists()) {
+                continue;
+            }
+            $this->attachExisting($course, $student, $actor);
+            $linked++;
+        }
+
+        return $linked;
+    }
+
+    public function syncTeacherCourses(User $teacher): int
+    {
+        if ($teacher->role !== 'profesor' || ! $teacher->colegio_id) {
+            return 0;
+        }
+
+        $linked = 0;
+        $courses = Course::query()
+            ->where('teacher_id', $teacher->id)
+            ->where('colegio_id', $teacher->colegio_id)
+            ->get();
+        foreach ($courses as $course) {
+            $linked += $this->syncCourseWithGradeStudents($course, null);
+        }
+
+        return $linked;
+    }
+
+    /**
+     * @return array{links_created:int,already_synced:int,students_count:int,courses_count:int}
+     */
+    public function syncColegioEnrollments(int $colegioId, ?User $actor = null): array
+    {
+        $students = Student::query()->where('colegio_id', $colegioId)->get();
+        $courses = Course::query()->where('colegio_id', $colegioId)->get();
+        $linksCreated = 0;
+        $alreadySynced = 0;
+
+        foreach ($students as $student) {
+            foreach ($courses as $course) {
+                if (! $this->matchesGradeAndSection($student, $course)) {
+                    continue;
+                }
+                if ($course->students()->where('students.id', $student->id)->exists()) {
+                    $alreadySynced++;
+
+                    continue;
+                }
+                $this->attachExisting($course, $student, $actor);
+                $linksCreated++;
+            }
+        }
+
+        return [
+            'links_created' => $linksCreated,
+            'already_synced' => $alreadySynced,
+            'students_count' => $students->count(),
+            'courses_count' => $courses->count(),
+        ];
+    }
+
+    public function relinkStudentAfterGradeChange(Student $student, ?User $actor = null): int
+    {
+        $colegioId = (int) $student->colegio_id;
+        if ($colegioId <= 0) {
+            return 0;
+        }
+
+        $attached = 0;
+        $courses = Course::query()->where('colegio_id', $colegioId)->get();
+        foreach ($courses as $course) {
+            $enrolled = $course->students()->where('students.id', $student->id)->exists();
+            $should = $this->matchesGradeAndSection($student, $course);
+            if ($enrolled && ! $should) {
+                $course->students()->detach($student->id);
+            }
+            if (! $enrolled && $should) {
+                $this->attachExisting($course, $student, $actor);
+                $attached++;
+            }
+        }
+
+        return $attached;
     }
 
     private function resolveFamilyCode(User $actor, array $data): string

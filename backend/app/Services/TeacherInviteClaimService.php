@@ -9,6 +9,8 @@ use Illuminate\Support\Facades\Log;
 
 class TeacherInviteClaimService
 {
+    public function __construct(private StudentEnrollmentService $enrollment) {}
+
     /**
      * Vincula al docente con invitaciones DOC- pendientes (por código o email)
      * y asigna los cursos/alumnos que el director preparó.
@@ -94,6 +96,7 @@ class TeacherInviteClaimService
                     continue;
                 }
                 $item->claimFor($user);
+                $this->enrollment->syncTeacherCourses($user->fresh());
                 $claimed++;
                 Log::info('Invitación docente reclamada', [
                     'user_id' => $user->id,

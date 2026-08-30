@@ -11,6 +11,7 @@ use App\Models\Grade;
 use App\Models\Notification;
 use App\Models\Student;
 use App\Services\AttendanceSummaryService;
+use App\Services\StudentEnrollmentService;
 use App\Services\StudentGradeAccumulationService;
 use App\Services\TeacherInviteClaimService;
 use App\Support\GradingScale;
@@ -26,7 +27,8 @@ class HubController extends Controller
     public function __construct(
         private StudentGradeAccumulationService $accumulation,
         private AttendanceSummaryService $attendanceSummary,
-        private TeacherInviteClaimService $inviteClaim
+        private TeacherInviteClaimService $inviteClaim,
+        private StudentEnrollmentService $enrollment,
     ) {
     }
 
@@ -40,6 +42,7 @@ class HubController extends Controller
         // Reclama invitaciones DOC- pendientes (p.ej. si el onboarding no vinculó cursos)
         $this->inviteClaim->claimForUser($teacher->fresh());
         $teacher->refresh();
+        $this->enrollment->syncTeacherCourses($teacher);
 
         $quotes = [
             'La educación es el arma más poderosa que puedes usar para cambiar el mundo. — Nelson Mandela',
@@ -81,6 +84,7 @@ class HubController extends Controller
     public function apiStats(): JsonResponse
     {
         $teacher = auth()->user();
+        $this->enrollment->syncTeacherCourses($teacher);
 
         $courseIds = Course::where('teacher_id', $teacher->id)->pluck('id');
         $activityIds = Activity::whereIn('course_id', $courseIds)->pluck('id');
@@ -213,6 +217,8 @@ class HubController extends Controller
 
     public function apiCourses(): JsonResponse
     {
+        $this->enrollment->syncTeacherCourses(auth()->user());
+
         $courses = Course::where('teacher_id', auth()->id())
             ->withCount(['students', 'activities'])
             ->with(['activities' => fn ($q) => $q
@@ -257,6 +263,8 @@ class HubController extends Controller
         if ($course->teacher_id !== auth()->id()) {
             return response()->json(['error' => 'No autorizado.'], 403);
         }
+
+        $this->enrollment->syncCourseWithGradeStudents($course, null);
 
         $course->load([
             'students' => fn ($q) => $q
