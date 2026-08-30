@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Activity;
 use App\Models\Colegio;
 use App\Models\Course;
+use App\Models\DirectorAiOperationLog;
 use App\Models\Evaluation;
 use App\Models\ProductEvent;
 use App\Models\User;
@@ -256,5 +257,57 @@ class SuperAdminDashboardTest extends TestCase
             ->assertSee('Colegio Beta')
             ->assertSee('Crear docente')
             ->assertSee('Consultó la lista de alumnos');
+    }
+
+    public function test_school_page_groups_subjects_and_translates_director_intents(): void
+    {
+        $admin = User::factory()->create(['role' => 'super_admin', 'onboarding_completed' => true]);
+        $director = User::factory()->create(['role' => 'director', 'onboarding_completed' => true]);
+        $colegio = Colegio::create([
+            'name' => 'Colegio QA',
+            'invite_code' => 'QA-0001',
+            'codes_pin' => Colegio::hashPinFromInvite('QA-0001'),
+            'director_user_id' => $director->id,
+        ]);
+        $director->update(['colegio_id' => $colegio->id]);
+
+        foreach (['1ro', '2do', '3ro'] as $i => $grade) {
+            Course::create([
+                'colegio_id' => $colegio->id,
+                'subject_name' => 'MATEMATICA',
+                'grade' => $grade,
+                'school_year' => '2026-2027',
+                'invite_code' => 'QA-MAT-'.$i,
+            ]);
+        }
+
+        DirectorAiOperationLog::create([
+            'director_user_id' => $director->id,
+            'colegio_id' => $colegio->id,
+            'intent' => 'assign_teacher',
+            'status' => 'verified',
+        ]);
+        DirectorAiOperationLog::create([
+            'director_user_id' => $director->id,
+            'colegio_id' => $colegio->id,
+            'intent' => 'create_students_batch',
+            'status' => 'pending_confirmation',
+        ]);
+
+        $this->actingAs($admin)
+            ->get('/super-admin/colegios/'.$colegio->id)
+            ->assertOk()
+            ->assertSee('Matematica')
+            ->assertSee('3 cursos')
+            ->assertSee('1ro')
+            ->assertSee('2do')
+            ->assertSee('3ro')
+            ->assertSee('Asignar docente a un curso')
+            ->assertSee('Cargar varios alumnos')
+            ->assertSee('Esperando confirmación')
+            ->assertSee('Hecho')
+            ->assertDontSee('assign_teacher')
+            ->assertDontSee('create_students_batch')
+            ->assertDontSee('pending_confirmation');
     }
 }

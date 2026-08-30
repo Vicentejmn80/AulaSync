@@ -13,6 +13,7 @@ use App\Models\ProductEvent;
 use App\Models\Student;
 use App\Models\User;
 use App\Support\DatabaseBoolean;
+use App\Support\GradeLabel;
 use App\Support\SuperAdminCopy;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
@@ -337,11 +338,30 @@ class SuperAdminAnalyticsService
                 ->orderByDesc('id')
                 ->limit(15)
                 ->get(['id', 'original_name', 'kind', 'status', 'created_at']),
-            'courses' => Course::query()
+            'courses' => $courses = Course::query()
                 ->where('colegio_id', $colegio->id)
                 ->orderBy('grade')
                 ->orderBy('subject_name')
                 ->get(['id', 'subject_name', 'grade', 'section', 'teacher_id']),
+            'subjects' => $courses
+                ->groupBy(fn (Course $course) => mb_strtolower(trim((string) $course->subject_name)))
+                ->map(function (Collection $group) {
+                    $grades = $group->pluck('grade')
+                        ->map(fn ($grade) => GradeLabel::canonical((string) $grade) ?: trim((string) $grade))
+                        ->filter()
+                        ->unique()
+                        ->sortBy(fn ($grade) => GradeLabel::number((string) $grade) ?? 99)
+                        ->values();
+
+                    return [
+                        'name' => $group->first()?->subject_name,
+                        'grades' => $grades,
+                        'course_count' => $group->count(),
+                        'courses' => $group->values(),
+                    ];
+                })
+                ->sortBy(fn (array $subject) => mb_strtolower((string) $subject['name']))
+                ->values(),
             'teachers' => User::query()
                 ->where('colegio_id', $colegio->id)
                 ->where('role', 'profesor')

@@ -17,6 +17,10 @@ class SuperAdminCopyTest extends TestCase
         $this->assertSame('Docente', SuperAdminCopy::role('profesor'));
         $this->assertSame('Plantel y matrícula', SuperAdminCopy::category('roster'));
         $this->assertSame('Estable', SuperAdminCopy::status('estable'));
+        $this->assertSame('Asignar docente a un curso', SuperAdminCopy::action('assign_teacher'));
+        $this->assertSame('Cargar varios alumnos', SuperAdminCopy::action('create_students_batch'));
+        $this->assertSame('Esperando confirmación', SuperAdminCopy::status('pending_confirmation'));
+        $this->assertSame('Hecho', SuperAdminCopy::status('verified'));
         $this->assertSame('25/08/2026', SuperAdminCopy::day('2026-08-25'));
     }
 }
