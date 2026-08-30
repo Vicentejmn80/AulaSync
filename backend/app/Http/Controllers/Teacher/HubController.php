@@ -14,6 +14,7 @@ use App\Services\AttendanceSummaryService;
 use App\Services\StudentEnrollmentService;
 use App\Services\StudentGradeAccumulationService;
 use App\Services\TeacherInviteClaimService;
+use App\Support\GradeLabel;
 use App\Support\GradingScale;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -129,6 +130,13 @@ class HubController extends Controller
             ])
             ->values();
 
+        $todayActivities = Activity::whereIn('course_id', $courseIds)
+            ->whereDate('due_date', now()->toDateString())
+            ->with('course:id,subject_name,grade,section')
+            ->orderBy('course_id')
+            ->orderBy('title')
+            ->get();
+
         $nextActivity = $upcomingActivities->first();
 
         // Climate: computed from recent grade average
@@ -163,6 +171,7 @@ class HubController extends Controller
             'grade_trend'          => $gradeTrend,
             'next_activity'        => $nextActivity,
             'upcoming_activities'  => $upcomingActivities,
+            'today_grade_list'     => $this->buildTodayGradeList($todayActivities),
             'attendance'           => $this->attendanceSnapshot($teacher->id, $courseIds),
         ]);
     }
@@ -441,6 +450,8 @@ class HubController extends Controller
     {
         $teacher     = auth()->user();
         $monthStr    = $request->query('month', now()->format('Y-m'));
+        $requestedGrade = trim((string) $request->query('grade', 'all'));
+        $selectedGrade = $requestedGrade !== '' ? $requestedGrade : 'all';
 
         try {
             $start = Carbon::parse($monthStr . '-01')->startOfMonth();
@@ -449,7 +460,27 @@ class HubController extends Controller
         }
         $end = $start->copy()->endOfMonth();
 
-        $courseIds = Course::where('teacher_id', $teacher->id)->pluck('id');
+        $teacherCourses = Course::where('teacher_id', $teacher->id)
+            ->get(['id', 'grade']);
+        $gradeOptions = $teacherCourses->pluck('grade')
+            ->filter()
+            ->map(fn ($grade) => GradeLabel::canonical((string) $grade) ?? trim((string) $grade))
+            ->unique()
+            ->values()
+            ->all();
+        $courseIds = $teacherCourses
+            ->filter(function (Course $course) use ($selectedGrade) {
+                if ($selectedGrade === 'all') {
+                    return true;
+                }
+
+                $courseGrade = GradeLabel::canonical((string) $course->grade) ?? trim((string) $course->grade);
+                $filterGrade = GradeLabel::canonical($selectedGrade) ?? trim($selectedGrade);
+
+                return $courseGrade !== '' && $courseGrade === $filterGrade;
+            })
+            ->pluck('id')
+            ->values();
 
         // Course color palette (cycles)
         $palette = ['#7c3aed','#2563eb','#059669','#d97706','#dc2626','#0891b2','#7c3aed'];
@@ -467,13 +498,34 @@ class HubController extends Controller
 
         $activitiesByDay = $query->get()
             ->groupBy(fn ($a) => Carbon::parse($a->due_date)->format('Y-m-d'))
-            ->map(fn ($group) => $group->map(fn ($a) => $this->serializeHubActivity($a, null, $courseColors)));
+            ->map(function ($group) use ($courseColors) {
+                $ordered = $group->sortBy(function ($activity) {
+                    $course = $activity->relationLoaded('course') ? $activity->course : null;
+                    $grade = GradeLabel::canonical((string) ($course?->grade ?? '')) ?? trim((string) ($course?->grade ?? ''));
+                    $name = mb_strtolower(trim((string) ($course?->subject_name ?? '')));
+                    $title = mb_strtolower(trim((string) $activity->title));
+
+                    return sprintf('%s|%s|%s', $grade, $name, $title);
+                })->values();
+
+                return $ordered->values()->map(function ($activity, $index) use ($courseColors) {
+                    $payload = $this->serializeHubActivity($activity, null, $courseColors);
+                    $slot = $this->calendarTimeSlotForIndex((int) $index);
+                    $payload['time_label'] = $slot['start'];
+                    $payload['time_range'] = $slot['start'].'-'.$slot['end'];
+                    $payload['slot_index'] = (int) $index;
+
+                    return $payload;
+                });
+            });
 
         return response()->json([
             'month'             => $start->format('Y-m'),
             'month_name'        => $this->monthNameEs($start->month) . ' ' . $start->year,
             'days_in_month'     => $start->daysInMonth,
             'first_weekday'     => (int) $start->format('w'), // 0=Sun … 6=Sat
+            'selected_grade'    => $selectedGrade,
+            'grade_options'     => $gradeOptions,
             'activities_by_day' => $activitiesByDay,
             'total_activities'  => $activitiesByDay->flatten(1)->count(),
         ]);
@@ -570,5 +622,64 @@ class HubController extends Controller
             $avg >= 10 => ['label' => 'Atención',     'color' => 'amber',   'icon' => '⚠️', 'pct' => round(($avg / 20) * 100)],
             default    => ['label' => 'Intervención', 'color' => 'red',     'icon' => '🚨', 'pct' => round(($avg / 20) * 100)],
         };
+    }
+
+    private function buildTodayGradeList($activities): array
+    {
+        if ($activities->isEmpty()) {
+            return [];
+        }
+
+        $indexed = $activities->values()->map(function ($activity, $index) {
+            $slot = $this->calendarTimeSlotForIndex((int) $index);
+            $course = $activity->relationLoaded('course') ? $activity->course : null;
+            $grade = GradeLabel::canonical((string) ($course?->grade ?? '')) ?? trim((string) ($course?->grade ?? ''));
+            $courseLabel = trim(($course?->subject_name ?? '').' '.($course?->grade ?? '').(($course?->section ?? '') !== '' ? ' / '.$course->section : ''));
+
+            return [
+                'id' => (int) $activity->id,
+                'title' => (string) $activity->title,
+                'type' => (string) ($activity->type ?? 'actividad'),
+                'is_homework' => (bool) $activity->is_homework,
+                'grade' => $grade,
+                'course_name' => $courseLabel,
+                'time_label' => $slot['start'],
+                'time_range' => $slot['start'].'-'.$slot['end'],
+                'slot_index' => (int) $index,
+            ];
+        });
+
+        return $indexed
+            ->groupBy('grade')
+            ->map(function ($group, $grade) {
+                return [
+                    'grade' => $grade,
+                    'count' => $group->count(),
+                    'items' => $group->sortBy('slot_index')->values()->all(),
+                ];
+            })
+            ->sortBy('grade')
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return array{start:string,end:string}
+     */
+    private function calendarTimeSlotForIndex(int $index): array
+    {
+        $safeIndex = max(0, $index);
+        $startMinutes = (7 * 60) + ($safeIndex * 60);
+        $endMinutes = $startMinutes + 50;
+
+        $startHour = intdiv($startMinutes, 60) % 24;
+        $startMin = $startMinutes % 60;
+        $endHour = intdiv($endMinutes, 60) % 24;
+        $endMin = $endMinutes % 60;
+
+        return [
+            'start' => sprintf('%02d:%02d', $startHour, $startMin),
+            'end' => sprintf('%02d:%02d', $endHour, $endMin),
+        ];
     }
 }

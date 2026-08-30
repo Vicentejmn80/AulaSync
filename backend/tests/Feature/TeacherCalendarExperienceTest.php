@@ -1,0 +1,141 @@
+<?php
+
+namespace Tests\Feature;
+
+use App\Models\Activity;
+use App\Models\Colegio;
+use App\Models\Course;
+use App\Models\User;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
+use Tests\TestCase;
+
+class TeacherCalendarExperienceTest extends TestCase
+{
+    use RefreshDatabase;
+
+    public function test_calendar_can_be_filtered_by_grade_and_returns_time_slots(): void
+    {
+        [$teacher, $course3ro, $course6to] = $this->teacherWithTwoCourses();
+
+        Activity::create([
+            'teacher_id' => $teacher->id,
+            'course_id' => $course3ro->id,
+            'title' => 'Fotosíntesis y cloroplastos',
+            'due_date' => '2026-09-08',
+            'type' => 'clase',
+            'max_score' => 20,
+        ]);
+        Activity::create([
+            'teacher_id' => $teacher->id,
+            'course_id' => $course6to->id,
+            'title' => 'Respiración celular',
+            'due_date' => '2026-09-08',
+            'type' => 'clase',
+            'max_score' => 20,
+        ]);
+
+        $response = $this->actingAs($teacher)
+            ->getJson(route('teacher.api.calendar', ['month' => '2026-09', 'grade' => '3ro']));
+
+        $response->assertOk()
+            ->assertJsonPath('selected_grade', '3ro')
+            ->assertJsonPath('total_activities', 1);
+
+        $this->assertContains('3ro', $response->json('grade_options'));
+        $this->assertContains('6to', $response->json('grade_options'));
+        $dayList = $response->json('activities_by_day.2026-09-08');
+        $this->assertCount(1, $dayList);
+        $this->assertSame('3ro', $dayList[0]['grade']);
+        $this->assertSame('07:00', $dayList[0]['time_label']);
+        $this->assertSame('07:00-07:50', $dayList[0]['time_range']);
+    }
+
+    public function test_welcome_stats_include_today_list_grouped_by_grade(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-09-16 09:30:00'));
+        try {
+            [$teacher, $course3ro, $course6to] = $this->teacherWithTwoCourses();
+
+            Activity::create([
+                'teacher_id' => $teacher->id,
+                'course_id' => $course3ro->id,
+                'title' => 'Clase de apertura: fotosíntesis',
+                'due_date' => '2026-09-16',
+                'type' => 'clase',
+                'max_score' => 20,
+            ]);
+            Activity::create([
+                'teacher_id' => $teacher->id,
+                'course_id' => $course3ro->id,
+                'title' => 'Laboratorio de hojas',
+                'due_date' => '2026-09-16',
+                'type' => 'actividad',
+                'max_score' => 20,
+            ]);
+            Activity::create([
+                'teacher_id' => $teacher->id,
+                'course_id' => $course6to->id,
+                'title' => 'Evaluación breve',
+                'due_date' => '2026-09-16',
+                'type' => 'actividad',
+                'max_score' => 20,
+            ]);
+
+            $stats = $this->actingAs($teacher)->getJson(route('teacher.api.stats'));
+            $stats->assertOk();
+
+            $today = $stats->json('today_grade_list');
+            $this->assertIsArray($today);
+            $this->assertCount(2, $today);
+            $this->assertSame('3ro', $today[0]['grade']);
+            $this->assertSame(2, $today[0]['count']);
+            $this->assertSame('6to', $today[1]['grade']);
+            $this->assertSame('07:00-07:50', $today[0]['items'][0]['time_range']);
+            $this->assertSame('08:00-08:50', $today[0]['items'][1]['time_range']);
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
+    /**
+     * @return array{0:User,1:Course,2:Course}
+     */
+    private function teacherWithTwoCourses(): array
+    {
+        $colegio = Colegio::create([
+            'name' => 'Colegio Agenda',
+            'invite_code' => 'AGD-1001',
+            'codes_pin' => Colegio::hashPinFromInvite('AGD-1001'),
+        ]);
+
+        $teacher = User::factory()->create([
+            'role' => 'profesor',
+            'colegio_id' => $colegio->id,
+            'onboarding_completed' => true,
+            'name' => 'Docente Agenda',
+        ]);
+
+        $course3ro = Course::create([
+            'colegio_id' => $colegio->id,
+            'teacher_id' => $teacher->id,
+            'subject_name' => 'Biología',
+            'grade' => '3ro',
+            'section' => 'A',
+            'school_year' => '2026-2027',
+            'invite_code' => 'BIO-3A',
+        ]);
+        $course6to = Course::create([
+            'colegio_id' => $colegio->id,
+            'teacher_id' => $teacher->id,
+            'subject_name' => 'Biología',
+            'grade' => '6to',
+            'section' => 'A',
+            'school_year' => '2026-2027',
+            'invite_code' => 'BIO-6A',
+        ]);
+
+        return [$teacher, $course3ro, $course6to];
+    }
+}
+

@@ -1369,6 +1369,88 @@
             overflow-y: auto;
         }
 
+        .today-grade-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            max-height: 220px;
+            overflow-y: auto;
+        }
+
+        .today-grade-group {
+            border: 1px solid var(--nova-glass-border);
+            border-radius: 14px;
+            background: var(--nova-glass);
+            padding: 10px;
+        }
+
+        .today-grade-group header {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            margin-bottom: 8px;
+        }
+
+        .today-grade-group header strong {
+            font-size: 13px;
+            color: var(--text-primary);
+        }
+
+        .today-grade-group header span {
+            font-size: 11px;
+            color: var(--text-tertiary);
+        }
+
+        .today-grade-items {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .today-grade-item {
+            border: 0;
+            background: transparent;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            cursor: pointer;
+            border-radius: 10px;
+            text-align: left;
+            color: inherit;
+            padding: 6px;
+        }
+
+        .today-grade-item:hover {
+            background: rgba(124, 58, 237, 0.08);
+        }
+
+        .today-grade-time {
+            font-size: 11px;
+            font-weight: 700;
+            color: #7C3AED;
+            min-width: 82px;
+        }
+
+        .today-grade-copy {
+            min-width: 0;
+            flex: 1;
+        }
+
+        .today-grade-copy p {
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--text-primary);
+            margin: 0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .today-grade-copy small {
+            font-size: 11px;
+            color: var(--text-tertiary);
+        }
+
         .upcoming-list::-webkit-scrollbar { width: 4px; }
         .upcoming-list::-webkit-scrollbar-thumb {
             background: var(--nova-glass-border);
@@ -3031,6 +3113,32 @@
             margin-left: 15px;
         }
 
+        .calendar-grade-filters {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            flex-wrap: wrap;
+            margin-left: 4px;
+        }
+
+        .calendar-grade-chip {
+            border: 1px solid var(--nova-glass-border);
+            background: var(--bg-secondary);
+            color: var(--text-secondary);
+            font-size: 11px;
+            font-weight: 700;
+            padding: 6px 10px;
+            border-radius: 999px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+
+        .calendar-grade-chip.active {
+            background: rgba(124, 58, 237, 0.14);
+            border-color: rgba(124, 58, 237, 0.38);
+            color: #7C3AED;
+        }
+
         .calendar-grid {
             background: var(--bg-card);
             backdrop-filter: blur(10px);
@@ -3127,6 +3235,29 @@
             border-radius: 999px;
         }
 
+        .day-grade-summary {
+            margin-top: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .day-grade-pill {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 10px;
+            border: 1px solid var(--nova-glass-border);
+            background: var(--nova-glass);
+            border-radius: 10px;
+            padding: 3px 6px;
+            color: var(--text-secondary);
+        }
+
+        .day-grade-pill strong {
+            color: var(--text-primary);
+        }
+
         .cal-event {
             font-size: 10px;
             padding: 4px 6px;
@@ -3167,6 +3298,82 @@
             color: var(--nova-cyan);
             cursor: pointer;
             margin-top: 2px;
+        }
+
+        .day-agenda {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .day-agenda-row {
+            display: grid;
+            grid-template-columns: 64px 1fr;
+            gap: 10px;
+            align-items: start;
+        }
+
+        .day-agenda-hour {
+            font-size: 11px;
+            font-weight: 800;
+            color: var(--text-tertiary);
+            padding-top: 10px;
+        }
+
+        .day-agenda-cards {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .day-agenda-empty {
+            font-size: 12px;
+            color: var(--text-tertiary);
+            border: 1px dashed var(--nova-glass-border);
+            border-radius: 12px;
+            padding: 8px 10px;
+        }
+
+        .day-agenda-card {
+            border: 1px solid var(--nova-glass-border);
+            border-radius: 14px;
+            background: var(--nova-glass);
+            padding: 10px 12px;
+            width: 100%;
+            text-align: left;
+            color: inherit;
+            cursor: pointer;
+        }
+
+        .day-agenda-card:hover {
+            border-color: rgba(124, 58, 237, 0.4);
+            transform: translateY(-1px);
+        }
+
+        .day-agenda-card-top {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 4px;
+        }
+
+        .day-agenda-time {
+            font-size: 11px;
+            font-weight: 700;
+            color: #7C3AED;
+        }
+
+        .day-agenda-title {
+            margin: 0 0 2px;
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+
+        .day-agenda-meta {
+            margin: 0;
+            font-size: 11px;
+            color: var(--text-tertiary);
         }
 
         .day-dots {
@@ -4147,6 +4354,39 @@
                 </template>
 
                 <div class="ios-board">
+                    <div class="ios-panel ios-panel--today-grade">
+                        <div class="ios-panel-head">
+                            <h3>Agenda de hoy por grado</h3>
+                            <span class="panel-week-chip">Ordenada por hora</span>
+                        </div>
+                        <template x-if="(stats?.today_grade_list || []).length">
+                            <div class="today-grade-list">
+                                <template x-for="bucket in stats.today_grade_list" :key="'today-'+bucket.grade">
+                                    <section class="today-grade-group">
+                                        <header>
+                                            <strong x-text="bucket.grade"></strong>
+                                            <span x-text="`${bucket.count} bloque${bucket.count === 1 ? '' : 's'}`"></span>
+                                        </header>
+                                        <div class="today-grade-items">
+                                            <template x-for="item in bucket.items" :key="'item-'+item.id">
+                                                <button type="button" class="today-grade-item" @click="openActivityModalFromExternal({ id: item.id })">
+                                                    <span class="today-grade-time" x-text="item.time_range || item.time_label || 'Sin hora'"></span>
+                                                    <div class="today-grade-copy">
+                                                        <p x-text="item.title"></p>
+                                                        <small x-text="item.course_name"></small>
+                                                    </div>
+                                                </button>
+                                            </template>
+                                        </div>
+                                    </section>
+                                </template>
+                            </div>
+                        </template>
+                        <template x-if="!(stats?.today_grade_list || []).length">
+                            <p class="upcoming-empty">No hay actividades para hoy. Puedes planificar desde el calendario.</p>
+                        </template>
+                    </div>
+
                     <div class="ios-panel ios-panel--upcoming">
                         <div class="ios-panel-head">
                             <h3>Próximas actividades</h3>
@@ -4438,6 +4678,15 @@
                         <span class="calendar-stats">
                             <span x-text="calendarData?.total_activities ?? 0"></span> entregas
                         </span>
+                        <div class="calendar-grade-filters">
+                            <template x-for="grade in calendarGradeOptions()" :key="'grade-'+grade">
+                                <button type="button"
+                                        class="calendar-grade-chip"
+                                        :class="{ 'active': calendarGradeFilter === grade }"
+                                        @click="setCalendarGradeFilter(grade)"
+                                        x-text="grade === 'all' ? 'Todos' : grade"></button>
+                            </template>
+                        </div>
                         <button type="button" class="pedagogy-btn" title="Cambiar modelo pedagógico de planificación"
                                 @click="window.dispatchEvent(new CustomEvent('nova-lesson-template-picker'))">
                             <span class="pedagogy-emoji" aria-hidden="true">📘</span>
@@ -4477,31 +4726,39 @@
                                     <template x-if="cell !== null">
                                         <div style="display:flex;flex-direction:column;min-height:0;height:100%;">
                                             <span class="day-number" x-text="cell"></span>
-                                            <div class="day-dots" x-show="activitiesForDay(cell).length">
-                                                <template x-for="(act, di) in activitiesForDay(cell).slice(0, 3)" :key="'d'+act.id+di">
-                                                    <span class="day-dot"
-                                                          :class="act.type === 'clase' ? 'clase' : (act.is_homework ? 'homework' : 'actividad')"></span>
-                                                </template>
-                                                <span class="day-more-count" x-show="activitiesForDay(cell).length > 3" x-text="'+' + (activitiesForDay(cell).length - 3)"></span>
-                                            </div>
-                                            <div class="day-content">
-                                                <template x-for="act in activitiesForDay(cell).slice(0, 3)" :key="act.id">
-                                                    <button @click.stop="setActivityContext(act); openActivityModal(act)" 
-                                                             class="cal-event"
-                                                             :class="[
-                                                                 act.type === 'clase' ? 'clase' : (act.is_homework ? 'homework' : 'actividad'),
-                                                                 { 'has-director-notes': act.director_notes }
-                                                             ]"
-                                                             :title="act.title">
-                                                        <span x-text="act.title.length > 15 ? act.title.substring(0,12)+'...' : act.title"></span>
-                                                    </button>
-                                                </template>
-                                                <button type="button"
-                                                        class="more-events"
-                                                        x-show="activitiesForDay(cell).length > 3"
-                                                        @click.stop="openDayModal(cell)"
-                                                        x-text="'+' + (activitiesForDay(cell).length - 3) + ' más'"></button>
-                                            </div>
+                                            <template x-if="calendarGradeFilter === 'all'">
+                                                <div class="day-grade-summary">
+                                                    <template x-for="bucket in dayGradeBuckets(cell).slice(0, 3)" :key="'bucket-'+bucket.grade">
+                                                        <div class="day-grade-pill">
+                                                            <span x-text="bucket.grade"></span>
+                                                            <strong x-text="bucket.count"></strong>
+                                                        </div>
+                                                    </template>
+                                                    <span class="day-more-count"
+                                                          x-show="dayGradeBuckets(cell).length > 3"
+                                                          x-text="'+' + (dayGradeBuckets(cell).length - 3) + ' grados'"></span>
+                                                </div>
+                                            </template>
+                                            <template x-if="calendarGradeFilter !== 'all'">
+                                                <div class="day-content">
+                                                    <template x-for="act in activitiesForDay(cell).slice(0, 2)" :key="act.id">
+                                                        <button @click.stop="setActivityContext(act); openActivityModal(act)"
+                                                                class="cal-event"
+                                                                :class="[
+                                                                    act.type === 'clase' ? 'clase' : (act.is_homework ? 'homework' : 'actividad'),
+                                                                    { 'has-director-notes': act.director_notes }
+                                                                ]"
+                                                                :title="act.title">
+                                                            <span x-text="`${act.time_label || ''} · ${act.title}`"></span>
+                                                        </button>
+                                                    </template>
+                                                    <button type="button"
+                                                            class="more-events"
+                                                            x-show="activitiesForDay(cell).length > 2"
+                                                            @click.stop="openDayModal(cell)"
+                                                            x-text="'+' + (activitiesForDay(cell).length - 2) + ' más'"></button>
+                                                </div>
+                                            </template>
                                         </div>
                                     </template>
                                 </div>
@@ -5192,10 +5449,10 @@
 
     {{-- Day Modal --}}
     <div x-show="dayModal" x-cloak class="modal-overlay" @click.self="dayModal = null" @keydown.escape.window="dayModal = null">
-        <div class="modal-nova" style="max-width: 440px;">
+        <div class="modal-nova" style="max-width: 860px;">
             <div class="modal-header" style="background: var(--nova-gradient);">
                 <div>
-                    <p style="margin:0 0 4px;font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:rgba(255,255,255,.75)">Pendientes del día</p>
+                    <p style="margin:0 0 4px;font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:rgba(255,255,255,.75)">Agenda del día</p>
                     <h3 style="color: white; margin: 0; text-transform: capitalize;" x-text="dayModal?.dateLabel || ('Día ' + dayModal?.day)"></h3>
                 </div>
                 <button @click="dayModal = null" class="modal-close" style="background: rgba(255,255,255,0.2); color: white;">
@@ -5206,20 +5463,28 @@
                 <p x-show="!(dayModal?.activities || []).length" style="color: var(--text-secondary); font-size: 14px; padding: 12px 0;">
                     No hay clases, tareas ni evaluaciones este día.
                 </p>
-                <div style="display: flex; flex-direction: column; gap: 10px;">
-                    <template x-for="act in (dayModal?.activities ?? [])" :key="act.id">
-                        <button type="button"
-                                @click="setActivityContext(act); openActivityModal(act); dayModal = null"
-                                style="display: flex; align-items: center; gap: 12px; padding: 12px; background: var(--nova-glass); border-radius: 16px; border: 1px solid var(--nova-glass-border); text-align: left; cursor: pointer; width: 100%; color: inherit;">
-                            <div style="width: 38px; height: 38px; border-radius: 12px; background: var(--nova-gradient); display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
-                                <i class="fa-solid" :class="act.type === 'clase' ? 'fa-chalkboard-user' : (act.is_homework ? 'fa-book' : 'fa-pen-to-square')" style="color: white; font-size: 14px;"></i>
+                <div class="day-agenda">
+                    <template x-for="row in (dayModal?.agendaRows ?? [])" :key="'row-'+row.hour">
+                        <div class="day-agenda-row">
+                            <div class="day-agenda-hour" x-text="row.hour"></div>
+                            <div class="day-agenda-cards">
+                                <template x-if="!(row.activities || []).length">
+                                    <div class="day-agenda-empty">Sin actividad programada</div>
+                                </template>
+                                <template x-for="act in (row.activities || [])" :key="'agenda-'+act.id">
+                                    <button type="button"
+                                            @click="setActivityContext(act); openActivityModal(act); dayModal = null"
+                                            class="day-agenda-card">
+                                        <div class="day-agenda-card-top">
+                                            <span class="day-agenda-time" x-text="act.time_range || act.time_label || 'Sin hora'"></span>
+                                            <span class="status-pill" style="margin-left:auto;" x-text="act.grade || 'Sin grado'"></span>
+                                        </div>
+                                        <p class="day-agenda-title" x-text="act.title"></p>
+                                        <p class="day-agenda-meta" x-text="`${act.course_name || ''} · ${act.type || 'actividad'}`"></p>
+                                    </button>
+                                </template>
                             </div>
-                            <div style="flex: 1; min-width: 0;">
-                                <p style="font-weight: 700; color: var(--text-primary); margin-bottom: 3px;" x-text="act.title"></p>
-                                <p style="font-size: 12px; color: var(--text-tertiary);" x-text="(act.course_name || '') + (act.type ? ' · ' + act.type : '')"></p>
-                            </div>
-                            <i class="fa-solid fa-chevron-right" style="color: var(--nova-violet); font-size: 12px;"></i>
-                        </button>
+                        </div>
                     </template>
                 </div>
             </div>
@@ -5357,6 +5622,7 @@ function teacherHub() {
         planBlockFilter: {{ $initialPlanBlock ?? 'null' }},
         calendarData:    null,
         calendarMonth:   null,
+        calendarGradeFilter: 'all',
         hiddenWidgets:   [],
         activityModal:   null,
         deleteConfirm:   { open: false, id: null, title: '', deleting: false },
@@ -6089,25 +6355,47 @@ function teacherHub() {
             }, 250);
         },
 
-        async loadCalendar(month = null) {
+        async loadCalendar(month = null, grade = null) {
             this.view          = 'calendar';
             this.canvasLoading = true;
             this.courseData    = null;
             this.currentCourseId = null;
             this.calendarMonth = month || new Date().toISOString().slice(0, 7);
-            this.setNovaContext({ type: 'calendar', month: this.calendarMonth });
+            if (grade !== null) {
+                this.calendarGradeFilter = grade || 'all';
+            }
+            this.setNovaContext({ type: 'calendar', month: this.calendarMonth, grade: this.calendarGradeFilter });
 
             try {
-                const res = await fetch(`/teacher/api/calendar?month=${this.calendarMonth}`, {
+                const params = new URLSearchParams({
+                    month: this.calendarMonth,
+                    grade: this.calendarGradeFilter || 'all',
+                });
+                const res = await fetch(`/teacher/api/calendar?${params.toString()}`, {
                     headers: { 'Accept': 'application/json' }
                 });
                 this.calendarData = await res.json();
+                if (this.calendarData?.selected_grade) {
+                    this.calendarGradeFilter = this.calendarData.selected_grade;
+                }
             } catch (e) {
                 console.warn('Calendar fetch failed', e);
             } finally {
                 this.canvasLoading = false;
                 this.closeSidebarMobile();
             }
+        },
+
+        calendarGradeOptions() {
+            const options = this.calendarData?.grade_options || [];
+            return ['all', ...options];
+        },
+
+        setCalendarGradeFilter(grade) {
+            const target = grade || 'all';
+            if (this.calendarGradeFilter === target && this.view === 'calendar') return;
+            this.calendarGradeFilter = target;
+            this.loadCalendar(this.calendarMonth, target);
         },
 
         requestDeleteActivity(id, title) {
@@ -6867,6 +7155,7 @@ function teacherHub() {
                 day,
                 dateLabel: this.calendarDayLabel(day),
                 activities: acts,
+                agendaRows: this.dayAgendaRows(day),
             };
         },
 
@@ -6908,7 +7197,49 @@ function teacherHub() {
         activitiesForDay(day) {
             if (!day || !this.calendarData) return [];
             const key = this.calendarData.month + '-' + String(day).padStart(2, '0');
-            return this.calendarData.activities_by_day?.[key] ?? [];
+            const list = this.calendarData.activities_by_day?.[key] ?? [];
+            return [...list].sort((a, b) => {
+                const ai = Number(a.slot_index ?? 0);
+                const bi = Number(b.slot_index ?? 0);
+                return ai - bi;
+            });
+        },
+
+        dayGradeBuckets(day) {
+            const counts = {};
+            for (const act of this.activitiesForDay(day)) {
+                const grade = String(act.grade || 'Sin grado');
+                counts[grade] = (counts[grade] || 0) + 1;
+            }
+            return Object.entries(counts)
+                .map(([grade, count]) => ({ grade, count }))
+                .sort((a, b) => a.grade.localeCompare(b.grade, 'es'));
+        },
+
+        dayAgendaRows(day) {
+            const acts = this.activitiesForDay(day);
+            const buckets = {};
+            for (const act of acts) {
+                const key = String(act.time_label || 'Sin hora');
+                if (!buckets[key]) buckets[key] = [];
+                buckets[key].push(act);
+            }
+
+            const rows = [];
+            for (let hour = 7; hour <= 19; hour++) {
+                const key = `${String(hour).padStart(2, '0')}:00`;
+                rows.push({
+                    hour: key,
+                    activities: buckets[key] || [],
+                });
+            }
+
+            const extra = Object.entries(buckets)
+                .filter(([hour]) => !rows.some(row => row.hour === hour))
+                .map(([hour, list]) => ({ hour, activities: list }))
+                .sort((a, b) => a.hour.localeCompare(b.hour));
+
+            return [...rows, ...extra];
         },
 
         setNovaContext(ctx = null) {
