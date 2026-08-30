@@ -47,6 +47,7 @@ class TeacherCalendarExperienceTest extends TestCase
         $dayList = $response->json('activities_by_day.2026-09-08');
         $this->assertCount(1, $dayList);
         $this->assertSame('3ro', $dayList[0]['grade']);
+        $this->assertSame('#7C3AED', $dayList[0]['grade_color']);
         $this->assertSame('07:00', $dayList[0]['time_label']);
         $this->assertSame('07:00-07:50', $dayList[0]['time_range']);
     }
@@ -93,6 +94,58 @@ class TeacherCalendarExperienceTest extends TestCase
             $this->assertSame('6to', $today[1]['grade']);
             $this->assertSame('07:00-07:50', $today[0]['items'][0]['time_range']);
             $this->assertSame('08:00-08:50', $today[0]['items'][1]['time_range']);
+            $this->assertSame('#7C3AED', $today[0]['items'][0]['grade_color']);
+
+            $next = $stats->json('next_activity');
+            $this->assertSame('Clase de apertura: fotosíntesis', $next['title']);
+            $this->assertSame('3ro', $next['grade']);
+            $this->assertSame('#7C3AED', $next['grade_color']);
+            $this->assertSame('07:00', $next['time_label']);
+            $this->assertSame('Clase', $next['type_label']);
+
+            $queue = $stats->json('upcoming_queue');
+            $this->assertCount(3, $queue);
+            $this->assertSame('Evaluación breve', $queue[2]['title']);
+            $this->assertSame('#0891B2', $queue[2]['grade_color']);
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
+    public function test_upcoming_queue_returns_the_next_five_activities(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-08-30 07:15:00'));
+        try {
+            [$teacher, $course3ro, $course6to] = $this->teacherWithTwoCourses();
+
+            foreach ([
+                ['Fotosíntesis: conceptos clave', $course3ro, '2026-08-31', 'clase'],
+                ['Laboratorio de hojas', $course3ro, '2026-09-01', 'actividad'],
+                ['Quiz de cloroplastos', $course6to, '2026-09-02', 'actividad'],
+                ['Célula animal', $course3ro, '2026-09-03', 'clase'],
+                ['Examen de unidad', $course6to, '2026-09-04', 'actividad'],
+                ['Salida de campo', $course3ro, '2026-09-05', 'clase'],
+            ] as [$title, $course, $date, $type]) {
+                Activity::create([
+                    'teacher_id' => $teacher->id,
+                    'course_id' => $course->id,
+                    'title' => $title,
+                    'due_date' => $date,
+                    'type' => $type,
+                    'max_score' => 20,
+                ]);
+            }
+
+            $stats = $this->actingAs($teacher)->getJson(route('teacher.api.stats'));
+            $stats->assertOk();
+
+            $queue = $stats->json('upcoming_queue');
+            $this->assertCount(5, $queue);
+            $this->assertSame('Fotosíntesis: conceptos clave', $stats->json('next_activity.title'));
+            $this->assertSame('3ro', $stats->json('next_activity.grade'));
+            $this->assertSame('07:00', $stats->json('next_activity.time_label'));
+            $this->assertSame(['Fotosíntesis: conceptos clave', 'Laboratorio de hojas', 'Quiz de cloroplastos', 'Célula animal', 'Examen de unidad'], array_column($queue, 'title'));
+            $this->assertNotContains('Salida de campo', array_column($queue, 'title'));
         } finally {
             Carbon::setTestNow();
         }

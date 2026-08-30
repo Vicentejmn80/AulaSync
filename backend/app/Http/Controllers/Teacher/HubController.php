@@ -110,25 +110,17 @@ class HubController extends Controller
             ->whereBetween('due_date', [now()->startOfWeek(), now()->endOfWeek()])
             ->count();
 
-        // Upcoming activities (next 4)
-        $upcomingActivities = Activity::whereIn('course_id', $courseIds)
+        $upcomingRaw = Activity::whereIn('course_id', $courseIds)
             ->where('due_date', '>=', now()->toDateString())
             ->orderBy('due_date')
-            ->limit(3)
+            ->orderBy('id')
+            ->limit(6)
             ->with('course:id,subject_name,grade,section')
-            ->get(['id', 'title', 'due_date', 'course_id', 'type'])
-            ->map(fn ($activity) => [
-                'id'          => $activity->id,
-                'title'       => $activity->title,
-                'due_date'    => $activity->due_date,
-                'type'        => $activity->type,
-                'course_name' => trim(collect([
-                    optional($activity->course)->subject_name,
-                    optional($activity->course)->grade,
-                    optional($activity->course)->section,
-                ])->filter()->implode(' ')),
-            ])
-            ->values();
+            ->get(['id', 'title', 'due_date', 'course_id', 'type', 'is_homework', 'evaluation_id']);
+
+        $upcomingQueue = $this->serializeUpcomingQueue($upcomingRaw);
+        $upcomingActivities = $upcomingQueue->take(5)->values();
+        $nextActivity = $upcomingQueue->first();
 
         $todayActivities = Activity::whereIn('course_id', $courseIds)
             ->whereDate('due_date', now()->toDateString())
@@ -136,8 +128,6 @@ class HubController extends Controller
             ->orderBy('course_id')
             ->orderBy('title')
             ->get();
-
-        $nextActivity = $upcomingActivities->first();
 
         // Climate: computed from recent grade average
         $climate = $this->computeClimate($avgGrade);
@@ -171,6 +161,7 @@ class HubController extends Controller
             'grade_trend'          => $gradeTrend,
             'next_activity'        => $nextActivity,
             'upcoming_activities'  => $upcomingActivities,
+            'upcoming_queue'       => $upcomingQueue->take(5)->values(),
             'today_grade_list'     => $this->buildTodayGradeList($todayActivities),
             'attendance'           => $this->attendanceSnapshot($teacher->id, $courseIds),
         ]);
@@ -259,6 +250,7 @@ class HubController extends Controller
                     'activities_count'       => $c->activities_count,
                     'avg_score'              => $avgScore,
                     'pending_grading_count'  => $pendingGradingCount,
+                    'grade_color'            => $this->gradeColor($c->grade),
                 ];
             });
 
@@ -572,9 +564,12 @@ class HubController extends Controller
             'weight_percentage' => $activity->weight_percentage,
             'due_date' => $dueDate,
             'course_name' => trim(($course?->subject_name ?? '').' '.($course?->grade ?? '')),
-            'grade' => $course?->grade,
+            'subject_name' => $course?->subject_name,
+            'grade' => GradeLabel::canonical((string) ($course?->grade ?? '')) ?? trim((string) ($course?->grade ?? '')),
             'section' => $course?->section,
-            'color' => $activity->is_homework ? '#0ea5e9' : ($courseColors[$activity->course_id] ?? '#7c3aed'),
+            'grade_color' => $this->gradeColor($course?->grade),
+            'type_label' => $this->activityTypeLabel($activity),
+            'color' => $this->gradeColor($course?->grade) ?: ($activity->is_homework ? '#0ea5e9' : ($courseColors[$activity->course_id] ?? '#7c3aed')),
             'plan_block_id' => $activity->plan_block_id,
             'grades_url' => route('teacher.grades.create', $activity->id),
             'director_notes' => $activity->director_notes,
@@ -642,6 +637,7 @@ class HubController extends Controller
                 'type' => (string) ($activity->type ?? 'actividad'),
                 'is_homework' => (bool) $activity->is_homework,
                 'grade' => $grade,
+                'grade_color' => $this->gradeColor($grade),
                 'course_name' => $courseLabel,
                 'time_label' => $slot['start'],
                 'time_range' => $slot['start'].'-'.$slot['end'],
@@ -681,5 +677,71 @@ class HubController extends Controller
             'start' => sprintf('%02d:%02d', $startHour, $startMin),
             'end' => sprintf('%02d:%02d', $endHour, $endMin),
         ];
+    }
+
+    private function serializeUpcomingQueue($activities)
+    {
+        $grouped = $activities->groupBy(function ($activity) {
+            $due = $activity->due_date;
+            if ($due instanceof Carbon) {
+                return $due->toDateString();
+            }
+
+            return (string) $due;
+        });
+
+        return $activities->values()->map(function ($activity) use ($grouped) {
+            $due = $activity->due_date instanceof Carbon
+                ? $activity->due_date->toDateString()
+                : (string) $activity->due_date;
+            $sameDay = $grouped->get($due, collect())->values();
+            $index = $sameDay->search(fn ($item) => (int) $item->id === (int) $activity->id);
+            $slot = $this->calendarTimeSlotForIndex($index === false ? 0 : (int) $index);
+            $course = $activity->relationLoaded('course') ? $activity->course : null;
+            $grade = GradeLabel::canonical((string) ($course?->grade ?? '')) ?? trim((string) ($course?->grade ?? ''));
+
+            return [
+                'id' => (int) $activity->id,
+                'title' => (string) $activity->title,
+                'due_date' => $due,
+                'type' => (string) ($activity->type ?? 'actividad'),
+                'type_label' => $this->activityTypeLabel($activity),
+                'is_homework' => (bool) $activity->is_homework,
+                'grade' => $grade,
+                'grade_color' => $this->gradeColor($grade),
+                'subject_name' => (string) ($course?->subject_name ?? ''),
+                'course_name' => trim(($course?->subject_name ?? '').' '.($grade).(($course?->section ?? '') !== '' ? ' / '.$course->section : '')),
+                'time_label' => $slot['start'],
+                'time_range' => $slot['start'].'-'.$slot['end'],
+            ];
+        })->values();
+    }
+
+    private function activityTypeLabel(Activity $activity): string
+    {
+        if ($activity->evaluation_id) {
+            return 'Evaluación';
+        }
+        if ((bool) $activity->is_homework || ($activity->type ?? '') === Activity::TYPE_TAREA) {
+            return 'Tarea';
+        }
+        if (($activity->type ?? '') === Activity::TYPE_CLASE) {
+            return 'Clase';
+        }
+
+        return 'Actividad';
+    }
+
+    private function gradeColor(?string $grade): string
+    {
+        return match (GradeLabel::number($grade)) {
+            1 => '#2563EB',
+            2 => '#059669',
+            3 => '#7C3AED',
+            4 => '#D97706',
+            5 => '#DB2777',
+            6 => '#0891B2',
+            default => '#64748B',
+        };
     }
 }

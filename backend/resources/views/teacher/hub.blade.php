@@ -908,13 +908,13 @@
 
         .course-btn.active {
             background: var(--nova-glass);
-            border-left: 3px solid var(--nova-fuchsia);
+            border-left: 3px solid var(--course-accent, var(--nova-fuchsia));
         }
 
         .course-avatar {
             width: 32px;
             height: 32px;
-            background: var(--nova-gradient);
+            background: var(--course-accent, var(--nova-gradient));
             border-radius: 10px;
             display: flex;
             align-items: center;
@@ -924,7 +924,7 @@
             color: white;
             position: relative;
             overflow: hidden;
-            box-shadow: 0 4px 12px -4px var(--nova-violet);
+            box-shadow: 0 4px 12px -4px var(--course-accent, var(--nova-violet));
             flex-shrink: 0;
         }
 
@@ -1379,6 +1379,7 @@
 
         .today-grade-group {
             border: 1px solid var(--nova-glass-border);
+            border-left: 4px solid var(--grade-accent, #7C3AED);
             border-radius: 14px;
             background: var(--nova-glass);
             padding: 10px;
@@ -1427,7 +1428,7 @@
         .today-grade-time {
             font-size: 11px;
             font-weight: 700;
-            color: #7C3AED;
+            color: var(--grade-accent, #7C3AED);
             min-width: 82px;
         }
 
@@ -1449,6 +1450,152 @@
         .today-grade-copy small {
             font-size: 11px;
             color: var(--text-tertiary);
+        }
+
+        .next-activity-box {
+            width: 100%;
+            border: 1px solid var(--nova-glass-border);
+            border-left: 6px solid var(--next-accent, #7C3AED);
+            border-radius: 22px;
+            padding: 6px;
+            margin-bottom: 16px;
+            color: inherit;
+            background:
+                linear-gradient(135deg, color-mix(in srgb, var(--next-accent, #7C3AED) 16%, var(--bg-card)), var(--bg-card));
+            box-shadow: 0 16px 32px -22px var(--next-accent, rgba(124, 58, 237, 0.6));
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .next-activity-box:hover {
+            transform: translateY(-2px);
+        }
+
+        .next-activity-toggle {
+            width: 100%;
+            border: 0;
+            background: transparent;
+            padding: 14px 16px;
+            text-align: left;
+            cursor: pointer;
+            color: inherit;
+        }
+
+        .next-activity-toggle:disabled {
+            cursor: default;
+        }
+
+        .next-activity-kicker {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            font-size: 11px;
+            font-weight: 800;
+            letter-spacing: .08em;
+            text-transform: uppercase;
+            color: var(--next-accent, #7C3AED);
+            margin-bottom: 8px;
+        }
+
+        .next-activity-main {
+            display: grid;
+            grid-template-columns: auto 1fr auto;
+            gap: 16px;
+            align-items: center;
+        }
+
+        .next-activity-time-wrap {
+            min-width: 86px;
+        }
+
+        .next-activity-time {
+            font-size: 28px;
+            line-height: 1;
+            font-weight: 800;
+            color: var(--text-primary);
+        }
+
+        .next-activity-time-wrap small,
+        .next-activity-queue-time small {
+            display: block;
+            margin-top: 4px;
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--text-tertiary);
+            text-transform: uppercase;
+            letter-spacing: .04em;
+        }
+
+        .next-activity-copy h2 {
+            margin: 0 0 4px;
+            font-size: 20px;
+            font-weight: 800;
+            color: var(--text-primary);
+        }
+
+        .next-activity-copy p {
+            margin: 0;
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+        .next-activity-type {
+            display: inline-flex;
+            align-items: center;
+            padding: 6px 10px;
+            border-radius: 999px;
+            background: color-mix(in srgb, var(--next-accent, #7C3AED) 14%, transparent);
+            color: var(--next-accent, #7C3AED);
+            font-size: 11px;
+            font-weight: 800;
+        }
+
+        .next-activity-queue {
+            margin: 0 10px 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .next-activity-queue-item {
+            width: 100%;
+            display: grid;
+            grid-template-columns: 78px 1fr auto;
+            gap: 10px;
+            align-items: center;
+            border: 0;
+            background: color-mix(in srgb, var(--bg-secondary) 88%, transparent);
+            border-radius: 14px;
+            padding: 10px 12px;
+            text-align: left;
+            cursor: pointer;
+            color: inherit;
+        }
+
+        .next-activity-queue-item strong {
+            font-size: 13px;
+            color: var(--text-primary);
+        }
+
+        .next-activity-queue-item small {
+            display: block;
+            color: var(--text-tertiary);
+            font-size: 11px;
+        }
+
+        .next-activity-queue-time strong {
+            font-size: 15px;
+            color: var(--next-accent, #7C3AED);
+        }
+
+        @media (max-width: 767px) {
+            .next-activity-main {
+                grid-template-columns: 1fr;
+                gap: 10px;
+            }
+            .next-activity-queue-item {
+                grid-template-columns: 1fr;
+            }
         }
 
         .upcoming-list::-webkit-scrollbar { width: 4px; }
@@ -1496,8 +1643,8 @@
             width: 40px;
             height: 40px;
             border-radius: 12px;
-            background: #F3EEFF;
-            color: #7C3AED;
+            background: color-mix(in srgb, var(--grade-accent, #7C3AED) 14%, transparent);
+            color: var(--grade-accent, #7C3AED);
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -1505,7 +1652,7 @@
             flex-shrink: 0;
         }
 
-        html.dark .upcoming-date { background: rgba(124, 58, 237, 0.18); color: #C4B5FD; }
+        html.dark .upcoming-date { background: color-mix(in srgb, var(--grade-accent, #7C3AED) 22%, transparent); color: var(--grade-accent, #C4B5FD); }
 
         .upcoming-date strong { font-size: 14px; line-height: 1; }
         .upcoming-date span { font-size: 8px; font-weight: 800; letter-spacing: 0.06em; }
@@ -2076,16 +2223,16 @@
             top: 0;
             left: 0;
             right: 0;
-            height: 3px;
-            background: var(--nova-gradient);
-            transform: scaleX(0);
+            height: 4px;
+            background: var(--course-accent, var(--nova-gradient));
+            transform: scaleX(1);
             transition: transform 0.3s ease;
         }
 
         .course-card:hover {
             transform: translateY(-5px);
-            border-color: var(--nova-violet);
-            box-shadow: var(--az-shadow-glow);
+            border-color: var(--course-accent, var(--nova-violet));
+            box-shadow: 0 14px 28px -16px var(--course-accent, rgba(124, 58, 237, 0.55));
         }
 
         .course-card:hover::before {
@@ -2102,7 +2249,7 @@
         .course-card-avatar {
             width: 40px;
             height: 40px;
-            background: var(--nova-gradient);
+            background: var(--course-accent, var(--nova-gradient));
             border-radius: 12px;
             display: flex;
             align-items: center;
@@ -2111,6 +2258,7 @@
             font-weight: 700;
             color: white;
             flex-shrink: 0;
+            box-shadow: 0 8px 16px -10px var(--course-accent, rgba(124, 58, 237, 0.7));
         }
 
         .course-card-info {
@@ -3134,9 +3282,9 @@
         }
 
         .calendar-grade-chip.active {
-            background: rgba(124, 58, 237, 0.14);
-            border-color: rgba(124, 58, 237, 0.38);
-            color: #7C3AED;
+            color: #fff;
+            border-color: transparent;
+            box-shadow: 0 8px 18px -10px currentColor;
         }
 
         .calendar-grid {
@@ -3174,8 +3322,8 @@
             background: var(--bg-secondary);
             border: 1px solid var(--nova-glass-border);
             border-radius: 16px;
-            min-height: 100px;
-            max-height: 168px;
+            min-height: 118px;
+            max-height: 196px;
             padding: 8px;
             position: relative;
             transition: all 0.2s ease;
@@ -3186,7 +3334,7 @@
         }
 
         .calendar-day.has-events {
-            border-color: color-mix(in srgb, var(--nova-violet) 28%, var(--nova-glass-border));
+            border-color: color-mix(in srgb, var(--nova-violet) 18%, var(--nova-glass-border));
         }
 
         .calendar-day:hover {
@@ -3243,19 +3391,46 @@
         }
 
         .day-grade-pill {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            font-size: 10px;
-            border: 1px solid var(--nova-glass-border);
-            background: var(--nova-glass);
-            border-radius: 10px;
-            padding: 3px 6px;
-            color: var(--text-secondary);
+            display: none;
         }
 
-        .day-grade-pill strong {
-            color: var(--text-primary);
+        .cal-grade-event {
+            display: flex;
+            flex-direction: column;
+            gap: 1px;
+            width: 100%;
+            border: 0;
+            border-radius: 9px;
+            padding: 5px 6px;
+            text-align: left;
+            color: #fff;
+            cursor: pointer;
+            box-shadow: 0 6px 14px -10px rgba(15, 23, 42, 0.55);
+        }
+
+        .cal-grade-event-line {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 9px;
+            font-weight: 800;
+            letter-spacing: .04em;
+            text-transform: uppercase;
+            opacity: .92;
+        }
+
+        .cal-grade-event-title {
+            font-size: 10px;
+            font-weight: 700;
+            line-height: 1.25;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .cal-grade-event.has-director-notes {
+            outline: 2px solid #f59e0b;
+            outline-offset: -2px;
         }
 
         .cal-event {
@@ -3336,6 +3511,7 @@
 
         .day-agenda-card {
             border: 1px solid var(--nova-glass-border);
+            border-left: 4px solid var(--grade-accent, #7C3AED);
             border-radius: 14px;
             background: var(--nova-glass);
             padding: 10px 12px;
@@ -3360,7 +3536,7 @@
         .day-agenda-time {
             font-size: 11px;
             font-weight: 700;
-            color: #7C3AED;
+            color: var(--grade-accent, #7C3AED);
         }
 
         .day-agenda-title {
@@ -4123,7 +4299,10 @@
                 </div>
             </template>
             <template x-for="c in courses" :key="c.id">
-                <button @click="loadCourse(c.id)" :class="{ active: view === 'course' && currentCourseId === c.id }" class="course-btn">
+                <button @click="loadCourse(c.id)"
+                        :class="{ active: view === 'course' && currentCourseId === c.id }"
+                        class="course-btn"
+                        :style="`--course-accent: ${c.grade_color || gradeColor(c.grade)}`">
                     <div class="course-avatar" x-text="c.subject_name.charAt(0).toUpperCase()"></div>
                     <div class="course-info">
                         <div class="course-name" x-text="c.subject_name"></div>
@@ -4259,6 +4438,65 @@
                 </div>
 
                 <template x-if="stats">
+                    <section class="next-activity-box"
+                             :class="{ 'is-open': nextQueueOpen, 'is-empty': !stats.next_activity }"
+                             :style="`--next-accent: ${stats.next_activity?.grade_color || gradeColor(stats.next_activity?.grade)}`">
+                        <button type="button"
+                                class="next-activity-toggle"
+                                @click="stats.next_activity && (nextQueueOpen = !nextQueueOpen)"
+                                :disabled="!stats.next_activity">
+                            <div class="next-activity-kicker">
+                                <span><i class="fa-solid fa-clock" style="margin-right:6px;"></i>Próxima actividad</span>
+                                <span x-show="stats.next_activity" x-text="nextQueueOpen ? 'Ocultar lista' : 'Ver siguientes 5'"></span>
+                            </div>
+                            <template x-if="stats.next_activity">
+                                <div class="next-activity-main">
+                                    <div class="next-activity-time-wrap">
+                                        <div class="next-activity-time" x-text="stats.next_activity.time_label || '—'"></div>
+                                        <small x-text="formatQueueWhen(stats.next_activity.due_date)"></small>
+                                    </div>
+                                    <div class="next-activity-copy">
+                                        <h2 x-text="stats.next_activity.title"></h2>
+                                        <p>
+                                            <span x-text="stats.next_activity.grade || 'Sin grado'"></span>
+                                            ·
+                                            <span x-text="stats.next_activity.subject_name || stats.next_activity.course_name || 'Sin materia'"></span>
+                                        </p>
+                                    </div>
+                                    <span class="next-activity-type" x-text="stats.next_activity.type_label || 'Actividad'"></span>
+                                </div>
+                            </template>
+                            <template x-if="!stats.next_activity">
+                                <div class="next-activity-main">
+                                    <div class="next-activity-copy">
+                                        <h2>Sin clases programadas</h2>
+                                        <p>Cuando tengas una clase, actividad o examen, verás aquí la hora, el grado y el tema.</p>
+                                    </div>
+                                </div>
+                            </template>
+                        </button>
+                        <div class="next-activity-queue" x-show="nextQueueOpen && (stats.upcoming_queue || []).length" x-cloak>
+                            <template x-for="item in (stats.upcoming_queue || [])" :key="'q-'+item.id">
+                                <button type="button"
+                                        class="next-activity-queue-item"
+                                        :style="`--next-accent: ${item.grade_color || gradeColor(item.grade)}`"
+                                        @click="openActivityModalFromExternal({ id: item.id })">
+                                    <span class="next-activity-queue-time">
+                                        <strong x-text="item.time_label || '—'"></strong>
+                                        <small x-text="formatQueueWhen(item.due_date)"></small>
+                                    </span>
+                                    <span>
+                                        <strong x-text="item.title"></strong>
+                                        <small x-text="`${item.grade || ''} · ${item.subject_name || item.course_name || ''}`"></small>
+                                    </span>
+                                    <span class="next-activity-type" x-text="item.type_label || 'Actividad'"></span>
+                                </button>
+                            </template>
+                        </div>
+                    </section>
+                </template>
+
+                <template x-if="stats">
                     <div class="ios-stat-grid">
                         <div class="ios-stat">
                             <div class="ios-stat-icon purple"><i class="fa-solid fa-layer-group"></i></div>
@@ -4317,7 +4555,7 @@
                         </div>
                         <div class="courses-grid">
                             <template x-for="c in filteredCourses()" :key="c.id">
-                                <div @click="loadCourse(c.id)" class="course-card">
+                                <div @click="loadCourse(c.id)" class="course-card" :style="`--course-accent: ${c.grade_color || gradeColor(c.grade)}`">
                                     <div class="course-card-header">
                                         <div class="course-card-avatar" x-text="c.subject_name.charAt(0).toUpperCase()"></div>
                                         <div class="course-card-info">
@@ -4362,14 +4600,14 @@
                         <template x-if="(stats?.today_grade_list || []).length">
                             <div class="today-grade-list">
                                 <template x-for="bucket in stats.today_grade_list" :key="'today-'+bucket.grade">
-                                    <section class="today-grade-group">
+                                    <section class="today-grade-group" :style="`--grade-accent: ${bucket.items?.[0]?.grade_color || gradeColor(bucket.grade)}`">
                                         <header>
                                             <strong x-text="bucket.grade"></strong>
                                             <span x-text="`${bucket.count} bloque${bucket.count === 1 ? '' : 's'}`"></span>
                                         </header>
                                         <div class="today-grade-items">
                                             <template x-for="item in bucket.items" :key="'item-'+item.id">
-                                                <button type="button" class="today-grade-item" @click="openActivityModalFromExternal({ id: item.id })">
+                                                <button type="button" class="today-grade-item" :style="`--grade-accent: ${item.grade_color || gradeColor(item.grade)}`" @click="openActivityModalFromExternal({ id: item.id })">
                                                     <span class="today-grade-time" x-text="item.time_range || item.time_label || 'Sin hora'"></span>
                                                     <div class="today-grade-copy">
                                                         <p x-text="item.title"></p>
@@ -4399,6 +4637,7 @@
                                 <template x-for="act in stats.upcoming_activities" :key="act.id">
                                     <button type="button"
                                             class="upcoming-row upcoming-row--clickable"
+                                            :style="`--grade-accent: ${act.grade_color || gradeColor(act.grade)}`"
                                             @click="openActivityModalFromExternal({ id: act.id })">
                                         <div class="upcoming-date">
                                             <strong x-text="formatDueParts(act.due_date).day"></strong>
@@ -4683,6 +4922,7 @@
                                 <button type="button"
                                         class="calendar-grade-chip"
                                         :class="{ 'active': calendarGradeFilter === grade }"
+                                        :style="gradeChipStyle(grade, calendarGradeFilter === grade)"
                                         @click="setCalendarGradeFilter(grade)"
                                         x-text="grade === 'all' ? 'Todos' : grade"></button>
                             </template>
@@ -4726,39 +4966,26 @@
                                     <template x-if="cell !== null">
                                         <div style="display:flex;flex-direction:column;min-height:0;height:100%;">
                                             <span class="day-number" x-text="cell"></span>
-                                            <template x-if="calendarGradeFilter === 'all'">
-                                                <div class="day-grade-summary">
-                                                    <template x-for="bucket in dayGradeBuckets(cell).slice(0, 3)" :key="'bucket-'+bucket.grade">
-                                                        <div class="day-grade-pill">
-                                                            <span x-text="bucket.grade"></span>
-                                                            <strong x-text="bucket.count"></strong>
-                                                        </div>
-                                                    </template>
-                                                    <span class="day-more-count"
-                                                          x-show="dayGradeBuckets(cell).length > 3"
-                                                          x-text="'+' + (dayGradeBuckets(cell).length - 3) + ' grados'"></span>
-                                                </div>
-                                            </template>
-                                            <template x-if="calendarGradeFilter !== 'all'">
-                                                <div class="day-content">
-                                                    <template x-for="act in activitiesForDay(cell).slice(0, 2)" :key="act.id">
-                                                        <button @click.stop="setActivityContext(act); openActivityModal(act)"
-                                                                class="cal-event"
-                                                                :class="[
-                                                                    act.type === 'clase' ? 'clase' : (act.is_homework ? 'homework' : 'actividad'),
-                                                                    { 'has-director-notes': act.director_notes }
-                                                                ]"
-                                                                :title="act.title">
-                                                            <span x-text="`${act.time_label || ''} · ${act.title}`"></span>
-                                                        </button>
-                                                    </template>
-                                                    <button type="button"
-                                                            class="more-events"
-                                                            x-show="activitiesForDay(cell).length > 2"
-                                                            @click.stop="openDayModal(cell)"
-                                                            x-text="'+' + (activitiesForDay(cell).length - 2) + ' más'"></button>
-                                                </div>
-                                            </template>
+                                            <div class="day-content">
+                                                <template x-for="act in activitiesForDay(cell).slice(0, calendarGradeFilter === 'all' ? 3 : 2)" :key="act.id">
+                                                    <button @click.stop="setActivityContext(act); openActivityModal(act)"
+                                                            class="cal-grade-event"
+                                                            :class="{ 'has-director-notes': act.director_notes }"
+                                                            :style="`background: ${act.grade_color || gradeColor(act.grade)}`"
+                                                            :title="`${act.grade || ''} · ${act.time_label || ''} · ${act.title}`">
+                                                        <span class="cal-grade-event-line">
+                                                            <span x-text="act.grade || 'Curso'"></span>
+                                                            <span x-text="act.time_label || ''"></span>
+                                                        </span>
+                                                        <span class="cal-grade-event-title" x-text="act.title"></span>
+                                                    </button>
+                                                </template>
+                                                <button type="button"
+                                                        class="more-events"
+                                                        x-show="activitiesForDay(cell).length > (calendarGradeFilter === 'all' ? 3 : 2)"
+                                                        @click.stop="openDayModal(cell)"
+                                                        x-text="'+' + (activitiesForDay(cell).length - (calendarGradeFilter === 'all' ? 3 : 2)) + ' más'"></button>
+                                            </div>
                                         </div>
                                     </template>
                                 </div>
@@ -5474,7 +5701,8 @@
                                 <template x-for="act in (row.activities || [])" :key="'agenda-'+act.id">
                                     <button type="button"
                                             @click="setActivityContext(act); openActivityModal(act); dayModal = null"
-                                            class="day-agenda-card">
+                                            class="day-agenda-card"
+                                            :style="`--grade-accent: ${act.grade_color || gradeColor(act.grade)}`">
                                         <div class="day-agenda-card-top">
                                             <span class="day-agenda-time" x-text="act.time_range || act.time_label || 'Sin hora'"></span>
                                             <span class="status-pill" style="margin-left:auto;" x-text="act.grade || 'Sin grado'"></span>
@@ -5623,6 +5851,7 @@ function teacherHub() {
         calendarData:    null,
         calendarMonth:   null,
         calendarGradeFilter: 'all',
+        nextQueueOpen:   false,
         hiddenWidgets:   [],
         activityModal:   null,
         deleteConfirm:   { open: false, id: null, title: '', deleting: false },
@@ -6144,12 +6373,50 @@ function teacherHub() {
 
         formatDueParts(dateStr) {
             if (!dateStr) return { day: '—', mon: '' };
-            const d = new Date(dateStr);
-            if (Number.isNaN(d.getTime())) return { day: '—', mon: '' };
+            const d = this.parseLocalDate(dateStr);
+            if (!d) return { day: '—', mon: '' };
             return {
                 day: String(d.getDate()).padStart(2, '0'),
                 mon: d.toLocaleDateString('es', { month: 'short' }).replace('.', '').toUpperCase(),
             };
+        },
+
+        parseLocalDate(dateStr) {
+            if (!dateStr) return null;
+            const raw = String(dateStr);
+            const iso = /^\d{4}-\d{2}-\d{2}$/.test(raw) ? `${raw}T12:00:00` : raw;
+            const d = new Date(iso);
+            return Number.isNaN(d.getTime()) ? null : d;
+        },
+
+        formatQueueWhen(dateStr) {
+            const d = this.parseLocalDate(dateStr);
+            if (!d) return '';
+            const today = new Date();
+            const startToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+            const startDate = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+            const diff = Math.round((startDate - startToday) / 86400000);
+            if (diff === 0) return 'Hoy';
+            if (diff === 1) return 'Mañana';
+            return d.toLocaleDateString('es-VE', { weekday: 'short', day: 'numeric', month: 'short' });
+        },
+
+        gradeColor(grade) {
+            const map = { 1: '#2563EB', 2: '#059669', 3: '#7C3AED', 4: '#D97706', 5: '#DB2777', 6: '#0891B2' };
+            const n = parseInt(String(grade || '').replace(/\D/g, ''), 10);
+            return map[n] || '#64748B';
+        },
+
+        gradeChipStyle(grade, active) {
+            if (grade === 'all') {
+                return active
+                    ? 'background:#0F172A;color:#fff;border-color:#0F172A'
+                    : '';
+            }
+            const color = this.gradeColor(grade);
+            return active
+                ? `background:${color};color:#fff;border-color:${color}`
+                : `color:${color};border-color:${color}55;background:${color}18`;
         },
 
         pendingTotal() {
@@ -6170,8 +6437,11 @@ function teacherHub() {
             if (!stats) return 'Cargando tu resumen académico…';
             if (!stats.total_courses) return 'Crea tu primer curso para empezar a ver tu resumen aquí.';
             if (stats.next_activity) {
-                const count = stats.activities_this_week ?? 0;
-                return `Tienes ${count} actividad${count === 1 ? '' : 'es'} esta semana. Tu próxima entrega es "${stats.next_activity.title}".`;
+                const next = stats.next_activity;
+                const when = this.formatQueueWhen(next.due_date);
+                const time = next.time_label ? ` a las ${next.time_label}` : '';
+                const grade = next.grade ? ` · ${next.grade}` : '';
+                return `Próxima: ${next.title}${grade}${time}${when ? ` (${when})` : ''}.`;
             }
             const courseCount = stats.total_courses;
             return `Tienes ${courseCount} curso${courseCount === 1 ? '' : 's'} activo${courseCount === 1 ? '' : 's'} y ninguna entrega pendiente por ahora.`;
