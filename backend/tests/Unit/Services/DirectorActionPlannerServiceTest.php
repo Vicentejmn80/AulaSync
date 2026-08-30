@@ -259,6 +259,59 @@ class DirectorActionPlannerServiceTest extends TestCase
         $this->assertStringContainsString('factual_lookup_mode', $prompt);
         $this->assertStringContainsString('sync_all_enrollments', $prompt);
         $this->assertStringContainsString('subject_name=null y agrega missing_slots', $prompt);
+        $this->assertStringContainsString('de 2do grado a 6to grado', $prompt);
+        $this->assertStringContainsString('NUNCA solo a los extremos', $prompt);
+    }
+
+    public function test_plan_expands_grade_range_when_llm_returns_only_endpoints(): void
+    {
+        config([
+            'services.openai.key' => 'test-key',
+            'services.openai.director_enabled' => true,
+            'services.openai.director_test_enabled' => true,
+        ]);
+
+        $this->fakeOpenAiPlan([
+            'status' => 'pending',
+            'actions' => [[
+                'id' => 'a1',
+                'type' => 'create_teacher',
+                'entity' => 'teacher',
+                'params' => [
+                    'teacher_name' => 'Carlos Gutiérrez',
+                    'subject_name' => 'Biología',
+                    'grades' => ['2do', '6to'],
+                    'student_name' => null,
+                    'names' => null,
+                    'grade' => null,
+                    'courses_data' => null,
+                    'students_data' => null,
+                    'section' => null,
+                    'new_grade' => null,
+                    'new_section' => null,
+                    'new_name' => null,
+                    'operation' => null,
+                    'all_in_grade' => null,
+                    'invite_code' => null,
+                ],
+                'status' => 'pending',
+                'missing_slots' => [],
+                'depends_on' => [],
+                'confirmation_required' => true,
+            ]],
+            'summary' => 'Voy a hacer:\n1. Crear profesor Carlos Gutiérrez',
+            'requires_confirmation' => true,
+            'all_or_nothing' => false,
+        ]);
+
+        $director = $this->makeDirector();
+        $plan = $this->planner->plan(
+            $director,
+            'Quiero que creas al profesor Carlos Gutiérrez, que va a ser el profesor de biología de 2do grado a 6to grado.'
+        );
+
+        $this->assertSame(['2do', '3ro', '4to', '5to', '6to'], $plan['actions'][0]['params']['grades']);
+        $this->assertStringContainsString('2do, 3ro, 4to, 5to, 6to', $plan['summary']);
     }
 
     public function test_plan_marks_missing_subject_for_assign_teacher_when_generic(): void

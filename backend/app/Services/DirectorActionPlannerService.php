@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\User;
+use App\Support\GradeLabel;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -361,7 +362,7 @@ REGLAS CRÍTICAS:
 3. Para acciones de escritura (crear, modificar, eliminar, matricular), confirmation_required = true. Para lectura (get_*), false.
 4. Si falta algún dato obligatorio, crea un slot en missing_slots con una pregunta clara.
 5. NOMBRES: params.teacher_name / student_name / names son SOLO el nombre propio (ej. "Mariano", "Vicente José") sin "también", "llamado", "el que te dije", "profesor de...", "alumno". DEDUPLICA: si el usuario repite el mismo nombre ("a Vicente José, al alumno Vicente José y a Gabriela Pernal" → Vicente José una sola vez, Gabriela Pernal una vez), cada persona aparece UNA sola vez en el plan.
-6. GRADOS — RANGOS EXPANDIDOS: Los grados válidos son 1ro, 2do, 3ro, 4to, 5to, 6to. Un rango como "de 1ro a 6to", "desde 1ro hasta 6to", "desde 1ro a 6to", "1ro a 6to" DEBE expandirse al array completo: ["1ro","2do","3ro","4to","5to","6to"]. Para create_teacher/create_course/assign_teacher usa el array grades completo. Para enroll_students_course usa grade individual o el grado relevante. NUNCA dejes un rango sin expandir ni como texto libre ni como grade=null.
+6. GRADOS — RANGOS EXPANDIDOS: Los grados válidos son 1ro, 2do, 3ro, 4to, 5to, 6to. Un rango como "de 1ro a 6to", "desde 1ro hasta 6to", "de 2do grado a 6to grado", "de segundo a sexto" DEBE expandirse al array completo, NUNCA solo a los extremos. Ejemplo: "profesor de biología de 2do grado a 6to grado" → grades=["2do","3ro","4to","5to","6to"]. Para create_teacher/create_course/assign_teacher usa el array grades completo. Para enroll_students_course usa grade individual o el grado relevante. NUNCA dejes un rango sin expandir ni como texto libre ni como grade=null.
 7. Genera un resumen natural en "summary" numerando las acciones, usando nombres limpios y rangos expandidos (ej. "1ro a 6to").
 8. Si no hay acciones, devuelve actions=[] y summary="No entendí ninguna acción. ¿Puedes reformular?".
 9. CURSOS — SIEMPRE EN LOTE: para crear materias/cursos usa SIEMPRE create_courses_batch, incluso si es una sola materia en un solo grado. NUNCA uses create_course. params.courses_data es un array con UN item por materia y cada item lleva su propio array grades con todos los grados pedidos. Ejemplo — "crea matemática, lenguaje y biología para 3ro y 4to" es UNA sola acción: courses_data=[{"subject_name":"matemática","grades":["3ro","4to"],"section":null,"teacher_name":null},{"subject_name":"lenguaje","grades":["3ro","4to"],"section":null,"teacher_name":null},{"subject_name":"biología","grades":["3ro","4to"],"section":null,"teacher_name":null}]. No la partas en tres acciones.
@@ -462,14 +463,32 @@ PROMPT;
         $plan['created_at'] = now()->toIso8601String();
         $plan['updated_at'] = now()->toIso8601String();
 
-        $plan['actions'] = collect($plan['actions'] ?? [])->map(function (array $action) {
+        $plan['actions'] = collect($plan['actions'] ?? [])->map(function (array $action) use ($text) {
             $action['params'] = $this->cleanParams($action['params'] ?? []);
             // Deduplica nombres dentro de cada acción y normaliza grades
             if (isset($action['params']['names']) && is_array($action['params']['names'])) {
                 $action['params']['names'] = array_values(array_unique(array_filter(array_map(fn ($n) => trim((string) $n), $action['params']['names']))));
             }
             if (isset($action['params']['grades']) && is_array($action['params']['grades'])) {
-                $action['params']['grades'] = array_values(array_unique(array_filter(array_map(fn ($g) => trim((string) $g), $action['params']['grades']))));
+                $action['params']['grades'] = GradeLabel::preferExpandedRange(
+                    array_values(array_unique(array_filter(array_map(fn ($g) => trim((string) $g), $action['params']['grades'])))),
+                    $text
+                );
+            } elseif (in_array((string) ($action['type'] ?? ''), ['create_teacher', 'assign_teacher', 'create_course'], true)) {
+                $range = GradeLabel::expandRangeFromText($text);
+                if ($range !== []) {
+                    $action['params']['grades'] = $range;
+                }
+            }
+            if (isset($action['params']['courses_data']) && is_array($action['params']['courses_data'])) {
+                $action['params']['courses_data'] = array_map(function ($item) use ($text) {
+                    if (! is_array($item)) {
+                        return $item;
+                    }
+                    $item['grades'] = GradeLabel::preferExpandedRange((array) ($item['grades'] ?? []), $text);
+
+                    return $item;
+                }, $action['params']['courses_data']);
             }
             // Normaliza students_data: recorta strings, descarta items sin name/grade
             // y elimina duplicados exactos (mismo alumno, grado y sección).
@@ -517,9 +536,7 @@ PROMPT;
             $plan['status'] = 'needs_info';
         }
 
-        if (empty($plan['summary'])) {
-            $plan['summary'] = $this->buildSummary($plan['actions']);
-        }
+        $plan['summary'] = $this->buildSummary($plan['actions']);
 
         return $plan;
     }
@@ -810,16 +827,17 @@ PROMPT;
         }
 
         $lines = collect($actions)->map(function (array $action, int $index) {
+            $payload = (array) ($action['data'] ?? $action['params'] ?? []);
             $desc = match ($action['intent'] ?? $action['type'] ?? '') {
-                'create_teacher' => 'Crear profesor '.($action['data']['teacher_name'] ?? ''),
+                'create_teacher' => $this->summarizeTeacherAction($payload),
                 'create_course', 'create_courses_batch' => $this->summarizeCourseAction($action),
-                'assign_teacher' => 'Asignar materia a '.($action['data']['teacher_name'] ?? ''),
+                'assign_teacher' => 'Asignar materia a '.($payload['teacher_name'] ?? ''),
                 'create_students_batch' => $this->summarizeStudentsAction($action),
-                'enroll_students_course', 'enroll_students' => 'Matricular alumnos '.implode(', ', $action['data']['names'] ?? []),
+                'enroll_students_course', 'enroll_students' => 'Matricular alumnos '.implode(', ', $payload['names'] ?? []),
                 'sync_all_enrollments' => 'Sincronizar matrículas de alumnos con los cursos de su grado',
-                'update_student' => 'Cambiar a '.($action['data']['student_name'] ?? ''),
-                'delete_teacher' => 'Eliminar profesor '.($action['data']['teacher_name'] ?? ''),
-                'delete_student' => 'Eliminar alumno '.($action['data']['student_name'] ?? ''),
+                'update_student' => 'Cambiar a '.($payload['student_name'] ?? ''),
+                'delete_teacher' => 'Eliminar profesor '.($payload['teacher_name'] ?? ''),
+                'delete_student' => 'Eliminar alumno '.($payload['student_name'] ?? ''),
                 default => 'Ejecutar '.($action['intent'] ?? $action['type'] ?? 'acción'),
             };
 
@@ -827,6 +845,25 @@ PROMPT;
         });
 
         return "Voy a hacer:\n".$lines->implode("\n");
+    }
+
+    /**
+     * @param  array<string,mixed>  $payload
+     */
+    private function summarizeTeacherAction(array $payload): string
+    {
+        $name = trim((string) ($payload['teacher_name'] ?? 'profesor'));
+        $subject = trim((string) ($payload['subject_name'] ?? ''));
+        $grades = array_values(array_filter((array) ($payload['grades'] ?? [])));
+        $span = $grades === [] ? '' : implode(', ', $grades);
+        if ($subject !== '' && $span !== '') {
+            return "Crear profesor {$name} ({$subject}: {$span})";
+        }
+        if ($subject !== '') {
+            return "Crear profesor {$name} ({$subject})";
+        }
+
+        return "Crear profesor {$name}";
     }
 
     /**

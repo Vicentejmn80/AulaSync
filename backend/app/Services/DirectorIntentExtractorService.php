@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use App\Support\GradeLabel;
+
 /**
  * Extractor determinista de múltiples intenciones a partir de un mensaje del director.
  *
@@ -604,6 +606,11 @@ class DirectorIntentExtractorService
      */
     private function extractGrades(string $segment): array
     {
+        $range = GradeLabel::expandRangeFromText($segment);
+        if ($range !== []) {
+            return $range;
+        }
+
         // Rango: "desde 1ro hasta 6to", "de 1ro a 6to", "1ro a 6to"
         if (preg_match('/(?:desde|de)\s+('.self::GRADE_PATTERN.')\s+(?:hasta|a)\s+('.self::GRADE_PATTERN.')/iu', $segment, $match)) {
             return $this->expandGradeRange($match[1], $match[2]);

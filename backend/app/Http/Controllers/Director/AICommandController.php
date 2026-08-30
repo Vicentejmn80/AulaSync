@@ -26,6 +26,7 @@ use App\Services\PersonNameMatcher;
 use App\Services\PersonNameSanitizer;
 use App\Services\ProductTelemetry;
 use App\Services\SpeechToTextService;
+use App\Support\GradeLabel;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
@@ -586,7 +587,14 @@ class AICommandController extends Controller
                 return $this->respondWithDataAgent($director, $text, $screenContext, $actions);
             }
 
-            return $this->prepareActions($director, $actions, $text, $planSummary, $plan['all_or_nothing'] ?? false, $actionPlan);
+            return $this->prepareActions(
+                $director,
+                $actions,
+                $text,
+                $this->usableConfirmationSummary($planSummary, $actions),
+                $plan['all_or_nothing'] ?? false,
+                $actionPlan
+            );
         } catch (ValidationException $e) {
             $msg = collect($e->errors())->flatten()->first() ?: 'No se pudo procesar la instrucción.';
             $this->conversationContext->rememberError($msg);
@@ -808,10 +816,11 @@ class AICommandController extends Controller
         }
 
         $this->rememberPendingActions($pending, $allOrNothing);
-        $confirmationMessage = $summary ?? $this->formatPendingConfirmation($pending);
+        $usableSummary = $this->usableConfirmationSummary($summary, $pending);
+        $confirmationMessage = $usableSummary ?? $this->formatPendingConfirmation($pending);
         $this->conversationContext->addTurn($rawText, $confirmationMessage, []);
 
-        return $this->pendingConfirmationResponse($pending, null, $summary, $actionPlan);
+        return $this->pendingConfirmationResponse($pending, null, $usableSummary, $actionPlan);
     }
 
     /**
@@ -1950,6 +1959,11 @@ class AICommandController extends Controller
      */
     private function pendingConfirmationResponse(array $pending, ?string $prefix = null, ?string $message = null, ?array $actionPlan = null): JsonResponse
     {
+        if ($pending === []) {
+            return $this->forgetPendingAndClarify('No identifiqué acciones en tu mensaje.');
+        }
+
+        $message = $this->usableConfirmationSummary($message, $pending);
         if ($message !== null && $message !== '') {
             if (! str_contains($message, '¿Confirmas')) {
                 $message .= "\n\n¿Confirmas que quieres ejecutar estas acciones?";
@@ -1977,6 +1991,26 @@ class AICommandController extends Controller
         }
 
         return response()->json($response);
+    }
+
+    /**
+     * Un resumen del planner tipo "no identifiqué acciones" no puede confirmar
+     * un plan que sí tiene acciones (el fallback ya las armó).
+     *
+     * @param  array<int,mixed>  $items
+     */
+    private function usableConfirmationSummary(?string $summary, array $items): ?string
+    {
+        $value = trim((string) $summary);
+        if ($items === [] || $value === '') {
+            return null;
+        }
+
+        if (preg_match('/no identifiqu[eé] acciones|no entend[ií] (?:esa orden|ninguna acci[oó]n)|no hay acciones/iu', $value)) {
+            return null;
+        }
+
+        return $value;
     }
 
     /**
@@ -4507,8 +4541,11 @@ class AICommandController extends Controller
                 if (! $skipSharedCourseCopy && empty($data['subject_name']) && $subject) {
                     $data['subject_name'] = $subject;
                 }
-                if (! $skipSharedCourseCopy && empty($data['grades']) && $grades !== []) {
-                    $data['grades'] = $grades;
+                if (! $skipSharedCourseCopy) {
+                    $data['grades'] = GradeLabel::preferExpandedRange((array) ($data['grades'] ?? []), $text);
+                    if ($data['grades'] === [] && $grades !== []) {
+                        $data['grades'] = $grades;
+                    }
                 }
                 if (empty($data['teacher_name']) && $teacher) {
                     $data['teacher_name'] = $teacher;
@@ -5117,6 +5154,11 @@ class AICommandController extends Controller
      */
     private function extractGrades(string $text): array
     {
+        $range = GradeLabel::expandRangeFromText($text);
+        if ($range !== []) {
+            return $range;
+        }
+
         $value = mb_strtolower($text);
         $value = strtr($value, [
             'primer grado' => '1ro grado',

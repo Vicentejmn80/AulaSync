@@ -435,6 +435,38 @@ class DirectorActionPlannerFlowTest extends TestCase
         $this->assertStringContainsString('no tiene tipo', mb_strtolower((string) $response->json('message')));
     }
 
+    public function test_empty_planner_summary_does_not_hide_detected_assignment(): void
+    {
+        [$director, $colegio] = $this->directorContext();
+        User::factory()->create([
+            'name' => 'Carlos Gutiérrez',
+            'role' => 'profesor',
+            'colegio_id' => $colegio->id,
+            'onboarding_completed' => true,
+        ]);
+
+        $this->fakePlannerPlan([
+            'status' => 'pending',
+            'actions' => [],
+            'summary' => 'No identifiqué acciones en tu mensaje.',
+            'requires_confirmation' => false,
+            'all_or_nothing' => false,
+        ]);
+
+        $response = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'asigna al profesor carlos gutierrez a 3ero, 4to y 5to grado de biología',
+        ]);
+
+        $response->assertOk();
+        $message = (string) $response->json('message');
+        $this->assertStringNotContainsStringIgnoringCase('No identifiqué acciones', $message);
+        $response->assertJsonPath('requires_confirmation', true);
+        $response->assertJsonPath('pending_actions.0.intent', 'assign_teacher');
+        $this->assertNotSame([], $response->json('buttons'));
+        $this->assertStringContainsStringIgnoringCase('Carlos', $message);
+        $this->assertStringContainsStringIgnoringCase('Biolog', $message);
+    }
+
     private function fakePlannerPlan(array $plan): void
     {
         Http::fake([

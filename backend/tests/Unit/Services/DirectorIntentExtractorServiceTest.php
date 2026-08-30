@@ -139,6 +139,19 @@ class DirectorIntentExtractorServiceTest extends TestCase
         $this->assertSame('sync_all_enrollments', $actions[0]['intent']);
     }
 
+    public function test_expands_2do_grado_a_6to_grado_range_for_teacher(): void
+    {
+        $actions = $this->extractor->extractMultipleIntentions(
+            'Quiero que creas al profesor Carlos Gutiérrez, que va a ser el profesor de biología de 2do grado a 6to grado.'
+        );
+
+        $this->assertCount(1, $actions);
+        $this->assertSame('create_teacher', $actions[0]['intent']);
+        $this->assertSame('Carlos Gutiérrez', $actions[0]['data']['teacher_name']);
+        $this->assertSame('Biología', $actions[0]['data']['subject_name']);
+        $this->assertSame(['2do', '3ro', '4to', '5to', '6to'], $actions[0]['data']['grades']);
+    }
+
     public function test_generic_subject_words_are_not_extracted_as_subject_name(): void
     {
         $actions = $this->extractor->extractMultipleIntentions(
