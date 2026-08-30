@@ -190,5 +190,93 @@ class TeacherCalendarExperienceTest extends TestCase
 
         return [$teacher, $course3ro, $course6to];
     }
+
+    public function test_teacher_can_reschedule_an_activity_to_a_specific_hour(): void
+    {
+        [$teacher, $course3ro] = $this->teacherWithTwoCourses();
+
+        $activity = Activity::create([
+            'teacher_id' => $teacher->id,
+            'course_id' => $course3ro->id,
+            'title' => 'Fotosíntesis: Teoría fundamental',
+            'due_date' => '2026-09-07',
+            'type' => 'clase',
+            'max_score' => 20,
+        ]);
+
+        $move = $this->actingAs($teacher)->patchJson(
+            route('teacher.api.activity.schedule', $activity),
+            ['time' => '10:00']
+        );
+
+        $move->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('activity.time_label', '10:00')
+            ->assertJsonPath('activity.time_range', '10:00-10:50')
+            ->assertJsonPath('activity.scheduled_time', '10:00');
+
+        $this->assertStringStartsWith('10:00', (string) $activity->fresh()->scheduled_time);
+
+        $calendar = $this->actingAs($teacher)
+            ->getJson(route('teacher.api.calendar', ['month' => '2026-09']));
+        $calendar->assertOk();
+        $dayList = $calendar->json('activities_by_day.2026-09-07');
+        $this->assertSame('10:00', $dayList[0]['time_label']);
+        $this->assertTrue($dayList[0]['scheduled']);
+    }
+
+    public function test_rescheduled_hour_is_kept_and_fallback_avoids_that_slot(): void
+    {
+        [$teacher, $course3ro, $course6to] = $this->teacherWithTwoCourses();
+
+        $first = Activity::create([
+            'teacher_id' => $teacher->id,
+            'course_id' => $course3ro->id,
+            'title' => 'Fotosíntesis: Teoría fundamental',
+            'due_date' => '2026-09-07',
+            'type' => 'clase',
+            'max_score' => 20,
+            'scheduled_time' => '10:00:00',
+        ]);
+        Activity::create([
+            'teacher_id' => $teacher->id,
+            'course_id' => $course6to->id,
+            'title' => 'Rayos solares: Teoría fundamental',
+            'due_date' => '2026-09-07',
+            'type' => 'clase',
+            'max_score' => 20,
+        ]);
+
+        $calendar = $this->actingAs($teacher)
+            ->getJson(route('teacher.api.calendar', ['month' => '2026-09']));
+        $calendar->assertOk();
+
+        $dayList = collect($calendar->json('activities_by_day.2026-09-07'));
+        $this->assertSame('10:00', $dayList->firstWhere('id', $first->id)['time_label']);
+        $this->assertSame('07:00', $dayList->firstWhere('title', 'Rayos solares: Teoría fundamental')['time_label']);
+    }
+
+    public function test_another_teacher_cannot_reschedule_an_activity(): void
+    {
+        [$teacher, $course3ro] = $this->teacherWithTwoCourses();
+        $activity = Activity::create([
+            'teacher_id' => $teacher->id,
+            'course_id' => $course3ro->id,
+            'title' => 'Clase ajena',
+            'due_date' => '2026-09-07',
+            'type' => 'clase',
+            'max_score' => 20,
+        ]);
+
+        $intruder = User::factory()->create([
+            'role' => 'profesor',
+            'colegio_id' => $teacher->colegio_id,
+            'onboarding_completed' => true,
+        ]);
+
+        $this->actingAs($intruder)
+            ->patchJson(route('teacher.api.activity.schedule', $activity), ['time' => '11:00'])
+            ->assertForbidden();
+    }
 }
 

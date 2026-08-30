@@ -110,15 +110,23 @@ class HubController extends Controller
             ->whereBetween('due_date', [now()->startOfWeek(), now()->endOfWeek()])
             ->count();
 
+        $upcomingColumns = ['id', 'title', 'due_date', 'course_id', 'type', 'is_homework', 'evaluation_id'];
+        if (Schema::hasColumn('activities', 'scheduled_time')) {
+            $upcomingColumns[] = 'scheduled_time';
+        }
+
         $upcomingRaw = Activity::whereIn('course_id', $courseIds)
             ->where('due_date', '>=', now()->toDateString())
             ->orderBy('due_date')
             ->orderBy('id')
-            ->limit(6)
+            ->limit(12)
             ->with('course:id,subject_name,grade,section')
-            ->get(['id', 'title', 'due_date', 'course_id', 'type', 'is_homework', 'evaluation_id']);
+            ->get($upcomingColumns);
 
-        $upcomingQueue = $this->serializeUpcomingQueue($upcomingRaw);
+        $upcomingQueue = $this->serializeUpcomingQueue($upcomingRaw)
+            ->sortBy(fn ($item) => ($item['due_date'] ?? '').'|'.($item['time_label'] ?? '99:99').'|'.($item['id'] ?? 0))
+            ->take(6)
+            ->values();
         $upcomingActivities = $upcomingQueue->take(5)->values();
         $nextActivity = $upcomingQueue->first();
 
@@ -500,15 +508,18 @@ class HubController extends Controller
                     return sprintf('%s|%s|%s', $grade, $name, $title);
                 })->values();
 
-                return $ordered->values()->map(function ($activity, $index) use ($courseColors) {
+                return $this->decorateActivitiesWithTimeSlots($ordered)->map(function ($item, $index) use ($courseColors) {
+                    /** @var Activity $activity */
+                    $activity = $item['activity'];
+                    $slot = $item['slot'];
                     $payload = $this->serializeHubActivity($activity, null, $courseColors);
-                    $slot = $this->calendarTimeSlotForIndex((int) $index);
                     $payload['time_label'] = $slot['start'];
                     $payload['time_range'] = $slot['start'].'-'.$slot['end'];
                     $payload['slot_index'] = (int) $index;
+                    $payload['scheduled'] = $slot['scheduled'];
 
                     return $payload;
-                });
+                })->values();
             });
 
         return response()->json([
@@ -539,6 +550,39 @@ class HubController extends Controller
         return response()->json([
             'success' => true,
             'activity' => $this->serializeHubActivity($activity),
+        ]);
+    }
+
+    public function updateActivitySchedule(Request $request, Activity $activity): JsonResponse
+    {
+        abort_unless($activity->teacher_id === auth()->id(), 403);
+
+        if (! Schema::hasColumn('activities', 'scheduled_time')) {
+            return response()->json(['error' => 'El horario aún no está disponible.'], 422);
+        }
+
+        $data = $request->validate([
+            'time' => ['required', 'regex:/^(?:[01]\d|2[0-3]):[0-5]\d$/'],
+        ]);
+
+        $hour = (int) substr($data['time'], 0, 2);
+        $minute = (int) substr($data['time'], 3, 2);
+        if ($hour < 7 || $hour > 19 || $minute !== 0) {
+            return response()->json(['error' => 'Elige una hora entre 07:00 y 19:00.'], 422);
+        }
+
+        $activity->scheduled_time = sprintf('%02d:%02d:00', $hour, $minute);
+        $activity->save();
+
+        $slot = $this->timeSlotFromStart(sprintf('%02d:%02d', $hour, $minute));
+        $payload = $this->serializeHubActivity($activity->fresh()->load('course:id,subject_name,grade,section'));
+        $payload['time_label'] = $slot['start'];
+        $payload['time_range'] = $slot['start'].'-'.$slot['end'];
+        $payload['scheduled'] = true;
+
+        return response()->json([
+            'success' => true,
+            'activity' => $payload,
         ]);
     }
 
@@ -579,6 +623,7 @@ class HubController extends Controller
             'evaluation_mode' => $evaluation?->mode,
             'evaluation_topic' => $evaluation?->topic,
             'evaluation_question_count' => $evaluation?->question_count,
+            'scheduled_time' => $this->scheduledTimeLabel($activity->scheduled_time ?? null),
             'tareas' => ($activity->tareas ?? collect())->map(fn ($t) => [
                 'id' => $t->id,
                 'titulo' => $t->titulo,
@@ -625,8 +670,10 @@ class HubController extends Controller
             return [];
         }
 
-        $indexed = $activities->values()->map(function ($activity, $index) {
-            $slot = $this->calendarTimeSlotForIndex((int) $index);
+        $indexed = $this->decorateActivitiesWithTimeSlots($activities)->map(function ($item, $index) {
+            /** @var Activity $activity */
+            $activity = $item['activity'];
+            $slot = $item['slot'];
             $course = $activity->relationLoaded('course') ? $activity->course : null;
             $grade = GradeLabel::canonical((string) ($course?->grade ?? '')) ?? trim((string) ($course?->grade ?? ''));
             $courseLabel = trim(($course?->subject_name ?? '').' '.($course?->grade ?? '').(($course?->section ?? '') !== '' ? ' / '.$course->section : ''));
@@ -642,6 +689,7 @@ class HubController extends Controller
                 'time_label' => $slot['start'],
                 'time_range' => $slot['start'].'-'.$slot['end'],
                 'slot_index' => (int) $index,
+                'scheduled' => $slot['scheduled'],
             ];
         });
 
@@ -651,7 +699,7 @@ class HubController extends Controller
                 return [
                     'grade' => $grade,
                     'count' => $group->count(),
-                    'items' => $group->sortBy('slot_index')->values()->all(),
+                    'items' => $group->sortBy('time_label')->values()->all(),
                 ];
             })
             ->sortBy('grade')
@@ -690,13 +738,18 @@ class HubController extends Controller
             return (string) $due;
         });
 
-        return $activities->values()->map(function ($activity) use ($grouped) {
+        $slotsById = [];
+        foreach ($grouped as $group) {
+            foreach ($this->decorateActivitiesWithTimeSlots($group) as $item) {
+                $slotsById[(int) $item['activity']->id] = $item['slot'];
+            }
+        }
+
+        return $activities->values()->map(function ($activity) use ($slotsById) {
             $due = $activity->due_date instanceof Carbon
                 ? $activity->due_date->toDateString()
                 : (string) $activity->due_date;
-            $sameDay = $grouped->get($due, collect())->values();
-            $index = $sameDay->search(fn ($item) => (int) $item->id === (int) $activity->id);
-            $slot = $this->calendarTimeSlotForIndex($index === false ? 0 : (int) $index);
+            $slot = $slotsById[(int) $activity->id] ?? $this->calendarTimeSlotForIndex(0);
             $course = $activity->relationLoaded('course') ? $activity->course : null;
             $grade = GradeLabel::canonical((string) ($course?->grade ?? '')) ?? trim((string) ($course?->grade ?? ''));
 
@@ -713,8 +766,76 @@ class HubController extends Controller
                 'course_name' => trim(($course?->subject_name ?? '').' '.($grade).(($course?->section ?? '') !== '' ? ' / '.$course->section : '')),
                 'time_label' => $slot['start'],
                 'time_range' => $slot['start'].'-'.$slot['end'],
+                'scheduled' => (bool) ($slot['scheduled'] ?? false),
             ];
         })->values();
+    }
+
+    /**
+     * @return \Illuminate\Support\Collection<int, array{activity: Activity, slot: array{start: string, end: string, scheduled: bool}}>
+     */
+    private function decorateActivitiesWithTimeSlots($activities)
+    {
+        $list = collect($activities)->values();
+        $hasColumn = Schema::hasColumn('activities', 'scheduled_time');
+        $reserved = [];
+
+        foreach ($list as $activity) {
+            $label = $hasColumn ? $this->scheduledTimeLabel($activity->scheduled_time ?? null) : null;
+            if ($label) {
+                $reserved[$label] = true;
+            }
+        }
+
+        $fallbackIndex = 0;
+
+        return $list->map(function ($activity) use ($hasColumn, $reserved, &$fallbackIndex) {
+            $label = $hasColumn ? $this->scheduledTimeLabel($activity->scheduled_time ?? null) : null;
+            if ($label) {
+                $slot = $this->timeSlotFromStart($label);
+                $slot['scheduled'] = true;
+            } else {
+                do {
+                    $slot = $this->calendarTimeSlotForIndex($fallbackIndex);
+                    $fallbackIndex++;
+                } while (isset($reserved[$slot['start']]) && $fallbackIndex < 20);
+                $slot['scheduled'] = false;
+            }
+
+            return [
+                'activity' => $activity,
+                'slot' => $slot,
+            ];
+        });
+    }
+
+    private function scheduledTimeLabel(mixed $value): ?string
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        if ($value instanceof Carbon) {
+            return $value->format('H:i');
+        }
+
+        $raw = substr((string) $value, 0, 5);
+
+        return preg_match('/^\d{2}:\d{2}$/', $raw) === 1 ? $raw : null;
+    }
+
+    /**
+     * @return array{start: string, end: string}
+     */
+    private function timeSlotFromStart(string $start): array
+    {
+        [$hour, $minute] = array_map('intval', explode(':', $start));
+        $endMinutes = ($hour * 60 + $minute) + 50;
+
+        return [
+            'start' => sprintf('%02d:%02d', $hour, $minute),
+            'end' => sprintf('%02d:%02d', intdiv($endMinutes, 60) % 24, $endMinutes % 60),
+        ];
     }
 
     private function activityTypeLabel(Activity $activity): string

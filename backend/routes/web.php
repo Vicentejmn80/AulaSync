@@ -298,6 +298,7 @@ Route::middleware('auth')->group(function () {
             Route::get('/teacher/api/courses/{course}/students/{student}/grades', [HubController::class, 'apiCourseStudentGrades'])->name('teacher.api.course.student.grades');
             Route::get('/teacher/api/calendar', [HubController::class, 'apiCalendar'])->name('teacher.api.calendar');
             Route::get('/teacher/api/activities/{activity}', [HubController::class, 'apiActivity'])->name('teacher.api.activity');
+            Route::patch('/teacher/api/activities/{activity}/schedule', [HubController::class, 'updateActivitySchedule'])->name('teacher.api.activity.schedule');
 
             // Asistente de IA
             Route::post('/ai/command', [AICommandHandlerController::class, 'handle'])->name('ai.command');

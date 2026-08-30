@@ -23,6 +23,7 @@ class Activity extends Model
         'max_score',
         'weight_percentage',
         'due_date',
+        'scheduled_time',
         'type',
         'is_homework',
         'nee_type',

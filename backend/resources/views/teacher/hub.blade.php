@@ -3485,7 +3485,16 @@
             display: grid;
             grid-template-columns: 64px 1fr;
             gap: 10px;
-            align-items: start;
+            align-items: stretch;
+            min-height: 62px;
+            padding: 2px 0;
+            border-radius: 14px;
+            transition: background 0.15s ease, box-shadow 0.15s ease;
+        }
+
+        .day-agenda-row.is-drop-target {
+            background: color-mix(in srgb, var(--nova-violet) 10%, transparent);
+            box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--nova-violet) 45%, transparent);
         }
 
         .day-agenda-hour {
@@ -3506,19 +3515,39 @@
             color: var(--text-tertiary);
             border: 1px dashed var(--nova-glass-border);
             border-radius: 12px;
-            padding: 8px 10px;
+            padding: 14px 10px;
+            min-height: 48px;
+            display: flex;
+            align-items: center;
+        }
+
+        .day-agenda-hint {
+            margin: 0 0 12px;
+            font-size: 12px;
+            color: var(--text-tertiary);
         }
 
         .day-agenda-card {
             border: 1px solid var(--nova-glass-border);
             border-left: 4px solid var(--grade-accent, #7C3AED);
             border-radius: 14px;
-            background: var(--nova-glass);
+            background: var(--bg-card);
             padding: 10px 12px;
             width: 100%;
             text-align: left;
             color: inherit;
-            cursor: pointer;
+            cursor: grab;
+            box-shadow: 0 8px 18px -16px rgba(15, 23, 42, 0.55);
+            user-select: none;
+        }
+
+        .day-agenda-card:active {
+            cursor: grabbing;
+        }
+
+        .day-agenda-card.is-dragging {
+            opacity: 0.42;
+            transform: scale(0.98);
         }
 
         .day-agenda-card:hover {
@@ -5690,26 +5719,38 @@
                 <p x-show="!(dayModal?.activities || []).length" style="color: var(--text-secondary); font-size: 14px; padding: 12px 0;">
                     No hay clases, tareas ni evaluaciones este día.
                 </p>
+                <p class="day-agenda-hint" x-show="(dayModal?.activities || []).length">
+                    Arrastra una tarjeta a otra hora para reprogramarla. El clic abre el detalle.
+                </p>
+                <p class="day-agenda-hint" x-show="agendaDrag.saving" x-cloak>Guardando horario…</p>
                 <div class="day-agenda">
                     <template x-for="row in (dayModal?.agendaRows ?? [])" :key="'row-'+row.hour">
-                        <div class="day-agenda-row">
+                        <div class="day-agenda-row"
+                             :class="{ 'is-drop-target': agendaDrag.id && agendaDropHour === row.hour }"
+                             @dragover.prevent="onAgendaDragOver($event, row.hour)"
+                             @dragenter.prevent="agendaDropHour = row.hour"
+                             @dragleave="if (agendaDropHour === row.hour) agendaDropHour = null"
+                             @drop.prevent="onAgendaDrop($event, row.hour)">
                             <div class="day-agenda-hour" x-text="row.hour"></div>
                             <div class="day-agenda-cards">
                                 <template x-if="!(row.activities || []).length">
-                                    <div class="day-agenda-empty">Sin actividad programada</div>
+                                    <div class="day-agenda-empty">Suelta aquí para programar a las <span x-text="row.hour"></span></div>
                                 </template>
                                 <template x-for="act in (row.activities || [])" :key="'agenda-'+act.id">
-                                    <button type="button"
-                                            @click="setActivityContext(act); openActivityModal(act); dayModal = null"
+                                    <article draggable="true"
+                                            @dragstart="onAgendaDragStart($event, act)"
+                                            @dragend="onAgendaDragEnd($event)"
+                                            @click="openAgendaActivity(act)"
                                             class="day-agenda-card"
+                                            :class="{ 'is-dragging': agendaDrag.id === act.id }"
                                             :style="`--grade-accent: ${act.grade_color || gradeColor(act.grade)}`">
                                         <div class="day-agenda-card-top">
                                             <span class="day-agenda-time" x-text="act.time_range || act.time_label || 'Sin hora'"></span>
                                             <span class="status-pill" style="margin-left:auto;" x-text="act.grade || 'Sin grado'"></span>
                                         </div>
                                         <p class="day-agenda-title" x-text="act.title"></p>
-                                        <p class="day-agenda-meta" x-text="`${act.course_name || ''} · ${act.type || 'actividad'}`"></p>
-                                    </button>
+                                        <p class="day-agenda-meta" x-text="`${act.course_name || ''} · ${act.type_label || act.type || 'actividad'}`"></p>
+                                    </article>
                                 </template>
                             </div>
                         </div>
@@ -5852,6 +5893,8 @@ function teacherHub() {
         calendarMonth:   null,
         calendarGradeFilter: 'all',
         nextQueueOpen:   false,
+        agendaDrag:      { id: null, fromHour: null, saving: false, didMove: false },
+        agendaDropHour:  null,
         hiddenWidgets:   [],
         activityModal:   null,
         deleteConfirm:   { open: false, id: null, title: '', deleting: false },
@@ -7469,10 +7512,126 @@ function teacherHub() {
             const key = this.calendarData.month + '-' + String(day).padStart(2, '0');
             const list = this.calendarData.activities_by_day?.[key] ?? [];
             return [...list].sort((a, b) => {
-                const ai = Number(a.slot_index ?? 0);
-                const bi = Number(b.slot_index ?? 0);
-                return ai - bi;
+                const ta = String(a.time_label || '99:99');
+                const tb = String(b.time_label || '99:99');
+                if (ta !== tb) return ta.localeCompare(tb);
+                return Number(a.id) - Number(b.id);
             });
+        },
+
+        refreshDayModal() {
+            if (!this.dayModal?.day) return;
+            const day = this.dayModal.day;
+            this.dayModal = {
+                ...this.dayModal,
+                activities: this.activitiesForDay(day),
+                agendaRows: this.dayAgendaRows(day),
+            };
+        },
+
+        endTimeFromStart(hour) {
+            const [h, m] = String(hour || '07:00').split(':').map(Number);
+            const end = ((h || 0) * 60 + (m || 0) + 50);
+            return `${String(Math.floor(end / 60) % 24).padStart(2, '0')}:${String(end % 60).padStart(2, '0')}`;
+        },
+
+        onAgendaDragStart(event, act) {
+            if (!act?.id) return;
+            this.agendaDrag = { id: act.id, fromHour: act.time_label || null, saving: false, didMove: false };
+            this.agendaDropHour = act.time_label || null;
+            if (event.dataTransfer) {
+                event.dataTransfer.effectAllowed = 'move';
+                event.dataTransfer.setData('text/plain', String(act.id));
+            }
+        },
+
+        onAgendaDragOver(event, hour) {
+            if (!this.agendaDrag.id) return;
+            event.preventDefault();
+            if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+            this.agendaDropHour = hour;
+        },
+
+        onAgendaDragEnd() {
+            this.agendaDropHour = null;
+            if (this.agendaDrag.saving) return;
+            this.agendaDrag = { ...this.agendaDrag, id: null };
+        },
+
+        async onAgendaDrop(event, hour) {
+            event.preventDefault();
+            const activityId = this.agendaDrag.id || Number(event.dataTransfer?.getData('text/plain') || 0);
+            this.agendaDropHour = null;
+            if (!activityId || !hour) return;
+            if (this.agendaDrag.fromHour === hour) {
+                this.agendaDrag = { id: null, fromHour: null, saving: false, didMove: false };
+                return;
+            }
+            await this.moveActivityToHour(activityId, hour);
+        },
+
+        applyLocalActivityTime(activityId, hour) {
+            if (!this.calendarData?.activities_by_day) return;
+            const range = `${hour}-${this.endTimeFromStart(hour)}`;
+            const days = this.calendarData.activities_by_day;
+            Object.keys(days).forEach((key) => {
+                days[key] = (days[key] || []).map((act) => {
+                    if (Number(act.id) !== Number(activityId)) return act;
+                    return { ...act, time_label: hour, time_range: range, scheduled_time: hour, scheduled: true };
+                });
+            });
+            this.calendarData = { ...this.calendarData, activities_by_day: { ...days } };
+            this.refreshDayModal();
+        },
+
+        async moveActivityToHour(activityId, hour) {
+            this.agendaDrag = { id: activityId, fromHour: this.agendaDrag.fromHour, saving: true, didMove: true };
+            this.applyLocalActivityTime(activityId, hour);
+            try {
+                const res = await fetch(`/teacher/api/activities/${activityId}/schedule`, {
+                    method: 'PATCH',
+                    headers: {
+                        'Accept': 'application/json',
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]')?.content || '',
+                    },
+                    body: JSON.stringify({ time: hour }),
+                });
+                const json = await res.json().catch(() => ({}));
+                if (!res.ok || !json.success) {
+                    throw new Error(json.error || 'No se pudo guardar el horario.');
+                }
+                if (json.activity) {
+                    this.applyLocalActivityTime(json.activity.id, json.activity.time_label || hour);
+                }
+                if (typeof this.loadWelcome === 'function' && this.view === 'welcome') {
+                    this.loadWelcome();
+                } else if (this.stats) {
+                    fetch('{{ route('teacher.api.stats') }}', { headers: { 'Accept': 'application/json' } })
+                        .then((res) => res.json())
+                        .then((json) => { this.stats = json; })
+                        .catch(() => {});
+                }
+            } catch (e) {
+                console.error('moveActivityToHour', e);
+                alert(e.message || 'No se pudo guardar el horario.');
+                if (this.calendarMonth) {
+                    await this.loadCalendar(this.calendarMonth, this.calendarGradeFilter);
+                    this.refreshDayModal();
+                }
+            } finally {
+                this.agendaDrag = { id: null, fromHour: null, saving: false, didMove: true };
+            }
+        },
+
+        openAgendaActivity(act) {
+            if (this.agendaDrag.didMove || this.agendaDrag.saving) {
+                this.agendaDrag = { id: null, fromHour: null, saving: false, didMove: false };
+                return;
+            }
+            this.setActivityContext(act);
+            this.openActivityModal(act);
+            this.dayModal = null;
         },
 
         dayGradeBuckets(day) {
