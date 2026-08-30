@@ -352,6 +352,10 @@ class DirectorDataAgentConversationTest extends TestCase
         $this->assertStringContainsString('res.status === 419', $blade);
         $this->assertStringContainsString('Tu sesión expiró', $blade);
         $this->assertStringContainsString('getCsrfToken()', $blade);
+        $this->assertStringContainsString('keepSessionAlive()', $blade);
+        $this->assertStringContainsString('requestWithSession', $blade);
+        $this->assertStringContainsString('voiceMaxMs', $blade);
+        $this->assertStringContainsString("route('ai.transcribe')", $blade);
     }
 
     /**

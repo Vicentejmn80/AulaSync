@@ -13,8 +13,10 @@ class SpeechToTextService
         private DirectorCommandFocusService $commandFocus,
     ) {}
 
-    public function transcribe(UploadedFile $audio): string
+    public function transcribe(UploadedFile $audio, string $role = 'director'): string
     {
+        $role = $role === 'profesor' ? 'profesor' : 'director';
+
         if (! $this->enabled()) {
             throw ValidationException::withMessages([
                 'audio' => 'La transcripción de voz no está configurada. Revisa la clave de OpenAI.',
@@ -23,8 +25,12 @@ class SpeechToTextService
 
         $contents = $this->readAudio($audio);
         $filename = $audio->getClientOriginalName() ?: ('nota-voz.'.$this->guessExtension($audio));
-        $raw = $this->callTranscription($contents, $filename);
-        $polished = $this->polishAndTranslate($raw);
+        $raw = $this->callTranscription($contents, $filename, $role);
+        $polished = $this->polishAndTranslate($raw, $role);
+
+        if ($role === 'profesor') {
+            return $polished;
+        }
 
         $focus = $this->commandFocus->extract($polished);
         $working = trim((string) $focus['working']);
@@ -63,7 +69,7 @@ class SpeechToTextService
         return $contents;
     }
 
-    private function callTranscription(string $contents, string $filename): string
+    private function callTranscription(string $contents, string $filename, string $role = 'director'): string
     {
         $models = array_values(array_unique(array_filter([
             (string) config('services.openai.whisper_model', 'gpt-4o-mini-transcribe'),
@@ -79,13 +85,13 @@ class SpeechToTextService
                     'model' => $model,
                     'language' => 'es',
                     'response_format' => 'json',
-                    'prompt' => $this->vocabularyPrompt(),
+                    'prompt' => $this->vocabularyPrompt($role),
                 ];
                 if ($model === 'whisper-1') {
                     $payload['temperature'] = 0;
                 }
 
-                $response = Http::timeout(90)
+                $response = Http::timeout(120)
                     ->withToken((string) config('services.openai.key'))
                     ->attach('file', $contents, $filename)
                     ->post('https://api.openai.com/v1/audio/transcriptions', $payload);
@@ -116,7 +122,7 @@ class SpeechToTextService
         throw ValidationException::withMessages(['audio' => $lastError]);
     }
 
-    private function polishAndTranslate(string $raw): string
+    private function polishAndTranslate(string $raw, string $role = 'director'): string
     {
         $raw = trim($raw);
         if ($raw === '') {
@@ -138,19 +144,7 @@ class SpeechToTextService
                     'messages' => [
                         [
                             'role' => 'system',
-                            'content' => <<<PROMPT
-Eres AulaSync, el asistente del director. Recibes una transcripción de voz (español venezolano, a veces mezclado con inglés).
-Devuelve SOLO el texto limpio, en español, listo para ejecutar. Sin comillas, sin explicación, sin markdown.
-
-Reglas:
-1. Traduce al español cualquier fragmento en inglés.
-2. Corrige errores típicos de voz: 1ero/primer→1ro, 3ero→3ro, ingles→inglés, matematica→matemática, robotica→robótica, computacion→computación, religion→religión, fisica→física, biologia→biología.
-3. Conserva nombres propios tal cual (Jorge Alarcón, Yovanny, etc.).
-4. RESALTA las órdenes: si hay "necesito que", "quiero que", "crea", "modifica", "agrega", "elimina", "aumenta", "disminuye", "asigna", deja esas cláusulas completas y quita charla previa (saludos, "mira", "te cuento").
-5. No inventes profesores, cursos ni grados que no estén en el audio.
-6. NUNCA cambies "crea/crear/crees" por "tiene/hay". Si dijo crear, deja crear.
-7. No agregues "va a dar" ni materias si el director no las dijo.
-PROMPT,
+                            'content' => $this->polishPrompt($role),
                         ],
                         [
                             'role' => 'user',
@@ -171,8 +165,48 @@ PROMPT,
         return $this->normalizeSchoolSpanish($raw);
     }
 
-    private function vocabularyPrompt(): string
+    private function polishPrompt(string $role): string
     {
+        if ($role === 'profesor') {
+            return <<<PROMPT
+Eres AulaSync, el asistente del docente. Recibes una transcripción de voz (español venezolano, a veces mezclado con inglés).
+Devuelve SOLO el texto limpio, en español, listo para el chat. Sin comillas, sin explicación, sin markdown.
+
+Reglas:
+1. Traduce al español cualquier fragmento en inglés.
+2. Corrige errores típicos de voz: 1ero/primer→1ro, 3ero/tercero→3ro, ingles→inglés, matematica→matemática, biologia→biología, planificacion→planificación, setiembre→septiembre.
+3. Conserva materias, meses y días tal cual se pidieron (septiembre, lunes, martes, biología, 3ro).
+4. Si pidió una planificación, un plan de clase, notas o asistencia, deja esa orden completa.
+5. No inventes cursos, grados ni fechas que no estén en el audio.
+PROMPT;
+        }
+
+        return <<<PROMPT
+Eres AulaSync, el asistente del director. Recibes una transcripción de voz (español venezolano, a veces mezclado con inglés).
+Devuelve SOLO el texto limpio, en español, listo para ejecutar. Sin comillas, sin explicación, sin markdown.
+
+Reglas:
+1. Traduce al español cualquier fragmento en inglés.
+2. Corrige errores típicos de voz: 1ero/primer→1ro, 3ero→3ro, ingles→inglés, matematica→matemática, robotica→robótica, computacion→computación, religion→religión, fisica→física, biologia→biología.
+3. Conserva nombres propios tal cual (Jorge Alarcón, Yovanny, etc.).
+4. RESALTA las órdenes: si hay "necesito que", "quiero que", "crea", "modifica", "agrega", "elimina", "aumenta", "disminuye", "asigna", deja esas cláusulas completas y quita charla previa (saludos, "mira", "te cuento").
+5. No inventes profesores, cursos ni grados que no estén en el audio.
+6. NUNCA cambies "crea/crear/crees" por "tiene/hay". Si dijo crear, deja crear.
+7. No agregues "va a dar" ni materias si el director no las dijo.
+PROMPT;
+    }
+
+    private function vocabularyPrompt(string $role = 'director'): string
+    {
+        if ($role === 'profesor') {
+            return 'Transcripción en español venezolano de un docente para AulaSync. '
+                .'Vocabulario: planificación, plan de clase, evaluación, asistencia, notas, actividades, tareas, curso, materia, grado. '
+                .'Materias: biología, matemática, inglés, lenguaje, ciencias, física, química. '
+                .'Grados: 1ro, 2do, 3ro, 4to, 5to, 6to, tercero. '
+                .'Tiempo: septiembre, octubre, lunes, martes, miércoles, jueves, viernes. '
+                .'Frases: tírame una planificación, planifica, genera un plan, para el mes de septiembre.';
+        }
+
         return 'Transcripción en español venezolano de un director de colegio para AulaSync. '
             .'Vocabulario: profesor, docente, alumno, curso, materia, grado, sección, invitación. '
             .'Materias: inglés, matemática, computación, robótica, biología, física, religión, lenguaje, ciencias. '
@@ -193,6 +227,9 @@ PROMPT,
             '/\breligion\b/iu' => 'religión',
             '/\bfisica\b/iu' => 'física',
             '/\bbiologia\b/iu' => 'biología',
+            '/\btercero\b/iu' => '3ro',
+            '/\bsetiembre\b/iu' => 'septiembre',
+            '/\bplanificacion\b/iu' => 'planificación',
         ];
 
         foreach ($replacements as $pattern => $replacement) {

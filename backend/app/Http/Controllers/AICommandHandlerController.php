@@ -15,6 +15,7 @@ use App\Services\DirectorAlertService;
 use App\Services\EvaluationPlanService;
 use App\Services\EvaluationSyncService;
 use App\Services\ProductTelemetry;
+use App\Services\SpeechToTextService;
 use App\Services\StudentGradeAccumulationService;
 use App\Support\GradingScale;
 use App\Support\LessonTemplate;
@@ -39,7 +40,40 @@ class AICommandHandlerController extends Controller
     public function __construct(
         private StudentGradeAccumulationService $accumulation,
         private EvaluationPlanService $planService,
+        private SpeechToTextService $speechToText,
     ) {}
+
+    public function session(): JsonResponse
+    {
+        return response()->json([
+            'success' => true,
+            'token' => csrf_token(),
+            'expires_in_minutes' => (int) config('session.lifetime', 480),
+        ]);
+    }
+
+    public function transcribe(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        if (! $user || $user->role !== 'profesor') {
+            return response()->json([
+                'success' => false,
+                'error' => 'No autorizado.',
+                'message' => 'Solo docentes pueden enviar notas de voz por esta ruta.',
+            ], 403);
+        }
+
+        $request->validate([
+            'audio' => ['required', 'file', 'max:51200'],
+        ]);
+
+        $transcript = $this->speechToText->transcribe($request->file('audio'), 'profesor');
+
+        return response()->json([
+            'success' => true,
+            'transcript' => $transcript,
+        ]);
+    }
 
     private function jsonOut(array $payload, int $status = 200): JsonResponse
     {

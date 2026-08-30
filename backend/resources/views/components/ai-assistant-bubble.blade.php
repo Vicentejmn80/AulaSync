@@ -1071,7 +1071,7 @@
             <div class="input-wrapper">
                 <textarea x-ref="novaMainTextarea" x-model="input" @keydown.enter.prevent="if(!$event.shiftKey) sendCommand()" @input="autoResizeTextarea()" :disabled="loading" rows="1" placeholder="Escribe tu mensaje..."></textarea>
                 <div class="input-actions">
-                    <button class="voice-btn" :class="{ 'listening': listening }" @click="toggleVoice()" :title="isDirector ? 'Nota de voz: graba y envía' : 'Dictado de voz'">
+                    <button class="voice-btn" :class="{ 'listening': listening }" @click="toggleVoice()" :title="transcribeEndpoint ? 'Nota de voz: graba hasta 4 minutos y envía' : 'Dictado de voz'">
                         <i class="fa-solid" :class="listening ? 'fa-stop' : 'fa-microphone'"></i>
                     </button>
                     <button class="send-btn" @click="sendCommand()" :disabled="loading || !input.trim()">
@@ -1080,9 +1080,9 @@
                 </div>
             </div>
             <div x-show="listening || transcribing" class="voice-status" style="font-size: 10px; color: #EF4444; text-align: center; margin-top: 6px;">
-                <span x-show="isDirector && listening && !transcribing">🔴 Grabando nota de voz... toca el micrófono para transcribir y enviar</span>
-                <span x-show="isDirector && transcribing">⏳ Transcribiendo y entendiendo la orden...</span>
-                <span x-show="!isDirector">🔴 Escuchando...</span>
+                <span x-show="transcribeEndpoint && listening && !transcribing">🔴 Grabando <span x-text="voiceElapsed"></span> / 4:00 — toca el micrófono para transcribir y enviar</span>
+                <span x-show="transcribeEndpoint && transcribing">⏳ Transcribiendo la nota de voz...</span>
+                <span x-show="!transcribeEndpoint">🔴 Escuchando...</span>
             </div>
         </div>
     </div>
@@ -1116,9 +1116,15 @@ function novaAIAssistant() {
         isTeacher: {{ auth()->check() && auth()->user()->role === 'profesor' ? 'true' : 'false' }},
         isDirector: {{ auth()->check() && auth()->user()->role === 'director' ? 'true' : 'false' }},
         commandEndpoint: @json(auth()->check() && auth()->user()->role === 'director' ? route('director.ai.command') : route('ai.command')),
-        transcribeEndpoint: @json(auth()->check() && auth()->user()->role === 'director' ? route('director.ai.transcribe') : null),
+        transcribeEndpoint: @json(auth()->check() && in_array(auth()->user()->role, ['director', 'profesor'], true)
+            ? (auth()->user()->role === 'director' ? route('director.ai.transcribe') : route('ai.transcribe'))
+            : null),
+        sessionEndpoint: @json(auth()->check() ? route('ai.session') : null),
         mediaRecorder: null,
         audioChunks: [],
+        voiceMaxMs: 4 * 60 * 1000,
+        voiceTimer: null,
+        voiceElapsed: '0:00',
         toast: {
             visible: false,
             message: '',
@@ -1129,6 +1135,8 @@ function novaAIAssistant() {
         init() {
             this.refreshContext();
             this._persistTimer = null;
+            this.keepSessionAlive();
+            this._sessionTimer = setInterval(() => this.keepSessionAlive(), 4 * 60 * 1000);
 
             // Escuchar eventos globales
             window.addEventListener('ai-context-changed', (e) => {
@@ -1247,26 +1255,59 @@ function novaAIAssistant() {
             const input = document.querySelector('input[name="_token"]');
             return input ? input.value : '';
         },
+        applyCsrfToken(token) {
+            if (!token) return '';
+            const meta = document.querySelector('meta[name="csrf-token"]');
+            if (meta) meta.setAttribute('content', token);
+            document.querySelectorAll('input[name="_token"]').forEach((input) => { input.value = token; });
+            return token;
+        },
+        async keepSessionAlive() {
+            if (!this.sessionEndpoint) return this.getCsrfToken();
+            try {
+                const res = await fetch(this.sessionEndpoint, {
+                    method: 'GET',
+                    credentials: 'same-origin',
+                    headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                });
+                if (!res.ok) return this.getCsrfToken();
+                const json = await res.json().catch(() => ({}));
+                return this.applyCsrfToken(json.token) || this.getCsrfToken();
+            } catch {
+                return this.getCsrfToken();
+            }
+        },
+        async requestWithSession(url, options = {}, retry = true) {
+            const token = await this.keepSessionAlive();
+            if (!token) {
+                return { res: { status: 419, ok: false }, json: {} };
+            }
+            const headers = {
+                'Accept': 'application/json',
+                'X-CSRF-TOKEN': token,
+                'X-Requested-With': 'XMLHttpRequest',
+                ...(options.headers || {}),
+            };
+            const res = await fetch(url, {
+                ...options,
+                credentials: 'same-origin',
+                headers,
+            });
+            if (res.status === 419 && retry) {
+                await this.keepSessionAlive();
+                return this.requestWithSession(url, options, false);
+            }
+            return { res, json: await res.json().catch(() => ({})) };
+        },
         async executeConfirmed() {
             const liveContext = window.novaContext || this.pageContext || null;
             const conversation = this.messages
                 .filter(m => m.role === 'user' || m.role === 'assistant')
                 .map(m => ({ role: m.role, content: m.text }));
-            const token = this.getCsrfToken();
-            if (!token) {
-                this.addMessage('assistant', 'No pude verificar tu sesión. Recarga la página e intenta de nuevo.');
-                return { success: false };
-            }
-            const res = await fetch(this.commandEndpoint, {
+            const { res, json } = await this.requestWithSession(this.commandEndpoint, {
                 method: 'POST',
-                credentials: 'same-origin',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json',
-                    'X-CSRF-TOKEN': token,
-                    'X-Requested-With': 'XMLHttpRequest',
-                },
-                    body: JSON.stringify({
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
                     prompt: '',
                     message: '',
                     confirmed: true,
@@ -1281,7 +1322,7 @@ function novaAIAssistant() {
                 this.addMessage('assistant', 'Tu sesión expiró. Recarga la página e intenta de nuevo.');
                 return { success: false, status: 419 };
             }
-            return res.json();
+            return json;
         },
 
         async sendCommand() {
@@ -1328,26 +1369,14 @@ function novaAIAssistant() {
                 }));
             }
 
-            const token2 = this.getCsrfToken();
-            if (!token2) {
-                this.addMessage('assistant', 'No pude verificar tu sesión. Recarga la página e intenta de nuevo.');
-                this.loading = false;
-                return;
-            }
             try {
                 const liveContext = window.novaContext || this.pageContext || null;
                 const conversation = this.messages
                     .filter(m => m.role === 'user' || m.role === 'assistant')
                     .map(m => ({ role: m.role, content: m.text }));
-                const res = await fetch(this.commandEndpoint, {
+                const { res, json } = await this.requestWithSession(this.commandEndpoint, {
                     method: 'POST',
-                    credentials: 'same-origin',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Accept': 'application/json',
-                        'X-CSRF-TOKEN': token2,
-                        'X-Requested-With': 'XMLHttpRequest',
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                     prompt: text,
                     message: text,
@@ -1363,11 +1392,7 @@ function novaAIAssistant() {
                     this.showToast('Sesión expirada', 'error', 'fa-exclamation-triangle');
                     return;
                 }
-                const raw = await res.text();
-                let json;
-                try {
-                    json = JSON.parse(raw);
-                } catch (parseErr) {
+                if (!json || typeof json !== 'object') {
                     this.addMessage('assistant', '❌ Lo siento, hubo un error de conexión. Intenta de nuevo.');
                     return;
                 }
@@ -1390,15 +1415,9 @@ function novaAIAssistant() {
             this.loading = true;
             const liveContext = window.novaContext || this.pageContext || null;
             const conversation = this.messages.filter(m => m.role === 'user' || m.role === 'assistant').map(m => ({ role: m.role, content: m.text }));
-            fetch(this.commandEndpoint, {
+            this.requestWithSession(this.commandEndpoint, {
                 method: 'POST',
-                credentials: 'same-origin',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json',
-                    'X-CSRF-TOKEN': this.getCsrfToken(),
-                    'X-Requested-With': 'XMLHttpRequest',
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     prompt: label,
                     message: label,
@@ -1407,7 +1426,11 @@ function novaAIAssistant() {
                     screen_context: liveContext,
                     conversation: conversation.length ? conversation : undefined,
                 }),
-            }).then(r => r.text().then(t => { try { return JSON.parse(t); } catch(e) { return { message: 'Error' }; } })).then(json => {
+            }).then(({ res, json }) => {
+                if (res.status === 419) {
+                    this.addMessage('assistant', 'Tu sesión expiró. Recarga la página e intenta de nuevo.');
+                    return;
+                }
                 this.handleResponse(json);
             }).catch(() => {
                 this.addMessage('assistant', '❌ Error de conexión.');
@@ -1612,7 +1635,7 @@ function novaAIAssistant() {
             }
 
             this.open = true;
-            if (this.isDirector && this.transcribeEndpoint && navigator.mediaDevices?.getUserMedia && window.MediaRecorder) {
+            if (this.transcribeEndpoint && navigator.mediaDevices?.getUserMedia && window.MediaRecorder) {
                 this.startVoiceNote();
                 return;
             }
@@ -1621,6 +1644,10 @@ function novaAIAssistant() {
         },
 
         stopVoiceCapture() {
+            if (this.voiceTimer) {
+                clearInterval(this.voiceTimer);
+                this.voiceTimer = null;
+            }
             if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
                 this.mediaRecorder.stop();
                 return;
@@ -1659,6 +1686,17 @@ function novaAIAssistant() {
                 };
                 this.mediaRecorder.start(250);
                 this.listening = true;
+                this.voiceElapsed = '0:00';
+                const startedAt = Date.now();
+                this.voiceTimer = setInterval(() => {
+                    const elapsed = Date.now() - startedAt;
+                    const mins = Math.floor(elapsed / 60000);
+                    const secs = Math.floor((elapsed % 60000) / 1000);
+                    this.voiceElapsed = mins + ':' + String(secs).padStart(2, '0');
+                    if (elapsed >= this.voiceMaxMs) {
+                        this.stopVoiceCapture();
+                    }
+                }, 250);
             } catch (err) {
                 this.startBrowserDictation();
             }
@@ -1670,8 +1708,7 @@ function novaAIAssistant() {
                 return;
             }
 
-            const token = this.getCsrfToken();
-            if (!token || !this.transcribeEndpoint) {
+            if (!this.transcribeEndpoint) {
                 this.showToast('No pude verificar tu sesión', 'error', 'fa-circle-xmark');
                 return;
             }
@@ -1683,17 +1720,15 @@ function novaAIAssistant() {
             form.append('audio', blob, `nota-voz.${extension}`);
 
             try {
-                const res = await fetch(this.transcribeEndpoint, {
+                const { res, json } = await this.requestWithSession(this.transcribeEndpoint, {
                     method: 'POST',
-                    credentials: 'same-origin',
-                    headers: {
-                        'Accept': 'application/json',
-                        'X-CSRF-TOKEN': token,
-                        'X-Requested-With': 'XMLHttpRequest',
-                    },
                     body: form,
                 });
-                const json = await res.json().catch(() => ({}));
+                if (res.status === 419) {
+                    this.addMessage('assistant', 'Tu sesión expiró. Recarga la página e intenta de nuevo.');
+                    this.showToast('Sesión expirada', 'error', 'fa-exclamation-triangle');
+                    return;
+                }
                 const errorText = json?.message || json?.errors?.audio?.[0] || 'No pude transcribir la nota de voz. Intenta de nuevo.';
                 if (!res.ok || !json?.success || !json?.transcript) {
                     this.showToast(errorText, 'error', 'fa-microphone-slash');
@@ -1722,13 +1757,19 @@ function novaAIAssistant() {
             const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
             this.recognition = new SR();
             this.recognition.lang = 'es-VE';
-            this.recognition.continuous = false;
-            this.recognition.interimResults = false;
+            this.recognition.continuous = true;
+            this.recognition.interimResults = true;
 
             this.recognition.onresult = (e) => {
-                this.input = e.results[0][0].transcript;
-                this.listening = false;
-                this.sendCommand();
+                const last = e.results[e.results.length - 1];
+                if (!last) return;
+                this.input = Array.from(e.results).map((result) => result[0]?.transcript || '').join(' ').trim();
+                this.autoResizeTextarea();
+                if (last.isFinal && !this.transcribeEndpoint) {
+                    this.listening = false;
+                    this.recognition?.stop();
+                    this.sendCommand();
+                }
             };
 
             this.recognition.onerror = () => {

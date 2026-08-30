@@ -267,6 +267,13 @@ Route::middleware('auth')->group(function () {
             });
 
         // Generador de IA y Herramientas
+        Route::middleware('auth')->group(function () {
+            Route::get('/ai/session', [AICommandHandlerController::class, 'session'])->name('ai.session');
+            Route::post('/ai/transcribe', [AICommandHandlerController::class, 'transcribe'])
+                ->middleware('throttle:20,1')
+                ->name('ai.transcribe');
+        });
+
         Route::post('/generate-ai', [AIController::class, 'generate'])->name('ai.generate');
         Route::post('/improve-section', [AIController::class, 'improveSection'])->name('ai.improve_section');
         Route::post('/plan-pro/nee', [AIController::class, 'planProNEE'])->name('ai.plan_pro.nee');

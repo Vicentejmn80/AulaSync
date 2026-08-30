@@ -92,7 +92,7 @@ class AICommandController extends Controller
         }
 
         $request->validate([
-            'audio' => ['required', 'file', 'max:25600'],
+            'audio' => ['required', 'file', 'max:51200'],
             'process_command' => ['sometimes', 'boolean'],
             'conversation' => ['sometimes', 'array', 'max:40'],
             'conversation.*.role' => ['required_with:conversation', 'in:user,assistant'],
