@@ -1116,9 +1116,7 @@ function novaAIAssistant() {
         isTeacher: {{ auth()->check() && auth()->user()->role === 'profesor' ? 'true' : 'false' }},
         isDirector: {{ auth()->check() && auth()->user()->role === 'director' ? 'true' : 'false' }},
         commandEndpoint: @json(auth()->check() && auth()->user()->role === 'director' ? route('director.ai.command') : route('ai.command')),
-        transcribeEndpoint: @json(auth()->check() && in_array(auth()->user()->role, ['director', 'profesor'], true)
-            ? (auth()->user()->role === 'director' ? route('director.ai.transcribe') : route('ai.transcribe'))
-            : null),
+        transcribeEndpoint: @json(auth()->check() && auth()->user()->role === 'director' ? route('director.ai.transcribe') : (auth()->check() && auth()->user()->role === 'profesor' ? route('ai.transcribe') : null)),
         sessionEndpoint: @json(auth()->check() ? route('ai.session') : null),
         mediaRecorder: null,
         audioChunks: [],
