@@ -17,6 +17,8 @@ use Illuminate\Validation\ValidationException;
 
 class DirectorActionService
 {
+    private const GENERIC_SUBJECT_PATTERN = '/^(?:curso|cursos|clase|clases|materia|materias|asignatura|asignaturas)$/u';
+
     public function __construct(
         private StudentEnrollmentService $enrollmentService,
         private PersonNameMatcher $nameMatcher,
@@ -276,14 +278,14 @@ class DirectorActionService
     public function assignTeacherToGradesSubject(User $director, array $payload): array
     {
         $colegioId = (int) $director->colegio_id;
-        $subject = trim((string) $payload['subject_name']);
+        $subject = $this->normalizeSubjectName(isset($payload['subject_name']) ? (string) $payload['subject_name'] : null);
         $section = trim((string) ($payload['section'] ?? ''));
         $section = $section !== '' ? $section : null;
         $grades = collect($payload['grades'])->map(fn ($g) => trim((string) $g))->filter()->unique()->values();
 
-        if ($subject === '' || $grades->isEmpty()) {
+        if ($subject === null || $grades->isEmpty()) {
             throw ValidationException::withMessages([
-                'assignment' => 'Debes indicar materia y al menos un grado.',
+                'assignment' => 'Debes indicar una materia específica y al menos un grado.',
             ]);
         }
 
@@ -584,7 +586,7 @@ class DirectorActionService
     public function createCourses(User $director, array $payload): array
     {
         $colegioId = (int) $director->colegio_id;
-        $subject = trim((string) $payload['subject_name']);
+        $subject = $this->normalizeSubjectName(isset($payload['subject_name']) ? (string) $payload['subject_name'] : null);
         $section = trim((string) ($payload['section'] ?? ''));
         $section = $section !== '' ? $section : null;
         $grades = collect($payload['grades'] ?? [])
@@ -593,9 +595,9 @@ class DirectorActionService
             ->unique()
             ->values();
 
-        if ($subject === '' || $grades->isEmpty()) {
+        if ($subject === null || $grades->isEmpty()) {
             throw ValidationException::withMessages([
-                'course' => 'Debes indicar materia y al menos un grado.',
+                'course' => 'Debes indicar una materia específica y al menos un grado.',
             ]);
         }
 
@@ -687,14 +689,14 @@ class DirectorActionService
     public function createCourse(User $director, array $payload): array
     {
         $colegioId = (int) $director->colegio_id;
-        $subject = trim((string) $payload['subject_name']);
+        $subject = $this->normalizeSubjectName(isset($payload['subject_name']) ? (string) $payload['subject_name'] : null);
         $grade = trim((string) $payload['grade']);
         $section = trim((string) ($payload['section'] ?? ''));
         $section = $section !== '' ? $section : null;
 
-        if ($subject === '' || $grade === '') {
+        if ($subject === null || $grade === '') {
             throw ValidationException::withMessages([
-                'course' => 'Debes indicar materia y grado para crear el curso.',
+                'course' => 'Debes indicar una materia específica y el grado para crear el curso.',
             ]);
         }
 
@@ -907,8 +909,8 @@ class DirectorActionService
                 continue;
             }
 
-            $subject = trim((string) ($item['subject_name'] ?? ''));
-            if ($subject === '') {
+            $subject = $this->normalizeSubjectName(isset($item['subject_name']) ? (string) $item['subject_name'] : null);
+            if ($subject === null) {
                 continue;
             }
 
@@ -946,6 +948,22 @@ class DirectorActionService
         }
 
         return array_values($merged);
+    }
+
+    private function normalizeSubjectName(?string $subject): ?string
+    {
+        $value = trim((string) $subject);
+        if ($value === '') {
+            return null;
+        }
+
+        $folded = mb_strtolower($value);
+        $folded = strtr($folded, ['á' => 'a', 'é' => 'e', 'í' => 'i', 'ó' => 'o', 'ú' => 'u']);
+        if (preg_match(self::GENERIC_SUBJECT_PATTERN, $folded)) {
+            return null;
+        }
+
+        return $value;
     }
 
     /**

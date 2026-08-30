@@ -138,4 +138,15 @@ class DirectorIntentExtractorServiceTest extends TestCase
         $this->assertCount(1, $actions);
         $this->assertSame('sync_all_enrollments', $actions[0]['intent']);
     }
+
+    public function test_generic_subject_words_are_not_extracted_as_subject_name(): void
+    {
+        $actions = $this->extractor->extractMultipleIntentions(
+            'Crea a los alumnos Carlos Duarte y Ana Ruiz en 3ro de materia.'
+        );
+
+        $this->assertCount(1, $actions);
+        $this->assertSame('create_students_batch', $actions[0]['intent']);
+        $this->assertNull($actions[0]['data']['subject_name']);
+    }
 }

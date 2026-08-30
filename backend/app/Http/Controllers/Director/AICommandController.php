@@ -37,6 +37,8 @@ use Illuminate\Validation\ValidationException;
 
 class AICommandController extends Controller
 {
+    private const GENERIC_SUBJECT_PATTERN = '/^(?:curso|cursos|clase|clases|materia|materias|asignatura|asignaturas)$/u';
+
     private const PENDING_SESSION_KEY = 'director_ai_pending_actions';
 
     private const PENDING_BATCH_SESSION_KEY = 'chat_pending_batch';
@@ -530,11 +532,7 @@ class AICommandController extends Controller
                             return $slotResponse;
                         }
 
-                        return response()->json([
-                            'success' => false,
-                            'needs_clarification' => true,
-                            'message' => $missingDataMessage,
-                        ]);
+                        return $this->forgetPendingAndClarify($missingDataMessage);
                     }
                     $actions = $this->enrichActionsFromText([['intent' => $intent, 'data' => $operationData]], $text);
                 }
@@ -549,11 +547,7 @@ class AICommandController extends Controller
                             'data' => $staffingData,
                         ]], $text);
                     } elseif ($staffingMsg) {
-                        return response()->json([
-                            'success' => false,
-                            'needs_clarification' => true,
-                            'message' => $staffingMsg,
-                        ]);
+                        return $this->forgetPendingAndClarify($staffingMsg);
                     }
                 }
             }
@@ -597,11 +591,7 @@ class AICommandController extends Controller
             $msg = collect($e->errors())->flatten()->first() ?: 'No se pudo procesar la instrucción.';
             $this->conversationContext->rememberError($msg);
 
-            return response()->json([
-                'success' => false,
-                'needs_clarification' => true,
-                'message' => $msg,
-            ], 422);
+            return $this->forgetPendingAndClarify($msg, [], 422);
         } catch (\Throwable $e) {
             Log::error('Director AI handle failed', [
                 'director_id' => $director->id,
@@ -2162,9 +2152,24 @@ class AICommandController extends Controller
         return response()->json([
             'success' => false,
             'needs_clarification' => true,
+            'requires_confirmation' => false,
+            'pending_actions' => null,
+            'buttons' => [],
+            'timeline' => $this->conversationalTimeline($message),
             'message' => $message,
             ...$extra,
         ], $status);
+    }
+
+    /**
+     * @return array<int,array{status:string,message:string}>
+     */
+    private function conversationalTimeline(string $finalMessage): array
+    {
+        return [
+            ['status' => 'analyzing', 'message' => 'Analizando tu mensaje...'],
+            ['status' => 'conversation', 'message' => $finalMessage],
+        ];
     }
 
     /**
@@ -3013,12 +3018,40 @@ class AICommandController extends Controller
         $missing = [];
         foreach ($required as $param) {
             $value = $data[$param] ?? null;
+            if ($param === 'subject_name' && $this->isGenericSubjectName($value)) {
+                $value = null;
+            }
+            if ($intent === 'create_courses_batch' && $param === 'courses_data') {
+                $hasConcrete = collect((array) $value)->contains(function ($item) {
+                    if (! is_array($item)) {
+                        return false;
+                    }
+                    $subject = $item['subject_name'] ?? null;
+
+                    return ! $this->isGenericSubjectName($subject);
+                });
+                if (! $hasConcrete) {
+                    $missing[] = 'subject_name';
+                }
+            }
             if ($value === null || $value === '' || (is_array($value) && $value === [])) {
                 $missing[] = $param;
             }
         }
 
-        return $missing;
+        return array_values(array_unique($missing));
+    }
+
+    private function isGenericSubjectName(mixed $value): bool
+    {
+        $subject = trim((string) $value);
+        if ($subject === '') {
+            return true;
+        }
+        $folded = mb_strtolower($subject);
+        $folded = strtr($folded, ['á' => 'a', 'é' => 'e', 'í' => 'i', 'ó' => 'o', 'ú' => 'u']);
+
+        return (bool) preg_match(self::GENERIC_SUBJECT_PATTERN, $folded);
     }
 
     /**
@@ -3354,10 +3387,10 @@ class AICommandController extends Controller
             return [[], '¿Cuál es el nombre completo del profesor que deseas crear?'];
         }
 
-        $subject = $this->extractKnownSubject($text)
+        $subject = $this->sanitizeSubjectName($this->extractKnownSubject($text)
             ?? $this->extractSubject($text)
             ?? $this->extractSubjectFromCoursePrompt($text)
-            ?? $this->extractSubjectFromDeletePrompt($text);
+            ?? $this->extractSubjectFromDeletePrompt($text));
         $grades = $this->extractGrades($text);
         $missingGrades = $this->missingGradesFor($director, $grades);
 
@@ -3395,7 +3428,7 @@ class AICommandController extends Controller
     {
         $grades = $this->extractGrades($text);
 
-        $subject = $this->extractSubjectFromCoursePrompt($text);
+        $subject = $this->sanitizeSubjectName($this->extractSubjectFromCoursePrompt($text));
         if (! $subject) {
             return [[], '¿Qué asignatura debo crear? Ejemplo: "Crea Matemática para 4.º, 5.º y 6.º".'];
         }
@@ -3445,11 +3478,11 @@ class AICommandController extends Controller
             return [[], '¿A qué profesor deseas asignar la materia?'];
         }
 
-        $subject = $this->extractSubject($text)
+        $subject = $this->sanitizeSubjectName($this->extractSubject($text)
             ?? $this->extractSubjectFromCoursePrompt($text)
             ?? $this->extractSubjectFromDeletePrompt($text)
             ?? $this->extractKnownSubject($text)
-            ?? ($context['subject_name'] ?? null);
+            ?? ($context['subject_name'] ?? null));
         if (! $subject) {
             return [[], '¿Qué materia deseas asignar?'];
         }
@@ -4921,6 +4954,22 @@ class AICommandController extends Controller
         return $subjects[0] ?? null;
     }
 
+    private function sanitizeSubjectName(?string $subject): ?string
+    {
+        $value = trim((string) $subject);
+        if ($value === '') {
+            return null;
+        }
+
+        $folded = mb_strtolower($value);
+        $folded = strtr($folded, ['á' => 'a', 'é' => 'e', 'í' => 'i', 'ó' => 'o', 'ú' => 'u']);
+        if (preg_match(self::GENERIC_SUBJECT_PATTERN, $folded)) {
+            return null;
+        }
+
+        return $value;
+    }
+
     private function utteranceMentionsCourses(string $text): bool
     {
         $value = $this->normalizedText($text);
@@ -4969,7 +5018,7 @@ class AICommandController extends Controller
             $subject = trim((string) $m[1]);
             $known = $this->extractKnownSubject($subject) ?? $this->titleCaseSubject($subject);
             if ($this->isValidCourseSubject($known)) {
-                return $known;
+                return $this->sanitizeSubjectName($known);
             }
         }
 
@@ -4978,7 +5027,7 @@ class AICommandController extends Controller
             $subject = trim((string) $m[1]);
             $known = $this->extractKnownSubject($subject) ?? $this->titleCaseSubject($subject);
             if ($this->isValidCourseSubject($known)) {
-                return $known;
+                return $this->sanitizeSubjectName($known);
             }
         }
 
@@ -4986,7 +5035,7 @@ class AICommandController extends Controller
         if (preg_match('/(?:curso|cursos|cursso|asignatura|materia)s?\s+de\s*:?\s*([0-9].*?)\s+grado\s+de\s+([A-Za-zÁÉÍÓÚáéíóúÑñ][A-Za-zÁÉÍÓÚáéíóúÑñ\s]*?)(?:\s+(?:para|en|y|,|con)|\s*$)/iu', $text, $m)) {
             $subject = trim((string) $m[2]);
             if ($this->isValidCourseSubject($subject)) {
-                return $this->titleCaseSubject($subject);
+                return $this->sanitizeSubjectName($this->titleCaseSubject($subject));
             }
         }
 
@@ -4994,7 +5043,7 @@ class AICommandController extends Controller
         if (preg_match('/^(?:cre(?:a|ar|arles|es|e|o)|creame)\s+(?:el\s+)?(?:curso\s+de\s+|cursos?\s+|cursso\s+|asignatura\s+|materia\s+)?([A-Za-zÁÉÍÓÚáéíóúÑñ][A-Za-zÁÉÍÓÚáéíóúÑñ\s]{2,60}?)\s+(?:para|en|de|del)\s+[1-6](?:ro|er|do|to|°|º|ero)?\s*(?:grado)?\b/iu', $text, $m)) {
             $subject = trim((string) $m[1]);
             if ($this->isValidCourseSubject($subject)) {
-                return $this->titleCaseSubject($subject);
+                return $this->sanitizeSubjectName($this->titleCaseSubject($subject));
             }
         }
 
@@ -5023,7 +5072,7 @@ class AICommandController extends Controller
             return null;
         }
 
-        return $subject;
+        return $this->sanitizeSubjectName($subject);
     }
 
     private function isValidCourseSubject(string $subject): bool
@@ -5056,7 +5105,7 @@ class AICommandController extends Controller
             if (preg_match($pattern, $text, $m)) {
                 $raw = trim($m[1]);
 
-                return $this->extractKnownSubject($raw) ?? trim($raw);
+                return $this->sanitizeSubjectName($this->extractKnownSubject($raw) ?? trim($raw));
             }
         }
 

@@ -8,6 +8,7 @@ use App\Models\Student;
 use App\Models\User;
 use App\Services\DirectorActionService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Validation\ValidationException;
 use Tests\TestCase;
 
 class DirectorEnrollmentSyncTest extends TestCase
@@ -160,6 +161,26 @@ class DirectorEnrollmentSyncTest extends TestCase
         $this->assertSame(1, $course->fresh()->students()->count());
     }
 
+    public function test_assign_teacher_rejects_generic_subject_name(): void
+    {
+        [$director, $colegio] = $this->directorContext();
+        User::factory()->create([
+            'name' => 'Jose Marrero',
+            'role' => 'profesor',
+            'colegio_id' => $colegio->id,
+            'onboarding_completed' => true,
+        ]);
+
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage('materia específica');
+
+        app(DirectorActionService::class)->assignTeacherToGradesSubject($director, [
+            'teacher_name' => 'Jose Marrero',
+            'subject_name' => 'cursos',
+            'grades' => ['3ro'],
+        ]);
+    }
+
     public function test_sync_command_from_chat_requires_confirmation_and_executes(): void
     {
         [$director, $colegio] = $this->directorContext();
@@ -219,6 +240,10 @@ class DirectorEnrollmentSyncTest extends TestCase
         ]);
 
         $draft->assertJsonPath('needs_clarification', true);
+        $draft->assertJsonPath('requires_confirmation', false);
+        $draft->assertJsonPath('pending_actions', null);
+        $this->assertSame([], $draft->json('buttons'));
+        $this->assertSame('conversation', $draft->json('timeline.1.status'));
         $this->assertFalse(session()->has('director_ai_pending_actions'));
         $this->assertFalse(session()->has('chat_pending'));
 

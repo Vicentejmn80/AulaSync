@@ -13,6 +13,7 @@ namespace App\Services;
 class DirectorIntentExtractorService
 {
     private const SUBJECT_PATTERN = 'matem[aá]ticas?|ingl[eé]s|lenguaje|lengua|ciencias?\s*naturales?|ciencias?\s*sociales?|historia|geograf[ií]a|f[ií]sica|qu[ií]mica|biolog[ií]a|educaci[oó]n\s*f[ií]sica|robotica|rob[oó]tica|computaci[oó]n|religi[oó]n|arte|m[uú]sica|pl[aá]stica';
+    private const GENERIC_SUBJECT_PATTERN = '/^(?:curso|cursos|clase|clases|materia|materias|asignatura|asignaturas)$/u';
 
     private const GRADE_PATTERN = '(?:primer|primero|segundo|tercer|tercero|cuarto|quinto|sexto|[1-6](?:ro|ero|er|do|to|°|º)?)';
     private const GRADE_WORD_PATTERN_EXTENDED = '(?:primer|primero|segundo|tercer|tercero|cuarto|quinto|sexto|septim[oa]|octav[oa]|noven[oa]|[1-9](?:ro|ero|er|do|to|mo|vo|no|°|º)?)';
@@ -555,7 +556,7 @@ class DirectorIntentExtractorService
                 'ã' => 'a', 'õ' => 'o', 'ñ' => 'n',
             ]);
 
-            return match ($subject) {
+            $normalized = match ($subject) {
                 'matematica', 'matematicas' => 'Matemática',
                 'ingles' => 'Inglés',
                 'lengua', 'lenguaje' => 'Lenguaje',
@@ -575,9 +576,27 @@ class DirectorIntentExtractorService
                 'ciencias sociales', 'ciencias sociale' => 'Ciencias Sociales',
                 default => $this->nameSanitizer->titleCase($subject),
             };
+
+            return $this->normalizeSubjectName($normalized);
         }
 
         return null;
+    }
+
+    private function normalizeSubjectName(?string $subject): ?string
+    {
+        $value = trim((string) $subject);
+        if ($value === '') {
+            return null;
+        }
+
+        $folded = mb_strtolower($value);
+        $folded = strtr($folded, ['á' => 'a', 'é' => 'e', 'í' => 'i', 'ó' => 'o', 'ú' => 'u']);
+        if (preg_match(self::GENERIC_SUBJECT_PATTERN, $folded)) {
+            return null;
+        }
+
+        return $value;
     }
 
     /**

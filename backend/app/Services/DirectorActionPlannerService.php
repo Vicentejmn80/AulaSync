@@ -16,6 +16,8 @@ use Illuminate\Support\Str;
  */
 class DirectorActionPlannerService
 {
+    private const GENERIC_SUBJECT_PATTERN = '/^(?:curso|cursos|clase|clases|materia|materias|asignatura|asignaturas)$/u';
+
     public function __construct(
         private SchoolRosterContextService $rosterContext,
         private DirectorIntentExtractorService $intentExtractor,
@@ -365,7 +367,8 @@ REGLAS CRÍTICAS:
 9. CURSOS — SIEMPRE EN LOTE: para crear materias/cursos usa SIEMPRE create_courses_batch, incluso si es una sola materia en un solo grado. NUNCA uses create_course. params.courses_data es un array con UN item por materia y cada item lleva su propio array grades con todos los grados pedidos. Ejemplo — "crea matemática, lenguaje y biología para 3ro y 4to" es UNA sola acción: courses_data=[{"subject_name":"matemática","grades":["3ro","4to"],"section":null,"teacher_name":null},{"subject_name":"lenguaje","grades":["3ro","4to"],"section":null,"teacher_name":null},{"subject_name":"biología","grades":["3ro","4to"],"section":null,"teacher_name":null}]. No la partas en tres acciones.
 10. DOCENTE OPCIONAL EN CURSOS: teacher_name es opcional dentro de courses_data. Si el director no menciona profesor, deja teacher_name=null y NO crees ningún missing_slot pidiéndolo: el curso se crea sin docente y se asigna después.
 11. ALUMNOS — SIEMPRE EN LOTE CON GRADO POR ALUMNO: para create_students_batch usa SIEMPRE params.students_data, incluso si es un solo alumno. students_data es un array con UN item por alumno: {"name","grade","section","subject_name","teacher_name"}. Cada alumno lleva su propio grade, así que un mensaje como "crea a Juan Pérez en 1ro y a María Gómez en 3ro con Matemática" es UNA sola acción: students_data=[{"name":"Juan Pérez","grade":"1ro","section":null,"subject_name":null,"teacher_name":null},{"name":"María Gómez","grade":"3ro","section":null,"subject_name":"Matemática","teacher_name":null}]. No la partas en dos acciones ni fuerces un grade común para todos.
-12. SINCRONIZACIÓN MASIVA: si el director pide "sincroniza las matrículas", "agrega a todos los alumnos a los cursos disponibles" o equivalentes, usa UNA sola acción sync_all_enrollments. No inventes un profesor ni partas la orden en enroll_students_course por alumno.
+12. MATERIA OBLIGATORIA EN CURSOS/ASIGNACIONES: para create_course/create_courses_batch/assign_teacher, subject_name es obligatorio y debe ser una materia concreta. Si el director dice "crea los cursos de 1ro a 6to" o "asigna a José a 3ro A" sin materia, NO inventes ni asumas "Los Cursos", "Curso", "Clase" o similares. En esos casos coloca subject_name=null y agrega missing_slots con una pregunta para que el director indique la materia.
+13. SINCRONIZACIÓN MASIVA: si el director pide "sincroniza las matrículas", "agrega a todos los alumnos a los cursos disponibles" o equivalentes, usa UNA sola acción sync_all_enrollments. No inventes un profesor ni partas la orden en enroll_students_course por alumno.
 
 MODO DE RESPUESTA CONDICIONAL (para el summary, no para tools de analítica):
 - factual_lookup_mode: summary en 1-2 oraciones, solo lo que se va a ejecutar. Sin recomendaciones.
@@ -508,6 +511,8 @@ PROMPT;
         // Batch como único camino para cursos, independientemente de lo que emitió el LLM.
         $plan['actions'] = $this->canonicalizeCourseActions($plan['actions']);
 
+        $plan['actions'] = $this->enforceRequiredSubjects($plan['actions']);
+
         if (collect($plan['actions'])->contains(fn (array $a) => $a['status'] === 'needs_info')) {
             $plan['status'] = 'needs_info';
         }
@@ -542,10 +547,94 @@ PROMPT;
                     continue;
                 }
             }
+            if ($key === 'subject_name' && is_string($value)) {
+                $value = $this->normalizeSubjectName($value);
+                if ($value === null) {
+                    continue;
+                }
+            }
             $clean[$key] = $value;
         }
 
         return $clean;
+    }
+
+    private function normalizeSubjectName(?string $subject): ?string
+    {
+        $value = trim((string) $subject);
+        if ($value === '') {
+            return null;
+        }
+
+        $folded = mb_strtolower($value);
+        $folded = strtr($folded, ['á' => 'a', 'é' => 'e', 'í' => 'i', 'ó' => 'o', 'ú' => 'u']);
+        if (preg_match(self::GENERIC_SUBJECT_PATTERN, $folded)) {
+            return null;
+        }
+
+        return $value;
+    }
+
+    /**
+     * @param  array<int,array<string,mixed>>  $actions
+     * @return array<int,array<string,mixed>>
+     */
+    private function enforceRequiredSubjects(array $actions): array
+    {
+        return array_map(function (array $action) {
+            $type = (string) ($action['type'] ?? '');
+            $params = (array) ($action['params'] ?? []);
+            $slots = (array) ($action['missing_slots'] ?? []);
+            $needsSubject = in_array($type, ['assign_teacher', 'create_course', 'create_courses_batch'], true);
+            if (! $needsSubject) {
+                return $action;
+            }
+
+            if ($type === 'create_courses_batch') {
+                $items = array_values(array_filter((array) ($params['courses_data'] ?? []), 'is_array'));
+                $hasMissing = false;
+                foreach ($items as $i => $item) {
+                    $subject = $this->normalizeSubjectName(isset($item['subject_name']) ? (string) $item['subject_name'] : null);
+                    $items[$i]['subject_name'] = $subject;
+                    if ($subject === null) {
+                        $hasMissing = true;
+                    }
+                }
+                $params['courses_data'] = $items;
+                if ($hasMissing) {
+                    $slots[] = [
+                        'name' => 'subject_name',
+                        'description' => '¿Qué materia específica debo usar para crear esos cursos?',
+                        'required' => true,
+                        'value' => null,
+                        'source' => 'user',
+                    ];
+                }
+            } else {
+                $subject = $this->normalizeSubjectName(isset($params['subject_name']) ? (string) $params['subject_name'] : null);
+                $params['subject_name'] = $subject;
+                if ($subject === null) {
+                    $slots[] = [
+                        'name' => 'subject_name',
+                        'description' => $type === 'assign_teacher'
+                            ? '¿Qué materia deseas asignar a ese profesor?'
+                            : '¿Qué materia debo crear para ese curso?',
+                        'required' => true,
+                        'value' => null,
+                        'source' => 'user',
+                    ];
+                }
+            }
+
+            $action['params'] = $params;
+            $action['missing_slots'] = $this->normalizeSlots($slots);
+            if ($action['missing_slots'] !== []) {
+                $action['status'] = 'needs_info';
+                $action['confirmation_required'] = true;
+            }
+
+            return $action;
+        }, $actions);
     }
 
     /**

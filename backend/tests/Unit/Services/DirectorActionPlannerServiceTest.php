@@ -258,6 +258,57 @@ class DirectorActionPlannerServiceTest extends TestCase
         $this->assertStringContainsString('Nunca conviertas "de segundo/de tercero/para cuarto" en nombres de persona', $prompt);
         $this->assertStringContainsString('factual_lookup_mode', $prompt);
         $this->assertStringContainsString('sync_all_enrollments', $prompt);
+        $this->assertStringContainsString('subject_name=null y agrega missing_slots', $prompt);
+    }
+
+    public function test_plan_marks_missing_subject_for_assign_teacher_when_generic(): void
+    {
+        config([
+            'services.openai.key' => 'test-key',
+            'services.openai.director_enabled' => true,
+            'services.openai.director_test_enabled' => true,
+        ]);
+
+        $this->fakeOpenAiPlan([
+            'status' => 'pending',
+            'actions' => [[
+                'id' => 'a1',
+                'type' => 'assign_teacher',
+                'entity' => 'teacher',
+                'params' => [
+                    'teacher_name' => 'Jose Marrero',
+                    'subject_name' => 'cursos',
+                    'grades' => ['3ro'],
+                    'student_name' => null,
+                    'names' => null,
+                    'grade' => null,
+                    'courses_data' => null,
+                    'students_data' => null,
+                    'section' => null,
+                    'new_grade' => null,
+                    'new_section' => null,
+                    'new_name' => null,
+                    'operation' => null,
+                    'all_in_grade' => null,
+                    'invite_code' => null,
+                ],
+                'status' => 'pending',
+                'missing_slots' => [],
+                'depends_on' => [],
+                'confirmation_required' => true,
+            ]],
+            'summary' => 'Asignar cursos.',
+            'requires_confirmation' => true,
+            'all_or_nothing' => false,
+        ]);
+
+        $director = $this->makeDirector();
+        $plan = $this->planner->plan($director, 'asigna a Jose a 3ro');
+
+        $this->assertSame('needs_info', $plan['status']);
+        $this->assertSame('needs_info', $plan['actions'][0]['status']);
+        $this->assertSame('subject_name', $plan['actions'][0]['missing_slots'][0]['name']);
+        $this->assertNull($plan['actions'][0]['params']['subject_name']);
     }
 
     private function fakeOpenAiPlan(array $plan): void
