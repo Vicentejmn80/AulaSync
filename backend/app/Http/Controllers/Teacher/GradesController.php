@@ -87,17 +87,33 @@ class GradesController extends Controller
                 ->toArray();
         }
 
+        $gradingScale = GradingScale::normalize($course->grading_scale ?? null);
+        $scaleMax = GradingScale::maxFor($gradingScale);
+        $scaleOptions = GradingScale::options();
+        $isLetterScale = GradingScale::isLetter($gradingScale);
+
         $students = $course->students()
             ->get()
             ->map(fn ($student) => [
                 'id'             => $student->id,
                 'name'           => $student->name,
                 'existing_score' => isset($gradeMap[$student->id]) ? (float) $gradeMap[$student->id] : null,
+                'display_score'  => isset($gradeMap[$student->id])
+                    ? GradingScale::display($gradingScale, $gradeMap[$student->id])
+                    : '',
                 'is_published'   => ($statusMap[$student->id] ?? null) === 'published',
                 'nota_actual'    => isset($weightedMap[$student->id]) ? round((float) $weightedMap[$student->id], 2) : null,
             ]);
 
-        return view('teacher.grades.create', compact('activity', 'students'));
+        return view('teacher.grades.create', compact(
+            'activity',
+            'students',
+            'course',
+            'gradingScale',
+            'scaleMax',
+            'scaleOptions',
+            'isLetterScale'
+        ));
     }
 
     /**
@@ -108,21 +124,33 @@ class GradesController extends Controller
         abort_unless($activity->teacher_id === auth()->id(), 403);
         abort_unless((int) $activity->colegio_id === (int) auth()->user()->colegio_id, 403);
         $course = $activity->course()->firstOrFail();
-        $maxAllowed = GradingScale::effectiveMax($course->grading_scale, (int) $activity->max_score);
+        $maxAllowed = GradingScale::maxFor($course->grading_scale);
 
         $data = $request->validate([
             'grades'                => ['required', 'array'],
             'grades.*.student_id'   => ['required', 'exists:students,id'],
-            'grades.*.score'        => ['required', 'numeric', 'min:0', "max:{$maxAllowed}"],
+            'grades.*.score'        => ['required'],
             'grades.*.feedback'     => ['nullable', 'string', 'max:500'],
         ]);
 
+        $this->syncActivityMaxScore($activity, $course);
+
         foreach ($data['grades'] as $entry) {
+            $score = GradingScale::parseInput($course->grading_scale, $entry['score']);
+            if ($score === null || $score < 0 || $score > $maxAllowed) {
+                return $request->wantsJson()
+                    ? response()->json([
+                        'success' => false,
+                        'error' => "La nota debe estar entre 0 y {$maxAllowed}. El 0 es válido si no asistió.",
+                    ], 422)
+                    : redirect()->back()->withErrors(['grades' => "La nota debe estar entre 0 y {$maxAllowed}."]);
+            }
+
             Grade::updateOrCreate(
                 ['activity_id' => $activity->id, 'student_id' => $entry['student_id']],
                 [
                     'colegio_id' => $activity->colegio_id,
-                    'score' => $entry['score'],
+                    'score' => $score,
                     'feedback_text' => $entry['feedback'] ?? null,
                 ]
             );
@@ -182,19 +210,32 @@ class GradesController extends Controller
             ->pluck('weighted_total', 'grades.student_id')
             ->toArray();
 
+        $gradingScale = GradingScale::normalize($course->grading_scale ?? null);
+        $scaleMax = GradingScale::maxFor($gradingScale);
+        $this->syncActivityMaxScore($activity, $course);
+
         return response()->json([
             'success' => true,
             'activity' => [
                 'id' => $activity->id,
                 'title' => $activity->title,
-                'max_score' => $activity->max_score,
+                'max_score' => $scaleMax,
                 'course_id' => $course->id,
                 'course_name' => $course->subject_name . ' · ' . $course->grade . ($course->section ? ' / ' . $course->section : ''),
+                'grading_scale' => $gradingScale,
+                'grading_scale_max' => $scaleMax,
+                'grading_scale_label' => GradingScale::label($gradingScale),
+                'is_letter_scale' => GradingScale::isLetter($gradingScale),
             ],
             'students' => $course->students->map(fn ($student) => [
                 'id' => $student->id,
                 'name' => $student->name,
-                'score' => isset($gradeMap[$student->id]) ? (float) $gradeMap[$student->id] : null,
+                'score' => isset($gradeMap[$student->id])
+                    ? (GradingScale::isLetter($gradingScale)
+                        ? GradingScale::display($gradingScale, $gradeMap[$student->id])
+                        : (float) $gradeMap[$student->id])
+                    : null,
+                'numeric_score' => isset($gradeMap[$student->id]) ? (float) $gradeMap[$student->id] : null,
                 'avg_score' => isset($studentAverages[$student->id]) ? round((float) $studentAverages[$student->id], 2) : null,
                 'status' => $statusMap[$student->id] ?? null,
                 'nota_actual' => isset($weightedMap[$student->id]) ? round((float) $weightedMap[$student->id], 2) : 0.0,
@@ -210,12 +251,23 @@ class GradesController extends Controller
         abort_unless($activity->teacher_id === auth()->id(), 403);
         abort_unless((int) $activity->colegio_id === (int) auth()->user()->colegio_id, 403);
         $course = $activity->course()->firstOrFail();
-        $maxAllowed = GradingScale::effectiveMax($course->grading_scale, (int) $activity->max_score);
+        $maxAllowed = GradingScale::maxFor($course->grading_scale);
 
         $data = $request->validate([
             'student_id' => ['required', 'integer', 'exists:students,id'],
-            'score' => ['required', 'numeric', 'min:0', "max:{$maxAllowed}"],
+            'score' => ['required'],
         ]);
+
+        $score = GradingScale::parseInput($course->grading_scale, $data['score']);
+        if ($score === null || $score < 0 || $score > $maxAllowed) {
+            return response()->json([
+                'success' => false,
+                'error' => "La nota debe estar entre 0 y {$maxAllowed}. El 0 es válido si no asistió.",
+            ], 422);
+        }
+
+        $data['score'] = $score;
+        $this->syncActivityMaxScore($activity, $course);
 
         $isEnrolled = $course
             ->students()
@@ -262,7 +314,10 @@ class GradesController extends Controller
             'message' => 'Nota guardada.',
             'activity_id' => $activity->id,
             'student_id' => (int) $data['student_id'],
-            'score' => (float) $data['score'],
+            'score' => GradingScale::isLetter($course->grading_scale)
+                ? GradingScale::display($course->grading_scale, $data['score'])
+                : (float) $data['score'],
+            'numeric_score' => (float) $data['score'],
             'status' => $this->supportsGradeWorkflow() ? $grade->status : null,
             'activity_avg_score' => $activityAvg !== null ? round((float) $activityAvg, 2) : null,
             'student_avg_score' => $studentAvg !== null ? round((float) $studentAvg, 2) : null,
@@ -317,6 +372,14 @@ class GradesController extends Controller
             'activity_id' => $activity->id,
             'published_count' => $totalGrades,
         ]);
+    }
+
+    private function syncActivityMaxScore(Activity $activity, $course): void
+    {
+        $scaleMax = GradingScale::maxFor($course->grading_scale ?? null);
+        if ((int) $activity->max_score !== $scaleMax) {
+            $activity->update(['max_score' => $scaleMax]);
+        }
     }
 
     private function supportsGradeWorkflow(): bool

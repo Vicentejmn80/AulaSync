@@ -400,7 +400,10 @@
             </div>
             <button class="btn btn-ghost" @click="gradeModal.open = false">Cerrar</button>
         </div>
-        <p class="muted" style="margin:12px 0 0;">Escala: 0 a <span x-text="gradeModal.max_score"></span>. Estas notas se acumulan en el hub y en las boletas del director.</p>
+        <p class="muted" style="margin:12px 0 0;">
+            Escala: <span x-text="gradeModal.scale_label || ('0 a ' + gradeModal.max_score)"></span>.
+            El 0 vale si no asistió. Las letras se promedian como número (A=20 … F=0).
+        </p>
         <p class="err" x-show="gradeModal.error" x-text="gradeModal.error"></p>
         <p class="ok" x-show="gradeModal.message" x-text="gradeModal.message"></p>
         <div x-show="gradeModal.loading" class="muted" style="padding:24px 0;">Cargando alumnos…</div>
@@ -420,8 +423,17 @@
                     <tr style="border-top:1px solid var(--nova-glass-border);">
                         <td style="padding:8px 6px;font-weight:700;" x-text="row.name"></td>
                         <td style="padding:8px 6px;">
-                            <input type="number" min="0" :max="gradeModal.max_score" step="0.01"
-                                   x-model.number="gradeModal.students[i].score">
+                            <input x-show="!gradeModal.is_letter_scale" type="number" min="0" :max="gradeModal.max_score" step="0.01" inputmode="decimal"
+                                   x-model="gradeModal.students[i].score">
+                            <select x-show="gradeModal.is_letter_scale" x-model="gradeModal.students[i].score">
+                                <option value="">—</option>
+                                <option value="A">A</option>
+                                <option value="B">B</option>
+                                <option value="C">C</option>
+                                <option value="D">D</option>
+                                <option value="E">E</option>
+                                <option value="F">F (0)</option>
+                            </select>
                         </td>
                         <td style="padding:8px 6px;">
                             <input type="text" placeholder="Opcional" x-model="gradeModal.students[i].feedback">
@@ -457,7 +469,7 @@ function evaluationsApp() {
         pending: @json($pendingAttempts),
         courses: @json($courses),
         preview: null,
-        gradeModal: { open: false, loading: false, saving: false, id: null, title: '', course: '', max_score: 20, students: [], error: '', message: '' },
+        gradeModal: { open: false, loading: false, saving: false, id: null, title: '', course: '', max_score: 20, scale_label: '0 a 20', is_letter_scale: false, students: [], error: '', message: '' },
         form: {
             prompt: '',
             mode: 'digital',
@@ -586,6 +598,7 @@ function evaluationsApp() {
             this.gradeModal = {
                 open: true, loading: true, saving: false, id: ev.id,
                 title: ev.title, course: ev.course?.subject_name || '', max_score: 20,
+                scale_label: '0 a 20', is_letter_scale: false,
                 students: [], error: '', message: '',
             };
             try {
@@ -593,6 +606,8 @@ function evaluationsApp() {
                 const data = await res.json();
                 if (!data.success) { this.gradeModal.error = data.error || 'No se pudo cargar el listado.'; this.gradeModal.loading = false; return; }
                 this.gradeModal.max_score = data.evaluation?.max_score || 20;
+                this.gradeModal.scale_label = data.evaluation?.grading_scale_label || ('0 a ' + this.gradeModal.max_score);
+                this.gradeModal.is_letter_scale = !!data.evaluation?.is_letter_scale;
                 this.gradeModal.course = [data.evaluation?.course?.subject_name, data.evaluation?.course?.grade, data.evaluation?.course?.section].filter(Boolean).join(' · ');
                 this.gradeModal.students = (data.students || []).map(s => ({ ...s }));
             } catch (e) {

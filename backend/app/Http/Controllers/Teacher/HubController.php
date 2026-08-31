@@ -428,18 +428,23 @@ class HubController extends Controller
         }
 
         $data = $request->validate([
-            'grading_scale' => ['required', 'in:1-5,1-10,1-20'],
+            'grading_scale' => ['required', 'in:1-5,1-10,1-20,A-F'],
         ]);
 
         $course->update([
             'grading_scale' => GradingScale::normalize($data['grading_scale']),
         ]);
 
+        $scaleMax = GradingScale::maxFor($course->grading_scale);
+        Activity::query()
+            ->where('course_id', $course->id)
+            ->update(['max_score' => $scaleMax]);
+
         return response()->json([
             'success' => true,
             'message' => 'Escala de calificación actualizada.',
             'grading_scale' => $course->grading_scale,
-            'grading_scale_max' => GradingScale::maxFor($course->grading_scale),
+            'grading_scale_max' => $scaleMax,
             'grading_scale_label' => GradingScale::label($course->grading_scale),
         ]);
     }

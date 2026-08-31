@@ -5276,10 +5276,27 @@
             </div>
 
             <div class="grades-slideover-meta">
+                <label class="meta-chip" style="gap:8px;cursor:pointer;">
+                    <i class="fa-solid fa-sliders"></i>
+                    <span>Escala</span>
+                    <select x-model="gradesSlideover.grading_scale"
+                        @change="changeGradesScale()"
+                        :disabled="gradesSlideover.scaleSaving"
+                        style="background:transparent;border:0;color:inherit;font-weight:700;cursor:pointer;max-width:180px;">
+                        <option value="1-20">0 a 20</option>
+                        <option value="1-10">0 a 10</option>
+                        <option value="1-5">0 a 5</option>
+                        <option value="A-F">A, B, C, D, E, F</option>
+                    </select>
+                </label>
                 <span class="meta-chip">
                     <i class="fa-solid fa-star"></i>
-                    Máx: <strong x-text="gradeMaxForActivity(gradesSlideover.activity)"></strong>
-                    <span style="opacity:.75;">(<span x-text="courseData?.grading_scale_label || '1 al 20'"></span>)</span>
+                    <template x-if="!isLetterScale()">
+                        <span>0 a <strong x-text="courseScaleMax()"></strong> · 0 = no asistió</span>
+                    </template>
+                    <template x-if="isLetterScale()">
+                        <span>A=20 · F=0 (no asistió)</span>
+                    </template>
                 </span>
                 <span class="meta-chip">
                     <i class="fa-solid fa-chart-line"></i>
@@ -5335,14 +5352,30 @@
                                             <div class="grade-input-wrap">
                                                 <input type="number"
                                                     class="grade-input"
-                                                    :max="gradeMaxForActivity(gradesSlideover.activity)"
+                                                    x-show="!isLetterScale()"
+                                                    :max="courseScaleMax()"
                                                     min="0"
                                                     step="0.01"
+                                                    inputmode="decimal"
                                                     x-model="student.score"
                                                     :data-grade-index="idx"
+                                                    placeholder="0"
                                                     @blur="persistGrade(student)"
                                                     @change="persistGrade(student)"
                                                     @keydown="handleGradeInputKeydown($event, student, idx)">
+                                                <select class="grade-input"
+                                                    x-show="isLetterScale()"
+                                                    x-model="student.score"
+                                                    :data-grade-index="idx"
+                                                    @change="persistGrade(student)">
+                                                    <option value="">—</option>
+                                                    <option value="A">A</option>
+                                                    <option value="B">B</option>
+                                                    <option value="C">C</option>
+                                                    <option value="D">D</option>
+                                                    <option value="E">E</option>
+                                                    <option value="F">F (0)</option>
+                                                </select>
                                                 <i x-show="gradesSlideover.savedPulse[student.id]"
                                                    x-transition.opacity.duration.200ms
                                                    class="fa-solid fa-circle-check grade-saved-icon"></i>
@@ -5845,12 +5878,13 @@
                 </p>
                 <label style="display:block;font-size:12px;font-weight:700;color:var(--text-secondary);margin-bottom:8px;">Escala de notas</label>
                 <select x-model="courseSettingsForm.grading_scale" style="width:100%;padding:12px 14px;border-radius:14px;border:1px solid var(--nova-glass-border);background:var(--bg-secondary);color:var(--text-primary);">
-                    <option value="1-5">1 al 5</option>
-                    <option value="1-10">1 al 10</option>
-                    <option value="1-20">1 al 20</option>
+                    <option value="1-20">0 a 20</option>
+                    <option value="1-10">0 a 10</option>
+                    <option value="1-5">0 a 5</option>
+                    <option value="A-F">Letras A, B, C, D, E, F</option>
                 </select>
                 <p style="font-size:12px;color:var(--text-tertiary);margin-top:10px;line-height:1.5;">
-                    Afecta validaciones de nuevas calificaciones, el asistente IA y la visualización del acumulado.
+                    El 0 vale si el alumno no asistió. Las letras se promedian como número (A=20, B=16, C=12, D=8, E=4, F=0).
                 </p>
             </div>
             <div class="modal-footer">
@@ -5926,8 +5960,10 @@ function teacherHub() {
             loading: false,
             publishing: false,
             confirmPublish: false,
+            scaleSaving: false,
             error: null,
             activity: null,
+            grading_scale: '1-20',
             students: [],
             savedPulse: {},
             rowState: {},
@@ -6327,7 +6363,61 @@ function teacherHub() {
         },
 
         courseScaleMax() {
-            return Number(this.courseData?.grading_scale_max ?? 20);
+            const scale = this.gradesSlideover?.grading_scale || this.courseData?.grading_scale || '1-20';
+            if (scale === '1-5') return 5;
+            if (scale === '1-10') return 10;
+            return 20;
+        },
+
+        isLetterScale() {
+            const scale = this.gradesSlideover?.grading_scale || this.courseData?.grading_scale || '1-20';
+            return scale === 'A-F';
+        },
+
+        applyGradingScale(json) {
+            const scale = json.grading_scale || this.gradesSlideover.grading_scale || '1-20';
+            const max = Number(json.grading_scale_max ?? (scale === '1-5' ? 5 : (scale === '1-10' ? 10 : 20)));
+            const label = json.grading_scale_label || (scale === 'A-F' ? 'Letras A–F' : (`0 a ${max}`));
+            this.gradesSlideover.grading_scale = scale;
+            if (this.courseData) {
+                this.courseData.grading_scale = scale;
+                this.courseData.grading_scale_max = max;
+                this.courseData.grading_scale_label = label;
+            }
+            if (this.gradesSlideover.activity) {
+                this.gradesSlideover.activity.max_score = max;
+                this.gradesSlideover.activity.grading_scale = scale;
+            }
+        },
+
+        async changeGradesScale() {
+            if (!this.courseData?.id || this.gradesSlideover.scaleSaving) {
+                return;
+            }
+            this.gradesSlideover.scaleSaving = true;
+            try {
+                const res = await fetch(`/teacher/api/courses/${this.courseData.id}/grading-scale`, {
+                    method: 'PATCH',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').content,
+                    },
+                    body: JSON.stringify({
+                        grading_scale: this.gradesSlideover.grading_scale,
+                    }),
+                });
+                const json = await res.json();
+                if (!res.ok || !json.success) {
+                    throw new Error(json.error || json.message || 'No se pudo guardar la escala.');
+                }
+                this.applyGradingScale(json);
+                this.showToast('Escala actualizada. Las notas se promedian en números.', 'success', 'fa-check');
+            } catch (e) {
+                this.showToast(e.message || 'Error al guardar la escala.', 'error', 'fa-exclamation-triangle');
+            } finally {
+                this.gradesSlideover.scaleSaving = false;
+            }
         },
 
         formatAcum(value) {
@@ -6342,9 +6432,7 @@ function teacherHub() {
         },
 
         gradeMaxForActivity(activity) {
-            const scaleMax = this.courseScaleMax();
-            const actMax = Number(activity?.max_score ?? scaleMax);
-            return Math.min(actMax, scaleMax);
+            return this.courseScaleMax();
         },
 
         openCourseSettings() {
@@ -6936,12 +7024,18 @@ function teacherHub() {
                 this.gradesSlideover.activity = {
                     id: json.activity.id,
                     title: json.activity.title,
-                    max_score: json.activity.max_score,
+                    max_score: json.activity.grading_scale_max ?? json.activity.max_score,
                     avg_score: activity.avg_score ?? null,
                     graded_count: activity.graded_count ?? 0,
                     total_students: json.students.length,
                     course_name: json.activity.course_name ?? '',
+                    grading_scale: json.activity.grading_scale,
                 };
+                this.applyGradingScale({
+                    grading_scale: json.activity.grading_scale || this.courseData?.grading_scale || '1-20',
+                    grading_scale_max: json.activity.grading_scale_max,
+                    grading_scale_label: json.activity.grading_scale_label,
+                });
 
                 this.gradesSlideover.students = (json.students || []).map(student => ({
                     id: student.id,
@@ -7202,8 +7296,10 @@ function teacherHub() {
                 this.setStudentRowState(student.id, 'pending');
                 return;
             }
-            const score = Number(raw);
-            if (Number.isNaN(score)) {
+            const text = String(raw).trim();
+            const isLetter = /^[A-Fa-f]$/.test(text);
+            const score = isLetter ? text.toUpperCase() : Number(text);
+            if (!isLetter && Number.isNaN(score)) {
                 this.setStudentRowState(student.id, 'error');
                 return;
             }

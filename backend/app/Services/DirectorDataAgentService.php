@@ -233,10 +233,11 @@ class DirectorDataAgentService
         $value = $this->normalized($text);
 
         return (bool) preg_match(
-            '/(?:como va|como van|como le va|como esta|como estan|como estamos|quien|quienes|cuantos|cuantas|que alumnos|que cursos|que profesores|que evaluaciones|que tareas|compara|tendencia|tendencias|evolucion|ranking|informe|resumen|resume|estado academico|asistencia|faltas|promedio|rendimiento|notas|calificaciones|quiero saber|preocup|problemas|atencion|destacado|bajo rendimiento|este mes|esta semana|priorizar|prioridad|mi curso|mi colegio|dame|dime|le va a|evaluaciones|tareas|diagnostico|investiga|empeor|impresion|por que|que tienen en comun|preocupante|en que materia|quien es su profesor|con que profesor|quien (?:le )?da|quien tiene|prepara(?:me)?|nombr|listame|listado|nomina|como se llama|nombre del colegio|curso mas avanzado|grado mas alto|grado mas avanzado|ultimo grado|todos los alumnos|todos los estudiantes|nombre de todos|nombres de los|abecedario|alfabet|a\s*-\s*z|esos alumnos|sus notas)/u',
+            '/(?:como va|como van|como le va|como esta|como estan|como estamos|quien|quienes|cuantos|cuantas|que alumnos|que cursos|que profesores|que evaluaciones|que tareas|compara|tendencia|tendencias|evolucion|ranking|informe|resumen|resume|estado academico|asistencia|faltas|promedio|rendimiento|notas|calificaciones|quiero saber|preocup|problemas|atencion|destacado|bajo rendimiento|este mes|esta semana|priorizar|prioridad|mi curso|mi colegio|dame|dime|le va a|evaluaciones|tareas|diagnostico|investiga|empeor|impresion|por que|que tienen en comun|preocupante|en que materia|quien es su profesor|con que profesor|quien (?:le )?da|quien tiene|prepara(?:me)?|nombr|listame|listado|nomina|como se llama|nombre del colegio|curso mas avanzado|grado mas alto|grado mas avanzado|ultimo grado|todos los alumnos|todos los estudiantes|nombre de todos|nombres de los|abecedario|alfabet|a\s*-\s*z|esos alumnos|sus notas|ideas|ayudarlo|ayudarla|ayudarle|subir (?:la )?nota)/u',
             $value
         ) || (bool) preg_match('/\btop\s+\d/u', $value)
         || $this->looksLikeFollowUp($text)
+        || $this->looksLikeAdviceFollowUp($text)
         || $this->looksLikeRosterListQuery($text)
         || $this->looksLikeSchoolNameQuery($text)
         || $this->looksLikeMostAdvancedCourseQuery($text)
@@ -268,7 +269,21 @@ class DirectorDataAgentService
             '/^(?:por que|y (?:eso|ahora|el|la|los|las|ellos|ellas|su|le)|cual(?: es| de ellos| de ellas)?|en que materia|quien (?:es su profesor|le da|da)|que tienen en comun|el mas preocupante|explica|profundiza|y su profesor|nombr|listame|cuales son|quienes son|dime (?:los|las)|ese alumno|esa alumna|ese curso|ellos|ellas)\b/u',
             $value
         ) || (bool) preg_match('/\b(?:nombr|cuales son|quienes son|dime (?:los )?nombres|ese alumno|esos alumnos|esas alumnas|ese curso|ellos|ellas|sus notas|como van esos|como van sus)\b/u', $value)
-        || (bool) preg_match('/^y\s+\p{L}{2,}/u', $value);
+        || (bool) preg_match('/^y\s+\p{L}{2,}/u', $value)
+        || $this->looksLikeAdviceFollowUp($text);
+    }
+
+    /**
+     * "qué ideas me das para ayudarlo a subir la nota"
+     */
+    public function looksLikeAdviceFollowUp(string $text): bool
+    {
+        $value = $this->normalized($text);
+
+        return (bool) preg_match(
+            '/\b(?:ideas?|recomendacion(?:es)?|ayudarlo|ayudarla|ayudarle|como (?:lo |la |le )?ayudo|subir (?:la )?nota|mejorar (?:su |la )?nota|plan de apoyo|tutorias?|que (?:ideas? )?(?:me das|me recomiendas|puedo hacer|hago|le (?:digo|propongo)))\b/u',
+            $value
+        );
     }
 
     public function looksLikeSchoolNameQuery(string $text): bool
@@ -432,7 +447,19 @@ class DirectorDataAgentService
             }
         }
 
-        $wantsOpinion = $this->wantsOpinion($text);
+        if ($this->looksLikeAdviceFollowUp($text)) {
+            $adviceStudent = $lastStudent
+                ?: ((array) ($last['last_students'] ?? []))[0]
+                ?? null;
+            if ($adviceStudent) {
+                return $this->pack('get_student_performance', ['student_name' => $adviceStudent], true);
+            }
+            if ($lastGrade) {
+                return $this->pack('get_at_risk_students', ['grade' => $lastGrade, 'section' => $lastSection], true);
+            }
+        }
+
+        $wantsOpinion = $this->wantsOpinion($text) || $this->looksLikeAdviceFollowUp($text);
 
         if (is_array($preplanned) && $preplanned !== []) {
             $tools = [];
@@ -467,7 +494,10 @@ class DirectorDataAgentService
 
         $planned = $this->planFromText($text, $context, $last);
         $planned['tools'] = $this->applyContext($planned['tools'], $text, $context);
-        $planned['wants_opinion'] = $wantsOpinion || in_array($planned['intent'] ?? '', ['diagnose_school', 'school_concerns', 'executive_report', 'investigate'], true);
+        $planned['wants_opinion'] = $wantsOpinion
+            || ($planned['wants_opinion'] ?? false)
+            || $this->looksLikeAdviceFollowUp($text)
+            || in_array($planned['intent'] ?? '', ['diagnose_school', 'school_concerns', 'executive_report', 'investigate'], true);
 
         return $planned;
     }
@@ -573,9 +603,11 @@ class DirectorDataAgentService
 
         $memory = $this->conversationContext->snapshot();
         $facts = $this->factsForLlm($actions);
-        $style = $this->wantsStrategicAdvisory($text) || $intent === 'diagnose_school'
-            ? ($this->wantsExecutiveReport($text) || $this->wantsStructuredFormat($text) ? 'informe' : 'panorama')
-            : 'factual';
+        $style = $this->looksLikeAdviceFollowUp($text)
+            ? 'advice'
+            : ($this->wantsStrategicAdvisory($text) || $intent === 'diagnose_school'
+                ? ($this->wantsExecutiveReport($text) || $this->wantsStructuredFormat($text) ? 'informe' : 'panorama')
+                : 'factual');
 
         try {
             $response = \Illuminate\Support\Facades\Http::timeout(12)
@@ -583,7 +615,7 @@ class DirectorDataAgentService
                 ->post('https://api.openai.com/v1/chat/completions', [
                     'model' => (string) config('services.openai.director_model', 'gpt-4o-mini'),
                     'temperature' => 0.3,
-                    'max_tokens' => $style === 'informe' ? 700 : ($style === 'factual' ? 90 : 350),
+                    'max_tokens' => $style === 'informe' ? 400 : ($style === 'factual' ? 90 : 160),
                     'messages' => [
                         ['role' => 'system', 'content' => $this->synthesisSystemPrompt($style)],
                         ['role' => 'user', 'content' => json_encode([
@@ -619,18 +651,19 @@ class DirectorDataAgentService
     private function synthesisSystemPrompt(string $style): string
     {
         $format = match ($style) {
-            'informe' => 'Estructura de informe ejecutivo con subtítulos, riesgos y plan de acción.',
-            'panorama' => 'Respuesta tipo panorama del colegio, orientada a toma de decisiones.',
+            'informe' => 'Informe corto: 2 o 3 párrafos. Sin listas numeradas largas.',
+            'panorama' => 'Dos párrafos cortos, como una conversación. Sin ensayo ni marketing.',
+            'advice' => 'Dos párrafos cortos con ideas concretas. Sin lista de 3 prioridades ni cierre de venta.',
             'factual' => 'factual_lookup_mode: 1 o 2 oraciones, solo el dato pedido. Sin recomendaciones ni cierre estratégico.',
-            default => 'Respuesta conversacional natural, breve cuando aplique y accionable cuando haya riesgos.',
+            default => 'Conversación normal: 1 o 2 párrafos cortos. Responde y para.',
         };
 
         $roleLine = $style === 'factual'
             ? 'Estás en factual_lookup_mode: responde SOLO el dato pedido, en 1 o 2 oraciones. PROHIBIDO recomendaciones, hipótesis, riesgos, oportunidades o análisis de marketing.'
-            : 'Estás en strategic_advisory_mode: puedes interpretar patrones y recomendar porque el director pidió análisis, diagnóstico, informe, recomendaciones o la salud del colegio.';
+            : 'Hablas como un asistente cercano del director. Primero el dato o la idea, luego como mucho un comentario breve.';
 
         return <<<PROMPT
-Eres "AulaSync", asistente inteligente del director escolar. Redactas la respuesta final en español.
+Eres "AulaSync", asistente del director. Redactas en español, como una conversación normal: corta, clara, humana.
 
 {$roleLine}
 
@@ -640,25 +673,11 @@ Reglas:
 3. Si un dato no existe, di que no está disponible.
 4. No menciones tools, SQL, backend, agentes ni arquitectura interna.
 5. No digas que los números son registros reales ni menciones verificaciones internas.
-6. En factual_lookup_mode no interpretes ni agregues "siguiente paso". En strategic_advisory_mode sí puedes interpretar.
-7. Conecta patrones SOLO en strategic_advisory_mode (notas, asistencia, tendencia, riesgo) sin afirmar causalidad absoluta.
-8. Si detectas riesgo, incluye recomendación concreta SOLO en strategic_advisory_mode.
-9. Si el usuario pregunta "qué hacer", entrega acciones priorizadas y justificadas.
-10. Si el usuario pregunta "por qué", entrega hipótesis basadas en datos y explícitalas como hipótesis.
-11. Mantén tono natural, cálido y profesional, como conversación con un director.
-12. Sé ultra-conciso en preguntas simples (factual_lookup_mode) y más detallado solo en diagnósticos e informes.
-13. Evita repetir plantillas rígidas; adapta la respuesta a la intención.
-14. Cierra con pregunta de seguimiento SOLO en strategic_advisory_mode.
-15. {$format}
-
-Ejemplo de estilo esperado para panorama:
-"Panorama general: el promedio está bajando y eso merece atención esta semana. Lo más urgente es revisar 2do A y contactar a las familias de los alumnos en riesgo. Si quieres, te preparo una agenda de acciones por prioridad."
-
-Ejemplo de estilo esperado para riesgo:
-"Identifico alumnos en riesgo por combinación de promedio bajo y ausencias. Recomendación alta: reunión con padres en los casos críticos; recomendación media: refuerzo focalizado en la materia más débil."
-
-Ejemplo de estilo esperado para causa:
-"Con los datos actuales, la caída parece asociarse a una baja reciente de notas junto con faltas. Es una hipótesis, no una certeza. Sugiero validar con el docente y ajustar plan de apoyo esta semana."
+6. Por defecto: 1 o 2 párrafos cortos. Nunca un ensayo. Nunca una lista de 3 prioridades salvo que pidan un plan.
+7. En factual_lookup_mode no interpretes ni agregues "siguiente paso".
+8. Si pide ideas para un alumno, da 2 o 3 sugerencias en prosa, no un plan estratégico.
+9. Tono natural, de colega. Puedes cerrar con una pregunta corta solo si ayuda.
+10. {$format}
 PROMPT;
     }
 
@@ -2003,6 +2022,17 @@ PROMPT;
             ]);
         }
 
+        if (preg_match('/menor promedio|peor promedio|peor rendimiento|alumno (?:de .+ )?(?:con )?(?:el )?menor/u', $value)) {
+            return $this->pack('get_rankings', [
+                'metric' => 'average',
+                'limit' => 1,
+                'grade' => $grade,
+                'section' => $section,
+                'subject_name' => $subject,
+                'sort' => 'avg_asc',
+            ]);
+        }
+
         if (preg_match('/quien ha faltado|quienes han faltado|quien esta faltando/u', $value)) {
             return $this->pack('query_academic', ['query_type' => 'frequent_absentees']);
         }
@@ -2146,6 +2176,11 @@ PROMPT;
             ]);
         }
 
+        $memoryStudent = $memory['last_student'] ?? $memory['student_name'] ?? ((array) ($memory['last_students'] ?? $memory['student_names'] ?? []))[0] ?? null;
+        if (is_string($memoryStudent) && $memoryStudent !== '' && ($this->looksLikeAdviceFollowUp($text) || $this->looksLikeFollowUp($text))) {
+            return $this->pack('get_student_performance', ['student_name' => $memoryStudent], $this->looksLikeAdviceFollowUp($text));
+        }
+
         return [
             'tools' => [],
             'intent' => 'unclear',
@@ -2201,13 +2236,13 @@ PROMPT;
      * @param  array<string,mixed>  $args
      * @return array{tools:array<int,array{tool:string,args:array}>,intent:string,clarification:?string,wants_opinion:bool}
      */
-    private function pack(string $tool, array $args): array
+    private function pack(string $tool, array $args, bool $wantsOpinion = false): array
     {
         return [
             'tools' => [['tool' => $tool, 'args' => array_filter($args, fn ($v) => $v !== null && $v !== '')]],
             'intent' => $tool,
             'clarification' => null,
-            'wants_opinion' => false,
+            'wants_opinion' => $wantsOpinion,
         ];
     }
 
@@ -2258,7 +2293,7 @@ PROMPT;
         if ($focus === [] && empty($memory['last_student']) && empty($memory['student_name']) && empty($memory['student_names']) && empty($memory['last_students']) && empty($memory['last_intent'])) {
             return null;
         }
-        if (! $this->looksLikeFollowUp($text) && ! preg_match('/\b(?:por que|tienen en comun|mas preocupante|en que materia|su profesor|caso mas|ellos|ese alumno|ese curso|los de)\b/u', $this->normalized($text))) {
+        if (! $this->looksLikeFollowUp($text) && ! $this->looksLikeAdviceFollowUp($text) && ! preg_match('/\b(?:por que|tienen en comun|mas preocupante|en que materia|su profesor|caso mas|ellos|ese alumno|ese curso|los de)\b/u', $this->normalized($text))) {
             return null;
         }
 
@@ -2268,6 +2303,10 @@ PROMPT;
         $atRisk = (array) ($focus['at_risk'] ?? []);
         if (! $student && $atRisk !== []) {
             $student = $this->worstRiskName($atRisk);
+        }
+
+        if ($this->looksLikeAdviceFollowUp($text) && $student) {
+            return $this->pack('get_student_performance', ['student_name' => $student], true);
         }
 
         if (preg_match('/tienen en comun|que tienen/u', $value)) {
@@ -2888,7 +2927,7 @@ PROMPT;
     {
         $value = $this->normalized($text);
 
-        return (bool) preg_match('/\b(?:preocup|problemas?|recomien|opinion|deberia|ves|atencion|informe|resumen)\b/u', $value);
+        return (bool) preg_match('/\b(?:preocup|problemas?|recomien|opinion|deberia|ves|atencion|informe|resumen|ideas?|ayudarlo|ayudarla|ayudarle|subir (?:la )?nota|como lo ayudo|que (?:hago|puedo hacer|me das))\b/u', $value);
     }
 
     private function firstSentence(string $text): string

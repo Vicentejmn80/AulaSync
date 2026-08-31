@@ -397,6 +397,19 @@ class DirectorUnifiedAgentService
             return $answer;
         }
 
+        if (! ($plan['wants_opinion'] ?? false) && ! $this->dataAgent->looksLikeAdviceFollowUp($text)) {
+            $answer['recommendations'] = [];
+            $answer['analysis'] = null;
+            $answer['intelligent_query'] = [
+                'context' => $context,
+                'plan' => $plan,
+                'analysis' => null,
+                'recommendations' => [],
+            ];
+
+            return $answer;
+        }
+
         $analysis = $this->analyzeResults($director, $text, (array) ($answer['actions'] ?? []), $context, $plan);
         $generated = $this->generateResponse($director, $text, $analysis, $context, (string) ($answer['message'] ?? ''));
 
@@ -473,6 +486,11 @@ class DirectorUnifiedAgentService
         if (app()->runningUnitTests()) {
             return null;
         }
+        if (($fallbackPlan['tools'] ?? []) !== [] && (
+            $this->dataAgent->looksLikeFollowUp($text) || $this->dataAgent->looksLikeAdviceFollowUp($text)
+        )) {
+            return null;
+        }
         $key = trim((string) config('services.openai.key'));
         if ($key === '' || str_contains($key, 'your_openai')) {
             return null;
@@ -496,13 +514,10 @@ class DirectorUnifiedAgentService
                     'messages' => [
                         [
                             'role' => 'system',
-                            'content' => "Eres el planificador estratégico del modo consulta inteligente de AulaSync.\n"
-                                ."Selecciona SOLO herramientas de lectura necesarias para responder la consulta.\n"
-                                ."No ejecutes herramientas redundantes.\n"
-                                ."Si el usuario pide recomendaciones, incluye get_smart_recommendations.\n"
-                                ."Si pregunta por riesgo, incluye get_risk_analysis.\n"
-                                ."Si pregunta por causas, incluye get_trend_analysis y get_cause_analysis.\n"
-                                ."Resuelve referencias con conversation_history.\n"
+                            'content' => "Eres el planificador de consultas de AulaSync.\n"
+                                ."Selecciona SOLO herramientas de lectura necesarias.\n"
+                                ."Si fallback_plan ya tiene tools, respétalo cuando el usuario habla de 'él', 'ese alumno' o pide ideas para ayudarlo.\n"
+                                ."Resuelve pronombres con conversation_history y memory.last_student.\n"
                                 ."Nunca inventes parámetros fuera de contexto.",
                         ],
                         [
@@ -546,7 +561,8 @@ class DirectorUnifiedAgentService
                 'tools' => array_slice($toolsPlan, 0, 4),
                 'intent' => (string) ($toolsPlan[0]['tool'] ?? 'intelligent_query'),
                 'clarification' => null,
-                'wants_opinion' => true,
+                'wants_opinion' => $this->dataAgent->looksLikeAdviceFollowUp($text)
+                    || (bool) ($fallbackPlan['wants_opinion'] ?? false),
             ];
         } catch (\Throwable $e) {
             Log::warning('Unified intelligent planner failed', [
@@ -587,6 +603,7 @@ class DirectorUnifiedAgentService
                             'role' => 'system',
                             'content' => "Analiza resultados académicos para un director.\n"
                                 ."Devuelve JSON con: summary, key_patterns[], risks[], opportunities[], recommendations[{priority,action,reason}], follow_up_question.\n"
+                                ."summary debe ser 1 o 2 oraciones. recommendations vacío salvo que el director pida qué hacer o ideas.\n"
                                 ."No inventes hechos. Distingue observación de hipótesis.",
                         ],
                         [
@@ -650,6 +667,7 @@ class DirectorUnifiedAgentService
                 ->post('https://api.openai.com/v1/chat/completions', [
                     'model' => (string) config('services.openai.director_model', 'gpt-4o-mini'),
                     'temperature' => 0.35,
+                    'max_tokens' => 160,
                     'messages' => [
                         ['role' => 'system', 'content' => $this->intelligentSystemPrompt()],
                         [
@@ -692,21 +710,16 @@ class DirectorUnifiedAgentService
     private function intelligentSystemPrompt(): string
     {
         return <<<PROMPT
-Eres "AulaSync", asistente estratégico del director del colegio.
+Eres "AulaSync", el asistente del director. Hablas como en una conversación normal: corta, clara y humana.
 
-Piensa y responde en este orden:
-1) Entiende la intención real de la pregunta.
-2) Interpreta los datos y explica su impacto.
-3) Conecta patrones (rendimiento, asistencia, tendencia, riesgo).
-4) Prioriza acciones concretas con razón.
-5) Conversa de forma natural y cierra con una pregunta breve cuando ayude.
+Responde en 1 o 2 párrafos cortos. Primero el dato o la idea, luego como mucho un comentario breve.
+No escribas ensayos. No uses listas de 3 prioridades. No suenes a informe de marketing.
+Si pide ideas para un alumno, da 2 o 3 sugerencias en prosa, no un plan estratégico.
 
 Reglas:
 - Nunca inventes alumnos, cursos, promedios, asistencia ni causas no respaldadas por datos.
 - Si planteas una causa, declárala como hipótesis.
-- Diferencia claramente entre dato observado y recomendación.
 - No menciones tools, SQL, backend ni arquitectura.
-- Mantén tono ejecutivo, cercano y accionable.
 PROMPT;
     }
 

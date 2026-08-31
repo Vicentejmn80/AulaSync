@@ -208,6 +208,28 @@ class DirectorDataAgentConversationTest extends TestCase
         $this->assertStringNotContainsString('Puedo crear y eliminar', (string) $response->json('message'));
     }
 
+    public function test_ideas_to_raise_grade_follow_up_uses_last_student(): void
+    {
+        [$director] = $this->seedSchool();
+
+        $first = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'dime quien es el alumno de 1ro con menor promedio',
+        ]);
+        $first->assertOk();
+        $this->assertFalse((bool) $first->json('needs_clarification'));
+        $this->assertStringContainsString('Javier Mendez', (string) $first->json('message'));
+        $this->assertStringNotContainsString('Puedo consultar notas, asistencia', (string) $first->json('message'));
+
+        $second = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => 'que ideas me das para ayudarlo a subir la nota?',
+        ]);
+        $second->assertOk();
+        $this->assertFalse((bool) $second->json('needs_clarification'));
+        $this->assertContains('get_student_performance', $second->json('tools'));
+        $this->assertStringNotContainsString('Puedo consultar notas, asistencia', (string) $second->json('message'));
+        $this->assertStringContainsString('Javier', (string) $second->json('message'));
+    }
+
     public function test_ese_alumno_follow_up_uses_last_student(): void
     {
         [$director] = $this->seedSchool();

@@ -236,10 +236,10 @@ class EvaluationSyncService
             : collect();
 
         $saved = 0;
-        $max = (float) GradingScale::effectiveMax(
-            $evaluation->course?->grading_scale,
-            (int) ($activity->max_score ?: GradingScale::maxFor($evaluation->course?->grading_scale))
-        );
+        $max = (float) GradingScale::maxFor($evaluation->course?->grading_scale);
+        if ((int) $activity->max_score !== (int) $max) {
+            $activity->update(['max_score' => (int) $max]);
+        }
         $updatedStudentIds = [];
 
         foreach ($rows as $row) {

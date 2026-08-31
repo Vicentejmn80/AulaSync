@@ -165,7 +165,7 @@
                 <tr class="bg-white/5 text-violet-100 text-xs font-bold uppercase tracking-wider">
                     <th class="px-6 py-4 w-16">#</th>
                     <th class="px-6 py-4">Alumno</th>
-                    <th class="px-6 py-4 text-center">Nota (0-{{ $activity->max_score }})</th>
+                    <th class="px-6 py-4 text-center">Nota ({{ $scaleOptions[$gradingScale] ?? '0 a 20' }}{{ $isLetterScale ? '' : ' · 0 = no asistió' }})</th>
                     <th class="px-6 py-4 text-center">Estado</th>
                     <th class="px-6 py-4 text-center">Acumulado</th>
                 </tr>
@@ -184,16 +184,30 @@
                     </td>
                     <td class="px-6 py-4 flex justify-center">
                         <div class="relative">
+                            @if($isLetterScale)
+                            <select
+                                id="score_{{ $student['id'] }}"
+                                data-student="{{ $student['id'] }}"
+                                onchange="autoSaveGrade(this, {{ $student['id'] }})"
+                                class="grade-input w-24 text-center bg-white/10 border border-white/10 rounded-xl py-2 px-3 text-white font-bold transition focus:ring-2 focus:ring-violet-500"
+                            >
+                                <option value="">—</option>
+                                @foreach(['A','B','C','D','E','F'] as $letter)
+                                    <option value="{{ $letter }}" @selected(($student['display_score'] ?? '') === $letter)>{{ $letter }}</option>
+                                @endforeach
+                            </select>
+                            @else
                             <input
-                                type="number" min="0" max="{{ $activity->max_score }}" step="0.01"
-                                value="{{ $student['existing_score'] ?? '' }}"
+                                type="number" min="0" max="{{ $scaleMax }}" step="0.01" inputmode="decimal"
+                                value="{{ $student['existing_score'] === null ? '' : $student['existing_score'] }}"
                                 id="score_{{ $student['id'] }}"
                                 data-student="{{ $student['id'] }}"
                                 onblur="autoSaveGrade(this, {{ $student['id'] }})"
                                 oninput="updateBadgeState({{ $student['id'] }}, 'editing')"
                                 class="grade-input w-24 text-center bg-white/10 border border-white/10 rounded-xl py-2 px-3 text-white font-bold transition focus:ring-2 focus:ring-violet-500"
-                                placeholder="—"
+                                placeholder="0"
                             >
+                            @endif
                         </div>
                     </td>
                     <td class="px-6 py-4 text-center">
@@ -257,7 +271,8 @@
 
 <script>
 const ACTIVITY_ID = {{ $activity->id }};
-const ACTIVITY_MAX_SCORE = {{ $activity->max_score }};
+const ACTIVITY_MAX_SCORE = {{ $scaleMax }};
+const IS_LETTER_SCALE = {{ $isLetterScale ? 'true' : 'false' }};
 const GRADE_STORE_URL = '{{ route("teacher.grades.store", $activity) }}';
 const AI_PARSE_URL = '{{ route("teacher.grades.ai_parse", $activity) }}';
 const PUBLISH_URL = '{{ route('teacher.grades.publish', $activity) }}';
@@ -307,17 +322,21 @@ function updateBadgeState(studentId, state) {
 }
 
 async function autoSaveGrade(input, studentId) {
-    let score = parseFloat(input.value);
+    const raw = String(input.value ?? '').trim();
     const badge = document.getElementById(`badge_${studentId}`);
+    const isLetter = /^[A-Fa-f]$/.test(raw);
+    let score = isLetter ? raw.toUpperCase() : parseFloat(raw);
 
-    if (isNaN(score) || input.value === '') {
+    if (raw === '' || (!isLetter && Number.isNaN(score))) {
         setBadgeState(studentId, 'empty');
-        input.value = '';
+        if (!IS_LETTER_SCALE) input.value = '';
         return;
     }
 
-    score = Math.max(0, Math.min(ACTIVITY_MAX_SCORE, score));
-    input.value = score.toFixed(2);
+    if (!isLetter) {
+        score = Math.max(0, Math.min(ACTIVITY_MAX_SCORE, score));
+        input.value = String(score);
+    }
 
     setBadgeState(studentId, 'saving');
     input.classList.add('border-violet-500');

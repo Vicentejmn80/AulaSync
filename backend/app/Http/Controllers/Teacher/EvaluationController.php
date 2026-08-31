@@ -472,9 +472,13 @@ class EvaluationController extends Controller
                 'id' => $evaluation->id,
                 'title' => $evaluation->title,
                 'activity_id' => $evaluation->activity_id,
-                'max_score' => $evaluation->activity?->max_score ?? $evaluation->total_points,
+                'max_score' => GradingScale::maxFor($evaluation->course?->grading_scale)
+                    ?: ($evaluation->activity?->max_score ?? $evaluation->total_points),
+                'grading_scale' => GradingScale::normalize($evaluation->course?->grading_scale),
+                'grading_scale_label' => GradingScale::label($evaluation->course?->grading_scale),
+                'is_letter_scale' => GradingScale::isLetter($evaluation->course?->grading_scale),
                 'total_points' => $evaluation->total_points,
-                'course' => $evaluation->course?->only(['id', 'subject_name', 'grade', 'section']),
+                'course' => $evaluation->course?->only(['id', 'subject_name', 'grade', 'section', 'grading_scale']),
             ],
             'students' => $roster,
         ]);
@@ -484,17 +488,28 @@ class EvaluationController extends Controller
     {
         $this->authorizeTeacher($evaluation);
         $evaluation->loadMissing('course:id,grading_scale', 'activity:id,max_score');
-        $maxAllowed = GradingScale::effectiveMax(
-            $evaluation->course?->grading_scale,
-            (int) ($evaluation->activity?->max_score ?: GradingScale::maxFor($evaluation->course?->grading_scale))
-        );
+        $maxAllowed = GradingScale::maxFor($evaluation->course?->grading_scale);
 
         $data = $request->validate([
             'grades' => 'required|array|min:1',
             'grades.*.student_id' => 'required|integer',
-            'grades.*.score' => "nullable|numeric|min:0|max:{$maxAllowed}",
+            'grades.*.score' => 'nullable',
             'grades.*.feedback' => 'nullable|string|max:1000',
         ]);
+
+        foreach ($data['grades'] as $index => $entry) {
+            if (($entry['score'] ?? null) === null || $entry['score'] === '') {
+                continue;
+            }
+            $parsed = GradingScale::parseInput($evaluation->course?->grading_scale, $entry['score']);
+            if ($parsed === null || $parsed < 0 || $parsed > $maxAllowed) {
+                return response()->json([
+                    'success' => false,
+                    'error' => "La nota debe estar entre 0 y {$maxAllowed}. El 0 es válido si no asistió.",
+                ], 422);
+            }
+            $data['grades'][$index]['score'] = $parsed;
+        }
 
         $result = $this->sync->saveGrades($evaluation, auth()->user(), $data['grades']);
 
