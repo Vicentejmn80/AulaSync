@@ -8,10 +8,12 @@ use App\Models\Course;
 use App\Models\ManualPlanning;
 use App\Models\Planificacion;
 use App\Services\DirectorAlertService;
+use App\Support\LessonTemplate;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 
@@ -72,7 +74,32 @@ class ManualPlanningController extends Controller
             $selectedCourseId = $courses->first()->id;
         }
 
-        return view('teacher.planner.manual', compact('planning', 'courses', 'selectedCourseId'));
+        $lessonTemplate = LessonTemplate::forUser(auth()->user());
+        if ($planning) {
+            $fromPayload = data_get($planning, 'payload.lesson_template');
+            $fromSession = data_get($planning, 'sessions.0.lesson_template');
+            $lessonTemplate = LessonTemplate::normalize((string) ($fromPayload ?: $fromSession ?: $lessonTemplate));
+            if (! empty($planning->planificacion_id)) {
+                $linked = Planificacion::find($planning->planificacion_id);
+                if (is_array($linked?->payload) && ! empty($linked->payload['lesson_template'])) {
+                    $lessonTemplate = LessonTemplate::normalize((string) $linked->payload['lesson_template']);
+                }
+            }
+        }
+
+        $templates = collect(LessonTemplate::ids())->map(fn ($id) => [
+            'id' => $id,
+            'label' => LessonTemplate::label($id),
+            'phases' => LessonTemplate::phaseDefs($id),
+        ])->values();
+
+        return view('teacher.planner.manual', compact(
+            'planning',
+            'courses',
+            'selectedCourseId',
+            'lessonTemplate',
+            'templates'
+        ));
     }
 
     /**
@@ -87,12 +114,22 @@ class ManualPlanningController extends Controller
         $data = $request->validate([
             'course_id' => ['required', 'integer', 'exists:courses,id'],
             'planificacion_id' => ['nullable', 'integer'],
+            'lesson_template' => ['nullable', 'string', 'max:40'],
             'sessions' => ['required', 'array', 'min:1'],
             'sessions.*.date' => ['nullable', 'date'],
+            'sessions.*.title' => ['nullable', 'string', 'max:180'],
             'sessions.*.inicio' => ['nullable', 'string'],
             'sessions.*.desarrollo' => ['nullable', 'string'],
             'sessions.*.cierre' => ['nullable', 'string'],
+            'sessions.*.phases' => ['nullable', 'array'],
+            'sessions.*.phases.*' => ['nullable', 'string'],
         ]);
+
+        $template = LessonTemplate::normalize((string) ($data['lesson_template'] ?? LessonTemplate::forUser($user)));
+        $data['sessions'] = collect($data['sessions'])
+            ->map(fn ($session) => $this->normalizeSession($session, $template))
+            ->values()
+            ->all();
 
         try {
             $requestedCourseId = (int) $data['course_id'];
@@ -119,12 +156,15 @@ class ManualPlanningController extends Controller
 
             $signaturePayload = [
                 'course_id' => $course->id,
+                'lesson_template' => $template,
                 'sessions' => collect($data['sessions'])
                     ->map(fn ($s) => [
                         'date' => $s['date'] ?? null,
+                        'title' => trim((string) ($s['title'] ?? '')),
                         'inicio' => trim((string) ($s['inicio'] ?? '')),
                         'desarrollo' => trim((string) ($s['desarrollo'] ?? '')),
                         'cierre' => trim((string) ($s['cierre'] ?? '')),
+                        'phases' => $s['phases'] ?? [],
                     ])
                     ->values()
                     ->all(),
@@ -168,7 +208,7 @@ class ManualPlanningController extends Controller
             $courseName = trim($course->subject_name . ' ' . $course->grade . ($course->section ? ' / ' . $course->section : ''));
             $originalStatus = $existingPlan ? (string) ($existingPlan->status ?? '') : null;
 
-            $planificacion = DB::transaction(function () use ($teacherId, $colegioId, $data, $course, $courseName, $signature, $existingPlan, &$originalStatus) {
+            $planificacion = DB::transaction(function () use ($teacherId, $colegioId, $data, $course, $courseName, $signature, $existingPlan, $template, &$originalStatus) {
                 $manualPayload = [
                     'teacher_id' => $teacherId,
                     'course_id'  => $course->id,
@@ -185,6 +225,7 @@ class ManualPlanningController extends Controller
                     'type'      => 'manual_plan',
                     'course_id' => $course->id,
                     'course_name' => $courseName,
+                    'lesson_template' => $template,
                     'signature' => $signature,
                     'sessions'  => $data['sessions'],
                     'manual_id' => $manual->id,
@@ -225,7 +266,7 @@ class ManualPlanningController extends Controller
                 $this->notifyDirectorsOfCorrectedPlan($colegioId, $teacherName, $courseName);
             }
 
-            DB::transaction(function () use ($teacherId, $colegioId, $data, $course, $courseName, $planificacion) {
+            DB::transaction(function () use ($teacherId, $colegioId, $data, $course, $courseName, $planificacion, $template) {
                 Activity::where('plan_block_id', $planificacion->id)
                     ->where('colegio_id', $colegioId)
                     ->delete();
@@ -240,24 +281,31 @@ class ManualPlanningController extends Controller
                 ];
 
                 foreach ($data['sessions'] as $idx => $session) {
-                    $inicio = trim((string) ($session['inicio'] ?? ''));
-                    $desarrollo = trim((string) ($session['desarrollo'] ?? ''));
-                    $cierre = trim((string) ($session['cierre'] ?? ''));
                     $sessionDate = filled($session['date'] ?? null)
                         ? Carbon::parse((string) $session['date'])->format('Y-m-d')
                         : null;
+                    $description = LessonTemplate::build($session['phases'] ?? [], $template);
+                    if ($description === '') {
+                        $inicio = trim((string) ($session['inicio'] ?? ''));
+                        $desarrollo = trim((string) ($session['desarrollo'] ?? ''));
+                        $cierre = trim((string) ($session['cierre'] ?? ''));
+                        $description = collect([
+                            $inicio ? "INICIO:\n{$inicio}" : null,
+                            $desarrollo ? "DESARROLLO:\n{$desarrollo}" : null,
+                            $cierre ? "CIERRE:\n{$cierre}" : null,
+                        ])->filter()->implode("\n\n");
+                    }
 
-                    $description = collect([
-                        $inicio ? "INICIO:\n{$inicio}" : null,
-                        $desarrollo ? "DESARROLLO:\n{$desarrollo}" : null,
-                        $cierre ? "CIERRE:\n{$cierre}" : null,
-                    ])->filter()->implode("\n\n");
+                    $title = trim((string) ($session['title'] ?? ''));
+                    if ($title === '') {
+                        $title = $courseName.' · Sesión #'.($idx + 1);
+                    }
 
                     $activity = new Activity([
                         'teacher_id'       => $teacherId,
                         'course_id'        => $course->id,
                         'plan_block_id'    => $planificacion->id,
-                        'title'            => $courseName . ' · Sesión manual #' . ($idx + 1),
+                        'title'            => $title,
                         'description'      => $description,
                         'type'             => Activity::TYPE_CLASE,
                         'is_homework'      => false,
@@ -313,9 +361,165 @@ class ManualPlanningController extends Controller
         }
     }
 
+    public function generate(Request $request): JsonResponse
+    {
+        $user = auth()->user();
+        $data = $request->validate([
+            'prompt' => ['required', 'string', 'min:8', 'max:2000'],
+            'course_id' => ['nullable', 'integer', 'exists:courses,id'],
+            'lesson_template' => ['nullable', 'string', 'max:40'],
+            'session_count' => ['nullable', 'integer', 'min:1', 'max:12'],
+            'start_date' => ['nullable', 'date'],
+        ]);
+
+        $template = LessonTemplate::normalize((string) ($data['lesson_template'] ?? LessonTemplate::forUser($user)));
+        $count = (int) ($data['session_count'] ?? 4);
+        $start = filled($data['start_date'] ?? null)
+            ? Carbon::parse((string) $data['start_date'])->startOfDay()
+            : now()->startOfDay();
+
+        $course = null;
+        if (! empty($data['course_id'])) {
+            $course = Course::where('teacher_id', $user->id)
+                ->where('colegio_id', $user->colegio_id)
+                ->where('id', (int) $data['course_id'])
+                ->first(['id', 'subject_name', 'grade', 'section']);
+        }
+
+        $apiKey = config('services.openai.key', env('OPENAI_API_KEY'));
+        if (empty($apiKey)) {
+            return response()->json([
+                'success' => false,
+                'error' => 'OPENAI_API_KEY no está configurada.',
+            ], 200);
+        }
+
+        $phaseDefs = LessonTemplate::phaseDefs($template);
+        $phaseKeys = array_column($phaseDefs, 'key');
+        $phaseExample = collect($phaseDefs)
+            ->mapWithKeys(fn ($def) => [$def['key'] => 'texto breve de '.$def['label']])
+            ->all();
+        $courseLabel = $course
+            ? trim($course->subject_name.' '.$course->grade.($course->section ? ' / '.$course->section : ''))
+            : 'el curso del docente';
+        $dates = [];
+        for ($i = 0; $i < $count; $i++) {
+            $dates[] = $start->copy()->addDays($i)->toDateString();
+        }
+
+        $system = 'Eres un pedagogo experto en colegios de Latinoamérica. '
+            .'Responde SOLO JSON válido, sin markdown. '
+            .'Estructura exacta: {"sessions":[{"date":"YYYY-MM-DD","title":"","phases":{}}]}. '
+            .'Cada phases debe incluir exactamente estas claves: '.implode(', ', $phaseKeys).'. '
+            .'El estilo pedagógico obligatorio es «'.LessonTemplate::label($template).'». '
+            .'Redacta clases concretas, accionables y de 4 a 8 líneas por fase. No inventes el nombre del colegio.';
+
+        $userMessage = 'Curso: '.$courseLabel.'. '
+            .'Fechas sugeridas (usa estas u otras cercanas): '.implode(', ', $dates).'. '
+            .'Cantidad de sesiones: '.$count.'. '
+            .'Ejemplo de phases: '.json_encode($phaseExample, JSON_UNESCAPED_UNICODE).'. '
+            .'Pedido del docente: '.$data['prompt'];
+
+        try {
+            $response = Http::withToken($apiKey)
+                ->timeout(70)
+                ->post('https://api.openai.com/v1/chat/completions', [
+                    'model' => 'gpt-4o-mini',
+                    'temperature' => 0.4,
+                    'response_format' => ['type' => 'json_object'],
+                    'messages' => [
+                        ['role' => 'system', 'content' => $system],
+                        ['role' => 'user', 'content' => $userMessage],
+                    ],
+                ]);
+
+            if (! $response->successful()) {
+                Log::warning('Manual planning AI error', ['status' => $response->status(), 'body' => $response->body()]);
+
+                return response()->json(['success' => false, 'error' => 'La IA no pudo generar la planificación.'], 200);
+            }
+
+            $content = data_get($response->json(), 'choices.0.message.content', '{}');
+            $payload = json_decode((string) $content, true);
+            $rawSessions = is_array($payload) ? ($payload['sessions'] ?? $payload['sesiones'] ?? []) : [];
+            if (! is_array($rawSessions) || $rawSessions === []) {
+                return response()->json(['success' => false, 'error' => 'La IA devolvió un formato inválido.'], 200);
+            }
+
+            $sessions = collect($rawSessions)
+                ->take(12)
+                ->values()
+                ->map(function ($session, $index) use ($template, $start) {
+                    if (! is_array($session)) {
+                        $session = [];
+                    }
+                    if (empty($session['date'])) {
+                        $session['date'] = $start->copy()->addDays($index)->toDateString();
+                    }
+
+                    return $this->normalizeSession($session, $template);
+                })
+                ->all();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Sesiones generadas. Revisa, edita y guarda cuando estés listo.',
+                'lesson_template' => $template,
+                'sessions' => $sessions,
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Manual planning AI exception: '.$e->getMessage());
+
+            return response()->json(['success' => false, 'error' => 'Error al contactar la IA.'], 200);
+        }
+    }
+
     public function pdf($id = null)
     {
         return response()->json(['message' => 'Función PDF en desarrollo para el ID: ' . $id]);
+    }
+
+    private function normalizeSession(array $session, string $template): array
+    {
+        $phases = is_array($session['phases'] ?? null) ? $session['phases'] : [];
+        $empty = LessonTemplate::emptyPhases($template);
+
+        foreach ($empty as $key => $_) {
+            $empty[$key] = trim((string) ($phases[$key] ?? $session[$key] ?? ''));
+        }
+
+        if (! implode('', $empty)) {
+            $fallback = trim((string) ($session['desarrollo'] ?? $session['inicio'] ?? $session['title'] ?? ''));
+            $keys = array_keys($empty);
+            if ($fallback !== '' && isset($keys[min(1, count($keys) - 1)])) {
+                $empty[$keys[min(1, count($keys) - 1)]] = $fallback;
+            }
+        }
+
+        $classic = LessonTemplate::parse(
+            LessonTemplate::rewrite(LessonTemplate::build($empty, $template), LessonTemplate::CLASSIC),
+            LessonTemplate::CLASSIC
+        );
+
+        $date = $session['date'] ?? null;
+        if (filled($date)) {
+            try {
+                $date = Carbon::parse((string) $date)->toDateString();
+            } catch (\Throwable) {
+                $date = null;
+            }
+        }
+
+        return [
+            'id' => $session['id'] ?? (int) (microtime(true) * 1000) + random_int(1, 99),
+            'date' => $date,
+            'title' => trim((string) ($session['title'] ?? '')),
+            'inicio' => trim((string) ($classic['inicio'] ?? '')),
+            'desarrollo' => trim((string) ($classic['desarrollo'] ?? '')),
+            'cierre' => trim((string) ($classic['cierre'] ?? '')),
+            'phases' => $empty,
+            'lesson_template' => $template,
+        ];
     }
 
     private function notifyDirectorsOfNewPlan(int $colegioId, string $teacherName, string $courseName): void

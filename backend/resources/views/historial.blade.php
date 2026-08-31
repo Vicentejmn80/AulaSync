@@ -209,6 +209,44 @@
         .hist-modal-actions { display: flex; justify-content: flex-end; gap: .5rem; margin-top: 1rem; }
         .btn-cancel-hist { background: #f3f4f6; color: #374151; font-weight: 600; padding: .5rem 1.1rem; border-radius: .625rem; border: none; cursor: pointer; }
         .btn-delete-hist { background: linear-gradient(135deg,#db2777,#9d174d); color: #fff; font-weight: 700; padding: .5rem 1.1rem; border-radius: .625rem; border: none; cursor: pointer; }
+
+        .plan-workspace {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 18px;
+        }
+        .plan-workspace-card {
+            background: #fff;
+            border: 1px solid rgba(124,58,237,.14);
+            border-radius: 22px;
+            overflow: hidden;
+            box-shadow: 0 18px 36px rgba(15,23,42,.07);
+            transition: transform .18s ease, box-shadow .18s ease;
+        }
+        .plan-workspace-card:hover { transform: translateY(-4px); box-shadow: 0 24px 40px rgba(15,23,42,.12); }
+        .plan-workspace-card summary { list-style: none; cursor: pointer; }
+        .plan-workspace-card summary::-webkit-details-marker { display: none; }
+        .plan-card-top {
+            height: 8px;
+            background: linear-gradient(90deg, #7c3aed, #06b6d4, #ec4899);
+        }
+        .plan-card-body { padding: 18px 18px 8px; }
+        .class-rail { padding: 0 18px 16px; display: flex; flex-direction: column; gap: 8px; }
+        .class-chip {
+            display: grid;
+            grid-template-columns: 72px 1fr;
+            gap: 10px;
+            align-items: center;
+            border: 1px solid rgba(124,58,237,.12);
+            border-left: 4px solid var(--chip-color, #7c3aed);
+            border-radius: 14px;
+            padding: 8px 10px;
+            background: #faf8ff;
+        }
+        .class-chip time { font-size: 11px; font-weight: 800; color: #7c3aed; }
+        .class-chip b { display: block; font-size: 13px; color: #1e1b4b; }
+        .class-chip small { color: #6b7280; font-size: 11px; }
+        .plan-expand-hint { font-size: 12px; color: #7c3aed; font-weight: 700; margin: 8px 0 0; }
     </style>
     @endpush
 
@@ -240,8 +278,8 @@
     <div class="container py-5">
         <div class="hist-banner">
             <div>
-                <h1>📚 Historial de Planificaciones</h1>
-                <p>Gestiona, visualiza y mejora tus clases guardadas bajo el sello AulaSync.</p>
+                <h1>Campo de planificaciones</h1>
+                <p>Mira cada plan y, al abrirlo, las clases que lo componen. Crea, edita y sigue el ritmo de tu mes.</p>
             </div>
             <div class="flex flex-wrap gap-3">
                 <a href="{{ route('teacher.hub') }}" class="btn-hist-secondary">
@@ -250,9 +288,6 @@
                 <a href="{{ route('teacher.planner.manual') }}" class="btn-hist-primary">
                     <i class="fas fa-plus"></i> Nueva Planificación
                 </a>
-                <button type="button" class="btn-hist-secondary" onclick="window.dispatchEvent(new CustomEvent('nova-lesson-template-picker'))">
-                    <i class="fas fa-palette"></i> Estilo de clase
-                </button>
             </div>
         </div>
 
@@ -271,18 +306,15 @@
                 </div>
             </div>
         @else
-            <div class="row g-4" id="historialGrid">
+            <div class="plan-workspace" id="historialGrid">
                 @foreach($plans as $plan)
                     @php
-                        // Aseguramos que el payload sea un array
                         $payload = is_array($plan->payload) ? $plan->payload : json_decode($plan->payload, true) ?? [];
                         $type = $payload['type'] ?? 'ai_plan';
                         $isManual = $type === 'manual_plan';
                         $isBulk = $type === 'bulk_plan';
                         $courseId = $payload['course_id'] ?? null;
-                        $firstSessionDate = isset($payload['sessions'][0]['date'])
-                            ? $payload['sessions'][0]['date']
-                            : null;
+                        $firstSessionDate = $payload['sessions'][0]['date'] ?? $plan->activities->first()?->due_date;
                         $manualMonth = $firstSessionDate
                             ? \Illuminate\Support\Carbon::parse($firstSessionDate)->format('Y-m')
                             : null;
@@ -293,12 +325,31 @@
                             'aprobado' => ['class' => 'approved', 'icon' => 'fa-check', 'label' => 'Aprobada'],
                             'rechazado' => ['class' => 'rejected', 'icon' => 'fa-xmark', 'label' => 'Requiere corrección'],
                         ][$status] ?? ['class' => 'pending', 'icon' => 'fa-clock', 'label' => ucfirst($status)];
+                        $palette = ['#7C3AED', '#059669', '#D97706', '#DB2777', '#0891B2', '#2563EB'];
+                        $classes = collect($payload['sessions'] ?? [])->map(function ($session, $i) {
+                            return [
+                                'date' => $session['date'] ?? null,
+                                'title' => $session['title'] ?? ('Sesión '.($i + 1)),
+                                'preview' => \Illuminate\Support\Str::limit(trim(($session['inicio'] ?? '').' '.($session['desarrollo'] ?? '')), 70),
+                            ];
+                        });
+                        if ($classes->isEmpty()) {
+                            $classes = $plan->activities->map(function ($activity) {
+                                $due = $activity->due_date;
+                                $dueStr = $due instanceof \Illuminate\Support\Carbon ? $due->format('Y-m-d') : (string) $due;
+
+                                return [
+                                    'date' => $dueStr ?: null,
+                                    'title' => $activity->title,
+                                    'preview' => \Illuminate\Support\Str::limit(strip_tags((string) $activity->description), 70),
+                                ];
+                            });
+                        }
                     @endphp
 
-                    <div class="col-12 col-md-6 col-lg-4" data-plan-card-id="{{ $plan->id }}">
-                        <div class="historial-card {{ $isManual ? 'is-manual' : '' }}">
-                            
-                            {{-- Badge Dinámico --}}
+                    <details class="plan-workspace-card" data-plan-card-id="{{ $plan->id }}">
+                        <div class="plan-card-top"></div>
+                        <summary class="plan-card-body">
                             @if($isManual)
                                 <span class="hist-badge manual"><i class="fas fa-hand-paper me-1"></i> Plan Manual</span>
                             @elseif($isBulk)
@@ -309,54 +360,48 @@
                             <span class="hist-status {{ $statusMeta['class'] }}">
                                 <i class="fas {{ $statusMeta['icon'] }}"></i>{{ $statusMeta['label'] }}
                             </span>
-
                             @if($status === 'rechazado' && !empty($payload['rechazo_feedback']))
                                 <div class="mt-2 mb-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">
                                     <strong>Feedback Dirección:</strong> {{ \Illuminate\Support\Str::limit($payload['rechazo_feedback'], 120) }}
                                 </div>
                             @endif
-
                             <h3>{{ $plan->tema ?: 'Sin título' }}</h3>
-                            
-                            <p class="hist-obj">
-                                {{ \Illuminate\Support\Str::limit($plan->objetivo ?: 'Sin objetivo definido', 120) }}
-                            </p>
-
+                            <p class="hist-obj">{{ \Illuminate\Support\Str::limit($plan->objetivo ?: 'Sin objetivo definido', 120) }}</p>
                             <div class="hist-meta">
                                 <span><i class="far fa-calendar-alt me-1"></i> {{ $plan->created_at?->format('d/m/Y') }}</span>
-                                @if(isset($payload['nivel_educativo']))
-                                    <span><i class="fas fa-graduation-cap me-1"></i> {{ ucfirst($payload['nivel_educativo']) }}</span>
-                                @endif
+                                <span><i class="fas fa-chalkboard me-1"></i> {{ $classes->count() }} clase{{ $classes->count() === 1 ? '' : 's' }}</span>
                             </div>
-
-                            <div class="hist-actions">
-                                {{-- Botón Eliminar --}}
-                                <button type="button" 
-                                        class="btn-hist-delete btn-delete-plan" 
-                                        data-plan-id="{{ $plan->id }}" 
-                                        data-plan-title="{{ $plan->tema }}"
-                                        title="Eliminar">
+                            <p class="plan-expand-hint">Ver clases del plan</p>
+                        </summary>
+                        <div class="class-rail">
+                            @forelse($classes as $idx => $class)
+                                <div class="class-chip" style="--chip-color: {{ $palette[$idx % count($palette)] }}">
+                                    <time>{{ !empty($class['date']) ? \Illuminate\Support\Carbon::parse($class['date'])->format('d M') : 'Sin fecha' }}</time>
+                                    <div>
+                                        <b>{{ $class['title'] ?: 'Clase' }}</b>
+                                        @if(!empty($class['preview']))
+                                            <small>{{ $class['preview'] }}</small>
+                                        @endif
+                                    </div>
+                                </div>
+                            @empty
+                                <p class="hist-obj">Este plan aún no tiene clases desglosadas.</p>
+                            @endforelse
+                            <div class="hist-actions" style="margin-top:8px;">
+                                <button type="button" class="btn-hist-delete btn-delete-plan" data-plan-id="{{ $plan->id }}" data-plan-title="{{ $plan->tema }}" title="Eliminar">
                                     <i class="fas fa-trash-alt"></i>
                                 </button>
-
-                                {{-- Botón Abrir Dinámico --}}
                                 @if($isManual)
-                                    {{-- Enlace corregido a la ficha técnica --}}
-                                <a href="{{ route('teacher.hub', ['plan_block' => $plan->id, 'month' => $manualMonth]) }}" class="btn-hist-open btn-manual">
-                                        <i class="fas fa-eye me-1"></i> Ver Sesiones
-                                    </a>
+                                    <a href="{{ route('teacher.planner.manual', $plan->id) }}" class="btn-hist-open btn-manual"><i class="fas fa-pen me-1"></i> Editar</a>
+                                    <a href="{{ route('teacher.hub', ['plan_block' => $plan->id, 'month' => $manualMonth]) }}" class="btn-hist-open btn-manual"><i class="fas fa-eye me-1"></i> Calendario</a>
                                 @elseif($isBulk && $courseId)
-                                    <a href="{{ route('teacher.hub', ['course' => $courseId, 'plan_block' => $plan->id]) }}" class="btn-hist-open">
-                                        <i class="fas fa-calendar-check me-1"></i> Calendario
-                                    </a>
+                                    <a href="{{ route('teacher.hub', ['course' => $courseId, 'plan_block' => $plan->id]) }}" class="btn-hist-open"><i class="fas fa-calendar-check me-1"></i> Calendario</a>
                                 @else
-                                    <a href="{{ route('dashboard', ['plan' => $plan->id]) }}" class="btn-hist-open">
-                                        <i class="fas fa-folder-open me-1"></i> Abrir
-                                    </a>
+                                    <a href="{{ route('dashboard', ['plan' => $plan->id]) }}" class="btn-hist-open"><i class="fas fa-folder-open me-1"></i> Abrir</a>
                                 @endif
                             </div>
                         </div>
-                    </div>
+                    </details>
                 @endforeach
             </div>
         @endif

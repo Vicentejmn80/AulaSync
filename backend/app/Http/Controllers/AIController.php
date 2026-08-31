@@ -416,6 +416,10 @@ class AIController extends Controller
         $user = auth()->user();
         $plans = $user->planificaciones()
             ->where('colegio_id', $user->colegio_id)
+            ->with(['activities' => fn ($q) => $q
+                ->orderBy('due_date')
+                ->orderBy('id')
+                ->select(['id', 'title', 'due_date', 'type', 'plan_block_id', 'course_id', 'description'])])
             ->withCount('activities')
             ->latest()
             ->get();

@@ -398,6 +398,7 @@ Route::middleware('auth')->group(function () {
                 // El {id?} permite que el Hub entre a /manual sin error
                 Route::get('/manual/{id?}', [ManualPlanningController::class, 'show'])->name('manual');
                 Route::post('/manual', [ManualPlanningController::class, 'store'])->name('store');
+                Route::post('/manual/generate', [ManualPlanningController::class, 'generate'])->name('generate');
 
                 // Ruta show explícita para compatibilidad con redirecciones
                 Route::get('/show/{id}', [ManualPlanningController::class, 'show'])->name('show');

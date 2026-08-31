@@ -75,6 +75,21 @@ class LessonTemplate
         return self::CLASSIC;
     }
 
+    public static function ids(): array
+    {
+        return [self::CLASSIC, self::DIRECT, self::CONSTRUCTIVIST, self::PROJECT];
+    }
+
+    public static function emptyPhases(string $id): array
+    {
+        $out = [];
+        foreach (self::phaseDefs($id) as $def) {
+            $out[$def['key']] = '';
+        }
+
+        return $out;
+    }
+
     public static function label(string $id): string
     {
         return match (self::normalize($id)) {
