@@ -28,6 +28,7 @@ class Activity extends Model
         'is_homework',
         'nee_type',
         'nee_adaptation',
+        'nee_student_id',
         'id_curso',
         'id_docente',
         'id_profesor',
@@ -91,6 +92,11 @@ class Activity extends Model
     public function course(): BelongsTo
     {
         return $this->belongsTo(Course::class);
+    }
+
+    public function neeStudent(): BelongsTo
+    {
+        return $this->belongsTo(Student::class, 'nee_student_id');
     }
 
     public function evaluation(): BelongsTo

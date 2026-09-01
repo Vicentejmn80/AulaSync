@@ -280,7 +280,7 @@ class HubController extends Controller
                 ->select('students.id', 'students.name', 'students.grade', 'students.section', 'students.document_id', 'students.family_code')
                 ->orderBy('students.name'),
             'activities' => fn ($q) => $q
-                ->with(['tareas', 'evaluation:id,title,mode,question_count,topic,instructions'])
+                ->with(['tareas', 'evaluation:id,title,mode,question_count,topic,instructions', 'neeStudent:id,name'])
                 ->withCount('grades')
                 ->withAvg('grades', 'score')
                 ->orderBy('due_date'),
@@ -499,7 +499,7 @@ class HubController extends Controller
         // Load all activities for this teacher's courses in the month range
         $query = Activity::whereIn('course_id', $courseIds)
             ->whereBetween('due_date', [$start->toDateString(), $end->toDateString()])
-            ->with(['course:id,subject_name,grade,section', 'tareas', 'evaluation:id,title,mode,question_count,topic,instructions']);
+            ->with(['course:id,subject_name,grade,section', 'tareas', 'evaluation:id,title,mode,question_count,topic,instructions', 'neeStudent:id,name']);
 
         $activitiesByDay = $query->get()
             ->groupBy(fn ($a) => Carbon::parse($a->due_date)->format('Y-m-d'))
@@ -550,6 +550,7 @@ class HubController extends Controller
             'course:id,subject_name,grade,section',
             'tareas:id,actividad_id,titulo,descripcion,fecha_entrega,puntos,calificacion,feedback',
             'evaluation:id,title,mode,question_count,topic,instructions',
+            'neeStudent:id,name',
         ]);
 
         return response()->json([
@@ -624,6 +625,8 @@ class HubController extends Controller
             'director_notes' => $activity->director_notes,
             'nee_type' => $activity->nee_type,
             'nee_adaptation' => $activity->nee_adaptation,
+            'nee_student_id' => $activity->nee_student_id,
+            'nee_student_name' => $activity->neeStudent?->name,
             'evaluation_id' => $activity->evaluation_id ?: $evaluation?->id,
             'evaluation_mode' => $evaluation?->mode,
             'evaluation_topic' => $evaluation?->topic,

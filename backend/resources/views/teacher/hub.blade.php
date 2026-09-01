@@ -3711,6 +3711,86 @@
             margin-bottom: 0;
         }
 
+        .proposal-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        @media (min-width: 700px) {
+            .proposal-grid {
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+            }
+        }
+
+        .proposal-card {
+            text-align: left;
+            padding: 12px 14px;
+            border-radius: 14px;
+            border: 1px solid var(--nova-glass-border);
+            background: var(--bg-secondary);
+            cursor: pointer;
+            transition: all 0.15s ease;
+            min-height: 140px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .proposal-card:hover {
+            border-color: color-mix(in srgb, var(--nova-violet) 40%, transparent);
+            transform: translateY(-1px);
+            box-shadow: 0 8px 18px -12px var(--nova-violet);
+        }
+
+        .proposal-card.is-saving {
+            opacity: 0.7;
+            pointer-events: none;
+        }
+
+        .proposal-card-kicker {
+            font-size: 10px;
+            font-weight: 800;
+            letter-spacing: .08em;
+            text-transform: uppercase;
+            color: var(--nova-cyan);
+        }
+
+        .proposal-card-title {
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--text-primary);
+            line-height: 1.35;
+        }
+
+        .proposal-card-body {
+            font-size: 12px;
+            color: var(--text-secondary);
+            line-height: 1.5;
+            flex: 1;
+        }
+
+        .nee-card {
+            padding: 14px 16px;
+            border-radius: 14px;
+            border: 1px solid rgba(196,85,237,0.22);
+            background: rgba(196,85,237,0.06);
+        }
+
+        .nee-card-name {
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--text-primary);
+            margin-bottom: 4px;
+        }
+
+        .nee-inline-form {
+            display: grid;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
         .modal-meta-row {
             display: flex;
             align-items: center;
@@ -5028,7 +5108,7 @@
 
     {{-- Activity Modal --}}
 <div x-show="activityModal" x-cloak class="modal-overlay" @click.self="activityModal = null" @keydown.escape.window="activityModal = null">
-    <div class="modal-nova" style="max-width: 680px;">
+    <div class="modal-nova" style="max-width: 780px;">
         <div class="modal-header" style="padding: 20px 28px;">
             <div style="display: flex; align-items: center; gap: 12px; min-width: 0;">
                 <span class="activity-type-badge" style="flex-shrink: 0; font-size: 10px; padding: 3px 10px;"
@@ -5132,7 +5212,7 @@
             <div x-show="(activityModal?.tareas ?? []).length > 0" style="margin-top: 22px;">
                 <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
                     <i class="fa-solid fa-tasks" style="font-size: 11px; color: var(--nova-cyan);"></i>
-                    <span class="modal-section-label" style="font-size: 10px;">Tareas asociadas</span>
+                    <span class="modal-section-label" style="font-size: 10px;">Tarea oficial de la clase</span>
                     <span style="font-size: 10px; background: var(--nova-glass); border: 1px solid var(--nova-glass-border); border-radius: 20px; padding: 1px 7px; color: var(--text-tertiary);" x-text="(activityModal?.tareas ?? []).length"></span>
                 </div>
                 <template x-for="task in (activityModal?.tareas ?? [])" :key="task.id">
@@ -5147,13 +5227,67 @@
                 </template>
             </div>
 
+            <div x-show="taskLoading || taskProposals.length" style="margin-top: 18px;" x-cloak>
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                    <i class="fa-solid fa-lightbulb" style="font-size: 11px; color: var(--nova-fuchsia);"></i>
+                    <span class="modal-section-label" style="font-size: 10px;">Elige una de las 3 propuestas</span>
+                </div>
+                <div x-show="taskLoading" class="skeleton-nova" style="height: 120px;"></div>
+                <div x-show="!taskLoading" class="proposal-grid">
+                    <template x-for="(idea, idx) in taskProposals" :key="'idea-'+idx">
+                        <button type="button" class="proposal-card"
+                                :class="{ 'is-saving': taskProposalSaving === idx }"
+                                :disabled="taskProposalSaving !== null"
+                                @click="selectTaskProposal(idea, idx)">
+                            <span class="proposal-card-kicker" x-text="idea.enfoque || ('Opción ' + (idx + 1))"></span>
+                            <span class="proposal-card-title" x-text="idea.titulo"></span>
+                            <span class="proposal-card-body" x-text="idea.descripcion"></span>
+                            <span style="font-size:11px;font-weight:700;color:var(--nova-violet);margin-top:4px;">Usar esta tarea</span>
+                        </button>
+                    </template>
+                </div>
+            </div>
+
             <div x-show="activityModal?.nee_adaptation" style="margin-top: 16px;">
                 <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
                     <i class="fa-solid fa-brain" style="font-size: 11px; color: var(--nova-fuchsia);"></i>
                     <span class="modal-section-label" style="font-size: 10px;">Adaptación NEE</span>
                     <span style="font-size: 10px; background: rgba(196,85,237,0.1); border: 1px solid rgba(196,85,237,0.2); border-radius: 20px; padding: 1px 7px; color: var(--nova-fuchsia);" x-text="activityModal?.nee_type || 'NEE'"></span>
                 </div>
-                <div style="padding: 12px 14px; border-radius: 10px; border: 1px solid rgba(196,85,237,0.15); background: rgba(196,85,237,0.03); font-size: 13px; color: var(--text-secondary); line-height: 1.6;" x-text="activityModal?.nee_adaptation"></div>
+                <div class="nee-card">
+                    <div class="nee-card-name" x-text="activityModal?.nee_student_name ? ('Para ' + activityModal.nee_student_name) : 'Adaptación de aula'"></div>
+                    <div style="font-size: 13px; color: var(--text-secondary); line-height: 1.6;" x-text="activityModal?.nee_adaptation"></div>
+                </div>
+            </div>
+
+            <div x-show="neePanelOpen" class="nee-inline-form" x-cloak>
+                <div style="display:flex;align-items:center;gap:8px;">
+                    <i class="fa-solid fa-book-open-reader" style="color: var(--nova-fuchsia); font-size: 12px;"></i>
+                    <span class="modal-section-label" style="font-size: 10px;">Nueva adaptación</span>
+                </div>
+                <select x-model="neeForm.student_id"
+                        style="width:100%; background: var(--nova-glass); color: var(--text-primary); border:1px solid var(--nova-glass-border); border-radius:12px; padding:10px 12px; font-size:13px;">
+                    <option value="">Todo el grupo / sin alumno específico</option>
+                    <template x-for="st in neeRoster" :key="st.id">
+                        <option :value="st.id" x-text="st.name"></option>
+                    </template>
+                </select>
+                <select x-model="neeForm.tipo"
+                        style="width:100%; background: var(--nova-glass); color: var(--text-primary); border:1px solid var(--nova-glass-border); border-radius:12px; padding:10px 12px; font-size:13px;">
+                    <option value="">Diagnóstico NEE…</option>
+                    <option value="TDAH">TDAH</option>
+                    <option value="TEA/Autismo">TEA / Autismo</option>
+                    <option value="Dislexia">Dislexia</option>
+                    <option value="Discalculia">Discalculia</option>
+                    <option value="Otro">Otro</option>
+                </select>
+                <div x-show="neeLoading" class="skeleton-nova" style="height: 72px;"></div>
+                <textarea x-show="!neeLoading && neeForm.texto" x-model="neeForm.texto" rows="3"
+                          style="width:100%; background: var(--nova-glass); color: var(--text-primary); border:1px solid var(--nova-glass-border); border-radius:12px; padding:10px 12px; font-size:13px;"></textarea>
+                <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;">
+                    <button type="button" class="btn-secondary" @click="generateNeeAdaptation()" :disabled="!neeForm.tipo || neeLoading">Generar</button>
+                    <button type="button" class="btn-primary" @click="saveNeeAdaptation()" :disabled="!neeForm.texto || neeSaving">Guardar en la clase</button>
+                </div>
             </div>
 
             {{-- Director feedback --}}
@@ -5988,6 +6122,8 @@ function teacherHub() {
         taskLoading:     false,
         taskSaving:      false,
         taskAccepted:    false,
+        taskProposals:   [],
+        taskProposalSaving: null,
         taskForm: {
             titulo: '',
             descripcion: '',
@@ -5995,12 +6131,15 @@ function teacherHub() {
             puntos: 20,
         },
         neeModalOpen: false,
+        neePanelOpen: false,
         neeLoading: false,
         neeSaving: false,
         neeAccepted: false,
+        neeRoster: [],
         neeForm: {
             tipo: '',
             texto: '',
+            student_id: '',
         },
         showNewCourseModal: false,
         showEnrollModal: false,
@@ -6191,6 +6330,9 @@ function teacherHub() {
             });
 
             window.addEventListener('ai-canvas-refresh', () => {
+                if (this.activityModal?.id) {
+                    this.refreshActivityModal(this.activityModal.id);
+                }
                 if (this.view === 'course' && this.currentCourseId) {
                     this.loadCourse(this.currentCourseId);
                 } else if (this.view === 'calendar') {
@@ -7388,19 +7530,39 @@ function teacherHub() {
 
         async openTaskIdeaModal() {
             if (!this.activityModal?.id) return;
-            this.taskIdeaModalOpen = true;
             this.taskAccepted = false;
             this.taskForm.fecha_entrega = this.activityModal?.due_date || '';
             this.taskForm.puntos = 20;
             await this.generateTaskIdea();
         },
 
-        openNeeModal() {
+        async openNeeModal() {
             if (!this.activityModal?.id) return;
-            this.neeModalOpen = true;
+            this.neePanelOpen = true;
             this.neeAccepted = false;
             this.neeForm.tipo = this.activityModal?.nee_type || '';
             this.neeForm.texto = this.activityModal?.nee_adaptation || '';
+            this.neeForm.student_id = this.activityModal?.nee_student_id || '';
+            await this.loadNeeRoster();
+        },
+
+        async loadNeeRoster() {
+            const courseId = this.activityModal?.course_id || this.courseData?.id;
+            if (this.courseData?.id && Number(this.courseData.id) === Number(courseId) && Array.isArray(this.courseData.students)) {
+                this.neeRoster = this.courseData.students;
+                return;
+            }
+            if (!courseId) {
+                this.neeRoster = [];
+                return;
+            }
+            try {
+                const res = await fetch(`/teacher/api/courses/${courseId}`, { headers: { 'Accept': 'application/json' } });
+                const json = await res.json();
+                this.neeRoster = json.students || [];
+            } catch (e) {
+                this.neeRoster = [];
+            }
         },
 
         async generateTaskIdea() {
@@ -7408,6 +7570,7 @@ function teacherHub() {
 
             this.taskLoading = true;
             this.taskAccepted = false;
+            this.taskProposals = [];
 
             try {
                 const res = await fetch('{{ route('teacher.tareas.generate') }}', {
@@ -7422,15 +7585,16 @@ function teacherHub() {
                 const json = await res.json();
 
                 if (!res.ok || !json.success) {
-                    alert(json.error || 'No se pudo generar sugerencia.');
+                    this.showToast(json.error || 'No se pudo generar sugerencia.', 'error', 'fa-exclamation-triangle');
                     return;
                 }
 
-                this.taskForm.titulo = json.idea?.titulo || 'Tarea sugerida';
-                this.taskForm.descripcion = json.idea?.descripcion || '';
+                this.taskProposals = Array.isArray(json.ideas) && json.ideas.length
+                    ? json.ideas
+                    : (json.idea ? [json.idea] : []);
             } catch (e) {
                 console.error('generateTaskIdea', e);
-                alert('Error al generar sugerencia de tarea.');
+                this.showToast('Error al generar sugerencia de tarea.', 'error', 'fa-exclamation-triangle');
             } finally {
                 this.taskLoading = false;
             }
@@ -7446,8 +7610,32 @@ function teacherHub() {
             }
         },
 
+        async selectTaskProposal(idea, idx) {
+            if (!idea || !this.activityModal?.id) return;
+            this.taskForm.titulo = idea.titulo || '';
+            this.taskForm.descripcion = idea.descripcion || '';
+            this.taskForm.fecha_entrega = this.activityModal?.due_date || this.taskForm.fecha_entrega || '';
+            this.taskForm.puntos = this.taskForm.puntos || 20;
+            this.taskAccepted = true;
+            this.taskProposalSaving = idx;
+            try {
+                await this.saveTask();
+                this.taskProposals = [];
+            } finally {
+                this.taskProposalSaving = null;
+            }
+        },
+
         async saveTask() {
             if (!this.activityModal?.id || !this.taskAccepted) return;
+            if (!this.taskForm.fecha_entrega) {
+                const d = new Date();
+                d.setDate(d.getDate() + 1);
+                this.taskForm.fecha_entrega = d.toISOString().slice(0, 10);
+            }
+            if (!this.taskForm.puntos) {
+                this.taskForm.puntos = 20;
+            }
 
             this.taskSaving = true;
             try {
@@ -7481,6 +7669,7 @@ function teacherHub() {
                 }
                 this.activityModal.tareas.unshift(json.tarea);
                 this.taskIdeaModalOpen = false;
+                this.showToast('Tarea asignada a esta clase.', 'success', 'fa-check');
                 window.dispatchEvent(new CustomEvent('ai-canvas-refresh'));
             } catch (e) {
                 console.error('saveTask', e);
@@ -7503,17 +7692,23 @@ function teacherHub() {
                         'Accept': 'application/json',
                         'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').content,
                     },
-                    body: JSON.stringify({ nee_type: this.neeForm.tipo }),
+                    body: JSON.stringify({
+                        nee_type: this.neeForm.tipo,
+                        student_id: this.neeForm.student_id || null,
+                    }),
                 });
                 const json = await res.json();
                 if (!res.ok || !json.success) {
-                    alert(json.error || 'No se pudo generar la adaptación.');
+                    this.showToast(json.error || 'No se pudo generar la adaptación.', 'error', 'fa-exclamation-triangle');
                     return;
                 }
                 this.neeForm.texto = json.adaptation || '';
+                if (json.student_id) {
+                    this.neeForm.student_id = json.student_id;
+                }
             } catch (e) {
                 console.error('generateNeeAdaptation', e);
-                alert('Error al generar adaptación NEE.');
+                this.showToast('Error al generar adaptación NEE.', 'error', 'fa-exclamation-triangle');
             } finally {
                 this.neeLoading = false;
             }
@@ -7524,7 +7719,7 @@ function teacherHub() {
         },
 
         async saveNeeAdaptation() {
-            if (!this.activityModal?.id || !this.neeAccepted || !this.neeForm.tipo || !this.neeForm.texto) return;
+            if (!this.activityModal?.id || !this.neeForm.tipo || !this.neeForm.texto) return;
 
             this.neeSaving = true;
             try {
@@ -7538,20 +7733,25 @@ function teacherHub() {
                     body: JSON.stringify({
                         nee_type: this.neeForm.tipo,
                         nee_adaptation: this.neeForm.texto,
+                        student_id: this.neeForm.student_id || null,
                     }),
                 });
                 const json = await res.json();
                 if (!res.ok || !json.success) {
-                    alert(json.error || 'No se pudo guardar la adaptación.');
+                    this.showToast(json.error || 'No se pudo guardar la adaptación.', 'error', 'fa-exclamation-triangle');
                     return;
                 }
                 this.activityModal.nee_type = json.nee_type;
                 this.activityModal.nee_adaptation = json.nee_adaptation;
+                this.activityModal.nee_student_id = json.nee_student_id;
+                this.activityModal.nee_student_name = json.nee_student_name;
                 this.neeModalOpen = false;
+                this.neePanelOpen = false;
+                this.showToast('Adaptación guardada en la clase.', 'success', 'fa-check');
                 window.dispatchEvent(new CustomEvent('ai-canvas-refresh'));
             } catch (e) {
                 console.error('saveNeeAdaptation', e);
-                alert('Error al guardar adaptación NEE.');
+                this.showToast('Error al guardar adaptación NEE.', 'error', 'fa-exclamation-triangle');
             } finally {
                 this.neeSaving = false;
             }
@@ -7980,6 +8180,10 @@ function teacherHub() {
 
         openActivityModal(activity) {
             this.activityModal = activity;
+            this.setActivityContext(activity);
+            this.taskProposals = [];
+            this.taskProposalSaving = null;
+            this.neePanelOpen = false;
             const template = this.detectLessonTemplate(activity?.description);
             const values = this.parsePhasesFromDescription(activity?.description);
             this.phaseEdit = {
@@ -7989,6 +8193,20 @@ function teacherHub() {
                 editing: null,
                 saving: null,
             };
+        },
+
+        async refreshActivityModal(activityId) {
+            if (!activityId) return;
+            try {
+                const res = await fetch(`/teacher/api/activities/${activityId}`, { headers: { 'Accept': 'application/json' } });
+                const json = await res.json();
+                if (res.ok && json.success && json.activity && this.activityModal?.id === activityId) {
+                    this.activityModal = { ...this.activityModal, ...json.activity };
+                    this.setActivityContext(this.activityModal);
+                }
+            } catch (e) {
+                console.error('refreshActivityModal', e);
+            }
         },
 
         renderPhaseMarkdown(text) {

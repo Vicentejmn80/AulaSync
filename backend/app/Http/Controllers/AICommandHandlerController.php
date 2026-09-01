@@ -14,6 +14,7 @@ use App\Models\User;
 use App\Services\DirectorAlertService;
 use App\Services\EvaluationPlanService;
 use App\Services\EvaluationSyncService;
+use App\Services\LessonAiService;
 use App\Services\ProductTelemetry;
 use App\Services\SpeechToTextService;
 use App\Services\StudentGradeAccumulationService;
@@ -41,6 +42,7 @@ class AICommandHandlerController extends Controller
         private StudentGradeAccumulationService $accumulation,
         private EvaluationPlanService $planService,
         private SpeechToTextService $speechToText,
+        private LessonAiService $lessonAi,
     ) {}
 
     public function session(): JsonResponse
@@ -171,6 +173,42 @@ class AICommandHandlerController extends Controller
                             'weight_percentage' => ['type' => 'number'],
                         ],
                         'required' => ['activity_id'],
+                    ],
+                ],
+            ],
+            [
+                'type' => 'function',
+                'function' => [
+                    'name' => 'assignLessonHomework',
+                    'description' => 'Genera 3 propuestas de tarea para una clase existente, guarda una como tarea oficial de esa lección y la deja visible en el modal. Úsala cuando el docente pida una tarea para esta clase o para un alumno/clase específica. NO crea una clase nueva.',
+                    'parameters' => [
+                        'type' => 'object',
+                        'properties' => [
+                            'activity_id' => ['type' => 'integer', 'description' => 'ID de la clase/lección. Si el docente está viendo el modal, usa el id del contexto.'],
+                            'course_id' => ['type' => 'integer'],
+                            'title_hint' => ['type' => 'string', 'description' => 'Título o tema de la clase si no hay activity_id'],
+                            'due_date' => ['type' => 'string'],
+                            'puntos' => ['type' => 'integer'],
+                        ],
+                    ],
+                ],
+            ],
+            [
+                'type' => 'function',
+                'function' => [
+                    'name' => 'assignLessonNee',
+                    'description' => 'Genera y guarda una adaptación curricular NEE para una clase existente, opcionalmente para un alumno concreto. El resultado queda en el modal de la lección.',
+                    'parameters' => [
+                        'type' => 'object',
+                        'properties' => [
+                            'activity_id' => ['type' => 'integer'],
+                            'course_id' => ['type' => 'integer'],
+                            'title_hint' => ['type' => 'string'],
+                            'nee_type' => ['type' => 'string', 'description' => 'TDAH, TEA/Autismo, Dislexia, Discalculia u Otro'],
+                            'student_name' => ['type' => 'string'],
+                            'student_id' => ['type' => 'integer'],
+                        ],
+                        'required' => ['nee_type'],
                     ],
                 ],
             ],
@@ -545,6 +583,37 @@ class AICommandHandlerController extends Controller
             $hasCreateEvaluationIntent = $this->hasCreateEvaluationIntent($intentText);
             $explicitProceed = $this->hasProceedIntent($intentText);
             $deleteRange = $this->extractDateRangeFromText($intentText);
+            $screenContextArray = is_array($screenContext) ? $screenContext : [];
+
+            if (! $hasCreateEvaluationIntent && $this->hasLessonNeeIntent($intentText)) {
+                $result = $this->doAssignLessonNee(
+                    $this->extractLessonSupportArgs($intentText, $screenContextArray),
+                    $teacher->id
+                );
+
+                return $this->jsonOut([
+                    'success' => (bool) ($result['success'] ?? false),
+                    'any_success' => (bool) ($result['success'] ?? false),
+                    'message' => $result['message'] ?? '',
+                    'actions' => [$result],
+                    'data' => [$result],
+                ]);
+            }
+
+            if (! $hasCreateEvaluationIntent && $this->hasLessonHomeworkIntent($intentText, $screenContextArray)) {
+                $result = $this->doAssignLessonHomework(
+                    $this->extractLessonSupportArgs($intentText, $screenContextArray),
+                    $teacher->id
+                );
+
+                return $this->jsonOut([
+                    'success' => (bool) ($result['success'] ?? false),
+                    'any_success' => (bool) ($result['success'] ?? false),
+                    'message' => $result['message'] ?? '',
+                    'actions' => [$result],
+                    'data' => [$result],
+                ]);
+            }
 
             Log::debug('AI_DELETE_ENTRY', [
                 'teacher_id' => $teacher->id,
@@ -603,11 +672,18 @@ class AICommandHandlerController extends Controller
                         $args['confirmed'] = true;
                         $args = $this->enrichBulkPlanArgsFromIntent($args, $intentText, $teacher);
                     }
-                    if (in_array($fn, ['createActivity', 'registerStudent', 'bulkPlan', 'deleteActivities', 'getCalendarContext', 'createEvaluation'], true)) {
+                    if (in_array($fn, ['createActivity', 'registerStudent', 'bulkPlan', 'deleteActivities', 'getCalendarContext', 'createEvaluation', 'assignLessonHomework', 'assignLessonNee'], true)) {
                         $resolvedCourseId = $this->resolveCourseIdForArgs($args, $teacher->id, $createdCourseMap, $screenContext);
                         if ($resolvedCourseId > 0) {
                             $args['course_id'] = $resolvedCourseId;
                         }
+                    }
+                    if (in_array($fn, ['assignLessonHomework', 'assignLessonNee'], true)
+                        && empty($args['activity_id'])
+                        && is_array($screenContext)
+                        && ($screenContext['type'] ?? '') === 'activity'
+                        && ! empty($screenContext['id'])) {
+                        $args['activity_id'] = (int) $screenContext['id'];
                     }
                     $results[] = $this->executeAction($fn, $args, $teacher->id, $createdCourseMap);
                 }
@@ -853,11 +929,12 @@ class AICommandHandlerController extends Controller
                 '',
                 'MAPA DE INTENCIONES → HERRAMIENTA:',
                 '- crear curso / sección → NO crear. Indica que solo el director puede hacerlo.',
-                '- crear clase / actividad / tarea (NO examen formal) → createActivity  (type: clase|actividad|tarea)',
+                '- crear clase / actividad / tarea NUEVA (NO examen formal, NO tarea de una clase ya abierta) → createActivity  (type: clase|actividad|tarea)',
+                '- sugerir / generar / asignar tarea para una clase o lección existente → assignLessonHomework',
                 '- crear evaluación / examen / prueba / quiz formal → createEvaluation (NO uses createActivity). Eso la deja en Evaluaciones Y como actividad calificable.',
                 '- crear evaluación y agregarla al plan → createEvaluation con add_to_plan=true (es el default)',
                 '- agregar evaluación existente al plan de evaluación → attachEvaluationToPlan',
-                '- adaptación NEE / TDAH / TEA / dislexia / discalculia → createActivity con nee_type relleno',
+                '- adaptación NEE / TDAH / TEA / dislexia / discalculia para una clase o alumno → assignLessonNee (guarda en la lección). Si pide crear una clase NUEVA con NEE, createActivity con nee_type.',
                 '- modificar / cambiar / editar actividad existente → modifyActivity',
                 '- inscribir / agregar alumnos → NO. Indica que solo el director matricula; el docente puede revisar y enviar la lista a dirección.',
                 '- planificar mes / cronograma / calendario → bulkPlan',
@@ -1082,11 +1159,18 @@ class AICommandHandlerController extends Controller
 
                 // Resolución robusta de curso: course_id válido > mapa de cursos del
                 // turno (por grado/nombre) > BD por hint > pantalla > único curso.
-                if (in_array($fn, ['createActivity', 'registerStudent', 'bulkPlan', 'deleteActivities', 'getCalendarContext', 'createEvaluation'], true)) {
+                if (in_array($fn, ['createActivity', 'registerStudent', 'bulkPlan', 'deleteActivities', 'getCalendarContext', 'createEvaluation', 'assignLessonHomework', 'assignLessonNee'], true)) {
                     $resolvedCourseId = $this->resolveCourseIdForArgs($args, $teacher->id, $createdCourseMap, $screenContext);
                     if ($resolvedCourseId > 0) {
                         $args['course_id'] = $resolvedCourseId;
                     }
+                }
+                if (in_array($fn, ['assignLessonHomework', 'assignLessonNee'], true)
+                    && empty($args['activity_id'])
+                    && is_array($screenContext)
+                    && ($screenContext['type'] ?? '') === 'activity'
+                    && ! empty($screenContext['id'])) {
+                    $args['activity_id'] = (int) $screenContext['id'];
                 }
 
                 $results[] = $this->executeAction($fn, $args, $teacher->id, $createdCourseMap);
@@ -1166,6 +1250,7 @@ class AICommandHandlerController extends Controller
             'createCourse', 'createActivity', 'modifyActivity', 'registerStudent',
             'bulkPlan', 'deleteActivities', 'deleteResource', 'setGrade', 'setGradeBatch',
             'publishGrades', 'createEvaluation', 'attachEvaluationToPlan',
+            'assignLessonHomework', 'assignLessonNee',
         ];
 
         try {
@@ -1188,6 +1273,8 @@ class AICommandHandlerController extends Controller
                     'getCurrentWeek' => $this->getCurrentWeek($args, $teacherId),
                     'createEvaluation' => $this->doCreateEvaluation($args, $teacherId),
                     'attachEvaluationToPlan' => $this->doAttachEvaluationToPlan($args, $teacherId),
+                    'assignLessonHomework' => $this->doAssignLessonHomework($args, $teacherId),
+                    'assignLessonNee' => $this->doAssignLessonNee($args, $teacherId),
                     default => ['success' => false, 'message' => "Acción $fn no definida."],
                 };
             };
@@ -1923,9 +2010,6 @@ class AICommandHandlerController extends Controller
         $normalizedArgs['type'] = $resolvedType;
         $normalizedArgs['is_homework'] = $isHomework;
 
-        $neeType = $normalizedArgs['nee_type'] ?? null;
-        $neeAdaptation = $neeType ? $this->buildNeeAdaptation($neeType) : null;
-
         $description = (string) ($normalizedArgs['description'] ?? '');
         $lessonTemplate = $this->activeLessonTemplateFor($teacherId);
         if ($description !== '' && ! LessonTemplate::hasRequiredHeaders($description, $lessonTemplate)) {
@@ -1942,6 +2026,24 @@ class AICommandHandlerController extends Controller
                 'action_type' => 'activity',
                 'icon' => '⚠️',
             ];
+        }
+
+        $neeType = $normalizedArgs['nee_type'] ?? null;
+        $neeStudent = null;
+        $neeAdaptation = null;
+        if ($neeType) {
+            $draft = new Activity([
+                'title' => $normalizedArgs['title'] ?? '',
+                'description' => $description,
+                'course_id' => $course->id,
+                'colegio_id' => $colegioId,
+            ]);
+            $neeStudent = $this->lessonAi->resolveStudentForActivity(
+                $draft,
+                isset($normalizedArgs['student_id']) ? (int) $normalizedArgs['student_id'] : null,
+                $normalizedArgs['student_name'] ?? null
+            );
+            $neeAdaptation = $this->lessonAi->generateNeeAdaptation($draft, (string) $neeType, $neeStudent);
         }
 
         Log::info('NOVA_SAVE_ATTEMPT', [
@@ -1967,6 +2069,7 @@ class AICommandHandlerController extends Controller
             'is_homework' => $isHomework,
             'nee_type' => $neeType,
             'nee_adaptation' => $neeAdaptation,
+            'nee_student_id' => $neeStudent?->id,
         ];
 
         // Guardrail final: el tipo que llega a BD debe estar normalizado.
@@ -2114,6 +2217,110 @@ class AICommandHandlerController extends Controller
             'message' => 'No se encontró la actividad.',
             'action_type' => 'activity',
             'icon' => '⚠️',
+        ];
+    }
+
+    /**
+     * @param  array<string,mixed>  $args
+     * @return array<string,mixed>
+     */
+    private function doAssignLessonHomework(array $args, int $teacherId): array
+    {
+        $teacher = User::find($teacherId);
+        if (! $teacher) {
+            return ['success' => false, 'message' => 'No autenticado.', 'action_type' => 'homework', 'icon' => '⚠️'];
+        }
+
+        $activity = $this->lessonAi->resolveActivity($teacher, $args, [
+            'type' => ! empty($args['activity_id']) ? 'activity' : ($args['screen_type'] ?? null),
+            'id' => $args['activity_id'] ?? $args['screen_activity_id'] ?? null,
+            'course_id' => $args['course_id'] ?? null,
+        ]);
+        if (! $activity) {
+            return [
+                'success' => false,
+                'message' => 'No encontré la clase. Ábrela en el calendario o dime el tema y el curso.',
+                'action_type' => 'homework',
+                'icon' => '⚠️',
+            ];
+        }
+
+        $ideas = $this->lessonAi->generateTaskProposals($activity);
+        $chosen = $ideas[0] ?? ['titulo' => 'Tarea de '.$activity->title, 'descripcion' => 'Completa la práctica de la clase.', 'enfoque' => 'Práctica guiada'];
+        $saved = $this->lessonAi->assignOfficialTask(
+            $activity,
+            $chosen,
+            $args['due_date'] ?? optional($activity->due_date)?->format('Y-m-d'),
+            (int) ($args['puntos'] ?? 20),
+            true
+        );
+
+        $lines = collect($ideas)->map(function ($idea, $i) use ($chosen) {
+            $mark = ($idea['titulo'] ?? '') === ($chosen['titulo'] ?? '') && $i === 0 ? ' (asignada)' : '';
+
+            return ($i + 1).'. '.$idea['enfoque'].': '.$idea['titulo'].$mark;
+        })->implode("\n");
+
+        return [
+            'success' => true,
+            'message' => "Guardé una tarea en «{$activity->title}». Elegí la de práctica guiada; las otras dos también quedaron como propuestas:\n{$lines}",
+            'action_type' => 'homework',
+            'icon' => '📝',
+            'data' => [
+                'activity_id' => $activity->id,
+                'tarea' => $saved['tarea'],
+                'ideas' => $ideas,
+            ],
+        ];
+    }
+
+    /**
+     * @param  array<string,mixed>  $args
+     * @return array<string,mixed>
+     */
+    private function doAssignLessonNee(array $args, int $teacherId): array
+    {
+        $teacher = User::find($teacherId);
+        if (! $teacher) {
+            return ['success' => false, 'message' => 'No autenticado.', 'action_type' => 'nee', 'icon' => '⚠️'];
+        }
+
+        $activity = $this->lessonAi->resolveActivity($teacher, $args, [
+            'type' => ! empty($args['activity_id']) ? 'activity' : ($args['screen_type'] ?? null),
+            'id' => $args['activity_id'] ?? $args['screen_activity_id'] ?? null,
+            'course_id' => $args['course_id'] ?? null,
+        ]);
+        if (! $activity) {
+            return [
+                'success' => false,
+                'message' => 'No encontré la clase para la adaptación. Ábrela o dime el tema.',
+                'action_type' => 'nee',
+                'icon' => '⚠️',
+            ];
+        }
+
+        $neeType = trim((string) ($args['nee_type'] ?? 'Otro')) ?: 'Otro';
+        $student = $this->lessonAi->resolveStudentForActivity(
+            $activity,
+            isset($args['student_id']) ? (int) $args['student_id'] : null,
+            $args['student_name'] ?? null
+        );
+        $text = $this->lessonAi->generateNeeAdaptation($activity, $neeType, $student);
+        $activity = $this->lessonAi->saveNeeAdaptation($activity, $neeType, $text, $student);
+        $who = $activity->neeStudent?->name ?: 'el grupo';
+
+        return [
+            'success' => true,
+            'message' => "Guardé la adaptación {$neeType} para {$who} en «{$activity->title}». Ya aparece en el modal de la clase.",
+            'action_type' => 'nee',
+            'icon' => '🧩',
+            'data' => [
+                'activity_id' => $activity->id,
+                'nee_type' => $activity->nee_type,
+                'nee_adaptation' => $activity->nee_adaptation,
+                'nee_student_id' => $activity->nee_student_id,
+                'nee_student_name' => $activity->neeStudent?->name,
+            ],
         ];
     }
 
@@ -3883,6 +4090,72 @@ MD;
         $value = mb_strtolower((string) $text);
 
         return (bool) preg_match('/\b(planifica|planificar|planificación|planificacion|cronograma|calendario|genera.*mes|organiza.*mes|mes de|desglosa|desglosar|siguientes d[ií]as|pr[oó]ximos d[ií]as)\b/u', $value);
+    }
+
+    private function hasLessonHomeworkIntent(?string $text, array $screenContext = []): bool
+    {
+        $value = mb_strtolower((string) $text);
+        if ($this->hasCreateEvaluationIntent($text) || $this->hasLessonNeeIntent($text)) {
+            return false;
+        }
+        $wantsTask = (bool) preg_match('/\btarea/u', $value);
+        if (! $wantsTask) {
+            return false;
+        }
+        $forLesson = (bool) preg_match('/\b(esta clase|esta leccion|esta lección|la clase|para la clase|de esta clase)\b/u', $value)
+            || (($screenContext['type'] ?? '') === 'activity');
+        $generate = (bool) preg_match('/\b(genera|generar|sugier|sugerir|propon|proponer|hazme|asigna|asignar|crea|crear)\b/u', $value);
+
+        return $generate && $forLesson;
+    }
+
+    private function hasLessonNeeIntent(?string $text): bool
+    {
+        $value = mb_strtolower((string) $text);
+
+        return (bool) preg_match('/\b(adaptaci[oó]n|nee|tdah|tea|dislexia|discalculia|autismo)\b/u', $value)
+            && (bool) preg_match('/\b(genera|generar|haz|crea|crear|adapta|adaptar|sugier|para)\b/u', $value);
+    }
+
+    /**
+     * @param  array<string,mixed>  $screenContext
+     * @return array<string,mixed>
+     */
+    private function extractLessonSupportArgs(string $text, array $screenContext): array
+    {
+        $args = [];
+        if (($screenContext['type'] ?? '') === 'activity' && ! empty($screenContext['id'])) {
+            $args['activity_id'] = (int) $screenContext['id'];
+            $args['course_id'] = (int) ($screenContext['course_id'] ?? 0);
+        } elseif (! empty($screenContext['course_id'])) {
+            $args['course_id'] = (int) $screenContext['course_id'];
+        } elseif (($screenContext['type'] ?? '') === 'course' && ! empty($screenContext['id'])) {
+            $args['course_id'] = (int) $screenContext['id'];
+        }
+
+        $value = mb_strtolower($text);
+        $neeMap = [
+            'tdah' => 'TDAH',
+            'tea' => 'TEA/Autismo',
+            'autismo' => 'TEA/Autismo',
+            'dislexia' => 'Dislexia',
+            'discalculia' => 'Discalculia',
+        ];
+        foreach ($neeMap as $needle => $label) {
+            if (str_contains($value, $needle)) {
+                $args['nee_type'] = $label;
+                break;
+            }
+        }
+        if (empty($args['nee_type']) && preg_match('/\bnee\b/u', $value)) {
+            $args['nee_type'] = 'Otro';
+        }
+
+        if (preg_match('/para(?:l alumno| la alumna| el estudiante| )? ([A-ZÁÉÍÓÚÑ][\p{L}]+(?:\s+[A-ZÁÉÍÓÚÑ][\p{L}]+){0,2})/u', $text, $m)) {
+            $args['student_name'] = trim($m[1]);
+        }
+
+        return $args;
     }
 
     private function hasCreateEvaluationIntent(?string $text): bool

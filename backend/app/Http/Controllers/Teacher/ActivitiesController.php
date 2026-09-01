@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Teacher;
 use App\Http\Controllers\Controller;
 use App\Models\Activity;
 use App\Models\Course;
+use App\Services\LessonAiService;
 use App\Support\GradingScale;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -16,6 +17,10 @@ use Illuminate\View\View;
 
 class ActivitiesController extends Controller
 {
+    public function __construct(private LessonAiService $lessonAi)
+    {
+    }
+
     /**
      * Muestra la lista de actividades.
      */
@@ -91,6 +96,8 @@ class ActivitiesController extends Controller
             'is_homework' => (bool) $activity->is_homework,
             'nee_type' => $activity->nee_type,
             'nee_adaptation' => $activity->nee_adaptation,
+            'nee_student_id' => $activity->nee_student_id,
+            'nee_student_name' => $activity->neeStudent?->name,
             'tareas_count' => $activity->tareas_count ?? count($tareas),
             'tareas' => $tareas,
         ];
@@ -312,40 +319,24 @@ class ActivitiesController extends Controller
 
         $data = $request->validate([
             'nee_type' => ['required', 'string', 'max:80'],
+            'student_id' => ['nullable', 'integer', 'exists:students,id'],
+            'student_name' => ['nullable', 'string', 'max:120'],
         ]);
 
-        $apiKey = config('services.openai.key', env('OPENAI_API_KEY'));
-        if (! $apiKey) {
-            return response()->json(['success' => false, 'error' => 'OPENAI_API_KEY no configurada'], 422);
-        }
+        $student = $this->lessonAi->resolveStudentForActivity(
+            $activity,
+            isset($data['student_id']) ? (int) $data['student_id'] : null,
+            $data['student_name'] ?? null
+        );
 
-        $system = 'Eres un especialista en educación inclusiva. Devuelve SOLO un párrafo de adaptación NEE, claro y aplicable en aula.';
-        $user = "Clase: {$activity->title}\nDescripción: {$activity->description}\nNEE: {$data['nee_type']}\n"
-            . "Genera una adaptación pedagógica con estrategias concretas y breves.";
+        $adaptation = $this->lessonAi->generateNeeAdaptation($activity, $data['nee_type'], $student);
 
-        try {
-            $res = Http::withToken($apiKey)
-                ->timeout(25)
-                ->post('https://api.openai.com/v1/chat/completions', [
-                    'model' => 'gpt-5.1 mini ',
-                    'temperature' => 0.7,
-                    'messages' => [
-                        ['role' => 'system', 'content' => $system],
-                        ['role' => 'user', 'content' => $user],
-                    ],
-                ]);
-
-            if (! $res->successful()) {
-                Log::warning('generateNee OpenAI error', ['status' => $res->status(), 'body' => $res->body()]);
-                return response()->json(['success' => false, 'error' => 'No se pudo generar la adaptación.'], 422);
-            }
-
-            $adaptation = trim((string) $res->json('choices.0.message.content', ''));
-            return response()->json(['success' => true, 'adaptation' => $adaptation]);
-        } catch (\Throwable $e) {
-            Log::error('generateNee exception', ['error' => $e->getMessage()]);
-            return response()->json(['success' => false, 'error' => 'Error al conectar con IA.'], 422);
-        }
+        return response()->json([
+            'success' => true,
+            'adaptation' => $adaptation,
+            'student_id' => $student?->id,
+            'student_name' => $student?->name,
+        ]);
     }
 
     public function saveNee(Request $request, Activity $activity): JsonResponse
@@ -355,18 +346,30 @@ class ActivitiesController extends Controller
         $data = $request->validate([
             'nee_type' => ['required', 'string', 'max:80'],
             'nee_adaptation' => ['required', 'string', 'max:2000'],
+            'student_id' => ['nullable', 'integer', 'exists:students,id'],
+            'student_name' => ['nullable', 'string', 'max:120'],
         ]);
 
-        $activity->update([
-            'nee_type' => $data['nee_type'],
-            'nee_adaptation' => $data['nee_adaptation'],
-        ]);
+        $student = $this->lessonAi->resolveStudentForActivity(
+            $activity,
+            isset($data['student_id']) ? (int) $data['student_id'] : null,
+            $data['student_name'] ?? null
+        );
+
+        $activity = $this->lessonAi->saveNeeAdaptation(
+            $activity,
+            $data['nee_type'],
+            $data['nee_adaptation'],
+            $student
+        );
 
         return response()->json([
             'success' => true,
             'message' => 'Adaptación NEE guardada correctamente.',
             'nee_type' => $activity->nee_type,
             'nee_adaptation' => $activity->nee_adaptation,
+            'nee_student_id' => $activity->nee_student_id,
+            'nee_student_name' => $activity->neeStudent?->name,
         ]);
     }
 
