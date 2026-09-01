@@ -37,7 +37,10 @@
             display: flex; flex-direction: column; gap: 8px;
         }
         .fam-overlay {
-            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(8,6,20,.5);
+            z-index: 28;
         }
         .brand { display: flex; align-items: center; gap: 12px; padding: 8px 10px 18px; }
         .brand-icon {
@@ -139,46 +142,55 @@
             color: var(--text-primary);
         }
         .unread { color: var(--nova-violet); }
-        .fab {
-            position: fixed;
-            right: 24px;
-            bottom: 24px;
-            z-index: 40;
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-            align-items: flex-end;
-            width: min(300px, 90vw);
-        }
-        .fab-toggle {
-            display: none;
-        }
-        .fab-btn {
-            width: 100%;
-            display: inline-flex;
-            align-items: center;
-            justify-content: flex-start;
-            gap: 10px;
-            border: 1px solid color-mix(in oklab, var(--nova-violet) 45%, transparent);
-            border-radius: 16px;
-            padding: 12px 14px;
+        .nav-kicker {
+            margin: 14px 8px 4px;
+            font-size: 10px;
             font-weight: 800;
-            color: #fff;
-            background: linear-gradient(135deg, #7c3aed, #ec4899 52%, #22d3ee);
-            box-shadow: 0 16px 36px rgba(124, 58, 237, .35);
-            cursor: pointer;
-            transition: transform .2s ease, box-shadow .2s ease;
+            letter-spacing: .08em;
+            text-transform: uppercase;
+            color: var(--text-tertiary);
         }
-        .fab-btn:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 20px 44px rgba(124, 58, 237, .4);
+        .nav-item.as-link { text-decoration: none; }
+        .fam-toast {
+            position: fixed;
+            left: 24px;
+            bottom: 24px;
+            z-index: 90;
+            max-width: min(320px, calc(100vw - 32px));
+            border-radius: 14px;
+            padding: 12px 14px;
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--text-primary);
+            background: var(--bg-card);
+            border: 1px solid var(--nova-glass-border);
+            box-shadow: var(--nova-shadow);
         }
-        .fab-btn i {
-            width: 20px;
-            text-align: center;
+        .overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(15, 17, 23, .48);
+            z-index: 80;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: max(12px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
+            overflow-y: auto;
         }
-        .overlay { position: fixed; inset: 0; background: rgba(8,6,20,.55); z-index: 50; display: grid; place-items: center; padding: max(12px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom)); overflow-y: auto; }
-        .modal { width: min(640px, 100%); background: var(--bg-secondary); border: 1px solid var(--nova-glass-border); border-radius: 28px; padding: 22px; max-height: min(86dvh, 86vh); overflow: auto; -webkit-overflow-scrolling: touch; }
+        .modal {
+            width: min(640px, 100%);
+            background: var(--bg-card, var(--bg-secondary));
+            color: var(--text-primary);
+            border: 1px solid var(--nova-glass-border);
+            border-radius: 28px;
+            padding: 22px;
+            max-height: min(86dvh, 86vh);
+            overflow: auto;
+            -webkit-overflow-scrolling: touch;
+            box-shadow: 0 24px 80px rgba(15, 17, 23, .28);
+            position: relative;
+            z-index: 81;
+        }
         .btn { border: 0; border-radius: 14px; padding: 11px 16px; font-weight: 800; cursor: pointer; }
         .btn-primary { background: var(--nova-gradient); color: #fff; }
         .btn-ghost { background: var(--nova-glass); color: var(--text-primary); border: 1px solid var(--nova-glass-border); }
@@ -350,13 +362,6 @@
         }
         @media (max-width: 860px) {
             .fam-shell { grid-template-columns: 1fr; }
-            .fam-overlay {
-                display: block;
-                position: fixed;
-                inset: 0;
-                background: rgba(8,6,20,.5);
-                z-index: 28;
-            }
             .fam-sidebar {
                 display: flex;
                 position: fixed;
@@ -397,48 +402,17 @@
             .cal-grade-event-line { display: none; }
             .calendar-nav { width: 100%; justify-content: flex-start; }
             .split { grid-template-columns: 1fr; }
-            .fab {
-                right: 14px;
-                bottom: calc(14px + env(safe-area-inset-bottom));
-                width: auto;
-                align-items: flex-end;
-            }
-            .fab-actions {
-                display: none;
-                flex-direction: column;
-                gap: 8px;
-                width: min(240px, calc(100vw - 40px));
-            }
-            .fab.open .fab-actions { display: flex; }
-            .fab-toggle {
-                display: inline-flex;
-                width: 56px;
-                height: 56px;
-                border-radius: 18px;
-                border: 0;
-                align-items: center;
-                justify-content: center;
-                color: #fff;
-                background: var(--nova-gradient);
-                box-shadow: 0 16px 36px rgba(124, 58, 237, .4);
-                cursor: pointer;
-            }
-            .fab-btn { font-size: 13px; padding: 11px 12px; }
+            .fam-toast { left: 14px; bottom: calc(14px + env(safe-area-inset-bottom)); }
             .overlay { align-items: end; }
             .modal { border-radius: 24px 24px 16px 16px; padding: 18px 16px; }
         }
     </style>
 </head>
-<body x-data="familyHub">
+<body x-data="familyHub" @keydown.escape.window="closeAnyModal()">
     <div class="mobile-bar">
         <button class="icon-btn" @click="sidebarOpen = !sidebarOpen" aria-label="Menú"><i class="fa-solid fa-bars"></i></button>
         <strong>AulaSync Familia</strong>
-        <div class="theme-toggle-wrap">
-            @include('components.theme-toggle')
-            <button type="button" class="theme-toggle" @click.stop="showThemePicker = !showThemePicker" title="Cambiar colores del tema">
-                <i class="fa-solid fa-palette"></i>
-            </button>
-        </div>
+        <span style="width:44px"></span>
     </div>
 
     <div class="fam-overlay" x-show="sidebarOpen" x-cloak @click="sidebarOpen = false"></div>
@@ -470,6 +444,10 @@
                 <span x-show="unreadAnnouncements > 0" x-text="unreadAnnouncements" style="margin-left:auto;background:#EC4899;color:#fff;border-radius:99px;padding:1px 7px;font-size:11px;"></span>
             </button>
             <button class="nav-item" :class="{ active: view === 'docs' }" @click="view = 'docs'; sidebarOpen = false; loadBoletasOficiales()"><i class="fa-solid fa-folder-open"></i> Documentos</button>
+            <div class="nav-kicker">Acciones</div>
+            <button class="nav-item" @click="openAbsenceModal()"><i class="fa-solid fa-calendar-xmark"></i> Reportar ausencia</button>
+            <button class="nav-item" @click="openBoletin(); sidebarOpen = false"><i class="fa-solid fa-file-lines"></i> Ver boletín</button>
+            <a class="nav-item as-link" :href="constanciaUrl"><i class="fa-solid fa-stamp"></i> Constancia</a>
             <div style="flex:1"></div>
             <div class="sidebar-theme">
                 @include('components.theme-toggle')
@@ -477,7 +455,7 @@
                     <i class="fa-solid fa-palette"></i>
                 </button>
             </div>
-            <button class="nav-item" @click="openProfile = true"><i class="fa-solid fa-user-gear"></i> Editar perfil</button>
+            <button class="nav-item" @click="openProfileModal()"><i class="fa-solid fa-user-gear"></i> Editar perfil</button>
             <form method="POST" action="{{ route('logout') }}">
                 @csrf
                 <button class="nav-item" type="submit"><i class="fa-solid fa-right-from-bracket"></i> Cerrar sesión</button>
@@ -498,9 +476,6 @@
                     </div>
                 </div>
                 <div style="display:flex;gap:8px;align-items:center">
-                    <button class="theme-toggle" @click.stop="showThemePicker = !showThemePicker" title="Cambiar colores del tema">
-                        <i class="fa-solid fa-palette"></i>
-                    </button>
                     <button class="icon-btn" @click="toggleNotif()" title="Notificaciones">
                         <i class="fa-solid fa-bell"></i>
                         <span class="badge" x-show="unreadNotif > 0" x-text="unreadNotif"></span>
@@ -692,7 +667,7 @@
                     </div>
                     <div class="calendar-days">
                         <template x-for="day in monthDays" :key="'c'+day.key">
-                            <button type="button"
+                            <div role="button"
                                     :class="{
                                         'calendar-day': !day.blank,
                                         'calendar-day empty': day.blank,
@@ -713,12 +688,12 @@
                                                     <span class="cal-grade-event-title" x-text="ev.title"></span>
                                                 </span>
                                             </template>
-                                            <button type="button" class="more-events" x-show="eventsFor(day.date).length > 3" @click.stop="openDay(day.date)"
-                                                    x-text="'+' + (eventsFor(day.date).length - 3) + ' más'"></button>
+                                            <span class="more-events" x-show="eventsFor(day.date).length > 3"
+                                                    x-text="'+' + (eventsFor(day.date).length - 3) + ' más'"></span>
                                         </div>
                                     </div>
                                 </template>
-                            </button>
+                            </div>
                         </template>
                     </div>
                 </section>
@@ -885,32 +860,9 @@
         </main>
     </div>
 
-    <div class="fab" :class="{ open: fabOpen }" x-show="students.length > 0">
-        <div class="fab-actions">
-        <button class="fab-btn" @click="openAbsence = true; fabOpen = false" title="Notificar una ausencia o retraso al colegio">
-            <i class="fa-solid fa-calendar-xmark"></i>
-            <span>Reportar ausencia</span>
-        </button>
-        <button class="fab-btn" @click="openBoletin(); fabOpen = false" title="Ver notas y rendimiento actual">
-            <i class="fa-solid fa-file-arrow-down"></i>
-            <span>Ver boletín</span>
-        </button>
-        <a class="fab-btn" :href="constanciaUrl" style="text-decoration:none" title="Descargar constancia de estudio">
-            <i class="fa-solid fa-stamp"></i>
-            <span>Ver constancias</span>
-        </a>
-        <button class="fab-btn" @click="openProfile = true; fabOpen = false" title="Actualizar datos del representante">
-            <i class="fa-solid fa-pen"></i>
-            <span>Editar perfil</span>
-        </button>
-        </div>
-        <button type="button" class="fab-toggle" @click="fabOpen = !fabOpen" :aria-expanded="fabOpen" aria-label="Acciones rápidas">
-            <i class="fa-solid" :class="fabOpen ? 'fa-xmark' : 'fa-plus'"></i>
-        </button>
-    </div>
-
-    <div class="overlay" x-show="daySheetOpen" x-cloak @click.self="closeDaySheet()" @keydown.escape.window="closeDaySheet()">
-        <div class="modal" style="max-width:640px">
+    <template x-if="daySheetOpen">
+    <div class="overlay" @click.self="closeDaySheet()">
+        <div class="modal" style="max-width:640px" @click.stop>
             <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:8px">
                 <div>
                     <p style="margin:0 0 4px;font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--nova-violet)">Agenda de tu hijo</p>
@@ -918,13 +870,13 @@
                 </div>
                 <button class="icon-btn" @click="closeDaySheet()" aria-label="Cerrar"><i class="fa-solid fa-xmark"></i></button>
             </div>
-            <template x-if="!(calendar.events?.[selectedDay] || []).length"><p class="empty">Sin clases, tareas ni evaluaciones este día.</p></template>
-            <template x-for="ev in (calendar.events?.[selectedDay] || [])" :key="'sheet'+ev.id">
+            <template x-if="!eventsFor(selectedDay).length"><p class="empty">Sin clases, tareas ni evaluaciones este día.</p></template>
+            <template x-for="ev in eventsFor(selectedDay)" :key="'sheet'+ev.id">
                 <article class="day-event-card" @click="openEvent(ev)" :style="selectedEvent?.id === ev.id ? 'border-color:color-mix(in srgb, var(--nova-violet) 45%, var(--nova-glass-border))' : ''">
                     <div class="event-head">
                         <div>
                             <div style="display:flex;align-items:center;gap:8px;">
-                                <span class="dot" style="display:inline-block;width:8px;height:8px;background:var(--grade-accent, #7C3AED)" :style="`--grade-accent:${ev.color || eventColor(ev.type)};background:${ev.color || eventColor(ev.type)}`"></span>
+                                <span class="dot" style="display:inline-block;width:8px;height:8px" :style="`background:${ev.color || eventColor(ev.type)}`"></span>
                                 <strong x-text="ev.title"></strong>
                             </div>
                             <div class="event-meta" x-text="[ev.type_label, ev.course, ev.teacher].filter(Boolean).join(' · ')"></div>
@@ -932,31 +884,33 @@
                         <span class="event-pill" x-text="ev.time_label || ev.type_label"></span>
                     </div>
                     <div class="day-event-meta">
-                        <span class="meta-chip" x-show="ev.topic" x-text="'Tema: ' + ev.topic"></span>
-                        <span class="meta-chip" x-show="ev.weight_percentage != null" x-text="ev.weight_percentage + '% del lapso'"></span>
-                        <span class="meta-chip" x-show="ev.max_score != null" x-text="ev.max_score + ' pts'"></span>
-                        <span class="meta-chip" x-show="ev.total_points != null && ev.max_score == null" x-text="ev.total_points + ' pts'"></span>
+                        <span class="meta-chip" x-show="ev.topic" x-text="'Tema: ' + (ev.topic || '')"></span>
+                        <span class="meta-chip" x-show="ev.weight_percentage != null" x-text="(ev.weight_percentage ?? 0) + '% del lapso'"></span>
+                        <span class="meta-chip" x-show="ev.max_score != null" x-text="(ev.max_score ?? 0) + ' pts'"></span>
+                        <span class="meta-chip" x-show="ev.total_points != null && ev.max_score == null" x-text="(ev.total_points ?? 0) + ' pts'"></span>
                         <span class="meta-chip" x-show="ev.difficulty" x-text="ev.difficulty"></span>
                     </div>
                     <p class="event-desc" x-text="ev.description || 'Sin descripción por ahora.'"></p>
                 </article>
             </template>
-            <div class="day-event-card" x-show="selectedEvent && !(calendar.events?.[selectedDay] || []).some(e => e.id === selectedEvent.id)" x-cloak>
+            <div class="day-event-card" x-show="orphanSelectedEvent" x-cloak>
                 <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--nova-cyan);margin-bottom:6px" x-text="selectedEvent?.type_label"></div>
                 <h3 style="margin:0;font-size:17px;font-weight:900" x-text="selectedEvent?.title"></h3>
                 <div class="event-meta" x-text="[selectedEvent?.course, selectedEvent?.teacher].filter(Boolean).join(' · ')"></div>
                 <div class="day-event-meta">
-                    <span class="meta-chip" x-show="selectedEvent?.topic" x-text="'Tema: ' + selectedEvent.topic"></span>
-                    <span class="meta-chip" x-show="selectedEvent?.weight_percentage != null" x-text="selectedEvent.weight_percentage + '% del lapso'"></span>
-                    <span class="meta-chip" x-show="selectedEvent?.max_score != null" x-text="selectedEvent.max_score + ' pts'"></span>
+                    <span class="meta-chip" x-show="selectedEvent?.topic" x-text="'Tema: ' + (selectedEvent?.topic || '')"></span>
+                    <span class="meta-chip" x-show="selectedEvent?.weight_percentage != null" x-text="(selectedEvent?.weight_percentage ?? 0) + '% del lapso'"></span>
+                    <span class="meta-chip" x-show="selectedEvent?.max_score != null" x-text="(selectedEvent?.max_score ?? 0) + ' pts'"></span>
                 </div>
                 <p class="event-desc" x-text="selectedEvent?.description || 'Sin descripción por ahora.'"></p>
             </div>
         </div>
     </div>
+    </template>
 
-    <div class="overlay" x-show="openAbsence" x-cloak @click.self="openAbsence = false">
-        <div class="modal">
+    <template x-if="openAbsence">
+    <div class="overlay" @click.self="openAbsence = false">
+        <div class="modal" @click.stop>
             <h3>Reportar ausencia o retraso</h3>
             <label>Estudiante</label>
             <select x-model="absence.student_id">
@@ -985,9 +939,11 @@
             </div>
         </div>
     </div>
+    </template>
 
-    <div class="overlay" x-show="subjectModal" x-cloak @click.self="subjectModal = null">
-        <div class="modal">
+    <template x-if="subjectModal">
+    <div class="overlay" @click.self="subjectModal = null">
+        <div class="modal" @click.stop>
             <h3 x-text="subjectModal?.name"></h3>
             <p class="empty" x-text="(subjectModal?.teacher || '') + ' · Promedio ' + (subjectModal?.average ?? '—')"></p>
             <div style="display:flex;gap:4px;align-items:flex-end;height:90px;margin:12px 0">
@@ -1026,18 +982,22 @@
             </div>
         </div>
     </div>
+    </template>
 
-    <div class="overlay" x-show="announcementModal" x-cloak @click.self="announcementModal = null">
-        <div class="modal">
+    <template x-if="announcementModal">
+    <div class="overlay" @click.self="announcementModal = null">
+        <div class="modal" @click.stop>
             <h3 x-text="announcementModal?.title"></h3>
             <p class="empty" x-text="announcementModal?.author"></p>
             <p style="white-space:pre-wrap" x-text="announcementModal?.body"></p>
             <button class="btn btn-ghost" @click="announcementModal = null">Cerrar</button>
         </div>
     </div>
+    </template>
 
-    <div class="overlay" x-show="chat" x-cloak @click.self="chat = null">
-        <div class="modal">
+    <template x-if="chat">
+    <div class="overlay" @click.self="chat = null">
+        <div class="modal" @click.stop>
             <h3 x-text="chat?.teacher"></h3>
             <div style="max-height:46vh;overflow:auto">
                 <template x-for="m in (chat?.messages || [])" :key="m.id">
@@ -1050,9 +1010,11 @@
             </div>
         </div>
     </div>
+    </template>
 
-    <div class="overlay" x-show="openProfile" x-cloak @click.self="openProfile = false">
-        <div class="modal">
+    <template x-if="openProfile">
+    <div class="overlay" @click.self="openProfile = false">
+        <div class="modal" @click.stop>
             <h3>Editar perfil</h3>
             <label>Nombre</label><input x-model="profile.name">
             <label>Teléfono</label><input x-model="profile.phone">
@@ -1065,10 +1027,9 @@
             </div>
         </div>
     </div>
+    </template>
 
-    <div x-show="toast" x-cloak class="fab" style="left:24px;right:auto;bottom:24px;z-index:60">
-        <div class="fab-btn" style="max-width:280px" x-text="toast"></div>
-    </div>
+    <div x-show="toast" x-cloak class="fam-toast" x-text="toast"></div>
     <script>
         document.addEventListener('alpine:init', () => {
             Alpine.data('familyHub', () => ({
@@ -1090,7 +1051,6 @@
                 selectedDay: '{{ now()->toDateString() }}',
                 selectedEvent: null,
                 daySheetOpen: false,
-                fabOpen: false,
                 commTab: 'announcements',
                 openAbsence: false,
                 openProfile: false,
@@ -1164,6 +1124,10 @@
                 get unreadAnnouncements() { return this.announcements.filter(a => !a.read).length; },
                 get monthEventCount() {
                     return Object.values(this.calendar.events || {}).reduce((n, list) => n + (list?.length || 0), 0);
+                },
+                get orphanSelectedEvent() {
+                    if (!this.selectedEvent) return false;
+                    return !this.eventsFor(this.selectedDay).some(e => e.id === this.selectedEvent.id);
                 },
                 get boletinUrl() { return this.studentId ? `/representante/boletin/${this.studentId}` : '#'; },
                 get constanciaUrl() { return this.studentId ? `/representante/constancia/${this.studentId}` : '#'; },
@@ -1261,8 +1225,28 @@
                 pickDay(date) {
                     this.openDay(date);
                 },
+                closeAnyModal() {
+                    this.daySheetOpen = false;
+                    this.openAbsence = false;
+                    this.openProfile = false;
+                    this.subjectModal = null;
+                    this.announcementModal = null;
+                    this.chat = null;
+                    this.showThemePicker = false;
+                    this.showNotif = false;
+                    this.sidebarOpen = false;
+                },
+                openAbsenceModal() {
+                    this.closeAnyModal();
+                    this.openAbsence = true;
+                },
+                openProfileModal() {
+                    this.closeAnyModal();
+                    this.openProfile = true;
+                },
                 openDay(date, ev = null) {
                     if (!date) return;
+                    this.closeAnyModal();
                     this.selectedDay = date;
                     const list = this.eventsFor(date);
                     this.selectedEvent = ev || list[0] || null;
@@ -1375,6 +1359,7 @@
                     await this.refreshAll();
                 },
                 async openBoletin() {
+                    this.closeAnyModal();
                     this.view = 'docs';
                     const json = await fetch(`/representante/api/${this.studentId}/boletin`, { headers: { Accept: 'application/json' } }).then(r => r.json());
                     this.boletin = json;

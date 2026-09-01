@@ -79,7 +79,9 @@ class RepresentanteFamilyHubTest extends TestCase
             ->assertSee('Colores del tema')
             ->assertSee('Calendario académico')
             ->assertSee('Próximas entregas')
-            ->assertSee('Ausencias del mes');
+            ->assertSee('Ausencias del mes')
+            ->assertSee('Reportar ausencia')
+            ->assertSee('Ver boletín');
     }
 
     /**
