@@ -42,6 +42,9 @@
             background: rgba(8,6,20,.5);
             z-index: 28;
         }
+        @media (min-width: 861px) {
+            .fam-overlay { display: none !important; pointer-events: none !important; }
+        }
         .brand { display: flex; align-items: center; gap: 12px; padding: 8px 10px 18px; }
         .brand-icon {
             width: 42px; height: 42px; border-radius: 14px; color: #fff;
@@ -255,14 +258,21 @@
             margin-bottom: 16px;
         }
         .theme-toggle-wrap { position: relative; z-index: 30; display: flex; align-items: center; gap: 8px; }
-        .theme-picker-backdrop { position: fixed; inset: 0; z-index: 1900; background: transparent; }
         .theme-picker {
-            position: fixed; top: 72px; left: 16px; width: min(300px, calc(100vw - 24px));
-            max-height: min(70vh, 520px); overflow-y: auto; overflow-x: hidden;
-            background: var(--bg-card); border: 1px solid var(--nova-glass-border);
-            border-radius: 16px; box-shadow: var(--nova-shadow); padding: 12px; z-index: 2000;
+            position: fixed;
+            left: 16px;
+            bottom: 72px;
+            width: min(260px, calc(100vw - 24px));
+            max-height: min(60vh, 420px);
+            overflow-y: auto;
+            overflow-x: hidden;
+            background: var(--bg-card);
+            border: 1px solid var(--nova-glass-border);
+            border-radius: 16px;
+            box-shadow: var(--nova-shadow);
+            padding: 12px;
+            z-index: 2000;
         }
-        @media (min-width: 860px) { .theme-picker { left: 296px; } }
         .theme-picker h4 { margin: 0 0 8px; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-tertiary); }
         .theme-picker-option {
             width: 100%; display: flex; align-items: center; gap: 10px; border: 0; background: transparent;
@@ -275,7 +285,7 @@
             border: 1px solid var(--nova-glass-border); color: var(--nova-violet); cursor: pointer;
             display: flex; align-items: center; justify-content: center;
         }
-        .sidebar-theme { display: flex; align-items: center; gap: 8px; padding: 8px 4px 14px; }
+        .sidebar-theme { position: relative; display: flex; align-items: center; gap: 8px; padding: 8px 4px 14px; }
         .upcoming-list { display: flex; flex-direction: column; }
         .upcoming-empty { color: var(--text-tertiary); font-size: 13px; margin: 4px 0 8px; }
         .upcoming-row {
@@ -415,17 +425,9 @@
         <span style="width:44px"></span>
     </div>
 
-    <div class="fam-overlay" x-show="sidebarOpen" x-cloak @click="sidebarOpen = false"></div>
-    <div class="theme-picker-backdrop" x-show="showThemePicker" x-cloak @click="showThemePicker = false"></div>
-    <div class="theme-picker" x-show="showThemePicker" x-cloak x-transition.opacity @click.stop>
-        <h4>Colores del tema</h4>
-        <template x-for="theme in themeOptions" :key="theme.id">
-            <button type="button" class="theme-picker-option" :class="{ active: currentThemeId === theme.id }" @click="applyTheme(theme.id)">
-                <span class="theme-picker-dot" :style="`background:${theme.dot}`"></span>
-                <span x-text="theme.label"></span>
-            </button>
-        </template>
-    </div>
+    <template x-if="sidebarOpen">
+        <div class="fam-overlay" @click="sidebarOpen = false"></div>
+    </template>
 
     <div class="fam-shell">
         <aside class="fam-sidebar" :class="{ open: sidebarOpen }">
@@ -436,24 +438,33 @@
                     <div class="brand-sub">{{ $schoolName ?? 'Panel familiar' }}</div>
                 </div>
             </div>
-            <button class="nav-item" :class="{ active: view === 'home' }" @click="view = 'home'; sidebarOpen = false"><i class="fa-solid fa-house"></i> Inicio</button>
-            <button class="nav-item" :class="{ active: view === 'calendar' }" @click="view = 'calendar'; sidebarOpen = false"><i class="fa-solid fa-calendar-days"></i> Calendario</button>
-            <button class="nav-item" :class="{ active: view === 'subjects' }" @click="view = 'subjects'; sidebarOpen = false"><i class="fa-solid fa-book-open"></i> Materias</button>
-            <button class="nav-item" :class="{ active: view === 'comms' }" @click="view = 'comms'; sidebarOpen = false">
+            <button class="nav-item" :class="{ active: view === 'home' }" @click="setView('home')"><i class="fa-solid fa-house"></i> Inicio</button>
+            <button class="nav-item" :class="{ active: view === 'calendar' }" @click="setView('calendar')"><i class="fa-solid fa-calendar-days"></i> Calendario</button>
+            <button class="nav-item" :class="{ active: view === 'subjects' }" @click="setView('subjects')"><i class="fa-solid fa-book-open"></i> Materias</button>
+            <button class="nav-item" :class="{ active: view === 'comms' }" @click="setView('comms')">
                 <i class="fa-solid fa-comments"></i> Comunicación
                 <span x-show="unreadAnnouncements > 0" x-text="unreadAnnouncements" style="margin-left:auto;background:#EC4899;color:#fff;border-radius:99px;padding:1px 7px;font-size:11px;"></span>
             </button>
-            <button class="nav-item" :class="{ active: view === 'docs' }" @click="view = 'docs'; sidebarOpen = false; loadBoletasOficiales()"><i class="fa-solid fa-folder-open"></i> Documentos</button>
+            <button class="nav-item" :class="{ active: view === 'docs' }" @click="setView('docs')"><i class="fa-solid fa-folder-open"></i> Documentos</button>
             <div class="nav-kicker">Acciones</div>
             <button class="nav-item" @click="openAbsenceModal()"><i class="fa-solid fa-calendar-xmark"></i> Reportar ausencia</button>
             <button class="nav-item" @click="openBoletin(); sidebarOpen = false"><i class="fa-solid fa-file-lines"></i> Ver boletín</button>
             <a class="nav-item as-link" :href="constanciaUrl"><i class="fa-solid fa-stamp"></i> Constancia</a>
             <div style="flex:1"></div>
-            <div class="sidebar-theme">
+            <div class="sidebar-theme" @click.outside="showThemePicker = false">
                 @include('components.theme-toggle')
-                <button type="button" class="theme-toggle" @click.stop="showThemePicker = !showThemePicker" title="Cambiar colores del tema">
+                <button type="button" class="theme-toggle" x-ref="themePaletteBtn" @click.stop="toggleThemePicker()" title="Cambiar colores del tema">
                     <i class="fa-solid fa-palette"></i>
                 </button>
+                <div class="theme-picker" x-ref="themePicker" x-show="showThemePicker" x-cloak x-transition.opacity @click.stop>
+                    <h4>Colores del tema</h4>
+                    <template x-for="theme in themeOptions" :key="theme.id">
+                        <button type="button" class="theme-picker-option" :class="{ active: currentThemeId === theme.id }" @click="applyTheme(theme.id)">
+                            <span class="theme-picker-dot" :style="`background:${theme.dot}`"></span>
+                            <span x-text="theme.label"></span>
+                        </button>
+                    </template>
+                </div>
             </div>
             <button class="nav-item" @click="openProfileModal()"><i class="fa-solid fa-user-gear"></i> Editar perfil</button>
             <form method="POST" action="{{ route('logout') }}">
@@ -1178,8 +1189,48 @@
                     this.isDark = document.documentElement.classList.contains('dark');
                     this.showThemePicker = false;
                 },
+                toggleThemePicker() {
+                    this.showThemePicker = !this.showThemePicker;
+                    if (this.showThemePicker) {
+                        this.$nextTick(() => this.placeThemePicker());
+                    }
+                },
+                placeThemePicker() {
+                    const btn = this.$refs.themePaletteBtn;
+                    const panel = this.$refs.themePicker;
+                    if (!btn || !panel) return;
+                    const rect = btn.getBoundingClientRect();
+                    const width = Math.min(260, window.innerWidth - 16);
+                    let left = rect.left;
+                    if (left + width > window.innerWidth - 8) {
+                        left = Math.max(8, window.innerWidth - width - 8);
+                    }
+                    panel.style.left = `${Math.max(8, left)}px`;
+                    panel.style.right = 'auto';
+                    panel.style.top = 'auto';
+                    panel.style.bottom = `${Math.max(8, window.innerHeight - rect.top + 8)}px`;
+                },
+                setView(name) {
+                    this.closeOverlays();
+                    this.view = name;
+                    this.sidebarOpen = false;
+                    this.showThemePicker = false;
+                    if (name === 'docs') this.loadBoletasOficiales();
+                },
+                closeOverlays() {
+                    this.daySheetOpen = false;
+                    this.openAbsence = false;
+                    this.openProfile = false;
+                    this.subjectModal = null;
+                    this.announcementModal = null;
+                    this.chat = null;
+                    this.showNotif = false;
+                },
                 trendIcon(t) { return t === 'up' ? '↑' : (t === 'down' ? '↓' : '↔'); },
                 async init() {
+                    window.addEventListener('resize', () => {
+                        if (this.showThemePicker) this.placeThemePicker();
+                    });
                     if (!this.studentId) return;
                     await this.refreshAll();
                     setInterval(() => this.refreshAll(true), 30000);
@@ -1226,14 +1277,8 @@
                     this.openDay(date);
                 },
                 closeAnyModal() {
-                    this.daySheetOpen = false;
-                    this.openAbsence = false;
-                    this.openProfile = false;
-                    this.subjectModal = null;
-                    this.announcementModal = null;
-                    this.chat = null;
+                    this.closeOverlays();
                     this.showThemePicker = false;
-                    this.showNotif = false;
                     this.sidebarOpen = false;
                 },
                 openAbsenceModal() {
@@ -1402,7 +1447,7 @@
                     await this.refreshAll();
                 },
                 toggleTheme() {
-                    this.showThemePicker = !this.showThemePicker;
+                    this.toggleThemePicker();
                 },
             }));
         });
