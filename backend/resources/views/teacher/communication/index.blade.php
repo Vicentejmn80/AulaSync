@@ -35,28 +35,102 @@
         .pill { border-radius: 999px; padding: 4px 8px; font-size: 11px; font-weight: 800; background: color-mix(in srgb, var(--nova-violet) 14%, transparent); color: var(--nova-violet); }
         .ok { color: #0F766E; font-weight: 700; }
         .warn { color: #B45309; font-weight: 700; }
-        .threads { display: grid; grid-template-columns: 290px 1fr 280px; gap: 10px; min-height: 520px; }
-        .thread-list, .thread-main, .thread-side { border: 1px solid var(--nova-glass-border); border-radius: 14px; padding: 10px; background: var(--bg-secondary); }
-        .thread-row { border: 1px solid transparent; border-radius: 10px; padding: 8px; cursor: pointer; margin-bottom: 6px; }
-        .thread-row.active { border-color: var(--nova-violet); background: color-mix(in srgb, var(--nova-violet) 9%, transparent); }
-        .msg { margin: 8px 0; padding: 8px 10px; border-radius: 11px; max-width: 84%; white-space: pre-wrap; word-break: break-word; }
-        .msg.teacher { margin-left: auto; background: color-mix(in srgb, var(--nova-violet) 16%, transparent); }
-        .msg.student { margin-right: auto; background: color-mix(in srgb, var(--nova-fuchsia) 14%, transparent); }
-        .msg.family { margin-right: auto; background: color-mix(in srgb, var(--nova-cyan, #22d3ee) 18%, transparent); }
-        .msg .meta { display: block; font-size: 10px; font-weight: 700; opacity: .65; margin-top: 6px; }
-        .thread-row { display: block; width: 100%; text-align: left; }
-        .thread-row .unread { display: inline-flex; min-width: 18px; justify-content: center; border-radius: 999px; padding: 1px 6px; font-size: 10px; font-weight: 800; background: var(--nova-fuchsia); color: #fff; margin-left: 6px; }
+        .wa {
+            display: grid;
+            grid-template-columns: 320px 1fr;
+            min-height: min(72vh, 720px);
+            border: 1px solid var(--nova-glass-border);
+            border-radius: 18px;
+            overflow: hidden;
+            background: var(--bg-secondary);
+            position: relative;
+        }
+        .wa-list, .wa-chat { min-height: 0; display: flex; flex-direction: column; }
+        .wa-list { border-right: 1px solid var(--nova-glass-border); background: var(--bg-card); }
+        .wa-list-head, .wa-chat-head {
+            display: flex; align-items: center; justify-content: space-between; gap: 10px;
+            padding: 12px 14px; border-bottom: 1px solid var(--nova-glass-border);
+        }
+        .wa-list-head h3, .wa-chat-head h3 { margin: 0; font-size: 16px; }
+        .wa-plus {
+            width: 38px; height: 38px; border: 0; border-radius: 50%; cursor: pointer;
+            background: var(--nova-gradient); color: #fff; font-size: 18px; font-weight: 800;
+        }
+        .wa-search { padding: 10px 12px; }
+        .wa-search input { margin: 0; }
+        .wa-rows { overflow: auto; flex: 1; padding: 6px; }
+        .thread-row {
+            display: flex; gap: 10px; align-items: center; width: 100%; text-align: left;
+            border: 0; background: transparent; color: inherit; cursor: pointer;
+            border-radius: 14px; padding: 10px; margin-bottom: 4px;
+        }
+        .thread-row.active { background: color-mix(in srgb, var(--nova-violet) 14%, transparent); }
+        .thread-row:hover { background: color-mix(in srgb, var(--nova-violet) 8%, transparent); }
+        .wa-avatar {
+            width: 42px; height: 42px; border-radius: 50%; flex: none;
+            display: grid; place-items: center; font-weight: 800; color: #fff;
+            background: var(--nova-gradient); font-size: 14px;
+        }
+        .wa-row-main { min-width: 0; flex: 1; }
+        .wa-row-top { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+        .wa-row-top strong { font-size: 13px; }
+        .wa-time { font-size: 10px; color: var(--text-secondary); white-space: nowrap; }
+        .wa-preview { font-size: 12px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+        .unread {
+            display: inline-flex; min-width: 18px; justify-content: center; border-radius: 999px;
+            padding: 1px 6px; font-size: 10px; font-weight: 800; background: var(--nova-fuchsia); color: #fff;
+        }
+        .wa-chat { background: color-mix(in srgb, var(--bg-primary) 88%, var(--nova-violet) 12%); }
+        .wa-back { display: none; }
+        .wa-chat-head { background: var(--bg-card); }
+        .wa-chat-copy small { display: block; color: var(--text-secondary); font-weight: 600; margin-top: 2px; }
+        .wa-msgs {
+            flex: 1; overflow: auto; padding: 16px 14px 8px;
+            display: flex; flex-direction: column; gap: 6px;
+        }
+        .msg {
+            margin: 0; padding: 8px 12px; border-radius: 16px; max-width: 78%;
+            white-space: pre-wrap; word-break: break-word; box-shadow: 0 8px 18px -16px rgba(0,0,0,.5);
+        }
+        .msg.teacher { margin-left: auto; border-bottom-right-radius: 6px; background: color-mix(in srgb, var(--nova-violet) 28%, var(--bg-card)); }
+        .msg.student, .msg.family { margin-right: auto; border-bottom-left-radius: 6px; background: var(--bg-card); }
+        .msg.family { border-left: 3px solid var(--nova-cyan, #22d3ee); }
+        .msg .meta { display: block; font-size: 10px; font-weight: 700; opacity: .65; margin-top: 6px; text-align: right; }
+        .wa-compose {
+            display: flex; gap: 8px; align-items: flex-end; padding: 10px 12px 12px;
+            background: var(--bg-card); border-top: 1px solid var(--nova-glass-border);
+        }
+        .wa-compose textarea { min-height: 44px; max-height: 120px; margin: 0; border-radius: 18px; resize: none; }
+        .wa-send {
+            width: 44px; height: 44px; border: 0; border-radius: 50%; cursor: pointer; flex: none;
+            background: var(--nova-gradient); color: #fff;
+        }
+        .wa-empty { padding: 40px 24px; text-align: center; color: var(--text-secondary); }
+        .wa-picker {
+            position: absolute; inset: 0 auto 0 0; width: 320px; z-index: 3;
+            background: var(--bg-card); display: flex; flex-direction: column;
+            border-right: 1px solid var(--nova-glass-border);
+        }
+        .contact-row { display: flex; gap: 10px; align-items: center; width: 100%; text-align: left; border: 0; background: transparent; color: inherit; cursor: pointer; padding: 10px 12px; }
+        .contact-row:hover { background: color-mix(in srgb, var(--nova-violet) 8%, transparent); }
+        .pill { border-radius: 999px; padding: 4px 8px; font-size: 11px; font-weight: 800; background: color-mix(in srgb, var(--nova-violet) 14%, transparent); color: var(--nova-violet); }
+        .ok { color: #0F766E; font-weight: 700; }
+        .warn { color: #B45309; font-weight: 700; }
         .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
         .table { width: 100%; border-collapse: collapse; font-size: 13px; }
         .table th, .table td { text-align: left; border-bottom: 1px solid var(--nova-glass-border); padding: 8px 6px; }
-        @media (max-width: 1080px) { .layout { grid-template-columns: 1fr; } .threads { grid-template-columns: 1fr; min-height: 0; } .row2, .grid3 { grid-template-columns: 1fr; } }
-        @media (max-width: 767px) {
-            .wrap { padding: 16px 16px calc(28px + env(safe-area-inset-bottom)); }
-            .title { font-size: 24px; }
-            .thread-list, .thread-main, .thread-side { min-height: 0; }
-            .thread-main { min-height: 52vh; }
+        @media (max-width: 1080px) { .layout { grid-template-columns: 1fr; } .row2, .grid3 { grid-template-columns: 1fr; } }
+        @media (max-width: 860px) {
+            .wa { grid-template-columns: 1fr; min-height: 70vh; }
+            .wa-list { display: none; }
+            .wa.show-list .wa-list { display: flex; }
+            .wa.show-list .wa-chat { display: none; }
+            .wa-back { display: inline-flex; }
+            .wa-picker { width: 100%; border-right: 0; }
             .msg { max-width: 92%; }
             .table { display: block; overflow-x: auto; }
+            .wrap { padding: 16px 16px calc(28px + env(safe-area-inset-bottom)); }
+            .title { font-size: 24px; }
         }
     </style>
 </head>
@@ -146,62 +220,103 @@
         </div>
     </div>
 
-    <div x-show="tab === 'messages'" class="card">
-        <h3><i class="fa-solid fa-inbox"></i> Mensajes privados por estudiante</h3>
-        <div class="threads">
-            <div class="thread-list">
-                <template x-for="t in threads" :key="t.id">
-                    <div class="thread-row" :class="{ active: selectedThreadId === t.id }" @click="selectThread(t.id)">
-                        <strong x-text="t.contact_name"></strong>
-                        <span class="pill" x-show="t.is_family || t.contact_role === 'representante'">Familia</span>
-                        <span class="unread" x-show="t.unread > 0" x-text="t.unread"></span>
-                        <br>
-                        <small class="muted" x-text="t.last_message_preview || 'Sin mensajes'"></small>
+    <div x-show="tab === 'messages'" class="card" style="padding:0;overflow:hidden">
+        <div class="wa" :class="{ 'show-list': mobileList }">
+            <div class="wa-list">
+                <div class="wa-list-head">
+                    <div>
+                        <h3>Chats</h3>
+                        <small class="muted" x-text="threads.length ? (threads.length + ' conversaciones') : 'Bandeja vacía'"></small>
+                    </div>
+                    <button type="button" class="wa-plus" @click="openNewChat()" title="Nuevo chat">+</button>
+                </div>
+                <div class="wa-search">
+                    <input x-model="inboxQuery" placeholder="Buscar chat">
+                </div>
+                <div class="wa-rows">
+                    <p class="wa-empty" x-show="filteredThreads().length === 0">No hay conversaciones aún. Pulsa + para escribirle a una familia.</p>
+                    <template x-for="t in filteredThreads()" :key="t.id">
+                        <button type="button" class="thread-row" :class="{ active: selectedThreadId === t.id }" @click="selectThread(t.id)">
+                            <div class="wa-avatar" x-text="initials(t.contact_name)"></div>
+                            <div class="wa-row-main">
+                                <div class="wa-row-top">
+                                    <strong x-text="t.contact_name"></strong>
+                                    <span class="wa-time" x-text="fmtTime(t.last_message_at)"></span>
+                                </div>
+                                <div style="display:flex;gap:8px;align-items:center">
+                                    <div class="wa-preview" x-text="t.last_message_preview || 'Sin mensajes'"></div>
+                                    <span class="unread" x-show="t.unread > 0" x-text="t.unread"></span>
+                                </div>
+                            </div>
+                        </button>
+                    </template>
+                </div>
+            </div>
+            <div class="wa-chat">
+                <template x-if="!selectedThread() && !draftContact">
+                    <div class="wa-empty">
+                        <p>Elige un chat o pulsa <strong>+</strong> para escribirle a un representante.</p>
+                        <button type="button" class="btn btn-soft" @click="openNewChat()">Nuevo mensaje</button>
                     </div>
                 </template>
-            </div>
-            <div class="thread-main">
-                <template x-if="!selectedThread()"><p class="muted">Selecciona un chat para comenzar.</p></template>
-                <template x-if="selectedThread()">
-                    <div>
-                        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-                            <strong x-text="selectedThread().contact_name"></strong>
-                            <button class="btn btn-soft" @click="simulateIncoming()">Simular pregunta</button>
+                <template x-if="selectedThread() || draftContact">
+                    <div style="display:flex;flex-direction:column;height:100%;min-height:0">
+                        <div class="wa-chat-head">
+                            <button type="button" class="btn btn-soft wa-back" @click="mobileList = true"><i class="fa-solid fa-arrow-left"></i></button>
+                            <div class="wa-avatar" x-text="initials(chatTitle())"></div>
+                            <div class="wa-chat-copy" style="flex:1;min-width:0">
+                                <h3 x-text="chatTitle()"></h3>
+                                <small x-text="chatSubtitle()"></small>
+                            </div>
+                            <button type="button" class="btn btn-soft" @click="suggestReplies()" x-show="selectedThread()"><i class="fa-solid fa-bolt"></i></button>
                         </div>
-                        <div style="max-height:340px; overflow:auto; margin-top:10px;">
-                            <template x-for="m in selectedThread().messages" :key="m.id">
+                        <div class="wa-msgs" x-ref="msgs">
+                            <template x-for="m in (selectedThread()?.messages || [])" :key="m.id">
                                 <div class="msg" :class="messageClass(m)">
                                     <div x-text="m.body"></div>
                                     <small class="meta" x-text="messageMeta(m)"></small>
                                 </div>
                             </template>
+                            <p class="muted" style="text-align:center" x-show="draftContact && !(selectedThread()?.messages || []).length">Este será el primer mensaje a la familia.</p>
                         </div>
-                        <label>Responder</label>
-                        <textarea x-model="chatDraft" placeholder="Escribe una respuesta clara y profesional."></textarea>
-                        <div class="stack">
-                            <button class="btn btn-main" @click="sendMessage(false)">Enviar mensaje</button>
-                            <button class="btn btn-soft" @click="suggestReplies()"><i class="fa-solid fa-bolt"></i> Sugerencias IA</button>
-                        </div>
-                        <div class="stack" x-show="quickReplies.length > 0">
+                        <div class="stack" style="padding:0 12px" x-show="quickReplies.length > 0">
                             <template x-for="(s, idx) in quickReplies" :key="idx">
                                 <button class="btn btn-soft" @click="applySuggestion(s)" x-text="s"></button>
                             </template>
                         </div>
+                        <form class="wa-compose" @submit.prevent="sendChat()">
+                            <textarea x-model="chatDraft" rows="1" placeholder="Mensaje" @keydown.enter.prevent="sendChat()"></textarea>
+                            <button type="submit" class="wa-send" title="Enviar"><i class="fa-solid fa-paper-plane"></i></button>
+                        </form>
                     </div>
                 </template>
             </div>
-            <div class="thread-side">
-                <template x-if="selectedThread() && selectedThread().student">
+            <div class="wa-picker" x-show="showNewChat" x-cloak>
+                <div class="wa-list-head">
                     <div>
-                        <h4 style="margin:0 0 8px;">Contexto académico</h4>
-                        <div class="list-item"><strong>Estudiante:</strong> <span x-text="selectedThread().student.name"></span></div>
-                        <div class="list-item"><strong>Promedio:</strong> <span x-text="selectedThread().student_avg ?? 'Sin datos'"></span></div>
-                        <div class="list-item"><strong>Curso:</strong> <span x-text="`${selectedThread().student.grade} ${selectedThread().student.section || ''}`"></span></div>
+                        <h3>Nuevo chat</h3>
+                        <small class="muted">Familias vinculadas a tus alumnos</small>
                     </div>
-                </template>
-                <template x-if="!selectedThread()"><p class="muted">Aquí verás rendimiento y resumen del estudiante.</p></template>
+                    <button type="button" class="btn btn-soft" @click="showNewChat = false">Cerrar</button>
+                </div>
+                <div class="wa-search">
+                    <input x-model="contactQuery" placeholder="Buscar alumno o representante">
+                </div>
+                <div class="wa-rows">
+                    <p class="wa-empty" x-show="filteredContacts().length === 0">No hay representantes vinculados todavía.</p>
+                    <template x-for="c in filteredContacts()" :key="c.id">
+                        <button type="button" class="contact-row" @click="startWithContact(c)">
+                            <div class="wa-avatar" x-text="initials(c.name)"></div>
+                            <div class="wa-row-main">
+                                <strong x-text="c.name"></strong>
+                                <div class="wa-preview" x-text="c.parent_label + (c.grade ? ' · ' + c.grade : '')"></div>
+                            </div>
+                        </button>
+                    </template>
+                </div>
             </div>
         </div>
+        <p class="warn" style="padding:8px 14px" x-show="error" x-text="error"></p>
     </div>
 
     </div>
@@ -210,17 +325,23 @@
 <script>
 function communicationApp() {
     return {
-        tab: 'announcements',
+        tab: 'messages',
         notice: '',
         error: '',
         courses: @json($courses),
         students: @json($students),
+        contacts: @json($contacts ?? []),
         announcements: @json($announcements),
         threads: @json($threads),
-        selectedThreadId: @json($threads->first()['id'] ?? null),
+        selectedThreadId: @json(data_get($threads->first(), 'id')),
         chatDraft: '',
         quickReplies: [],
         poller: null,
+        showNewChat: false,
+        inboxQuery: '',
+        contactQuery: '',
+        draftContact: null,
+        mobileList: true,
         announcement: {
             idea: '',
             course_id: '',
@@ -295,6 +416,51 @@ function communicationApp() {
         selectedThread() {
             return this.threads.find(t => t.id === this.selectedThreadId) || null;
         },
+        filteredThreads() {
+            const q = (this.inboxQuery || '').trim().toLowerCase();
+            const list = this.threads || [];
+            if (!q) return list;
+            return list.filter(t => `${t.contact_name} ${t.last_message_preview || ''}`.toLowerCase().includes(q));
+        },
+        filteredContacts() {
+            const q = (this.contactQuery || '').trim().toLowerCase();
+            const list = this.contacts || [];
+            if (!q) return list;
+            return list.filter(c => `${c.name} ${c.parent_label} ${c.grade || ''}`.toLowerCase().includes(q));
+        },
+        initials(name) {
+            const parts = String(name || '?').trim().split(/\s+/).filter(Boolean);
+            const letters = (parts[0]?.[0] || '?') + (parts[1]?.[0] || '');
+            return letters.toUpperCase();
+        },
+        fmtTime(value) {
+            if (!value) return '';
+            const d = new Date(value);
+            if (Number.isNaN(d.getTime())) return '';
+            const sameDay = new Date().toDateString() === d.toDateString();
+            return d.toLocaleString('es-VE', sameDay
+                ? { hour: '2-digit', minute: '2-digit' }
+                : { day: '2-digit', month: 'short' });
+        },
+        chatTitle() {
+            return this.selectedThread()?.contact_name || (this.draftContact ? this.draftContact.parent_label : '');
+        },
+        chatSubtitle() {
+            if (this.selectedThread()?.student) {
+                const s = this.selectedThread().student;
+                return [s.name, s.grade, s.section].filter(Boolean).join(' · ');
+            }
+            if (this.draftContact) {
+                return [this.draftContact.name, this.draftContact.grade, this.draftContact.section].filter(Boolean).join(' · ');
+            }
+            return 'Familia';
+        },
+        scrollChat() {
+            this.$nextTick(() => {
+                const box = this.$refs.msgs;
+                if (box) box.scrollTop = box.scrollHeight;
+            });
+        },
         messageClass(m) {
             if (m.sender_role === 'teacher') return 'teacher';
             if (m.sender_role === 'representante' || m.sender_role === 'parent') return 'family';
@@ -312,13 +478,56 @@ function communicationApp() {
         },
         async selectThread(id) {
             this.selectedThreadId = id;
+            this.draftContact = null;
+            this.showNewChat = false;
+            this.mobileList = false;
             this.quickReplies = [];
             this.chatDraft = '';
+            this.scrollChat();
             try {
                 await this.postJson(`/teacher/communication/threads/${id}/read`);
                 const thread = this.threads.find(t => t.id === id);
                 if (thread) thread.unread = 0;
             } catch (_) {}
+        },
+        openNewChat() {
+            this.showNewChat = true;
+            this.contactQuery = '';
+        },
+        startWithContact(contact) {
+            const existing = (this.threads || []).find(t => Number(t.student_id) === Number(contact.id));
+            this.showNewChat = false;
+            this.mobileList = false;
+            if (existing) {
+                this.selectThread(existing.id);
+                return;
+            }
+            this.selectedThreadId = null;
+            this.draftContact = contact;
+            this.chatDraft = '';
+            this.quickReplies = [];
+        },
+        async sendChat() {
+            const body = (this.chatDraft || '').trim();
+            if (!body) return;
+            this.error = '';
+            if (this.draftContact && !this.selectedThread()) {
+                const { ok, json: data } = await this.postJson('{{ route('teacher.communication.threads.start') }}', {
+                    student_id: this.draftContact.id,
+                    body,
+                });
+                if (!ok || !data.success) {
+                    this.error = data.error || data.message || 'No se pudo iniciar el chat.';
+                    return;
+                }
+                this.upsertThread(data.thread);
+                this.selectedThreadId = data.thread.id;
+                this.draftContact = null;
+                this.chatDraft = '';
+                this.scrollChat();
+                return;
+            }
+            await this.sendMessage(false);
         },
         async generateAnnouncement() {
             this.error = ''; this.notice = '';
@@ -363,22 +572,21 @@ function communicationApp() {
                 ai_suggested: !!aiSuggested,
             });
             if (!ok || !data.success) {
-                this.error = data.message || 'No se pudo enviar el mensaje. Recarga e inténtalo de nuevo.';
+                this.error = data.message || data.error || 'No se pudo enviar el mensaje. Recarga e inténtalo de nuevo.';
                 return;
             }
-            thread.messages.push(data.message);
-            thread.last_message_preview = data.message.body.slice(0, 130);
+            this.upsertThread(data.thread || { ...thread, messages: [...(thread.messages || []), data.message] });
             this.chatDraft = '';
+            this.scrollChat();
         },
-        async simulateIncoming() {
-            const thread = this.selectedThread();
-            if (!thread) return;
-            const { json: data } = await this.postJson(`/teacher/communication/threads/${thread.id}/simulate-incoming`);
-            if (data.success) {
-                thread.messages.push(data.message);
-                thread.last_message_preview = data.message.body.slice(0, 130);
-            }
+        upsertThread(thread) {
+            if (!thread?.id) return;
+            const idx = this.threads.findIndex(t => t.id === thread.id);
+            if (idx >= 0) this.threads.splice(idx, 1, thread);
+            else this.threads.unshift(thread);
+            this.threads.sort((a, b) => String(b.last_message_at || '').localeCompare(String(a.last_message_at || '')));
         },
+        async simulateIncoming() {},
         async suggestReplies() {
             const thread = this.selectedThread();
             if (!thread) return;
@@ -395,14 +603,20 @@ function communicationApp() {
             try {
                 const res = await fetch('{{ route('teacher.communication.threads') }}', { headers: { Accept: 'application/json' } });
                 const data = await res.json();
-                if (data.success) this.threads = data.threads || [];
+                if (!data.success) return;
+                const keepId = this.selectedThreadId;
+                this.threads = data.threads || [];
+                if (keepId && this.threads.some(t => t.id === keepId)) this.selectedThreadId = keepId;
+                this.scrollChat();
             } catch (_) {}
         },
         init() {
             this.refreshCsrf();
+            this.mobileList = !this.selectedThreadId;
+            this.scrollChat();
             this.poller = setInterval(() => {
                 if (this.tab === 'messages') this.pollThreads();
-            }, 12000);
+            }, 8000);
         },
     };
 }

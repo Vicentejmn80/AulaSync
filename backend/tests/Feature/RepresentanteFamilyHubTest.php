@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Activity;
 use App\Models\Colegio;
+use App\Models\CommunicationThread;
 use App\Models\Course;
 use App\Models\Evaluation;
 use App\Models\Student;
@@ -90,7 +91,7 @@ class RepresentanteFamilyHubTest extends TestCase
             ->assertSee('Ausencias del mes')
             ->assertSee('Reportar ausencia')
             ->assertSee('Ver boletín')
-            ->assertSee('Escribirle a un docente')
+            ->assertSee('Nuevo mensaje al docente')
             ->assertSee('Ver actividad completa')
             ->assertSee('fam-backdrop')
             ->assertDontSee('class="overlay"', false)
@@ -244,5 +245,72 @@ class RepresentanteFamilyHubTest extends TestCase
         $this->assertTrue($bodies->contains('Hola profesor, ¿qué entra en el parcial de álgebra?'));
         $this->assertTrue($bodies->contains('Hola, entra ecuaciones de primer grado y los ejercicios de la guía.'));
         $this->assertTrue(collect($thread['messages'])->contains(fn ($m) => $m['mine'] === false));
+    }
+
+    public function test_teacher_inbox_hides_empty_placeholder_threads(): void
+    {
+        [$parent, $student, $teacher] = $this->familyClassroom();
+        $other = Student::create([
+            'colegio_id' => $student->colegio_id,
+            'teacher_id' => $teacher->id,
+            'name' => 'Johanna Del Valle',
+            'grade' => '5to',
+            'section' => 'A',
+        ]);
+
+        CommunicationThread::create([
+            'teacher_id' => $teacher->id,
+            'student_id' => $other->id,
+            'contact_name' => $other->name,
+            'contact_role' => 'estudiante',
+            'last_message_preview' => 'Hilo iniciado para seguimiento académico.',
+            'last_message_at' => now(),
+        ]);
+
+        $this->actingAs($teacher)->get(route('teacher.communication.index'))->assertOk();
+
+        $threads = $this->actingAs($teacher)
+            ->getJson(route('teacher.communication.threads'))
+            ->assertOk()
+            ->json('threads');
+
+        $this->assertCount(0, $threads);
+        $this->assertDatabaseCount('communication_threads', 1);
+    }
+
+    public function test_teacher_can_start_family_chat_and_parent_receives_it(): void
+    {
+        [$parent, $student, $teacher] = $this->familyClassroom();
+
+        $contacts = $this->actingAs($teacher)
+            ->getJson(route('teacher.communication.contacts'))
+            ->assertOk()
+            ->json('contacts');
+        $this->assertTrue(collect($contacts)->contains(fn ($c) => $c['id'] === $student->id && $c['has_family'] === true));
+
+        $started = $this->actingAs($teacher)
+            ->postJson(route('teacher.communication.threads.start'), [
+                'student_id' => $student->id,
+                'body' => 'Hola familia, les escribo por el examen de fotosíntesis.',
+            ])
+            ->assertOk()
+            ->json();
+
+        $this->assertTrue($started['success']);
+        $threadId = $started['thread']['id'];
+
+        $thread = $this->actingAs($parent)
+            ->getJson(route('representante.api.mensajes.show', [
+                'thread' => $threadId,
+                'estudiante_id' => $student->id,
+            ]))
+            ->assertOk()
+            ->json('thread');
+
+        $this->assertTrue(
+            collect($thread['messages'])->contains(
+                fn ($message) => str_contains((string) $message['body'], 'fotosíntesis') && $message['mine'] === false
+            )
+        );
     }
 }

@@ -40,11 +40,10 @@ class CommunicationController extends Controller
 
         $announcements = collect();
         $threads = collect();
+        $contacts = collect();
 
         try {
             if ($this->communicationTablesReady()) {
-                $this->ensureThreads($teacher->id, $students);
-
                 $announcements = CommunicationAnnouncement::where('teacher_id', $teacher->id)
                     ->withCount([
                         'reads as recipients_count',
@@ -55,6 +54,7 @@ class CommunicationController extends Controller
                     ->get();
 
                 $threads = $this->threadPayloads($teacher->id);
+                $contacts = $this->contactPayloads($teacher);
             }
         } catch (QueryException $e) {
             Log::warning('Communication index skipped due to missing schema: ' . $e->getMessage());
@@ -65,7 +65,8 @@ class CommunicationController extends Controller
             'courses',
             'students',
             'announcements',
-            'threads'
+            'threads',
+            'contacts'
         ));
     }
 
@@ -225,6 +226,55 @@ class CommunicationController extends Controller
         ]);
     }
 
+    public function contacts(): JsonResponse
+    {
+        return response()->json([
+            'success' => true,
+            'contacts' => $this->contactPayloads(auth()->user()),
+        ]);
+    }
+
+    public function startThread(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'student_id' => 'required|integer',
+            'body' => 'required|string|min:1|max:4000',
+        ]);
+
+        $student = $this->authorizeStudentForTeacher((int) $data['student_id']);
+        $parents = app(AttendanceAlertService::class)->parentsFor($student);
+        if ($parents->isEmpty()) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Este alumno aún no tiene un representante vinculado.',
+            ], 422);
+        }
+
+        $thread = CommunicationThread::query()->firstOrCreate(
+            [
+                'teacher_id' => auth()->id(),
+                'student_id' => $student->id,
+            ],
+            [
+                'contact_name' => $parents->first()->name,
+                'contact_role' => 'representante',
+            ]
+        );
+
+        $thread->fill([
+            'contact_name' => $parents->first()->name,
+            'contact_role' => 'representante',
+        ])->save();
+
+        $message = $this->storeTeacherMessage($thread, $data['body']);
+
+        return response()->json([
+            'success' => true,
+            'message' => $this->presentMessage($message),
+            'thread' => $this->presentThread($thread->fresh(['student', 'messages'])),
+        ]);
+    }
+
     public function sendMessage(Request $request, CommunicationThread $thread): JsonResponse
     {
         $this->authorizeThread($thread);
@@ -233,43 +283,13 @@ class CommunicationController extends Controller
             'ai_suggested' => 'nullable|boolean',
         ]);
 
-        $message = $thread->messages()->create([
-            'sender_role' => 'teacher',
-            'body' => $data['body'],
-            'ai_suggested' => (bool) ($data['ai_suggested'] ?? false),
+        $message = $this->storeTeacherMessage($thread, $data['body'], (bool) ($data['ai_suggested'] ?? false));
+
+        return response()->json([
+            'success' => true,
+            'message' => $this->presentMessage($message),
+            'thread' => $this->presentThread($thread->fresh(['student', 'messages'])),
         ]);
-
-        $thread->loadMissing('student');
-
-        $thread->update([
-            'last_message_preview' => mb_substr($data['body'], 0, 160),
-            'last_message_at' => now(),
-        ]);
-
-        if (in_array($thread->contact_role, ['estudiante', 'student', null, ''], true) && $thread->student) {
-            $parents = app(AttendanceAlertService::class)->parentsFor($thread->student);
-            if ($parents->isNotEmpty()) {
-                $thread->update([
-                    'contact_name' => $parents->first()->name,
-                    'contact_role' => 'representante',
-                ]);
-            }
-        }
-
-        if ($thread->student && Schema::hasTable('notifications')) {
-            $parents = app(AttendanceAlertService::class)->parentsFor($thread->student);
-            foreach ($parents as $parent) {
-                Notification::create([
-                    'user_id' => $parent->id,
-                    'colegio_id' => $thread->student->colegio_id,
-                    'title' => 'Nuevo mensaje del docente',
-                    'message' => auth()->user()->name.' respondió sobre '.$thread->student->name.': '.mb_substr($data['body'], 0, 120),
-                    'link' => route('representante.dashboard').'#comms',
-                ]);
-            }
-        }
-
-        return response()->json(['success' => true, 'message' => $message]);
     }
 
     public function markThreadRead(CommunicationThread $thread): JsonResponse
@@ -359,6 +379,7 @@ class CommunicationController extends Controller
         }
 
         return CommunicationThread::where('teacher_id', $teacherId)
+            ->whereHas('messages')
             ->with(['student:id,name,grade,section,colegio_id', 'messages' => fn ($q) => $q->latest()->limit(80)])
             ->withCount([
                 'messages as unread_count' => fn ($q) => $q
@@ -366,38 +387,136 @@ class CommunicationController extends Controller
                     ->where('sender_role', '!=', 'teacher'),
             ])
             ->orderByDesc('last_message_at')
-            ->limit(40)
+            ->limit(80)
             ->get()
-            ->map(function (CommunicationThread $thread) {
-                $avg = $thread->student
-                    ? round((float) $thread->student->grades()->avg('score'), 1)
-                    : null;
-                $label = $thread->student?->name ?? $thread->contact_name;
-                $isFamily = in_array($thread->contact_role, ['representante', 'parent'], true);
-                if ($isFamily) {
-                    $label = ($thread->contact_name ?: 'Familia').' · '.$thread->student?->name;
-                }
+            ->map(fn (CommunicationThread $thread) => $this->presentThread($thread))
+            ->values();
+    }
+
+    private function presentThread(CommunicationThread $thread): array
+    {
+        $thread->loadMissing(['student:id,name,grade,section,colegio_id']);
+        if (! $thread->relationLoaded('messages')) {
+            $thread->load(['messages' => fn ($q) => $q->orderBy('created_at')->limit(80)]);
+        }
+
+        $avg = $thread->student
+            ? round((float) $thread->student->grades()->avg('score'), 1)
+            : null;
+        $isFamily = in_array($thread->contact_role, ['representante', 'parent'], true);
+        $label = $thread->student?->name ?? $thread->contact_name;
+        if ($isFamily) {
+            $label = ($thread->contact_name ?: 'Familia').' · '.$thread->student?->name;
+        }
+
+        $unread = (int) ($thread->unread_count ?? $thread->messages
+            ->whereNull('read_at')
+            ->where('sender_role', '!=', 'teacher')
+            ->count());
+
+        return [
+            'id' => $thread->id,
+            'contact_name' => $label,
+            'contact_role' => $thread->contact_role,
+            'is_family' => $isFamily,
+            'last_message_preview' => $thread->last_message_preview,
+            'last_message_at' => optional($thread->last_message_at)->toIso8601String(),
+            'unread' => $unread,
+            'student' => $thread->student,
+            'student_id' => $thread->student_id,
+            'student_avg' => $avg,
+            'messages' => $thread->messages->sortBy('created_at')->values()->map(fn (CommunicationMessage $m) => $this->presentMessage($m))->values(),
+        ];
+    }
+
+    private function presentMessage(CommunicationMessage $message): array
+    {
+        return [
+            'id' => $message->id,
+            'sender_role' => $message->sender_role,
+            'body' => $message->body,
+            'ai_suggested' => (bool) $message->ai_suggested,
+            'created_at' => optional($message->created_at)->toIso8601String(),
+        ];
+    }
+
+    private function storeTeacherMessage(CommunicationThread $thread, string $body, bool $aiSuggested = false): CommunicationMessage
+    {
+        $message = $thread->messages()->create([
+            'sender_role' => 'teacher',
+            'body' => $body,
+            'ai_suggested' => $aiSuggested,
+        ]);
+
+        $thread->loadMissing('student');
+        $parents = $thread->student
+            ? app(AttendanceAlertService::class)->parentsFor($thread->student)
+            : collect();
+
+        $thread->update([
+            'last_message_preview' => mb_substr($body, 0, 160),
+            'last_message_at' => now(),
+            'contact_name' => $parents->first()?->name ?: ($thread->contact_name ?: $thread->student?->name),
+            'contact_role' => $parents->isNotEmpty() ? 'representante' : ($thread->contact_role ?: 'estudiante'),
+        ]);
+
+        if ($thread->student && Schema::hasTable('notifications')) {
+            foreach ($parents as $parent) {
+                Notification::create([
+                    'user_id' => $parent->id,
+                    'colegio_id' => $thread->student->colegio_id,
+                    'title' => 'Nuevo mensaje del docente',
+                    'message' => auth()->user()->name.' escribió sobre '.$thread->student->name.': '.mb_substr($body, 0, 120),
+                    'link' => route('representante.dashboard').'#comms',
+                ]);
+            }
+        }
+
+        return $message;
+    }
+
+    private function contactPayloads($teacher)
+    {
+        $alerts = app(AttendanceAlertService::class);
+
+        return Student::query()
+            ->where(function ($q) use ($teacher) {
+                $q->where('teacher_id', $teacher->id)
+                    ->orWhereHas('courses', fn ($c) => $c->where('teacher_id', $teacher->id));
+            })
+            ->orderBy('name')
+            ->get(['id', 'name', 'grade', 'section', 'family_code', 'colegio_id', 'teacher_id'])
+            ->map(function (Student $student) use ($alerts) {
+                $parents = $alerts->parentsFor($student);
 
                 return [
-                    'id' => $thread->id,
-                    'contact_name' => $label,
-                    'contact_role' => $thread->contact_role,
-                    'is_family' => $isFamily,
-                    'last_message_preview' => $thread->last_message_preview,
-                    'last_message_at' => optional($thread->last_message_at)->toDateTimeString(),
-                    'unread' => (int) $thread->unread_count,
-                    'student' => $thread->student,
-                    'student_avg' => $avg,
-                    'messages' => $thread->messages->sortBy('created_at')->values()->map(fn (CommunicationMessage $m) => [
-                        'id' => $m->id,
-                        'sender_role' => $m->sender_role,
-                        'body' => $m->body,
-                        'ai_suggested' => $m->ai_suggested,
-                        'created_at' => optional($m->created_at)?->toIso8601String(),
-                    ]),
+                    'id' => $student->id,
+                    'name' => $student->name,
+                    'grade' => $student->grade,
+                    'section' => $student->section,
+                    'has_family' => $parents->isNotEmpty(),
+                    'parents' => $parents->map(fn ($p) => [
+                        'id' => $p->id,
+                        'name' => $p->name,
+                    ])->values(),
+                    'parent_label' => $parents->pluck('name')->filter()->unique()->implode(', ') ?: 'Sin representante vinculado',
                 ];
             })
+            ->filter(fn ($row) => $row['has_family'])
             ->values();
+    }
+
+    private function authorizeStudentForTeacher(int $studentId): Student
+    {
+        $teacherId = auth()->id();
+
+        return Student::query()
+            ->where('id', $studentId)
+            ->where(function ($q) use ($teacherId) {
+                $q->where('teacher_id', $teacherId)
+                    ->orWhereHas('courses', fn ($c) => $c->where('teacher_id', $teacherId));
+            })
+            ->firstOrFail();
     }
 
     private function authorizeAnnouncement(CommunicationAnnouncement $announcement): void
@@ -414,25 +533,6 @@ class CommunicationController extends Controller
     {
         return Schema::hasTable('communication_threads')
             && Schema::hasTable('communication_announcements');
-    }
-
-    private function ensureThreads(int $teacherId, $students): void
-    {
-        if (! Schema::hasTable('communication_threads')) {
-            return;
-        }
-
-        foreach ($students->take(10) as $student) {
-            CommunicationThread::firstOrCreate(
-                ['teacher_id' => $teacherId, 'student_id' => $student->id],
-                [
-                    'contact_name' => $student->name,
-                    'contact_role' => 'estudiante',
-                    'last_message_preview' => 'Hilo iniciado para seguimiento académico.',
-                    'last_message_at' => now(),
-                ]
-            );
-        }
     }
 
     private function resolveRecipients(int $teacherId, ?Course $course, string $segment): array

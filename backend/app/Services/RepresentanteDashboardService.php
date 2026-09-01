@@ -558,6 +558,7 @@ class RepresentanteDashboardService
 
         return CommunicationThread::query()
             ->where('student_id', $student->id)
+            ->whereHas('messages')
             ->with(['teacher:id,name', 'messages' => fn ($q) => $q->latest()->limit(1)])
             ->orderByDesc('last_message_at')
             ->get()

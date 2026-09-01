@@ -785,20 +785,24 @@
                         </template>
                     </div>
                     <div x-show="commTab === 'messages'">
-                        <div class="compose-box">
-                            <strong>Escribirle a un docente</strong>
-                            <select x-model="composeCourseId">
-                                <option value="">Elige la materia</option>
-                                <template x-for="sub in subjects" :key="'c'+sub.id">
-                                    <option :value="sub.id" x-text="sub.name + ' · ' + sub.teacher"></option>
-                                </template>
-                            </select>
-                            <textarea id="fam-compose-body" rows="3" x-model="newMessage" placeholder="Hola profesor, quería consultar…"></textarea>
-                            <button class="btn btn-primary" @click="messageTeacher(composeCourseId)">Enviar mensaje</button>
-                        </div>
                         <div class="inbox">
                             <div class="inbox-list">
-                                <template x-if="threads.length === 0"><p class="empty" style="padding:12px">Aún no hay conversaciones. Escríbele al docente arriba o desde una actividad.</p></template>
+                                <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:4px 4px 8px">
+                                    <strong>Chats</strong>
+                                    <button type="button" class="btn btn-primary" style="padding:8px 12px" @click="showCompose = !showCompose">+</button>
+                                </div>
+                                <div class="compose-box" x-show="showCompose" x-cloak>
+                                    <strong>Nuevo mensaje al docente</strong>
+                                    <select x-model="composeCourseId">
+                                        <option value="">Elige la materia</option>
+                                        <template x-for="sub in subjects" :key="'c'+sub.id">
+                                            <option :value="sub.id" x-text="sub.name + ' · ' + sub.teacher"></option>
+                                        </template>
+                                    </select>
+                                    <textarea id="fam-compose-body" rows="3" x-model="newMessage" placeholder="Escribe el primer mensaje…"></textarea>
+                                    <button class="btn btn-primary" @click="messageTeacher(composeCourseId)">Enviar</button>
+                                </div>
+                                <template x-if="threads.length === 0 && !showCompose"><p class="empty" style="padding:12px">Aún no hay conversaciones. Pulsa + para escribirle a un docente.</p></template>
                                 <template x-for="t in threads" :key="t.id">
                                     <button type="button" class="inbox-row" :class="{ active: chat?.id === t.id }" @click="openThread(t.id)">
                                         <div style="display:flex;justify-content:space-between;gap:8px;align-items:center">
@@ -812,12 +816,12 @@
                             </div>
                             <div class="inbox-pane">
                                 <template x-if="!chat">
-                                    <p class="empty">Elige una conversación para ver el hilo completo, o escribe un mensaje nuevo arriba.</p>
+                                    <p class="empty">Elige un chat o pulsa + para escribirle al docente.</p>
                                 </template>
                                 <template x-if="chat">
                                     <div style="display:flex;flex-direction:column;min-height:100%">
                                         <strong x-text="chat.teacher"></strong>
-                                        <div class="inbox-thread">
+                                        <div class="inbox-thread" x-ref="famMsgs">
                                             <template x-for="m in (chat.messages || [])" :key="m.id">
                                                 <div class="chat-bubble" :class="m.mine ? 'mine' : 'theirs'">
                                                     <div x-text="m.body"></div>
@@ -826,7 +830,7 @@
                                             </template>
                                         </div>
                                         <div style="display:flex;gap:8px;margin-top:10px">
-                                            <input x-model="chatBody" @keydown.enter="sendChat()" placeholder="Escribe una respuesta">
+                                            <input x-model="chatBody" @keydown.enter="sendChat()" placeholder="Mensaje">
                                             <button class="btn btn-primary" @click="sendChat()">Enviar</button>
                                         </div>
                                     </div>
@@ -1141,6 +1145,7 @@
                 chatBody: '',
                 newMessage: '',
                 composeCourseId: '',
+                showCompose: false,
                 boletin: null,
                 boletasOficiales: [],
                 loadingBoletas: false,
@@ -1526,6 +1531,10 @@
                     this.modalName = useModal ? 'chat' : null;
                     const row = this.threads.find(t => t.id === id);
                     if (row) row.unread = 0;
+                    this.$nextTick(() => {
+                        const box = this.$refs.famMsgs;
+                        if (box) box.scrollTop = box.scrollHeight;
+                    });
                 },
                 async pollInbox() {
                     if (!this.studentId) return;
@@ -1563,6 +1572,7 @@
                     this.view = 'comms';
                     this.commTab = 'messages';
                     this.chat = null;
+                    this.showCompose = true;
                     if (!courseId) this.showToast('Elige la materia para enviarle el mensaje al docente.');
                     this.$nextTick(() => document.getElementById('fam-compose-body')?.focus());
                 },
@@ -1584,6 +1594,7 @@
                     this.modalName = null;
                     this.view = 'comms';
                     this.commTab = 'messages';
+                    this.showCompose = false;
                     this.showToast('Mensaje enviado al docente.');
                     await this.refreshAll();
                     if (json.thread_id) await this.openThread(json.thread_id);

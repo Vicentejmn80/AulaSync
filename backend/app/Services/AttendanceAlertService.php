@@ -102,6 +102,12 @@ class AttendanceAlertService
                 ->get(['users.id', 'users.name', 'users.email', 'users.family_code', 'users.colegio_id']);
         }
 
-        return $fromHousehold->concat($fromPivot)->unique('id')->values();
+        $fromRepresented = User::query()
+            ->where('role', 'representante')
+            ->whereHas('representedStudents', fn ($q) => $q->where('students.id', $student->id))
+            ->when($student->colegio_id, fn ($q) => $q->where('colegio_id', $student->colegio_id))
+            ->get(['id', 'name', 'email', 'family_code', 'colegio_id']);
+
+        return $fromHousehold->concat($fromPivot)->concat($fromRepresented)->unique('id')->values();
     }
 }

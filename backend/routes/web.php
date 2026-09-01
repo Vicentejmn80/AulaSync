@@ -376,6 +376,8 @@ Route::middleware('auth')->group(function () {
             Route::prefix('teacher/communication')->name('teacher.communication.')->group(function () {
                 Route::get('/', [CommunicationController::class, 'index'])->name('index');
                 Route::get('/threads', [CommunicationController::class, 'threads'])->name('threads');
+                Route::get('/contacts', [CommunicationController::class, 'contacts'])->name('contacts');
+                Route::post('/threads', [CommunicationController::class, 'startThread'])->name('threads.start');
                 Route::post('/announcements/generate', [CommunicationController::class, 'generateAnnouncement'])->name('announcements.generate');
                 Route::post('/announcements', [CommunicationController::class, 'storeAnnouncement'])->name('announcements.store');
                 Route::post('/announcements/{announcement}/demo-read', [CommunicationController::class, 'markReadDemo'])->name('announcements.demo_read');
