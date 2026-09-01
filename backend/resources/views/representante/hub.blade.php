@@ -36,14 +36,19 @@
             padding: 22px 16px;
             display: flex; flex-direction: column; gap: 8px;
         }
-        .fam-overlay {
-            position: fixed;
-            inset: 0;
-            background: rgba(8,6,20,.5);
-            z-index: 28;
+        .fam-drawer-dim {
+            display: none !important;
+            pointer-events: none !important;
         }
-        @media (min-width: 861px) {
-            .fam-overlay { display: none !important; pointer-events: none !important; }
+        @media (max-width: 860px) {
+            .fam-drawer-dim.is-open {
+                display: block !important;
+                pointer-events: auto !important;
+                position: fixed;
+                inset: 0;
+                background: rgba(8,6,20,.5);
+                z-index: 28;
+            }
         }
         .brand { display: flex; align-items: center; gap: 12px; padding: 8px 10px 18px; }
         .brand-icon {
@@ -169,31 +174,41 @@
             border: 1px solid var(--nova-glass-border);
             box-shadow: var(--nova-shadow);
         }
-        .overlay {
+        .fam-backdrop {
+            display: none !important;
+            pointer-events: none !important;
             position: fixed;
             inset: 0;
             background: rgba(15, 17, 23, .48);
             z-index: 80;
-            display: flex;
             align-items: center;
             justify-content: center;
             padding: max(12px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
             overflow-y: auto;
         }
-        .modal {
-            width: min(640px, 100%);
+        .fam-backdrop.is-open {
+            display: flex !important;
+            pointer-events: auto !important;
+        }
+        .fam-dialog {
+            display: none;
+            position: relative !important;
+            top: auto !important;
+            left: auto !important;
+            width: min(640px, 100%) !important;
+            height: auto !important;
+            max-height: min(86dvh, 86vh);
+            overflow: auto;
+            -webkit-overflow-scrolling: touch;
             background: var(--bg-card, var(--bg-secondary));
             color: var(--text-primary);
             border: 1px solid var(--nova-glass-border);
             border-radius: 28px;
             padding: 22px;
-            max-height: min(86dvh, 86vh);
-            overflow: auto;
-            -webkit-overflow-scrolling: touch;
             box-shadow: 0 24px 80px rgba(15, 17, 23, .28);
-            position: relative;
             z-index: 81;
         }
+        .fam-dialog.is-visible { display: block !important; }
         .btn { border: 0; border-radius: 14px; padding: 11px 16px; font-weight: 800; cursor: pointer; }
         .btn-primary { background: var(--nova-gradient); color: #fff; }
         .btn-ghost { background: var(--nova-glass); color: var(--text-primary); border: 1px solid var(--nova-glass-border); }
@@ -413,8 +428,8 @@
             .calendar-nav { width: 100%; justify-content: flex-start; }
             .split { grid-template-columns: 1fr; }
             .fam-toast { left: 14px; bottom: calc(14px + env(safe-area-inset-bottom)); }
-            .overlay { align-items: end; }
-            .modal { border-radius: 24px 24px 16px 16px; padding: 18px 16px; }
+            .fam-backdrop.is-open { align-items: end; }
+            .fam-dialog { border-radius: 24px 24px 16px 16px; padding: 18px 16px; }
         }
     </style>
 </head>
@@ -425,9 +440,7 @@
         <span style="width:44px"></span>
     </div>
 
-    <template x-if="sidebarOpen">
-        <div class="fam-overlay" @click="sidebarOpen = false"></div>
-    </template>
+    <div class="fam-drawer-dim" :class="{ 'is-open': sidebarOpen }" x-cloak @click="sidebarOpen = false"></div>
 
     <div class="fam-shell">
         <aside class="fam-sidebar" :class="{ open: sidebarOpen }">
@@ -871,18 +884,17 @@
         </main>
     </div>
 
-    <template x-if="daySheetOpen">
-    <div class="overlay" @click.self="closeDaySheet()">
-        <div class="modal" style="max-width:640px" @click.stop>
+    <div class="fam-backdrop" :class="{ 'is-open': !!modalName }" x-cloak @click.self="closeAnyModal()">
+        <div class="fam-dialog" :class="{ 'is-visible': modalName === 'day' }" x-cloak @click.stop>
             <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:8px">
                 <div>
                     <p style="margin:0 0 4px;font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--nova-violet)">Agenda de tu hijo</p>
                     <h3 style="margin:0;text-transform:capitalize" x-text="selectedDay ? fmtLong(selectedDay) : 'Día'"></h3>
                 </div>
-                <button class="icon-btn" @click="closeDaySheet()" aria-label="Cerrar"><i class="fa-solid fa-xmark"></i></button>
+                <button class="icon-btn" @click="closeAnyModal()" aria-label="Cerrar"><i class="fa-solid fa-xmark"></i></button>
             </div>
-            <template x-if="!eventsFor(selectedDay).length"><p class="empty">Sin clases, tareas ni evaluaciones este día.</p></template>
-            <template x-for="ev in eventsFor(selectedDay)" :key="'sheet'+ev.id">
+            <template x-if="modalName === 'day' && !eventsFor(selectedDay).length"><p class="empty">Sin clases, tareas ni evaluaciones este día.</p></template>
+            <template x-for="ev in (modalName === 'day' ? eventsFor(selectedDay) : [])" :key="'sheet'+ev.id">
                 <article class="day-event-card" @click="openEvent(ev)" :style="selectedEvent?.id === ev.id ? 'border-color:color-mix(in srgb, var(--nova-violet) 45%, var(--nova-glass-border))' : ''">
                     <div class="event-head">
                         <div>
@@ -904,7 +916,7 @@
                     <p class="event-desc" x-text="ev.description || 'Sin descripción por ahora.'"></p>
                 </article>
             </template>
-            <div class="day-event-card" x-show="orphanSelectedEvent" x-cloak>
+            <div class="day-event-card" x-show="modalName === 'day' && orphanSelectedEvent" x-cloak>
                 <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--nova-cyan);margin-bottom:6px" x-text="selectedEvent?.type_label"></div>
                 <h3 style="margin:0;font-size:17px;font-weight:900" x-text="selectedEvent?.title"></h3>
                 <div class="event-meta" x-text="[selectedEvent?.course, selectedEvent?.teacher].filter(Boolean).join(' · ')"></div>
@@ -916,12 +928,8 @@
                 <p class="event-desc" x-text="selectedEvent?.description || 'Sin descripción por ahora.'"></p>
             </div>
         </div>
-    </div>
-    </template>
 
-    <template x-if="openAbsence">
-    <div class="overlay" @click.self="openAbsence = false">
-        <div class="modal" @click.stop>
+        <div class="fam-dialog" :class="{ 'is-visible': modalName === 'absence' }" x-cloak @click.stop>
             <h3>Reportar ausencia o retraso</h3>
             <label>Estudiante</label>
             <select x-model="absence.student_id">
@@ -945,16 +953,12 @@
             <textarea rows="3" x-model="absence.comment" placeholder="Opcional"></textarea>
             <p x-text="absenceError" style="color:#fb7185"></p>
             <div style="display:flex;gap:8px;justify-content:flex-end">
-                <button class="btn btn-ghost" @click="openAbsence = false">Cancelar</button>
+                <button class="btn btn-ghost" @click="closeAnyModal()">Cancelar</button>
                 <button class="btn btn-primary" @click="submitAbsence()">Enviar al colegio</button>
             </div>
         </div>
-    </div>
-    </template>
 
-    <template x-if="subjectModal">
-    <div class="overlay" @click.self="subjectModal = null">
-        <div class="modal" @click.stop>
+        <div class="fam-dialog" :class="{ 'is-visible': modalName === 'subject' }" x-cloak @click.stop>
             <h3 x-text="subjectModal?.name"></h3>
             <p class="empty" x-text="(subjectModal?.teacher || '') + ' · Promedio ' + (subjectModal?.average ?? '—')"></p>
             <div style="display:flex;gap:4px;align-items:flex-end;height:90px;margin:12px 0">
@@ -969,13 +973,11 @@
                     <div style="font-size:12px;color:var(--text-secondary)" x-text="item.feedback || fmt(item.date)"></div>
                 </div>
             </template>
-
             <div x-show="subjectModal?.attendance" style="margin-top:16px;padding:12px;border-radius:12px;border:1px solid var(--nova-glass-border);background:var(--bg-secondary)">
                 <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--nova-cyan);margin-bottom:6px">Asistencia en esta materia</div>
                 <div style="font-size:20px;font-weight:900" x-text="(subjectModal?.attendance?.percentage != null ? subjectModal.attendance.percentage + '%' : 'Sin registros')"></div>
                 <div style="font-size:12px;color:var(--text-secondary)" x-text="`${subjectModal?.attendance?.present ?? 0} presentes · ${subjectModal?.attendance?.tardy ?? 0} tarde · ${subjectModal?.attendance?.absent ?? 0} ausentes`"></div>
             </div>
-
             <div x-show="(subjectModal?.evaluation_plan || []).length > 0" style="margin-top:16px">
                 <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--nova-cyan);margin-bottom:8px">Plan de evaluación</div>
                 <template x-for="unit in (subjectModal?.evaluation_plan || [])" :key="unit.unit_name + unit.weight_percentage + (unit.due_date || '')">
@@ -986,29 +988,20 @@
                     </div>
                 </template>
             </div>
-
             <div style="margin-top:12px">
                 <textarea rows="2" x-model="newMessage" placeholder="Escribirle al docente…"></textarea>
                 <button class="btn btn-primary" @click="messageTeacher(subjectModal.id)">Enviar mensaje</button>
             </div>
         </div>
-    </div>
-    </template>
 
-    <template x-if="announcementModal">
-    <div class="overlay" @click.self="announcementModal = null">
-        <div class="modal" @click.stop>
+        <div class="fam-dialog" :class="{ 'is-visible': modalName === 'announcement' }" x-cloak @click.stop>
             <h3 x-text="announcementModal?.title"></h3>
             <p class="empty" x-text="announcementModal?.author"></p>
             <p style="white-space:pre-wrap" x-text="announcementModal?.body"></p>
-            <button class="btn btn-ghost" @click="announcementModal = null">Cerrar</button>
+            <button class="btn btn-ghost" @click="closeAnyModal()">Cerrar</button>
         </div>
-    </div>
-    </template>
 
-    <template x-if="chat">
-    <div class="overlay" @click.self="chat = null">
-        <div class="modal" @click.stop>
+        <div class="fam-dialog" :class="{ 'is-visible': modalName === 'chat' }" x-cloak @click.stop>
             <h3 x-text="chat?.teacher"></h3>
             <div style="max-height:46vh;overflow:auto">
                 <template x-for="m in (chat?.messages || [])" :key="m.id">
@@ -1020,12 +1013,8 @@
                 <button class="btn btn-primary" @click="sendChat()">Enviar</button>
             </div>
         </div>
-    </div>
-    </template>
 
-    <template x-if="openProfile">
-    <div class="overlay" @click.self="openProfile = false">
-        <div class="modal" @click.stop>
+        <div class="fam-dialog" :class="{ 'is-visible': modalName === 'profile' }" x-cloak @click.stop>
             <h3>Editar perfil</h3>
             <label>Nombre</label><input x-model="profile.name">
             <label>Teléfono</label><input x-model="profile.phone">
@@ -1033,12 +1022,11 @@
             <label>Número de emergencia</label><input x-model="profile.emergency">
             <p x-text="profileMsg" style="color:var(--nova-success)"></p>
             <div style="display:flex;gap:8px;justify-content:flex-end">
-                <button class="btn btn-ghost" @click="openProfile = false">Cerrar</button>
+                <button class="btn btn-ghost" @click="closeAnyModal()">Cerrar</button>
                 <button class="btn btn-primary" @click="saveProfile()">Guardar</button>
             </div>
         </div>
     </div>
-    </template>
 
     <div x-show="toast" x-cloak class="fam-toast" x-text="toast"></div>
     <script>
@@ -1048,6 +1036,7 @@
                 reasons: @json($reasons),
                 studentId: @json($students->first()['id'] ?? null),
                 view: 'home',
+                modalName: null,
                 sidebarOpen: false,
                 isDark: document.documentElement.classList.contains('dark'),
                 showThemePicker: false,
@@ -1218,6 +1207,7 @@
                     if (name === 'docs') this.loadBoletasOficiales();
                 },
                 closeOverlays() {
+                    this.modalName = null;
                     this.daySheetOpen = false;
                     this.openAbsence = false;
                     this.openProfile = false;
@@ -1284,10 +1274,12 @@
                 openAbsenceModal() {
                     this.closeAnyModal();
                     this.openAbsence = true;
+                    this.modalName = 'absence';
                 },
                 openProfileModal() {
                     this.closeAnyModal();
                     this.openProfile = true;
+                    this.modalName = 'profile';
                 },
                 openDay(date, ev = null) {
                     if (!date) return;
@@ -1296,6 +1288,7 @@
                     const list = this.eventsFor(date);
                     this.selectedEvent = ev || list[0] || null;
                     this.daySheetOpen = true;
+                    this.modalName = 'day';
                 },
                 openReminder(item) {
                     const date = item?.due_date || item?.date;
@@ -1310,6 +1303,7 @@
                 },
                 closeDaySheet() {
                     this.daySheetOpen = false;
+                    if (this.modalName === 'day') this.modalName = null;
                 },
                 async goToday() {
                     const today = '{{ now()->toDateString() }}';
@@ -1333,9 +1327,11 @@
                     const json = await fetch(`/representante/api/${this.studentId}/materia/${id}`, { headers: { Accept: 'application/json' } }).then(r => r.json());
                     this.subjectModal = json.subject;
                     this.newMessage = '';
+                    this.modalName = 'subject';
                 },
                 async openAnnouncement(a) {
                     this.announcementModal = a;
+                    this.modalName = 'announcement';
                     await fetch(`/representante/api/anuncios/${a.id}/leer`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-CSRF-TOKEN': this.csrf() },
@@ -1347,6 +1343,7 @@
                     const json = await fetch(`/representante/api/mensajes/${id}?estudiante_id=${this.studentId}`, { headers: { Accept: 'application/json' } }).then(r => r.json());
                     this.chat = json.thread;
                     this.chatBody = '';
+                    this.modalName = 'chat';
                 },
                 async sendChat() {
                     if (!this.chatBody.trim() || !this.chat) return;
@@ -1375,6 +1372,7 @@
                     this.newMessage = '';
                     this.composeCourseId = '';
                     this.subjectModal = null;
+                    this.modalName = null;
                     this.view = 'comms';
                     this.commTab = 'messages';
                     this.showToast('Mensaje enviado al docente.');
@@ -1399,6 +1397,7 @@
                         return;
                     }
                     this.openAbsence = false;
+                    this.modalName = null;
                     this.absence.comment = '';
                     this.showToast('Ausencia reportada. El docente ya fue notificado.');
                     await this.refreshAll();

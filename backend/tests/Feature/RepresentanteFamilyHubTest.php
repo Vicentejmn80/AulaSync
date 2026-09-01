@@ -81,7 +81,10 @@ class RepresentanteFamilyHubTest extends TestCase
             ->assertSee('Próximas entregas')
             ->assertSee('Ausencias del mes')
             ->assertSee('Reportar ausencia')
-            ->assertSee('Ver boletín');
+            ->assertSee('Ver boletín')
+            ->assertSee('fam-backdrop')
+            ->assertDontSee('class="overlay"', false)
+            ->assertDontSee('class="modal"', false);
     }
 
     /**
