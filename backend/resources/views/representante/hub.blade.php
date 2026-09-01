@@ -139,13 +139,21 @@
         .event-desc { margin-top: 8px; font-size: 13px; line-height: 1.45; color: var(--text-secondary); }
         .event-desc.is-preview {
             display: -webkit-box;
-            -webkit-line-clamp: 3;
+            -webkit-line-clamp: 4;
             -webkit-box-orient: vertical;
             overflow: hidden;
         }
-        .event-body { white-space: pre-wrap; word-break: break-word; font-size: 14px; line-height: 1.6; color: var(--text-primary); margin: 12px 0 0; }
-        .event-full { margin-top: 8px; }
+        .event-body { white-space: pre-wrap; word-break: break-word; font-size: 14px; line-height: 1.6; color: var(--text-primary); margin: 12px 0 0; overflow: visible; max-height: none; }
+        .event-full { margin-top: 8px; overflow: visible; }
         .event-hint { margin: 8px 0 0; font-size: 11px; font-weight: 700; color: var(--nova-violet); }
+        .event-toggle { margin-top: 10px; }
+        .event-md .lesson-sections { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+        .event-md .lesson-section { border-radius: 12px; padding: 10px 12px; }
+        .event-md .lesson-section-title { font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; margin-bottom: 6px; }
+        .event-md .lesson-section-content { font-size: 14px; line-height: 1.55; color: var(--text-primary); }
+        .event-md .lesson-section-content p { margin: 0 0 .45em; }
+        .event-md .lesson-section-content p:last-child { margin-bottom: 0; }
+        .event-md .lesson-section-content ul, .event-md .lesson-section-content ol { padding-left: 1.2rem; margin: 0 0 .45em; }
         .event-pill {
             display: inline-flex;
             align-items: center;
@@ -206,7 +214,7 @@
             left: auto !important;
             width: min(640px, 100%) !important;
             height: auto !important;
-            max-height: min(86dvh, 86vh);
+            max-height: min(92dvh, 92vh);
             overflow: auto;
             -webkit-overflow-scrolling: touch;
             background: var(--bg-card, var(--bg-secondary));
@@ -460,6 +468,7 @@
     </style>
 </head>
 <body x-data="familyHub" @keydown.escape.window="closeAnyModal()">
+    @csrf
     <div class="mobile-bar">
         <button class="icon-btn" @click="sidebarOpen = !sidebarOpen" aria-label="Menú"><i class="fa-solid fa-bars"></i></button>
         <strong>AulaSync Familia</strong>
@@ -945,13 +954,13 @@
                 <div>
                     <p style="margin:0 0 4px;font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--nova-violet)">Agenda de tu hijo</p>
                     <h3 style="margin:0;text-transform:capitalize" x-text="selectedDay ? fmtLong(selectedDay) : 'Día'"></h3>
-                    <p class="empty" style="padding:6px 0 0;margin:0">Toca una tarjeta para leer el detalle completo y escribirle al docente.</p>
+                    <p class="empty" style="padding:6px 0 0;margin:0">Pulsa «Ver actividad completa» para leer todo el plan. Vuelve a pulsar para cerrarlo.</p>
                 </div>
                 <button class="icon-btn" @click="closeAnyModal()" aria-label="Cerrar"><i class="fa-solid fa-xmark"></i></button>
             </div>
             <template x-if="modalName === 'day' && !eventsFor(selectedDay).length"><p class="empty">Sin clases, tareas ni evaluaciones este día.</p></template>
             <template x-for="ev in (modalName === 'day' ? eventsFor(selectedDay) : [])" :key="'sheet'+ev.id">
-                <article class="day-event-card" :class="{ 'is-selected': selectedEvent?.id === ev.id }" @click="openEvent(ev)">
+                <article class="day-event-card" :class="{ 'is-selected': isExpanded(ev) }" @click="toggleEvent(ev)">
                     <div class="event-head">
                         <div>
                             <div style="display:flex;align-items:center;gap:8px;">
@@ -969,15 +978,14 @@
                         <span class="meta-chip" x-show="ev.total_points != null && ev.max_score == null" x-text="(ev.total_points ?? 0) + ' pts'"></span>
                         <span class="meta-chip" x-show="ev.difficulty" x-text="ev.difficulty"></span>
                     </div>
-                    <p class="event-desc is-preview" x-show="selectedEvent?.id !== ev.id" x-text="preview(eventFullBody(ev), 160)"></p>
-                    <p class="event-hint" x-show="selectedEvent?.id !== ev.id">Toca para ver el detalle completo</p>
-                    <div class="event-full" x-show="selectedEvent?.id === ev.id" @click.stop>
-                        <p class="event-body" x-text="eventFullBody(ev) || 'Sin descripción por ahora.'"></p>
-                        <p class="event-desc" x-show="ev.instructions && eventFullBody(ev).indexOf(ev.instructions) === -1" x-text="'Indicaciones: ' + ev.instructions"></p>
-                        <button class="btn btn-primary" style="margin-top:14px" x-show="ev.course_id || ev.course" @click.stop="askTeacherAbout(ev)">
+                    <p class="event-desc is-preview" x-show="!isExpanded(ev)" x-text="eventFullBody(ev) || 'Sin descripción por ahora.'"></p>
+                    <div class="event-full" x-show="isExpanded(ev)" x-cloak @click.stop>
+                        <div class="event-md" x-html="renderEventHtml(ev)"></div>
+                        <button type="button" class="btn btn-primary" style="margin-top:14px" x-show="ev.course_id || ev.course" @click.stop="askTeacherAbout(ev)">
                             Escribirle al docente
                         </button>
                     </div>
+                    <button type="button" class="btn btn-ghost event-toggle" @click.stop="toggleEvent(ev)" x-text="isExpanded(ev) ? 'Ocultar detalle' : 'Ver actividad completa'"></button>
                 </article>
             </template>
             <div class="day-event-card is-selected" x-show="modalName === 'day' && orphanSelectedEvent" x-cloak>
@@ -989,8 +997,9 @@
                     <span class="meta-chip" x-show="selectedEvent?.weight_percentage != null" x-text="(selectedEvent?.weight_percentage ?? 0) + '% del lapso'"></span>
                     <span class="meta-chip" x-show="selectedEvent?.max_score != null" x-text="(selectedEvent?.max_score ?? 0) + ' pts'"></span>
                 </div>
-                <p class="event-body" x-text="eventFullBody(selectedEvent) || 'Sin descripción por ahora.'"></p>
-                <button class="btn btn-primary" style="margin-top:14px" x-show="selectedEvent?.course_id || selectedEvent?.course" @click="askTeacherAbout(selectedEvent)">
+                <div class="event-md" x-html="renderEventHtml(selectedEvent)"></div>
+                <button type="button" class="btn btn-ghost event-toggle" @click="toggleEvent(selectedEvent)" x-text="isExpanded(selectedEvent) ? 'Ocultar detalle' : 'Ver actividad completa'"></button>
+                <button type="button" class="btn btn-primary" style="margin-top:10px" x-show="selectedEvent?.course_id || selectedEvent?.course" @click="askTeacherAbout(selectedEvent)">
                     Escribirle al docente
                 </button>
             </div>
@@ -1120,6 +1129,7 @@
                 unreadNotif: 0,
                 selectedDay: '{{ now()->toDateString() }}',
                 selectedEvent: null,
+                expandedEventId: null,
                 daySheetOpen: false,
                 commTab: 'announcements',
                 openAbsence: false,
@@ -1151,7 +1161,58 @@
                     end_date: '{{ now()->toDateString() }}',
                     comment: '',
                 },
-                csrf() { return document.querySelector('meta[name=csrf-token]')?.content || ''; },
+                csrf() {
+                    return document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')
+                        || document.querySelector('input[name="_token"]')?.value
+                        || '';
+                },
+                applyCsrf(token) {
+                    if (!token) return this.csrf();
+                    const meta = document.querySelector('meta[name="csrf-token"]');
+                    if (meta) meta.setAttribute('content', token);
+                    document.querySelectorAll('input[name="_token"]').forEach((el) => { el.value = token; });
+                    return token;
+                },
+                xsrfCookie() {
+                    const row = document.cookie.split('; ').find((part) => part.startsWith('XSRF-TOKEN='));
+                    return row ? decodeURIComponent(row.split('=').slice(1).join('=')) : '';
+                },
+                async refreshCsrf() {
+                    try {
+                        const res = await fetch(@json(route('representante.api.csrf')), {
+                            method: 'GET',
+                            credentials: 'same-origin',
+                            headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                        });
+                        const json = await res.json().catch(() => ({}));
+                        return this.applyCsrf(json.token) || this.csrf();
+                    } catch (_) {
+                        return this.csrf();
+                    }
+                },
+                async postJson(url, payload = {}, retry = true) {
+                    const token = await this.refreshCsrf();
+                    const headers = {
+                        'Content-Type': 'application/json',
+                        Accept: 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'X-CSRF-TOKEN': token,
+                    };
+                    const xsrf = this.xsrfCookie();
+                    if (xsrf) headers['X-XSRF-TOKEN'] = xsrf;
+                    const res = await fetch(url, {
+                        method: 'POST',
+                        credentials: 'same-origin',
+                        headers,
+                        body: JSON.stringify({ _token: token, ...payload }),
+                    });
+                    if (res.status === 419 && retry) {
+                        await this.refreshCsrf();
+                        return this.postJson(url, payload, false);
+                    }
+                    const json = await res.json().catch(() => ({}));
+                    return { ok: res.ok, status: res.status, json };
+                },
                 get currentStudent() { return this.students.find(s => String(s.id) === String(this.studentId)); },
                 get parentFirstName() {
                     const name = @json($parent['name'] ?? 'familia');
@@ -1242,6 +1303,26 @@
                         .filter((part, idx, all) => all.indexOf(part) === idx)
                         .join('\n\n');
                 },
+                isExpanded(ev) {
+                    return !!ev && this.expandedEventId === ev.id;
+                },
+                toggleEvent(ev) {
+                    if (!ev) return;
+                    this.selectedEvent = ev;
+                    this.expandedEventId = this.expandedEventId === ev.id ? null : ev.id;
+                },
+                renderEventHtml(ev) {
+                    const text = this.eventFullBody(ev);
+                    if (!text) return '<p>Sin descripción por ahora.</p>';
+                    if (typeof window.renderMarkdown === 'function') {
+                        return window.renderMarkdown(text);
+                    }
+                    return text
+                        .replace(/&/g, '&amp;')
+                        .replace(/</g, '&lt;')
+                        .replace(/>/g, '&gt;')
+                        .replace(/\n/g, '<br>');
+                },
                 dueParts(value) {
                     if (!value) return { day: '—', mon: '' };
                     const d = new Date(`${value}T12:00:00`);
@@ -1301,6 +1382,7 @@
                     this.subjectModal = null;
                     this.announcementModal = null;
                     this.showNotif = false;
+                    this.expandedEventId = null;
                 },
                 trendIcon(t) { return t === 'up' ? '↑' : (t === 'down' ? '↓' : '↔'); },
                 async init() {
@@ -1311,6 +1393,7 @@
                         this.view = 'comms';
                         this.commTab = 'messages';
                     }
+                    await this.refreshCsrf();
                     if (!this.studentId) return;
                     await this.refreshAll();
                     setInterval(() => this.refreshAll(true), 30000);
@@ -1385,6 +1468,7 @@
                     this.selectedDay = date;
                     const list = this.eventsFor(date);
                     this.selectedEvent = ev || list[0] || null;
+                    this.expandedEventId = ev?.id || null;
                     this.daySheetOpen = true;
                     this.modalName = 'day';
                 },
@@ -1414,7 +1498,7 @@
                     return date === '{{ now()->toDateString() }}';
                 },
                 openEvent(ev) {
-                    this.selectedEvent = ev || null;
+                    this.toggleEvent(ev);
                 },
                 preview(text, max = 140) {
                     const raw = String(text || '').trim();
@@ -1430,11 +1514,7 @@
                 async openAnnouncement(a) {
                     this.announcementModal = a;
                     this.modalName = 'announcement';
-                    await fetch(`/representante/api/anuncios/${a.id}/leer`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-CSRF-TOKEN': this.csrf() },
-                        body: JSON.stringify({ estudiante_id: this.studentId }),
-                    });
+                    await this.postJson(`/representante/api/anuncios/${a.id}/leer`, { estudiante_id: this.studentId });
                     a.read = true;
                 },
                 async openThread(id, useModal = false) {
@@ -1460,11 +1540,15 @@
                 },
                 async sendChat() {
                     if (!this.chatBody.trim() || !this.chat) return;
-                    await fetch(`/representante/api/mensajes/${this.chat.id}`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-CSRF-TOKEN': this.csrf() },
-                        body: JSON.stringify({ estudiante_id: this.studentId, body: this.chatBody }),
+                    const body = this.chatBody;
+                    const { ok, status, json } = await this.postJson(`/representante/api/mensajes/${this.chat.id}`, {
+                        estudiante_id: this.studentId,
+                        body,
                     });
+                    if (!ok) {
+                        this.showToast(status === 419 ? 'La sesión expiró. Recarga e inténtalo de nuevo.' : (json.message || 'No se pudo enviar el mensaje.'));
+                        return;
+                    }
                     this.chatBody = '';
                     this.showToast('Mensaje enviado.');
                     await this.openThread(this.chat.id, this.modalName === 'chat');
@@ -1485,14 +1569,13 @@
                 async messageTeacher(courseId) {
                     if (!courseId) { this.showToast('Elige una materia.'); return; }
                     if (!this.newMessage.trim()) { this.showToast('Escribe un mensaje.'); return; }
-                    const res = await fetch(`/representante/api/mensajes`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-CSRF-TOKEN': this.csrf() },
-                        body: JSON.stringify({ estudiante_id: this.studentId, course_id: courseId, body: this.newMessage }),
+                    const { ok, status, json } = await this.postJson(`/representante/api/mensajes`, {
+                        estudiante_id: this.studentId,
+                        course_id: courseId,
+                        body: this.newMessage,
                     });
-                    const json = await res.json().catch(() => ({}));
-                    if (!res.ok) {
-                        this.showToast(json.message || 'No se pudo enviar el mensaje.');
+                    if (!ok) {
+                        this.showToast(status === 419 ? 'La sesión expiró. Recarga e inténtalo de nuevo.' : (json.message || 'No se pudo enviar el mensaje.'));
                         return;
                     }
                     this.newMessage = '';
@@ -1519,13 +1602,8 @@
                         this.absenceError = 'No hay motivos cargados. Recarga la página o avisa al colegio.';
                         return;
                     }
-                    const res = await fetch(`/representante/api/ausencia`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-CSRF-TOKEN': this.csrf() },
-                        body: JSON.stringify(this.absence),
-                    });
-                    const json = await res.json().catch(() => ({}));
-                    if (!res.ok) {
+                    const { ok, json } = await this.postJson(`/representante/api/ausencia`, this.absence);
+                    if (!ok) {
                         const firstError = json.errors ? Object.values(json.errors).flat()[0] : null;
                         this.absenceError = firstError || json.message || json.error || 'No se pudo enviar.';
                         return;
@@ -1565,18 +1643,13 @@
                     setTimeout(() => { if (this.toast === text) this.toast = ''; }, 3200);
                 },
                 async saveProfile() {
-                    const res = await fetch(`/representante/api/perfil`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-CSRF-TOKEN': this.csrf() },
-                        body: JSON.stringify(this.profile),
-                    });
-                    const json = await res.json();
+                    const { json } = await this.postJson(`/representante/api/perfil`, this.profile);
                     this.profileMsg = json.message || 'Guardado.';
                     this.showToast('Perfil actualizado.');
                 },
                 toggleNotif() { this.showNotif = !this.showNotif; },
                 async markNotifRead() {
-                    await fetch(`/representante/api/notificaciones/leer`, { method: 'POST', headers: { Accept: 'application/json', 'X-CSRF-TOKEN': this.csrf() } });
+                    await this.postJson(`/representante/api/notificaciones/leer`);
                     await this.refreshAll();
                 },
                 toggleTheme() {
@@ -1584,6 +1657,14 @@
                 },
             }));
         });
+    </script>
+    <script>
+        (function () {
+            if (!('serviceWorker' in navigator)) return;
+            navigator.serviceWorker.getRegistrations().then(function (regs) {
+                regs.forEach(function (r) { r.unregister(); });
+            });
+        })();
     </script>
 </body>
 </html>

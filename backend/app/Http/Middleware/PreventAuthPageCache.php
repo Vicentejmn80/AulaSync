@@ -20,6 +20,10 @@ class PreventAuthPageCache
         'onboarding',
         'onboarding/*',
         'logout',
+        'representante',
+        'representante/*',
+        'teacher/communication',
+        'teacher/communication/*',
     ];
 
     public function handle(Request $request, Closure $next): Response

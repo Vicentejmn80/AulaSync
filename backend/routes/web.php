@@ -254,6 +254,7 @@ Route::middleware('auth')->group(function () {
                     ->name('ausencias.store');
 
                 Route::get('/api/estudiantes', [RepresentanteController::class, 'students'])->name('api.estudiantes');
+                Route::get('/api/csrf', [RepresentanteController::class, 'csrfToken'])->name('api.csrf');
                 Route::get('/api/{estudiante}/resumen', [RepresentanteController::class, 'resumen'])->name('api.resumen');
                 Route::get('/api/{estudiante}/calendario', [RepresentanteController::class, 'calendario'])->name('api.calendario');
                 Route::get('/api/{estudiante}/materias', [RepresentanteController::class, 'materias'])->name('api.materias');

@@ -61,6 +61,7 @@
     </style>
 </head>
 <body>
+@csrf
 @include('partials.theme-switcher')
 <div class="wrap" x-data="communicationApp()" x-init="init()" x-cloak>
     <div class="top">
@@ -229,7 +230,68 @@ function communicationApp() {
             files: [],
             draft: null,
         },
-        csrf() { return document.querySelector('meta[name="csrf-token"]').content; },
+        csrf() {
+            return document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')
+                || document.querySelector('input[name="_token"]')?.value
+                || '';
+        },
+        applyCsrf(token) {
+            if (!token) return this.csrf();
+            const meta = document.querySelector('meta[name="csrf-token"]');
+            if (meta) meta.setAttribute('content', token);
+            document.querySelectorAll('input[name="_token"]').forEach((el) => { el.value = token; });
+            return token;
+        },
+        async refreshCsrf() {
+            try {
+                const res = await fetch('{{ route('ai.session') }}', {
+                    method: 'GET',
+                    credentials: 'same-origin',
+                    headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                });
+                const json = await res.json().catch(() => ({}));
+                return this.applyCsrf(json.token) || this.csrf();
+            } catch (_) {
+                return this.csrf();
+            }
+        },
+        async postJson(url, payload = {}, retry = true) {
+            const token = await this.refreshCsrf();
+            const headers = {
+                'Content-Type': 'application/json',
+                Accept: 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRF-TOKEN': token,
+            };
+            const res = await fetch(url, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers,
+                body: JSON.stringify({ _token: token, ...payload }),
+            });
+            if (res.status === 419 && retry) {
+                await this.refreshCsrf();
+                return this.postJson(url, payload, false);
+            }
+            const json = await res.json().catch(() => ({}));
+            return { ok: res.ok, status: res.status, json };
+        },
+        async postForm(url, form, retry = true) {
+            const token = await this.refreshCsrf();
+            form.set('_token', token);
+            const res = await fetch(url, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'X-CSRF-TOKEN': token, Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                body: form,
+            });
+            if (res.status === 419 && retry) {
+                await this.refreshCsrf();
+                return this.postForm(url, form, false);
+            }
+            const json = await res.json().catch(() => ({}));
+            return { ok: res.ok, json };
+        },
         selectedThread() {
             return this.threads.find(t => t.id === this.selectedThreadId) || null;
         },
@@ -253,23 +315,18 @@ function communicationApp() {
             this.quickReplies = [];
             this.chatDraft = '';
             try {
-                await fetch(`/teacher/communication/threads/${id}/read`, {
-                    method: 'POST',
-                    headers: { 'X-CSRF-TOKEN': this.csrf(), Accept: 'application/json' },
-                });
+                await this.postJson(`/teacher/communication/threads/${id}/read`);
                 const thread = this.threads.find(t => t.id === id);
                 if (thread) thread.unread = 0;
             } catch (_) {}
         },
         async generateAnnouncement() {
             this.error = ''; this.notice = '';
-            const res = await fetch('{{ route('teacher.communication.announcements.generate') }}', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': this.csrf(), 'Accept': 'application/json' },
-                body: JSON.stringify({ idea: this.announcement.idea, audience: 'Comunidad académica' }),
+            const { ok, json: data } = await this.postJson('{{ route('teacher.communication.announcements.generate') }}', {
+                idea: this.announcement.idea,
+                audience: 'Comunidad académica',
             });
-            const data = await res.json();
-            if (!data.success) { this.error = data.error || 'No se pudo generar.'; return; }
+            if (!ok || !data.success) { this.error = data.error || 'No se pudo generar.'; return; }
             this.announcement.draft = data.result;
             this.notice = 'Borrador generado por IA.';
         },
@@ -287,22 +344,13 @@ function communicationApp() {
             form.append('schedule_at', this.announcement.schedule_at || '');
             form.append('drive_link', this.announcement.drive_link || '');
             for (const file of this.announcement.files) form.append('files[]', file);
-            const res = await fetch('{{ route('teacher.communication.announcements.store') }}', {
-                method: 'POST',
-                headers: { 'X-CSRF-TOKEN': this.csrf(), 'Accept': 'application/json' },
-                body: form,
-            });
-            const data = await res.json();
+            const { json: data } = await this.postForm('{{ route('teacher.communication.announcements.store') }}', form);
             if (!data.success) { this.error = data.error || 'No se pudo guardar.'; return; }
             this.announcements.unshift(data.announcement);
             this.notice = 'Anuncio guardado y segmentado.';
         },
         async demoRead(id) {
-            const res = await fetch(`/teacher/communication/announcements/${id}/demo-read`, {
-                method: 'POST',
-                headers: { 'X-CSRF-TOKEN': this.csrf(), 'Accept': 'application/json' },
-            });
-            const data = await res.json();
+            const { json: data } = await this.postJson(`/teacher/communication/announcements/${id}/demo-read`);
             if (!data.success) return;
             const idx = this.announcements.findIndex(a => a.id === id);
             if (idx >= 0) this.announcements[idx] = data.announcement;
@@ -310,13 +358,14 @@ function communicationApp() {
         async sendMessage(aiSuggested) {
             const thread = this.selectedThread();
             if (!thread || !this.chatDraft.trim()) return;
-            const res = await fetch(`/teacher/communication/threads/${thread.id}/messages`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': this.csrf(), 'Accept': 'application/json' },
-                body: JSON.stringify({ body: this.chatDraft, ai_suggested: !!aiSuggested }),
+            const { ok, json: data } = await this.postJson(`/teacher/communication/threads/${thread.id}/messages`, {
+                body: this.chatDraft,
+                ai_suggested: !!aiSuggested,
             });
-            const data = await res.json();
-            if (!data.success) return;
+            if (!ok || !data.success) {
+                this.error = data.message || 'No se pudo enviar el mensaje. Recarga e inténtalo de nuevo.';
+                return;
+            }
             thread.messages.push(data.message);
             thread.last_message_preview = data.message.body.slice(0, 130);
             this.chatDraft = '';
@@ -324,11 +373,7 @@ function communicationApp() {
         async simulateIncoming() {
             const thread = this.selectedThread();
             if (!thread) return;
-            const res = await fetch(`/teacher/communication/threads/${thread.id}/simulate-incoming`, {
-                method: 'POST',
-                headers: { 'X-CSRF-TOKEN': this.csrf(), 'Accept': 'application/json' },
-            });
-            const data = await res.json();
+            const { json: data } = await this.postJson(`/teacher/communication/threads/${thread.id}/simulate-incoming`);
             if (data.success) {
                 thread.messages.push(data.message);
                 thread.last_message_preview = data.message.body.slice(0, 130);
@@ -338,12 +383,9 @@ function communicationApp() {
             const thread = this.selectedThread();
             if (!thread) return;
             const last = [...thread.messages].reverse().find(m => m.sender_role !== 'teacher');
-            const res = await fetch(`/teacher/communication/threads/${thread.id}/quick-replies`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': this.csrf(), 'Accept': 'application/json' },
-                body: JSON.stringify({ incoming: last ? last.body : '' }),
+            const { json: data } = await this.postJson(`/teacher/communication/threads/${thread.id}/quick-replies`, {
+                incoming: last ? last.body : '',
             });
-            const data = await res.json();
             if (data.success) this.quickReplies = data.suggestions || [];
         },
         applySuggestion(text) {
@@ -357,6 +399,7 @@ function communicationApp() {
             } catch (_) {}
         },
         init() {
+            this.refreshCsrf();
             this.poller = setInterval(() => {
                 if (this.tab === 'messages') this.pollThreads();
             }, 12000);

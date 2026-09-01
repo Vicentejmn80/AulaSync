@@ -14,7 +14,6 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Schema;
-use Illuminate\View\View;
 use Symfony\Component\HttpFoundation\Response;
 
 class RepresentanteController extends Controller
@@ -23,7 +22,7 @@ class RepresentanteController extends Controller
     {
     }
 
-    public function index(): View
+    public function index(): Response
     {
         $user = auth()->user();
         $user->loadMissing('settings');
@@ -31,22 +30,33 @@ class RepresentanteController extends Controller
         $reasons = $this->dashboard->reasons($user);
         $school = optional($students->first())->colegio;
 
-        return view('representante.hub', [
-            'students' => $students->map(fn ($s) => $this->dashboard->studentPayload($s))->values(),
-            'reasons' => $reasons->map(fn ($r) => [
-                'id' => $r->id,
-                'label' => $r->label,
-                'requires_comment' => (bool) $r->requires_comment,
-            ])->values(),
-            'schoolName' => $school?->name,
-            'parent' => [
-                'name' => $user->name,
-                'email' => $user->email,
-                'initials' => mb_strtoupper(mb_substr($user->name, 0, 1)),
-                'phone' => data_get($user->settings?->preferencias, 'phone'),
-                'address' => data_get($user->settings?->preferencias, 'address'),
-                'emergency' => data_get($user->settings?->preferencias, 'emergency'),
-            ],
+        return response()
+            ->view('representante.hub', [
+                'students' => $students->map(fn ($s) => $this->dashboard->studentPayload($s))->values(),
+                'reasons' => $reasons->map(fn ($r) => [
+                    'id' => $r->id,
+                    'label' => $r->label,
+                    'requires_comment' => (bool) $r->requires_comment,
+                ])->values(),
+                'schoolName' => $school?->name,
+                'parent' => [
+                    'name' => $user->name,
+                    'email' => $user->email,
+                    'initials' => mb_strtoupper(mb_substr($user->name, 0, 1)),
+                    'phone' => data_get($user->settings?->preferencias, 'phone'),
+                    'address' => data_get($user->settings?->preferencias, 'address'),
+                    'emergency' => data_get($user->settings?->preferencias, 'emergency'),
+                ],
+            ])
+            ->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+            ->header('Pragma', 'no-cache');
+    }
+
+    public function csrfToken(): JsonResponse
+    {
+        return response()->json([
+            'ok' => true,
+            'token' => csrf_token(),
         ]);
     }
 

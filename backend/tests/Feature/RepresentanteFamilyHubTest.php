@@ -91,10 +91,21 @@ class RepresentanteFamilyHubTest extends TestCase
             ->assertSee('Reportar ausencia')
             ->assertSee('Ver boletín')
             ->assertSee('Escribirle a un docente')
-            ->assertSee('Toca una tarjeta para leer el detalle completo')
+            ->assertSee('Ver actividad completa')
             ->assertSee('fam-backdrop')
             ->assertDontSee('class="overlay"', false)
             ->assertDontSee('class="modal"', false);
+    }
+
+    public function test_family_csrf_endpoint_returns_fresh_token(): void
+    {
+        [$parent] = $this->familyClassroom();
+
+        $this->actingAs($parent)
+            ->getJson(route('representante.api.csrf'))
+            ->assertOk()
+            ->assertJsonPath('ok', true)
+            ->assertJsonStructure(['token']);
     }
 
     /**
