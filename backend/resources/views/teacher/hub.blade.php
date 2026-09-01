@@ -46,6 +46,9 @@
             --font-display: 'Manrope', 'Inter', system-ui, sans-serif;
         }
 
+        html { color-scheme: light; }
+        html.dark { color-scheme: dark; }
+
         html.dark {
             --nova-deep: #060B18;
             --nova-dark: #0C1225;
@@ -3673,6 +3676,14 @@
             -webkit-overflow-scrolling: touch;
         }
 
+        .modal-nova.is-picker-open {
+            overflow: visible;
+        }
+
+        .modal-body.is-picker-open {
+            overflow: visible;
+        }
+
         .modal-footer {
             padding: 20px 24px;
             border-top: 1px solid var(--nova-glass-border);
@@ -3747,6 +3758,12 @@
         .proposal-card.is-saving {
             opacity: 0.7;
             pointer-events: none;
+        }
+
+        .proposal-card.is-picked {
+            border-color: var(--nova-violet);
+            box-shadow: 0 0 0 2px color-mix(in srgb, var(--nova-violet) 28%, transparent);
+            background: color-mix(in srgb, var(--nova-violet) 8%, var(--bg-secondary));
         }
 
         .proposal-card-kicker {
@@ -3957,6 +3974,260 @@
             overflow: hidden;
         }
 
+        .nova-picker {
+            position: relative;
+            width: 100%;
+        }
+
+        .nova-picker.is-inline {
+            width: auto;
+        }
+
+        .nova-picker-trigger {
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            padding: 11px 14px;
+            border-radius: 14px;
+            border: 1px solid var(--nova-glass-border);
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            font-size: 13px;
+            font-weight: 600;
+            text-align: left;
+            cursor: pointer;
+            box-shadow: inset 0 0 0 1px transparent;
+        }
+
+        .nova-picker-trigger:hover,
+        .nova-picker-trigger.is-open {
+            border-color: color-mix(in srgb, var(--nova-violet) 45%, var(--nova-glass-border));
+            box-shadow: 0 0 0 3px color-mix(in srgb, var(--nova-violet) 16%, transparent);
+        }
+
+        .nova-picker-trigger span {
+            color: var(--text-primary);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .nova-picker-trigger:disabled {
+            opacity: 0.55;
+            cursor: not-allowed;
+        }
+
+        .nova-picker.is-inline .nova-picker-trigger {
+            background: transparent;
+            border: 0;
+            padding: 0 2px 0 6px;
+            box-shadow: none;
+            font-weight: 700;
+            max-width: 180px;
+        }
+
+        .nova-picker-menu {
+            position: absolute;
+            top: calc(100% + 6px);
+            left: 0;
+            right: 0;
+            z-index: 40;
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            border: 1px solid var(--nova-glass-border);
+            border-radius: 16px;
+            box-shadow: 0 18px 40px -18px rgba(0,0,0,0.45);
+            padding: 6px;
+            max-height: 280px;
+            overflow-y: auto;
+        }
+
+        html.dark .nova-picker-menu {
+            background: #1C1636;
+            box-shadow: 0 22px 50px -16px rgba(0,0,0,0.7);
+        }
+
+        .nova-picker.drop-up .nova-picker-menu {
+            top: auto;
+            bottom: calc(100% + 6px);
+        }
+
+        .nova-picker-item {
+            width: 100%;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            border: 0;
+            background: transparent;
+            color: var(--text-primary);
+            padding: 10px 12px;
+            border-radius: 12px;
+            font-size: 13px;
+            font-weight: 600;
+            text-align: left;
+            cursor: pointer;
+        }
+
+        .nova-picker-item:hover,
+        .nova-picker-item.is-on {
+            background: color-mix(in srgb, var(--nova-violet) 14%, transparent);
+            color: var(--text-primary);
+        }
+
+        .nova-picker-item small {
+            margin-left: auto;
+            color: var(--text-tertiary);
+            font-weight: 500;
+        }
+
+        .due-picker {
+            width: min(440px, 100%);
+            background: var(--bg-card);
+            border: 1px solid var(--nova-glass-border);
+            border-radius: 28px;
+            box-shadow: var(--nova-shadow);
+            overflow: hidden;
+        }
+
+        .due-picker-body {
+            padding: 8px 24px 20px;
+        }
+
+        .due-picker-kicker {
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin: 0 0 14px;
+            line-height: 1.45;
+        }
+
+        .due-picker-kicker strong {
+            color: var(--text-primary);
+        }
+
+        .due-quick {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+
+        .due-chip {
+            border: 1px solid var(--nova-glass-border);
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            border-radius: 999px;
+            padding: 7px 12px;
+            font-size: 12px;
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        .due-chip:hover,
+        .due-chip.is-on {
+            border-color: color-mix(in srgb, var(--nova-violet) 50%, transparent);
+            background: color-mix(in srgb, var(--nova-violet) 14%, var(--bg-secondary));
+            color: var(--text-primary);
+        }
+
+        .due-cal-nav {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 10px;
+        }
+
+        .due-cal-nav h4 {
+            margin: 0;
+            font-size: 15px;
+            font-weight: 800;
+            color: var(--text-primary);
+            text-transform: capitalize;
+        }
+
+        .due-cal-nav button {
+            width: 32px;
+            height: 32px;
+            border-radius: 10px;
+            border: 1px solid var(--nova-glass-border);
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            cursor: pointer;
+        }
+
+        .due-cal-week {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 4px;
+            margin-bottom: 6px;
+        }
+
+        .due-cal-week span {
+            text-align: center;
+            font-size: 10px;
+            font-weight: 800;
+            letter-spacing: .06em;
+            text-transform: uppercase;
+            color: var(--text-tertiary);
+            padding: 4px 0;
+        }
+
+        .due-cal-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 4px;
+        }
+
+        .due-cal-day {
+            aspect-ratio: 1;
+            border: 1px solid transparent;
+            border-radius: 12px;
+            background: transparent;
+            color: var(--text-primary);
+            font-size: 13px;
+            font-weight: 700;
+            cursor: pointer;
+        }
+
+        .due-cal-day:hover {
+            background: color-mix(in srgb, var(--nova-violet) 12%, transparent);
+        }
+
+        .due-cal-day.is-today {
+            box-shadow: inset 0 0 0 1.5px var(--nova-fuchsia);
+        }
+
+        .due-cal-day.is-class {
+            background: color-mix(in srgb, var(--nova-cyan) 12%, transparent);
+        }
+
+        .due-cal-day.is-selected {
+            background: var(--nova-gradient);
+            color: #fff;
+            box-shadow: 0 8px 16px -10px var(--nova-violet);
+        }
+
+        .due-cal-day.is-empty {
+            cursor: default;
+            pointer-events: none;
+        }
+
+        .due-picker-summary {
+            margin-top: 14px;
+            padding: 12px 14px;
+            border-radius: 14px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--nova-glass-border);
+            color: var(--text-secondary);
+            font-size: 13px;
+        }
+
+        .due-picker-summary strong {
+            color: var(--text-primary);
+            text-transform: capitalize;
+        }
+
         .grades-slideover-wrap {
             position: fixed;
             inset: 0;
@@ -4157,12 +4428,23 @@
 
         .grade-input {
             width: 96px;
-            background: var(--nova-glass);
+            background: var(--bg-secondary);
             border: 1px solid var(--nova-glass-border);
             border-radius: 11px;
             padding: 8px 10px;
             color: var(--text-primary);
             font-size: 13px;
+        }
+
+        .grade-input option {
+            background-color: var(--bg-secondary);
+            color: var(--text-primary);
+        }
+
+        html.dark .grade-input,
+        html.dark .grade-input option {
+            background-color: #1C1636;
+            color: #F5F3FF;
         }
 
         .grade-input:focus {
@@ -5107,8 +5389,8 @@
     </main>
 
     {{-- Activity Modal --}}
-<div x-show="activityModal" x-cloak class="modal-overlay" @click.self="activityModal = null" @keydown.escape.window="activityModal = null">
-    <div class="modal-nova" style="max-width: 780px;">
+<div x-show="activityModal" x-cloak class="modal-overlay" @click.self="activityModal = null" @keydown.escape.window="if (!taskDuePicker.open) activityModal = null">
+    <div class="modal-nova" style="max-width: 780px;" :class="{ 'is-picker-open': openPicker }">
         <div class="modal-header" style="padding: 20px 28px;">
             <div style="display: flex; align-items: center; gap: 12px; min-width: 0;">
                 <span class="activity-type-badge" style="flex-shrink: 0; font-size: 10px; padding: 3px 10px;"
@@ -5123,7 +5405,7 @@
             </button>
         </div>
 
-        <div class="modal-body" style="padding: 0 28px 20px;">
+        <div class="modal-body" style="padding: 0 28px 20px;" :class="{ 'is-picker-open': openPicker }">
             <div class="modal-meta-row">
                 <span class="modal-meta-item"><i class="fa-regular fa-building" style="color: var(--nova-violet);"></i><span x-text="activityModal?.course_name"></span></span>
                 <span class="modal-meta-item"><i class="fa-regular fa-calendar" style="color: var(--nova-cyan);"></i><span x-text="activityModal?.due_date ?? '—'"></span></span>
@@ -5236,13 +5518,13 @@
                 <div x-show="!taskLoading" class="proposal-grid">
                     <template x-for="(idea, idx) in taskProposals" :key="'idea-'+idx">
                         <button type="button" class="proposal-card"
-                                :class="{ 'is-saving': taskProposalSaving === idx }"
+                                :class="{ 'is-saving': taskProposalSaving === idx, 'is-picked': taskDuePicker.open && taskDuePicker.idx === idx }"
                                 :disabled="taskProposalSaving !== null"
-                                @click="selectTaskProposal(idea, idx)">
+                                @click="openTaskDuePicker(idea, idx)">
                             <span class="proposal-card-kicker" x-text="idea.enfoque || ('Opción ' + (idx + 1))"></span>
                             <span class="proposal-card-title" x-text="idea.titulo"></span>
                             <span class="proposal-card-body" x-text="idea.descripcion"></span>
-                            <span style="font-size:11px;font-weight:700;color:var(--nova-violet);margin-top:4px;">Usar esta tarea</span>
+                            <span style="font-size:11px;font-weight:700;color:var(--nova-violet);margin-top:4px;">Elegir fecha de entrega</span>
                         </button>
                     </template>
                 </div>
@@ -5265,22 +5547,32 @@
                     <i class="fa-solid fa-book-open-reader" style="color: var(--nova-fuchsia); font-size: 12px;"></i>
                     <span class="modal-section-label" style="font-size: 10px;">Nueva adaptación</span>
                 </div>
-                <select x-model="neeForm.student_id"
-                        style="width:100%; background: var(--nova-glass); color: var(--text-primary); border:1px solid var(--nova-glass-border); border-radius:12px; padding:10px 12px; font-size:13px;">
-                    <option value="">Todo el grupo / sin alumno específico</option>
-                    <template x-for="st in neeRoster" :key="st.id">
-                        <option :value="st.id" x-text="st.name"></option>
-                    </template>
-                </select>
-                <select x-model="neeForm.tipo"
-                        style="width:100%; background: var(--nova-glass); color: var(--text-primary); border:1px solid var(--nova-glass-border); border-radius:12px; padding:10px 12px; font-size:13px;">
-                    <option value="">Diagnóstico NEE…</option>
-                    <option value="TDAH">TDAH</option>
-                    <option value="TEA/Autismo">TEA / Autismo</option>
-                    <option value="Dislexia">Dislexia</option>
-                    <option value="Discalculia">Discalculia</option>
-                    <option value="Otro">Otro</option>
-                </select>
+                <div class="nova-picker drop-up" @click.outside="closePickerIf('nee-student')">
+                    <button type="button" class="nova-picker-trigger" :class="{ 'is-open': openPicker === 'nee-student' }" @click="togglePicker('nee-student')">
+                        <span x-text="neeStudentLabel()"></span>
+                        <i class="fa-solid fa-chevron-down"></i>
+                    </button>
+                    <div x-show="openPicker === 'nee-student'" x-cloak class="nova-picker-menu">
+                        <button type="button" class="nova-picker-item" :class="{ 'is-on': !neeForm.student_id }" @click="neeForm.student_id = ''; openPicker = null;">Todo el grupo</button>
+                        <template x-for="st in neeRoster" :key="st.id">
+                            <button type="button" class="nova-picker-item" :class="{ 'is-on': String(neeForm.student_id) === String(st.id) }" @click="neeForm.student_id = st.id; openPicker = null;" x-text="st.name"></button>
+                        </template>
+                    </div>
+                </div>
+                <div class="nova-picker drop-up" @click.outside="closePickerIf('nee-type')">
+                    <button type="button" class="nova-picker-trigger" :class="{ 'is-open': openPicker === 'nee-type' }" @click="togglePicker('nee-type')">
+                        <span x-text="neeTypeLabel()"></span>
+                        <i class="fa-solid fa-chevron-down"></i>
+                    </button>
+                    <div x-show="openPicker === 'nee-type'" x-cloak class="nova-picker-menu">
+                        <template x-for="opt in neeTypeOptions" :key="opt.id">
+                            <button type="button" class="nova-picker-item" :class="{ 'is-on': neeForm.tipo === opt.id }" @click="neeForm.tipo = opt.id; openPicker = null;">
+                                <i :class="opt.icon" style="color: var(--nova-fuchsia); width: 16px;"></i>
+                                <span x-text="opt.label"></span>
+                            </button>
+                        </template>
+                    </div>
+                </div>
                 <div x-show="neeLoading" class="skeleton-nova" style="height: 72px;"></div>
                 <textarea x-show="!neeLoading && neeForm.texto" x-model="neeForm.texto" rows="3"
                           style="width:100%; background: var(--nova-glass); color: var(--text-primary); border:1px solid var(--nova-glass-border); border-radius:12px; padding:10px 12px; font-size:13px;"></textarea>
@@ -5386,6 +5678,65 @@
         </div>
     </div>
 
+    {{-- Fecha de entrega de la tarea elegida --}}
+    <div x-show="taskDuePicker.open" x-cloak class="modal-overlay" style="z-index: 13000;" @click.self="closeTaskDuePicker()" @keydown.escape.window="closeTaskDuePicker()">
+        <div class="due-picker" @click.stop>
+            <div class="modal-header" style="padding: 20px 24px 8px;">
+                <div>
+                    <p class="grades-slideover-eyebrow" style="margin-bottom: 4px;">Asignar tarea</p>
+                    <h3 style="font-family: var(--font-display); font-size: 18px; font-weight: 800; margin: 0;">¿Cuándo la entregan?</h3>
+                </div>
+                <button type="button" @click="closeTaskDuePicker()" class="modal-close"><i class="fa-solid fa-times"></i></button>
+            </div>
+            <div class="due-picker-body">
+                <p class="due-picker-kicker">
+                    <strong x-text="taskForm.titulo || 'Esta tarea'"></strong>
+                    no tiene que coincidir con el día de la clase.
+                </p>
+                <div class="due-quick">
+                    <button type="button" class="due-chip" :class="{ 'is-on': taskDuePicker.selected === classDueDate() }" @click="pickDuePreset(classDueDate())">Día de la clase</button>
+                    <button type="button" class="due-chip" :class="{ 'is-on': taskDuePicker.selected === isoToday() }" @click="pickDuePreset(isoToday())">Hoy</button>
+                    <button type="button" class="due-chip" :class="{ 'is-on': taskDuePicker.selected === isoAddDays(isoToday(), 1) }" @click="pickDuePreset(isoAddDays(isoToday(), 1))">Mañana</button>
+                    <button type="button" class="due-chip" :class="{ 'is-on': taskDuePicker.selected === isoAddDays(isoToday(), 7) }" @click="pickDuePreset(isoAddDays(isoToday(), 7))">En una semana</button>
+                </div>
+                <div class="due-cal-nav">
+                    <button type="button" @click="shiftDueMonth(-1)" aria-label="Mes anterior"><i class="fa-solid fa-chevron-left"></i></button>
+                    <h4 x-text="dueMonthLabel()"></h4>
+                    <button type="button" @click="shiftDueMonth(1)" aria-label="Mes siguiente"><i class="fa-solid fa-chevron-right"></i></button>
+                </div>
+                <div class="due-cal-week">
+                    <span>L</span><span>M</span><span>X</span><span>J</span><span>V</span><span>S</span><span>D</span>
+                </div>
+                <div class="due-cal-grid">
+                    <template x-for="(cell, i) in dueCalendarCells()" :key="'due-'+taskDuePicker.month+'-'+i">
+                        <button type="button" class="due-cal-day"
+                                :class="{
+                                    'is-empty': !cell,
+                                    'is-today': cell === isoToday(),
+                                    'is-class': cell && cell === classDueDate(),
+                                    'is-selected': cell && cell === taskDuePicker.selected
+                                }"
+                                :disabled="!cell"
+                                @click="cell && pickDuePreset(cell)"
+                                x-text="cell ? Number(cell.slice(8, 10)) : ''"></button>
+                    </template>
+                </div>
+                <div class="due-picker-summary">
+                    Entrega el <strong x-text="formatDueLong(taskDuePicker.selected)"></strong>
+                    <span x-show="taskDuePicker.selected === classDueDate()" style="color: var(--text-tertiary);"> · mismo día de la clase</span>
+                    <span x-show="taskDuePicker.selected && taskDuePicker.selected !== classDueDate()" style="color: var(--text-tertiary);"> · distinto al día de clase</span>
+                </div>
+            </div>
+            <div class="modal-footer" style="padding: 16px 24px; display: flex; gap: 8px; justify-content: flex-end; border-top: 1px solid var(--nova-glass-border);">
+                <button type="button" class="modal-footer-btn" @click="closeTaskDuePicker()">Cancelar</button>
+                <button type="button" class="modal-footer-btn primary" :disabled="taskSaving || !taskDuePicker.selected" @click="confirmTaskDue()">
+                    <i class="fa-solid" :class="taskSaving ? 'fa-spinner fa-spin' : 'fa-check'"></i>
+                    <span x-text="taskSaving ? 'Asignando…' : 'Asignar tarea'"></span>
+                </button>
+            </div>
+        </div>
+    </div>
+
     {{-- Grade Slide-over --}}
     <div x-show="gradesSlideover.open" x-cloak class="grades-slideover-wrap" @keydown.escape.window="closeGradesSlideover()">
         <div class="grades-slideover-backdrop" @click="closeGradesSlideover()"></div>
@@ -5410,19 +5761,23 @@
             </div>
 
             <div class="grades-slideover-meta">
-                <label class="meta-chip" style="gap:8px;cursor:pointer;">
+                <div class="meta-chip" style="gap:8px;">
                     <i class="fa-solid fa-sliders"></i>
                     <span>Escala</span>
-                    <select x-model="gradesSlideover.grading_scale"
-                        @change="changeGradesScale()"
-                        :disabled="gradesSlideover.scaleSaving"
-                        style="background:transparent;border:0;color:inherit;font-weight:700;cursor:pointer;max-width:180px;">
-                        <option value="1-20">0 a 20</option>
-                        <option value="1-10">0 a 10</option>
-                        <option value="1-5">0 a 5</option>
-                        <option value="A-F">A, B, C, D, E, F</option>
-                    </select>
-                </label>
+                    <div class="nova-picker is-inline" @click.outside="closePickerIf('grades-scale')">
+                        <button type="button" class="nova-picker-trigger" :class="{ 'is-open': openPicker === 'grades-scale' }" :disabled="gradesSlideover.scaleSaving" @click="togglePicker('grades-scale')">
+                            <span x-text="scaleLabel(gradesSlideover.grading_scale)"></span>
+                            <i class="fa-solid fa-chevron-down"></i>
+                        </button>
+                        <div x-show="openPicker === 'grades-scale'" x-cloak class="nova-picker-menu">
+                            <template x-for="opt in scaleOptions" :key="opt.id">
+                                <button type="button" class="nova-picker-item" :class="{ 'is-on': gradesSlideover.grading_scale === opt.id }" @click="pickGradesScale(opt.id)">
+                                    <span x-text="opt.label"></span>
+                                </button>
+                            </template>
+                        </div>
+                    </div>
+                </div>
                 <span class="meta-chip">
                     <i class="fa-solid fa-star"></i>
                     <template x-if="!isLetterScale()">
@@ -5838,16 +6193,20 @@
                 <div x-show="neeLoading" class="skeleton-nova" style="height: 96px;"></div>
                 <div x-show="!neeLoading">
                     <label style="display:block; font-size:12px; color: var(--text-secondary); margin-bottom:6px;">Tipo de condición</label>
-                    <select x-model="neeForm.tipo"
-                            :disabled="neeAccepted"
-                            style="width:100%; background: var(--nova-glass); color: var(--text-primary); border:1px solid var(--nova-glass-border); border-radius:12px; padding:10px 12px; font-size:13px;">
-                        <option value="">Selecciona…</option>
-                        <option value="TDAH">🧠 TDAH</option>
-                        <option value="TEA/Autismo">🧩 TEA/Autismo</option>
-                        <option value="Dislexia">📖 Dislexia</option>
-                        <option value="Discalculia">🔢 Discalculia</option>
-                        <option value="Otro">⭐ Otro</option>
-                    </select>
+                    <div class="nova-picker" @click.outside="closePickerIf('nee-modal-type')">
+                        <button type="button" class="nova-picker-trigger" :class="{ 'is-open': openPicker === 'nee-modal-type' }" :disabled="neeAccepted" @click="togglePicker('nee-modal-type')">
+                            <span x-text="neeTypeLabel()"></span>
+                            <i class="fa-solid fa-chevron-down"></i>
+                        </button>
+                        <div x-show="openPicker === 'nee-modal-type'" x-cloak class="nova-picker-menu">
+                            <template x-for="opt in neeTypeOptions" :key="'modal-'+opt.id">
+                                <button type="button" class="nova-picker-item" :class="{ 'is-on': neeForm.tipo === opt.id }" @click="neeForm.tipo = opt.id; openPicker = null;">
+                                    <i :class="opt.icon" style="color: var(--nova-fuchsia); width: 16px;"></i>
+                                    <span x-text="opt.label"></span>
+                                </button>
+                            </template>
+                        </div>
+                    </div>
 
                     <label style="display:block; font-size:12px; color: var(--text-secondary); margin:12px 0 6px;">Adaptación sugerida</label>
                     <textarea x-model="neeForm.texto"
@@ -6011,12 +6370,19 @@
                     Las notas ya guardadas no se modifican.
                 </p>
                 <label style="display:block;font-size:12px;font-weight:700;color:var(--text-secondary);margin-bottom:8px;">Escala de notas</label>
-                <select x-model="courseSettingsForm.grading_scale" style="width:100%;padding:12px 14px;border-radius:14px;border:1px solid var(--nova-glass-border);background:var(--bg-secondary);color:var(--text-primary);">
-                    <option value="1-20">0 a 20</option>
-                    <option value="1-10">0 a 10</option>
-                    <option value="1-5">0 a 5</option>
-                    <option value="A-F">Letras A, B, C, D, E, F</option>
-                </select>
+                <div class="nova-picker" @click.outside="closePickerIf('course-scale')">
+                    <button type="button" class="nova-picker-trigger" :class="{ 'is-open': openPicker === 'course-scale' }" @click="togglePicker('course-scale')">
+                        <span x-text="scaleLabel(courseSettingsForm.grading_scale)"></span>
+                        <i class="fa-solid fa-chevron-down"></i>
+                    </button>
+                    <div x-show="openPicker === 'course-scale'" x-cloak class="nova-picker-menu">
+                        <template x-for="opt in scaleOptions" :key="'course-'+opt.id">
+                            <button type="button" class="nova-picker-item" :class="{ 'is-on': courseSettingsForm.grading_scale === opt.id }" @click="courseSettingsForm.grading_scale = opt.id; openPicker = null;">
+                                <span x-text="opt.label"></span>
+                            </button>
+                        </template>
+                    </div>
+                </div>
                 <p style="font-size:12px;color:var(--text-tertiary);margin-top:10px;line-height:1.5;">
                     El 0 vale si el alumno no asistió. Las letras se promedian como número (A=20, B=16, C=12, D=8, E=4, F=0).
                 </p>
@@ -6124,6 +6490,26 @@ function teacherHub() {
         taskAccepted:    false,
         taskProposals:   [],
         taskProposalSaving: null,
+        taskDuePicker: {
+            open: false,
+            idx: null,
+            month: '',
+            selected: '',
+        },
+        openPicker: null,
+        neeTypeOptions: [
+            { id: 'TDAH', label: 'TDAH', icon: 'fa-solid fa-bolt' },
+            { id: 'TEA/Autismo', label: 'TEA / Autismo', icon: 'fa-solid fa-puzzle-piece' },
+            { id: 'Dislexia', label: 'Dislexia', icon: 'fa-solid fa-book-open' },
+            { id: 'Discalculia', label: 'Discalculia', icon: 'fa-solid fa-calculator' },
+            { id: 'Otro', label: 'Otro', icon: 'fa-solid fa-star' },
+        ],
+        scaleOptions: [
+            { id: '1-20', label: '0 a 20' },
+            { id: '1-10', label: '0 a 10' },
+            { id: '1-5', label: '0 a 5' },
+            { id: 'A-F', label: 'Letras A–F' },
+        ],
         taskForm: {
             titulo: '',
             descripcion: '',
@@ -6514,6 +6900,34 @@ function teacherHub() {
         isLetterScale() {
             const scale = this.gradesSlideover?.grading_scale || this.courseData?.grading_scale || '1-20';
             return scale === 'A-F';
+        },
+
+        scaleLabel(id) {
+            return (this.scaleOptions || []).find((opt) => opt.id === id)?.label || id || 'Escala';
+        },
+
+        neeTypeLabel() {
+            return (this.neeTypeOptions || []).find((opt) => opt.id === this.neeForm.tipo)?.label || 'Diagnóstico NEE…';
+        },
+
+        neeStudentLabel() {
+            if (!this.neeForm.student_id) return 'Todo el grupo';
+            const hit = (this.neeRoster || []).find((st) => String(st.id) === String(this.neeForm.student_id));
+            return hit?.name || 'Alumno';
+        },
+
+        togglePicker(id) {
+            this.openPicker = this.openPicker === id ? null : id;
+        },
+
+        closePickerIf(id) {
+            if (this.openPicker === id) this.openPicker = null;
+        },
+
+        pickGradesScale(id) {
+            this.gradesSlideover.grading_scale = id;
+            this.openPicker = null;
+            this.changeGradesScale();
         },
 
         applyGradingScale(json) {
@@ -7610,28 +8024,101 @@ function teacherHub() {
             }
         },
 
-        async selectTaskProposal(idea, idx) {
+        isoToday() {
+            const d = new Date();
+            return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        },
+
+        isoAddDays(iso, days) {
+            const d = this.parseLocalDate(iso) || new Date();
+            d.setDate(d.getDate() + days);
+            return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        },
+
+        classDueDate() {
+            return this.activityModal?.due_date || this.isoToday();
+        },
+
+        dueMonthLabel() {
+            const [y, m] = String(this.taskDuePicker.month || this.isoToday().slice(0, 7)).split('-').map(Number);
+            const d = new Date(y, (m || 1) - 1, 1);
+            return d.toLocaleDateString('es-VE', { month: 'long', year: 'numeric' });
+        },
+
+        dueCalendarCells() {
+            const [y, m] = String(this.taskDuePicker.month || this.isoToday().slice(0, 7)).split('-').map(Number);
+            const first = new Date(y, m - 1, 1);
+            const startPad = (first.getDay() + 6) % 7;
+            const daysInMonth = new Date(y, m, 0).getDate();
+            const cells = [];
+            for (let i = 0; i < startPad; i++) cells.push(null);
+            for (let day = 1; day <= daysInMonth; day++) {
+                cells.push(`${y}-${String(m).padStart(2, '0')}-${String(day).padStart(2, '0')}`);
+            }
+            while (cells.length % 7 !== 0) cells.push(null);
+            return cells;
+        },
+
+        shiftDueMonth(delta) {
+            const [y, m] = String(this.taskDuePicker.month || this.isoToday().slice(0, 7)).split('-').map(Number);
+            const d = new Date(y, m - 1 + delta, 1);
+            this.taskDuePicker.month = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        },
+
+        formatDueLong(iso) {
+            const d = this.parseLocalDate(iso);
+            if (!d) return 'una fecha';
+            return d.toLocaleDateString('es-VE', { weekday: 'long', day: 'numeric', month: 'long' });
+        },
+
+        pickDuePreset(iso) {
+            if (!iso) return;
+            this.taskDuePicker.selected = iso;
+            this.taskDuePicker.month = iso.slice(0, 7);
+        },
+
+        openTaskDuePicker(idea, idx) {
             if (!idea || !this.activityModal?.id) return;
             this.taskForm.titulo = idea.titulo || '';
             this.taskForm.descripcion = idea.descripcion || '';
-            this.taskForm.fecha_entrega = this.activityModal?.due_date || this.taskForm.fecha_entrega || '';
             this.taskForm.puntos = this.taskForm.puntos || 20;
             this.taskAccepted = true;
-            this.taskProposalSaving = idx;
+            const suggested = this.classDueDate();
+            this.taskDuePicker = {
+                open: true,
+                idx,
+                month: String(suggested).slice(0, 7),
+                selected: suggested,
+            };
+        },
+
+        closeTaskDuePicker() {
+            this.taskDuePicker.open = false;
+            this.taskDuePicker.idx = null;
+        },
+
+        async confirmTaskDue() {
+            if (!this.taskDuePicker.selected) return;
+            this.taskForm.fecha_entrega = this.taskDuePicker.selected;
+            this.taskProposalSaving = this.taskDuePicker.idx;
             try {
-                await this.saveTask();
+                const saved = await this.saveTask();
+                if (!saved) return;
                 this.taskProposals = [];
+                this.closeTaskDuePicker();
             } finally {
                 this.taskProposalSaving = null;
             }
         },
 
+        async selectTaskProposal(idea, idx) {
+            this.openTaskDuePicker(idea, idx);
+        },
+
         async saveTask() {
-            if (!this.activityModal?.id || !this.taskAccepted) return;
+            if (!this.activityModal?.id || !this.taskAccepted) return false;
             if (!this.taskForm.fecha_entrega) {
-                const d = new Date();
-                d.setDate(d.getDate() + 1);
-                this.taskForm.fecha_entrega = d.toISOString().slice(0, 10);
+                this.taskForm.fecha_entrega = this.isoAddDays(this.isoToday(), 1);
             }
             if (!this.taskForm.puntos) {
                 this.taskForm.puntos = 20;
@@ -7661,7 +8148,7 @@ function teacherHub() {
                 const json = await res.json();
                 if (!res.ok || !json.success) {
                     alert(json.error || 'No se pudo guardar la tarea.');
-                    return;
+                    return false;
                 }
 
                 if (!Array.isArray(this.activityModal.tareas)) {
@@ -7669,11 +8156,14 @@ function teacherHub() {
                 }
                 this.activityModal.tareas.unshift(json.tarea);
                 this.taskIdeaModalOpen = false;
-                this.showToast('Tarea asignada a esta clase.', 'success', 'fa-check');
+                const when = this.formatDueLong(this.taskForm.fecha_entrega);
+                this.showToast(`Tarea asignada · entrega el ${when}.`, 'success', 'fa-check');
                 window.dispatchEvent(new CustomEvent('ai-canvas-refresh'));
+                return true;
             } catch (e) {
                 console.error('saveTask', e);
                 alert('Error al guardar la tarea.');
+                return false;
             } finally {
                 this.taskSaving = false;
             }

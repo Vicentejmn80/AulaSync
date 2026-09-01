@@ -46,6 +46,13 @@ class TeacherLessonAiLabTest extends TestCase
         $this->assertDatabaseHas('tareas', [
             'actividad_id' => $activity->id,
             'titulo' => 'Práctica: Fracciones',
+            'fecha_entrega' => '2026-09-02',
+        ]);
+        $this->assertSame('2026-09-01', $activity->fresh()->due_date?->format('Y-m-d'));
+        $this->assertDatabaseHas('activities', [
+            'title' => 'Práctica: Fracciones',
+            'due_date' => '2026-09-02',
+            'is_homework' => 1,
         ]);
         $this->assertSame(1, Tarea::query()->where('actividad_id', $activity->id)->count());
     }

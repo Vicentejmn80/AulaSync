@@ -5,6 +5,45 @@
         transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
     }
 
+    html:not(.dark) { color-scheme: light; }
+    html.dark { color-scheme: dark; }
+
+    /* Native <select> dropdowns ignore inherited color on Windows unless
+       option has its own background. Dark themes were painting light text
+       on a white OS list — unreadable NEE / alumno / escala / letras. */
+    select,
+    select option,
+    select optgroup {
+        background-color: var(--bg-secondary);
+        color: var(--text-primary);
+    }
+
+    html:not(.dark) select,
+    html:not(.dark) select option,
+    html:not(.dark) select optgroup {
+        background-color: #FFFFFF;
+        color: #1C1233;
+    }
+
+    html.dark select,
+    html.dark select option,
+    html.dark select optgroup {
+        background-color: #1C1636;
+        color: #F5F3FF;
+    }
+
+    html[data-theme="eco"] select,
+    html[data-theme="eco"] select option {
+        background-color: #141428;
+        color: #E8E8F4;
+    }
+
+    html[data-theme="neon"] select,
+    html[data-theme="neon"] select option {
+        background-color: #0E2133;
+        color: #E8F7FF;
+    }
+
     html[data-theme="light"] {
         --bg-primary: #F8F6F0;
         --bg-secondary: #FFFFFF;
@@ -259,6 +298,7 @@
         const theme = (window.AULA_THEMES || []).find(t => t.id === themeId) || window.AULA_THEMES[0];
         document.documentElement.setAttribute('data-theme', theme.id);
         document.documentElement.classList.toggle('dark', !!theme.dark);
+        document.documentElement.style.colorScheme = theme.dark ? 'dark' : 'light';
         localStorage.setItem('aula-theme', theme.id);
         localStorage.setItem('nova-theme', theme.dark ? 'dark' : 'light');
         window.dispatchEvent(new CustomEvent('aula-theme-changed', { detail: theme }));
