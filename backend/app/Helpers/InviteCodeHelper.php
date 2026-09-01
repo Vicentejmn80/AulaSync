@@ -4,6 +4,7 @@ namespace App\Helpers;
 
 use App\Models\Colegio;
 use App\Models\Course;
+use App\Models\FamilyInvite;
 use App\Models\TeacherInvite;
 use Illuminate\Support\Str;
 
@@ -47,6 +48,15 @@ class InviteCodeHelper
         do {
             $candidate = 'DOC-' . strtoupper(Str::random(5));
         } while (TeacherInvite::where('invite_code', $candidate)->exists());
+
+        return $candidate;
+    }
+
+    public static function generateFamilyInvite(): string
+    {
+        do {
+            $candidate = 'FAM-' . strtoupper(Str::random(5));
+        } while (FamilyInvite::where('invite_code', $candidate)->exists());
 
         return $candidate;
     }

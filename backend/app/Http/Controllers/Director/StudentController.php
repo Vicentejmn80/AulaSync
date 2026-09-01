@@ -101,9 +101,12 @@ class StudentController extends Controller
         }
 
         $student = $this->enrollment->enroll($user, $data, $course);
+        $invite = app(\App\Services\FamilyInviteService::class)->ensureForStudent($student, $user);
+        $link = $invite->registrationUrl();
 
         return redirect()->route('director.students')
-            ->with('success', "Alumno «{$student->name}» matriculado. Código familiar: {$student->family_code}. Entrégaselo al representante.");
+            ->with('success', "Alumno «{$student->name}» matriculado. Comparte este enlace con la familia: {$link}")
+            ->with('family_invite_url', $link);
     }
 
     public function destroy(Request $request, Student $student, DirectorActionService $actions): RedirectResponse|JsonResponse

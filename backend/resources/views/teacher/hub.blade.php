@@ -6042,19 +6042,15 @@
             </div>
 
             <div class="grades-slideover-body">
-                <div x-show="studentSlideover.student?.has_family_code" class="mb-4 rounded-2xl border p-3" style="border-color: var(--nova-glass-border); background: var(--bg-secondary);">
-                    <p class="text-[11px] font-bold uppercase tracking-widest mb-2" style="color: var(--nova-violet);">Código familiar (representante)</p>
-                    <div x-show="!studentSlideover.familyUnlocked">
-                        <button type="button" class="btn-secondary" @click="studentSlideover.showPin = true" style="font-size:12px;">
-                            <i class="fa-solid fa-lock" style="margin-right:6px;"></i> Ver código con PIN
+                <div class="mb-4 rounded-2xl border p-3" style="border-color: var(--nova-glass-border); background: var(--bg-secondary);">
+                    <p class="text-[11px] font-bold uppercase tracking-widest mb-2" style="color: var(--nova-violet);">Invitar representante</p>
+                    <p class="text-xs" style="color: var(--text-secondary); margin-bottom: 8px;">Comparte el enlace. La familia se registra una vez y ve a este alumno (y a sus hermanos).</p>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                        <button type="button" class="btn-secondary" style="font-size:12px;" @click="copyStudentFamilyLink()">
+                            <i class="fa-solid fa-link" style="margin-right:6px;"></i> Copiar enlace
                         </button>
                     </div>
-                    <div x-show="studentSlideover.familyUnlocked" x-cloak class="inline-flex items-center gap-2">
-                        <code class="select-all rounded-lg border border-cyan-500/20 bg-cyan-500/10 px-3 py-1.5 font-mono text-xs font-bold tracking-widest text-cyan-300" x-text="studentSlideover.familyCode"></code>
-                        <span class="text-xs text-slate-400" x-text="studentSlideover.familySeconds + 's'"></span>
-                        <button type="button" class="btn-secondary" style="font-size:11px;padding:4px 8px;" @click="navigator.clipboard.writeText(studentSlideover.familyCode)">Copiar</button>
-                    </div>
-                    <p x-show="studentSlideover.pinError" class="grades-inline-error mt-2" x-text="studentSlideover.pinError" style="margin-top:8px;"></p>
+                    <p x-show="studentSlideover.familyLink" class="text-xs mt-2" style="color:var(--text-tertiary);word-break:break-all;" x-text="studentSlideover.familyLink"></p>
                 </div>
 
                 <template x-if="studentSlideover.loading">
@@ -6452,6 +6448,7 @@ function teacherHub() {
             pinError: '',
             familyUnlocked: false,
             familyCode: '',
+            familyLink: '',
             familySeconds: 0,
             familyTimer: null,
         },
@@ -7443,6 +7440,7 @@ function teacherHub() {
             this.studentSlideover.pinError = '';
             this.studentSlideover.familyUnlocked = false;
             this.studentSlideover.familyCode = '';
+            this.studentSlideover.familyLink = '';
             this.studentSlideover.familySeconds = 0;
             this.studentSlideover.student = {
                 id: student.id,
@@ -7484,6 +7482,36 @@ function teacherHub() {
                 this.studentSlideover.error = 'Error al cargar el panel del alumno.';
             } finally {
                 this.studentSlideover.loading = false;
+            }
+            this.loadStudentFamilyInvite(student.id);
+        },
+
+        async loadStudentFamilyInvite(studentId) {
+            try {
+                const res = await fetch(`/teacher/api/students/${studentId}/family-invite`, { headers: { Accept: 'application/json' } });
+                const json = await res.json();
+                if (json.family_invite?.invitation_link) {
+                    this.studentSlideover.familyLink = json.family_invite.invitation_link;
+                }
+            } catch (e) {
+                console.warn('family invite', e);
+            }
+        },
+
+        async copyStudentFamilyLink() {
+            if (!this.studentSlideover.familyLink && this.studentSlideover.student?.id) {
+                await this.loadStudentFamilyInvite(this.studentSlideover.student.id);
+            }
+            const link = this.studentSlideover.familyLink;
+            if (!link) {
+                this.showToast('No se pudo generar el enlace familiar.', 'error', 'fa-exclamation-triangle');
+                return;
+            }
+            try {
+                await navigator.clipboard.writeText(link);
+                this.showToast('Enlace familiar copiado.', 'success', 'fa-link');
+            } catch (e) {
+                this.showToast(link, 'success', 'fa-link');
             }
         },
 

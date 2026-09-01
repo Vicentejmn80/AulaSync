@@ -11,6 +11,7 @@ use App\Models\Grade;
 use App\Models\Notification;
 use App\Models\Student;
 use App\Services\AttendanceSummaryService;
+use App\Services\FamilyInviteService;
 use App\Services\StudentEnrollmentService;
 use App\Services\StudentGradeAccumulationService;
 use App\Services\TeacherInviteClaimService;
@@ -30,6 +31,7 @@ class HubController extends Controller
         private AttendanceSummaryService $attendanceSummary,
         private TeacherInviteClaimService $inviteClaim,
         private StudentEnrollmentService $enrollment,
+        private FamilyInviteService $families,
     ) {
     }
 
@@ -419,6 +421,21 @@ class HubController extends Controller
                 'activities' => [],
             ], 500);
         }
+    }
+
+    public function familyInvite(Student $student): JsonResponse
+    {
+        $teacher = auth()->user();
+        abort_unless((int) $student->colegio_id === (int) $teacher->colegio_id, 404);
+        $visible = $student->courses()->where('teacher_id', $teacher->id)->exists();
+        abort_unless($visible, 404);
+
+        $invite = $this->families->ensureForStudent($student, $teacher);
+
+        return response()->json([
+            'success' => true,
+            'family_invite' => $this->families->serialize($invite, $student),
+        ]);
     }
 
     public function updateGradingScale(Request $request, Course $course): JsonResponse

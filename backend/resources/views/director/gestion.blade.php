@@ -338,7 +338,10 @@
                                 <td @dblclick="startEdit(row, 'section')"><span x-show="editKey !== 's'+row.id+'.section'" x-text="row.section || '—'"></span>
                                     <input x-show="editKey === 's'+row.id+'.section'" x-cloak class="hub-input w-20" x-model="editValue" @keydown.enter="saveEdit(row, 'section')" @blur="saveEdit(row, 'section')"></td>
                                 <td><span class="text-sm text-slate-500" x-text="row.courses_count + ' curso(s)'"></span></td>
-                                <td class="text-right"><button class="hub-btn hub-btn-danger !py-1.5 !text-xs" @click="queueDelete(row, 'student')"><i class="fa-solid fa-trash-can"></i></button></td>
+                                <td class="text-right whitespace-nowrap">
+                                    <button class="hub-btn hub-btn-ghost !py-1.5 !text-xs" @click="openFamilyShare(row)"><i class="fa-solid fa-share-nodes"></i> Familia</button>
+                                    <button class="hub-btn hub-btn-danger !py-1.5 !text-xs" @click="queueDelete(row, 'student')"><i class="fa-solid fa-trash-can"></i></button>
+                                </td>
                             </tr>
                         </template>
                     </tbody>
@@ -623,6 +626,13 @@
                                 <template x-for="m in materias" :key="'fm'+m.id"><option :value="m.name" x-text="m.name"></option></template>
                             </select>
                         </div>
+                        <select class="hub-input" x-model="form.sibling_student_id">
+                            <option value="">Nueva familia (enlace propio)</option>
+                            <template x-for="sib in students" :key="'sib'+sib.id">
+                                <option :value="sib.id" x-text="'Hermano de ' + sib.name"></option>
+                            </template>
+                        </select>
+                        <p class="text-xs text-slate-500">Si es hermano de alguien ya matriculado, comparte el mismo enlace familiar.</p>
                         <p class="text-xs font-bold uppercase tracking-wide text-slate-400">Matricular en cursos</p>
                         <div class="max-h-56 space-y-2 overflow-y-auto rounded-2xl border p-2" style="border-color:var(--nova-glass-border)">
                             <p class="px-1 py-6 text-center text-sm text-slate-400" x-show="!studentCourseOptions.length">No hay cursos para ese filtro. Crea la oferta primero.</p>
@@ -679,25 +689,34 @@
     {{-- Share invite --}}
     <div x-show="inviteShare" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 px-4 py-6" @keydown.escape.window="inviteShare = null">
         <div class="w-full max-w-lg rounded-3xl p-6 shadow-2xl" style="background:var(--bg-card);color:var(--text-primary)">
-            <p class="text-xs font-bold uppercase tracking-widest text-indigo-500">Profesor creado</p>
-            <h3 class="mt-1 text-xl font-extrabold" x-text="(inviteShare?.name || '') + ' listo'"></h3>
-            <p class="mt-2 text-sm text-slate-500" x-show="inviteShare?.email" x-text="'Se envió un email de invitación a ' + inviteShare.email"></p>
-            <p class="mt-2 text-sm text-slate-500" x-show="!inviteShare?.email">Sin correo: comparte el link de registro para que el profesor cree su cuenta.</p>
+            <p class="text-xs font-bold uppercase tracking-widest text-indigo-500" x-text="inviteShare?.kind === 'family' ? 'Familia' : 'Profesor creado'"></p>
+            <h3 class="mt-1 text-xl font-extrabold" x-text="inviteShare?.kind === 'family' ? ('Invitar a la familia de ' + (inviteShare?.name || '')) : ((inviteShare?.name || '') + ' listo')"></h3>
+            <p class="mt-2 text-sm text-slate-500" x-show="inviteShare?.kind === 'family'">
+                Comparte el enlace por WhatsApp. El representante se registra una vez y ve a todos los hermanos de esta familia.
+            </p>
+            <p class="mt-2 text-sm text-slate-500" x-show="inviteShare?.kind !== 'family' && inviteShare?.email" x-text="'Se envió un email de invitación a ' + inviteShare.email"></p>
+            <p class="mt-2 text-sm text-slate-500" x-show="inviteShare?.kind !== 'family' && !inviteShare?.email">Sin correo: comparte el link de registro para que el profesor cree su cuenta.</p>
+            <div class="mt-4 space-y-2" x-show="inviteShare?.kind === 'family' && (inviteShare?.students || []).length">
+                <template x-for="kid in (inviteShare?.students || [])" :key="'kid'+kid.id">
+                    <p class="text-sm font-semibold" x-text="kid.name + (kid.grade ? ' · ' + kid.grade : '')"></p>
+                </template>
+            </div>
             <div class="mt-4 space-y-3 rounded-2xl border p-4" style="border-color:var(--nova-glass-border)">
                 <div>
-                    <p class="text-xs font-bold uppercase tracking-wide text-slate-400">Código de invitación</p>
+                    <p class="text-xs font-bold uppercase tracking-wide text-slate-400" x-text="inviteShare?.kind === 'family' ? 'Código familiar' : 'Código de invitación'"></p>
                     <p class="mt-1 font-mono text-lg font-extrabold" x-text="inviteShare?.invite_code"></p>
                 </div>
-                <div x-show="registrationLink(inviteShare)">
+                <div x-show="shareLink(inviteShare)">
                     <p class="text-xs font-bold uppercase tracking-wide text-slate-400">Link de registro</p>
-                    <p class="mt-1 break-all text-sm text-indigo-600" x-text="registrationLink(inviteShare)"></p>
+                    <p class="mt-1 break-all text-sm text-indigo-600" x-text="shareLink(inviteShare)"></p>
                 </div>
             </div>
             <div class="mt-5 flex flex-wrap gap-2">
-                <button type="button" class="hub-btn hub-btn-ghost" x-show="registrationLink(inviteShare)" @click="copyRegistrationLink(inviteShare)">Copiar link</button>
+                <button type="button" class="hub-btn hub-btn-ghost" x-show="shareLink(inviteShare)" @click="copyShareLink(inviteShare)">Copiar link</button>
                 <button type="button" class="hub-btn hub-btn-ghost" @click="copyText(inviteShare?.invite_code, 'Código copiado.')">Copiar código</button>
-                <button type="button" class="hub-btn hub-btn-solid" x-show="inviteShare?.email" @click="resendInvite(inviteShare)">Reenviar email</button>
-                <button type="button" class="hub-btn hub-btn-ghost ml-auto" @click="inviteShare = null; openPanel('teachers')">Menú principal</button>
+                <a class="hub-btn hub-btn-solid" x-show="inviteShare?.kind === 'family' && whatsappLink(inviteShare)" :href="whatsappLink(inviteShare)" target="_blank" rel="noopener">WhatsApp</a>
+                <button type="button" class="hub-btn hub-btn-solid" x-show="inviteShare?.kind !== 'family' && inviteShare?.email" @click="resendInvite(inviteShare)">Reenviar email</button>
+                <button type="button" class="hub-btn hub-btn-ghost ml-auto" @click="inviteShare = null">Cerrar</button>
             </div>
         </div>
     </div>
@@ -715,6 +734,7 @@
                 teachers: @json(route('director.gestion.teachers.store')),
                 resendInvite: (id) => @json(url('/director/gestion/teachers')).replace(/\/$/, '') + '/' + id + '/resend-invitation',
                 students: @json(route('director.gestion.students.store')),
+                familyInvite: (id) => @json(url('/director/gestion/students')).replace(/\/$/, '') + '/' + id + '/family-invite',
                 student: (id) => @json(url('/director/gestion/students')).replace(/\/$/, '') + '/' + id,
                 courses: @json(route('director.gestion.courses.store')),
                 course: (id) => @json(url('/director/gestion/courses')).replace(/\/$/, '') + '/' + id,
@@ -1067,7 +1087,7 @@
                     await this.refresh();
                 },
                 openCreate() {
-                    this.form = { name: '', email: '', subject_name: '', grade: '', section: 'A', materia_id: '', teacher_id: '', course_ids: [], subject_filter: '' };
+                    this.form = { name: '', email: '', subject_name: '', grade: '', section: 'A', materia_id: '', teacher_id: '', course_ids: [], subject_filter: '', sibling_student_id: '' };
                     this.creating = true;
                 },
                 toggleFormCourse(id, checked) {
@@ -1092,11 +1112,14 @@
                             this.showToast(json.message || 'Profesor creado.');
                         }
                         if (this.panel === 'students') {
-                            await this.api('POST', routes.students, {
+                            const json = await this.api('POST', routes.students, {
                                 name: this.form.name,
                                 grade: this.form.grade,
                                 course_ids: this.form.course_ids,
+                                sibling_student_id: this.form.sibling_student_id || null,
                             });
+                            this.inviteShare = json.family_invite || null;
+                            this.showToast(json.message || 'Alumno matriculado.');
                         }
                         if (this.panel === 'courses') {
                             const raw = String(this.form.teacher_id || '');
@@ -1172,13 +1195,43 @@
                 openShare(row) {
                     this.inviteShare = row;
                 },
-                registrationLink(row) {
+                async openFamilyShare(row) {
+                    const json = await this.api('GET', routes.familyInvite(row.id));
+                    this.inviteShare = json.family_invite || null;
+                },
+                shareLink(row) {
                     const link = String(row?.invitation_link || '').trim();
                     if (/^https?:\/\//i.test(link)) return link;
+                    if (row?.kind === 'family') {
+                        const school = this.schoolInviteCode || row?.school_code;
+                        const code = String(row?.invite_code || '').trim();
+                        if (!school || !code) return '';
+                        return `${window.location.origin}/familia/unirse?school=${encodeURIComponent(school)}&code=${encodeURIComponent(code)}`;
+                    }
+                    return this.registrationLink(row);
+                },
+                registrationLink(row) {
+                    const link = String(row?.invitation_link || '').trim();
+                    if (/^https?:\/\//i.test(link) && !String(link).includes('/familia/')) return link;
                     const school = this.schoolInviteCode;
                     const code = String(row?.invite_code || '').trim();
-                    if (!school || !code) return '';
+                    if (!school || !code || String(code).startsWith('FAM-')) return '';
                     return `${window.location.origin}/onboarding/profesor?school=${encodeURIComponent(school)}&code=${encodeURIComponent(code)}`;
+                },
+                copyShareLink(row) {
+                    const link = this.shareLink(row);
+                    if (!link) {
+                        this.showToast('Aún no hay link para copiar.');
+                        return;
+                    }
+                    this.copyText(link, 'Link copiado.');
+                },
+                whatsappLink(row) {
+                    const link = this.shareLink(row);
+                    if (!link) return '';
+                    const names = (row?.students || []).map((s) => s.name).join(', ') || row?.name || 'tu hijo';
+                    const text = `Hola, te invito a ver a ${names} en AulaSync. Entra aquí, crea tu cuenta y listo: ${link}`;
+                    return 'https://wa.me/?text=' + encodeURIComponent(text);
                 },
                 copyRegistrationLink(row) {
                     const link = this.registrationLink(row);

@@ -111,7 +111,7 @@
                         <input type="hidden" name="family_mode" :value="familyMode">
                         <div x-show="familyMode === 'existing'">
                             <select name="sibling_student_id" class="director-select">
-                                <option value="">— Elige al hermano para compartir el código NV- —</option>
+                                <option value="">— Elige al hermano para compartir el mismo enlace —</option>
                                 @foreach($households ?? [] as $mate)
                                     <option value="{{ $mate->id }}">
                                         {{ $mate->name }} · {{ $mate->family_code }}
@@ -120,7 +120,7 @@
                             </select>
                         </div>
                         <p class="mt-2 text-xs text-indigo-700" x-show="familyMode === 'new'">
-                            Se genera un código familiar NV- para que el representante se registre y confirme a este alumno.
+                            Se crea un enlace familiar para que el representante se registre una vez y vea a este alumno.
                         </p>
                     </div>
 

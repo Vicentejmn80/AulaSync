@@ -19,6 +19,7 @@ use App\Http\Controllers\Director\ReportCardController as DirectorReportCardCont
 use App\Http\Controllers\Director\StaffController as DirectorStaffController;
 use App\Http\Controllers\Director\StudentController as DirectorStudentController;
 use App\Http\Controllers\FamilyCodeController;
+use App\Http\Controllers\FamilyInviteController;
 use App\Http\Controllers\InvitationController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\OnboardingController;
@@ -64,6 +65,11 @@ Route::get('/onboarding/teacher', [InvitationController::class, 'show']);
 Route::post('/onboarding/profesor', [InvitationController::class, 'accept'])
     ->name('onboarding.teacher.store');
 Route::post('/onboarding/teacher', [InvitationController::class, 'accept']);
+
+Route::get('/familia/unirse', [FamilyInviteController::class, 'show'])
+    ->name('familia.join');
+Route::post('/familia/unirse', [FamilyInviteController::class, 'accept'])
+    ->name('familia.join.store');
 
 Route::get('/e/{token}', [EvaluationController::class, 'take'])->name('evaluations.take');
 Route::post('/e/{token}', [EvaluationController::class, 'submitTake'])->name('evaluations.take.submit');
@@ -115,6 +121,8 @@ Route::middleware('auth')->group(function () {
                     ->name('gestion.teachers.resend-invitation');
                 Route::post('/gestion/students', [DirectorManagementHubController::class, 'storeStudent'])
                     ->name('gestion.students.store');
+                Route::get('/gestion/students/{student}/family-invite', [DirectorManagementHubController::class, 'familyInvite'])
+                    ->name('gestion.students.family-invite');
                 Route::patch('/gestion/students/{student}', [DirectorManagementHubController::class, 'updateStudent'])
                     ->name('gestion.students.update');
                 Route::post('/gestion/courses', [DirectorManagementHubController::class, 'storeCourse'])
@@ -296,6 +304,7 @@ Route::middleware('auth')->group(function () {
             Route::get('/teacher/api/courses/{course}', [HubController::class, 'apiCourse'])->name('teacher.api.course');
             Route::patch('/teacher/api/courses/{course}/grading-scale', [HubController::class, 'updateGradingScale'])->name('teacher.api.course.grading_scale');
             Route::get('/teacher/api/courses/{course}/students/{student}/grades', [HubController::class, 'apiCourseStudentGrades'])->name('teacher.api.course.student.grades');
+            Route::get('/teacher/api/students/{student}/family-invite', [HubController::class, 'familyInvite'])->name('teacher.api.student.family_invite');
             Route::get('/teacher/api/calendar', [HubController::class, 'apiCalendar'])->name('teacher.api.calendar');
             Route::get('/teacher/api/activities/{activity}', [HubController::class, 'apiActivity'])->name('teacher.api.activity');
             Route::patch('/teacher/api/activities/{activity}/schedule', [HubController::class, 'updateActivitySchedule'])->name('teacher.api.activity.schedule');

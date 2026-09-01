@@ -6,11 +6,13 @@ use App\Helpers\InviteCodeHelper;
 use App\Http\Controllers\Controller;
 use App\Models\Colegio;
 use App\Models\Course;
+use App\Models\FamilyInvite;
 use App\Models\Materia;
 use App\Models\Student;
 use App\Models\TeacherInvite;
 use App\Models\User;
 use App\Services\DirectorActionService;
+use App\Services\FamilyInviteService;
 use App\Services\InvitationService;
 use App\Services\PersonNameSanitizer;
 use App\Services\StudentEnrollmentService;
@@ -26,6 +28,7 @@ class ManagementHubController extends Controller
         private StudentEnrollmentService $enrollment,
         private PersonNameSanitizer $names,
         private InvitationService $invitations,
+        private FamilyInviteService $families,
     ) {}
 
     public function index(): View
@@ -63,12 +66,19 @@ class ManagementHubController extends Controller
             ->get()
             ->map(fn (TeacherInvite $invite) => $this->serializeInvite($invite));
 
+        $familyInvites = FamilyInvite::query()
+            ->where('colegio_id', $colegioId)
+            ->whereNull('revoked_at')
+            ->with('colegio:id,name,invite_code')
+            ->get()
+            ->keyBy('family_code');
+
         $students = Student::query()
             ->where('colegio_id', $colegioId)
             ->with(['courses:id,subject_name,grade,section'])
             ->orderBy('name')
             ->get()
-            ->map(fn (Student $student) => $this->serializeStudent($student));
+            ->map(fn (Student $student) => $this->serializeStudent($student, $familyInvites->get($student->family_code)));
 
         $courses = Course::query()
             ->where('colegio_id', $colegioId)
@@ -187,6 +197,7 @@ class ManagementHubController extends Controller
             'course_id' => ['nullable', 'integer'],
             'course_ids' => ['nullable', 'array'],
             'course_ids.*' => ['integer'],
+            'sibling_student_id' => ['nullable', 'integer'],
         ]);
 
         $courseIds = collect($data['course_ids'] ?? [])
@@ -218,10 +229,26 @@ class ManagementHubController extends Controller
             }
         }
 
+        $invite = $this->families->ensureForStudent($student->fresh(), $request->user());
+        $share = $this->families->serialize($invite, $student);
+
         return response()->json([
             'success' => true,
-            'message' => "Alumno «{$student->name}» matriculado.",
-            'student' => $this->serializeStudent($student->fresh(['courses'])),
+            'message' => "Alumno «{$student->name}» matriculado. Comparte el enlace con la familia.",
+            'student' => $this->serializeStudent($student->fresh(['courses']), $invite),
+            'family_invite' => $share,
+        ]);
+    }
+
+    public function familyInvite(Request $request, Student $student): JsonResponse
+    {
+        abort_unless((int) $student->colegio_id === (int) $request->user()->colegio_id, 404);
+
+        $invite = $this->families->ensureForStudent($student, $request->user());
+
+        return response()->json([
+            'success' => true,
+            'family_invite' => $this->families->serialize($invite, $student),
         ]);
     }
 
@@ -632,14 +659,19 @@ class ManagementHubController extends Controller
         ];
     }
 
-    private function serializeStudent(Student $student): array
+    private function serializeStudent(Student $student, ?FamilyInvite $invite = null): array
     {
+        $link = $invite?->registrationUrl();
+
         return [
             'id' => $student->id,
             'name' => $student->name,
             'grade' => GradeLabel::canonical($student->grade) ?: $student->grade,
             'section' => $student->section,
             'family_code' => $student->family_code,
+            'invite_code' => $invite?->invite_code,
+            'invitation_link' => $link,
+            'family_status' => $invite ? 'listo' : 'sin_invitar',
             'courses_count' => $student->relationLoaded('courses') ? $student->courses->count() : ($student->courses_count ?? 0),
             'courses' => $student->relationLoaded('courses')
                 ? $student->courses->map(fn (Course $course) => $this->courseChip($course))->values()->all()

@@ -10,6 +10,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@600;700;800;900&display=swap" rel="stylesheet">
     @include('partials.nova-theme')
+    @include('partials.theme-system')
     <style>
         :root {
             --font-display: 'Manrope', Inter, system-ui, sans-serif;
@@ -189,6 +190,58 @@
         .chat-bubble.mine { margin-left: auto; background: var(--nova-gradient); color: #fff; }
         .chat-bubble.theirs { background: var(--bg-tertiary); }
         .empty { color: var(--text-secondary); font-size: 14px; padding: 18px 0; }
+        .hello { margin: 0 0 18px; }
+        .hello h1 { font-family: var(--font-display); font-size: 28px; font-weight: 900; letter-spacing: -.04em; margin: 0 0 6px; }
+        .hello p { margin: 0; color: var(--text-secondary); font-size: 14px; }
+        .kid-pills { display:flex; gap:8px; flex-wrap:wrap; margin: 12px 0 18px; }
+        .kid-pill {
+            border: 1px solid var(--nova-glass-border);
+            background: var(--bg-card);
+            color: var(--text-primary);
+            border-radius: 999px;
+            padding: 8px 14px;
+            font-weight: 800;
+            font-size: 13px;
+            cursor: pointer;
+        }
+        .kid-pill.is-on {
+            background: var(--nova-gradient);
+            color: #fff;
+            border-color: transparent;
+        }
+        .week-strip { display:grid; grid-template-columns: repeat(7, minmax(0,1fr)); gap: 8px; margin-bottom: 18px; }
+        .week-card {
+            border: 1px solid var(--nova-glass-border);
+            background: var(--bg-card);
+            border-radius: 16px;
+            padding: 10px 8px;
+            min-height: 88px;
+            cursor: pointer;
+            text-align: left;
+        }
+        .week-card.is-today { box-shadow: inset 0 0 0 1.5px var(--nova-fuchsia); }
+        .week-card.is-on { border-color: var(--nova-violet); background: color-mix(in srgb, var(--nova-violet) 10%, var(--bg-card)); }
+        .week-card small { display:block; font-size:10px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; color:var(--text-tertiary); }
+        .week-card b { display:block; font-size:18px; margin: 2px 0 6px; }
+        .week-card span { display:block; font-size:11px; color:var(--text-secondary); line-height:1.35; }
+        .cal-day { min-height: 72px; }
+        .cal-titles { margin-top: 4px; display:flex; flex-direction:column; gap:2px; }
+        .cal-chip {
+            font-size: 9px; font-weight: 800; border-radius: 6px; padding: 1px 4px;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+            background: color-mix(in srgb, var(--nova-violet) 14%, transparent);
+            color: var(--text-primary);
+        }
+        .cal-chip.task { background: color-mix(in srgb, #f59e0b 22%, transparent); }
+        .cal-chip.evaluation { background: color-mix(in srgb, #dc2626 18%, transparent); }
+        .cal-chip.class { background: color-mix(in srgb, #2563eb 16%, transparent); }
+        .insight {
+            border: 1px solid var(--nova-glass-border);
+            background: color-mix(in srgb, var(--nova-violet) 7%, var(--bg-card));
+            border-radius: 18px;
+            padding: 14px 16px;
+            margin-bottom: 16px;
+        }
         .mobile-bar { display: none; }
         .desktop-day-events { display: block; }
         input, select, textarea { font-size: 16px; }
@@ -230,6 +283,7 @@
                 border-bottom: 1px solid var(--nova-glass-border);
             }
             .kpi-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
+            .week-strip { grid-template-columns: repeat(4, minmax(0,1fr)); }
             .kpi-value { font-size: 24px; }
             .fam-main { padding: 12px 16px calc(108px + env(safe-area-inset-bottom)); }
             .topbar { gap: 10px; margin-bottom: 14px; }
@@ -353,11 +407,30 @@
                 <div class="panel" style="text-align:center;padding:60px 20px">
                     <i class="fa-solid fa-link" style="font-size:36px;color:var(--nova-violet)"></i>
                     <h2>Aún no hay hijos vinculados</h2>
-                    <p class="empty">Usa el código familiar NV- que te dio el colegio para completar el onboarding.</p>
+                    <p class="empty">Pide al colegio el enlace familiar. Al abrirlo, tus hijos aparecen aquí.</p>
                 </div>
             </template>
 
             <div x-show="students.length > 0">
+                <div class="hello" x-show="view === 'home'">
+                    <h1 x-text="'Hola, ' + parentFirstName"></h1>
+                    <p x-text="homeSubtitle"></p>
+                </div>
+                <div class="kid-pills" x-show="students.length > 1">
+                    <template x-for="s in students" :key="'pill'+s.id">
+                        <button type="button" class="kid-pill" :class="{ 'is-on': String(studentId) === String(s.id) }" @click="studentId = s.id; refreshAll()" x-text="s.name"></button>
+                    </template>
+                </div>
+                <div class="week-strip" x-show="view === 'home'">
+                    <template x-for="day in weekStrip" :key="'w'+day.date">
+                        <button type="button" class="week-card" :class="{ 'is-today': day.isToday, 'is-on': selectedDay === day.date }" @click="pickDay(day.date)">
+                            <small x-text="day.dow"></small>
+                            <b x-text="day.n"></b>
+                            <span x-text="day.label"></span>
+                        </button>
+                    </template>
+                </div>
+                <div class="insight" x-show="view === 'home' && homeInsight" x-text="homeInsight"></div>
                 <div x-show="view === 'home' || view === 'subjects'">
                     <div class="kpi-grid">
                         <article class="kpi">
@@ -397,6 +470,11 @@
                             <template x-for="day in monthDays" :key="day.key">
                                 <button class="cal-day" :class="{ active: selectedDay === day.date, today: isToday(day.date) }" :style="day.blank ? 'visibility:hidden' : ''" @click="pickDay(day.date)">
                                     <div style="font-weight:800;font-size:12px" x-text="day.n"></div>
+                                    <div class="cal-titles desktop-day-events">
+                                        <template x-for="ev in (calendar.events?.[day.date] || []).slice(0,2)" :key="'t'+ev.id">
+                                            <span class="cal-chip" :class="ev.type" x-text="ev.title"></span>
+                                        </template>
+                                    </div>
                                     <div class="dots">
                                         <template x-for="ev in (calendar.events?.[day.date] || []).slice(0,3)" :key="ev.id">
                                             <span class="dot" :class="ev.type"></span>
@@ -883,6 +961,43 @@
                 },
                 csrf() { return document.querySelector('meta[name=csrf-token]')?.content || ''; },
                 get currentStudent() { return this.students.find(s => String(s.id) === String(this.studentId)); },
+                get parentFirstName() {
+                    const name = @json($parent['name'] ?? 'familia');
+                    return String(name).trim().split(/\s+/)[0] || 'familia';
+                },
+                get homeSubtitle() {
+                    const kid = this.currentStudent;
+                    if (!kid) return 'Tu panel familiar.';
+                    const bits = [kid.grade, kid.section, kid.school].filter(Boolean);
+                    return bits.length ? `${kid.name} · ${bits.join(' · ')}` : kid.name;
+                },
+                get homeInsight() {
+                    const next = this.summary?.pending_tasks?.next_title;
+                    const when = this.fmt(this.summary?.pending_tasks?.next_date);
+                    if (next) return `Próximo: ${next}${when ? ' · ' + when : ''}`;
+                    const ev = this.summary?.evaluations?.next_title;
+                    if (ev) return `Próxima evaluación: ${ev}`;
+                    return 'Semana tranquila: no hay entregas marcadas.';
+                },
+                get weekStrip() {
+                    const start = new Date();
+                    start.setHours(12, 0, 0, 0);
+                    const days = [];
+                    for (let i = 0; i < 7; i++) {
+                        const d = new Date(start);
+                        d.setDate(start.getDate() + i);
+                        const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                        const events = this.calendar.events?.[date] || [];
+                        days.push({
+                            date,
+                            n: d.getDate(),
+                            dow: d.toLocaleDateString('es-VE', { weekday: 'short' }).replace('.', ''),
+                            isToday: i === 0,
+                            label: events[0]?.title || 'Libre',
+                        });
+                    }
+                    return days;
+                },
                 get unreadAnnouncements() { return this.announcements.filter(a => !a.read).length; },
                 get boletinUrl() { return this.studentId ? `/representante/boletin/${this.studentId}` : '#'; },
                 get constanciaUrl() { return this.studentId ? `/representante/constancia/${this.studentId}` : '#'; },
