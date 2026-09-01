@@ -229,7 +229,7 @@ class CommunicationController extends Controller
     {
         $this->authorizeThread($thread);
         $data = $request->validate([
-            'body' => 'required|string|min:1|max:3000',
+            'body' => 'required|string|min:1|max:4000',
             'ai_suggested' => 'nullable|boolean',
         ]);
 
@@ -239,10 +239,22 @@ class CommunicationController extends Controller
             'ai_suggested' => (bool) ($data['ai_suggested'] ?? false),
         ]);
 
+        $thread->loadMissing('student');
+
         $thread->update([
             'last_message_preview' => mb_substr($data['body'], 0, 160),
             'last_message_at' => now(),
         ]);
+
+        if (in_array($thread->contact_role, ['estudiante', 'student', null, ''], true) && $thread->student) {
+            $parents = app(AttendanceAlertService::class)->parentsFor($thread->student);
+            if ($parents->isNotEmpty()) {
+                $thread->update([
+                    'contact_name' => $parents->first()->name,
+                    'contact_role' => 'representante',
+                ]);
+            }
+        }
 
         if ($thread->student && Schema::hasTable('notifications')) {
             $parents = app(AttendanceAlertService::class)->parentsFor($thread->student);
@@ -252,12 +264,23 @@ class CommunicationController extends Controller
                     'colegio_id' => $thread->student->colegio_id,
                     'title' => 'Nuevo mensaje del docente',
                     'message' => auth()->user()->name.' respondió sobre '.$thread->student->name.': '.mb_substr($data['body'], 0, 120),
-                    'link' => route('representante.dashboard'),
+                    'link' => route('representante.dashboard').'#comms',
                 ]);
             }
         }
 
         return response()->json(['success' => true, 'message' => $message]);
+    }
+
+    public function markThreadRead(CommunicationThread $thread): JsonResponse
+    {
+        $this->authorizeThread($thread);
+        $thread->messages()
+            ->whereNull('read_at')
+            ->where('sender_role', '!=', 'teacher')
+            ->update(['read_at' => now()]);
+
+        return response()->json(['success' => true]);
     }
 
     public function simulateIncoming(CommunicationThread $thread): JsonResponse
@@ -336,7 +359,12 @@ class CommunicationController extends Controller
         }
 
         return CommunicationThread::where('teacher_id', $teacherId)
-            ->with(['student:id,name,grade,section,colegio_id', 'messages' => fn ($q) => $q->latest()->limit(40)])
+            ->with(['student:id,name,grade,section,colegio_id', 'messages' => fn ($q) => $q->latest()->limit(80)])
+            ->withCount([
+                'messages as unread_count' => fn ($q) => $q
+                    ->whereNull('read_at')
+                    ->where('sender_role', '!=', 'teacher'),
+            ])
             ->orderByDesc('last_message_at')
             ->limit(40)
             ->get()
@@ -345,7 +373,8 @@ class CommunicationController extends Controller
                     ? round((float) $thread->student->grades()->avg('score'), 1)
                     : null;
                 $label = $thread->student?->name ?? $thread->contact_name;
-                if ($thread->contact_role === 'representante') {
+                $isFamily = in_array($thread->contact_role, ['representante', 'parent'], true);
+                if ($isFamily) {
                     $label = ($thread->contact_name ?: 'Familia').' · '.$thread->student?->name;
                 }
 
@@ -353,11 +382,19 @@ class CommunicationController extends Controller
                     'id' => $thread->id,
                     'contact_name' => $label,
                     'contact_role' => $thread->contact_role,
+                    'is_family' => $isFamily,
                     'last_message_preview' => $thread->last_message_preview,
                     'last_message_at' => optional($thread->last_message_at)->toDateTimeString(),
+                    'unread' => (int) $thread->unread_count,
                     'student' => $thread->student,
                     'student_avg' => $avg,
-                    'messages' => $thread->messages->sortBy('created_at')->values(),
+                    'messages' => $thread->messages->sortBy('created_at')->values()->map(fn (CommunicationMessage $m) => [
+                        'id' => $m->id,
+                        'sender_role' => $m->sender_role,
+                        'body' => $m->body,
+                        'ai_suggested' => $m->ai_suggested,
+                        'created_at' => optional($m->created_at)?->toIso8601String(),
+                    ]),
                 ];
             })
             ->values();

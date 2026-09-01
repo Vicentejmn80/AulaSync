@@ -379,6 +379,7 @@ Route::middleware('auth')->group(function () {
                 Route::post('/announcements', [CommunicationController::class, 'storeAnnouncement'])->name('announcements.store');
                 Route::post('/announcements/{announcement}/demo-read', [CommunicationController::class, 'markReadDemo'])->name('announcements.demo_read');
                 Route::post('/threads/{thread}/messages', [CommunicationController::class, 'sendMessage'])->name('messages.send');
+                Route::post('/threads/{thread}/read', [CommunicationController::class, 'markThreadRead'])->name('threads.read');
                 Route::post('/threads/{thread}/simulate-incoming', [CommunicationController::class, 'simulateIncoming'])->name('messages.simulate_incoming');
                 Route::post('/threads/{thread}/quick-replies', [CommunicationController::class, 'suggestQuickReply'])->name('messages.quick_replies');
             });

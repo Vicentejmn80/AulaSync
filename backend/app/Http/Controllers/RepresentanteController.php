@@ -148,7 +148,7 @@ class RepresentanteController extends Controller
     {
         $data = $request->validate([
             'estudiante_id' => 'required|integer',
-            'body' => 'required|string|min:1|max:3000',
+            'body' => 'required|string|min:1|max:4000',
         ]);
         $parent = auth()->user();
         $student = $this->dashboard->authorizeStudent($parent, (int) $data['estudiante_id']);
@@ -162,7 +162,7 @@ class RepresentanteController extends Controller
         $data = $request->validate([
             'estudiante_id' => 'required|integer',
             'course_id' => 'required|integer',
-            'body' => 'required|string|min:1|max:3000',
+            'body' => 'required|string|min:1|max:4000',
         ]);
         $parent = auth()->user();
         $student = $this->dashboard->authorizeStudent($parent, (int) $data['estudiante_id']);

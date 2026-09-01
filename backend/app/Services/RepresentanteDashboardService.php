@@ -233,6 +233,13 @@ class RepresentanteDashboardService
             topic: null,
             weight: $activity->weight_percentage,
             maxScore: $activity->max_score,
+            extra: [
+                'course_id' => $activity->course_id,
+                'source_id' => $activity->id,
+                'notes' => $this->nullableText($activity->notes),
+                'director_notes' => $this->nullableText($activity->director_notes),
+                'body' => $this->fullEventBody($activity->description, $activity->notes, $activity->director_notes),
+            ],
         );
     }
 
@@ -260,9 +267,13 @@ class RepresentanteDashboardService
             weight: $evaluation->activity?->weight_percentage,
             maxScore: $evaluation->total_points ?? $evaluation->activity?->max_score,
             extra: [
+                'course_id' => $evaluation->course_id,
+                'source_id' => $evaluation->id,
                 'total_points' => $evaluation->total_points,
                 'passing_score' => $evaluation->passing_score,
                 'difficulty' => $evaluation->difficulty,
+                'instructions' => $this->nullableText($evaluation->instructions),
+                'body' => $this->fullEventBody($evaluation->description, $evaluation->instructions),
             ],
         );
     }
@@ -289,8 +300,13 @@ class RepresentanteDashboardService
             topic: $item->assessment_type,
             weight: $item->weight_percentage,
             extra: [
+                'course_id' => $course?->id,
+                'source_id' => $item->id,
                 'assessment_type' => $item->assessment_type,
                 'category' => $item->category,
+                'notes' => $this->nullableText($item->notes),
+                'learning_outcome' => $this->nullableText($item->learning_outcome),
+                'body' => $this->fullEventBody($item->notes, $item->learning_outcome),
             ],
         );
     }
@@ -308,6 +324,9 @@ class RepresentanteDashboardService
             teacher: $row->course?->teacher?->name,
             description: $tardy ? 'Se registró llegada tarde este día.' : 'Se registró ausencia este día.',
             date: $row->attended_on?->format('Y-m-d'),
+            extra: [
+                'course_id' => $row->course_id,
+            ],
         );
     }
 
@@ -373,11 +392,29 @@ class RepresentanteDashboardService
         foreach ($candidates as $candidate) {
             $text = trim((string) $candidate);
             if ($text !== '') {
-                return mb_substr($text, 0, 220);
+                return $text;
             }
         }
 
         return 'Sin descripción detallada aún. El docente puede ampliarla en el plan de clase.';
+    }
+
+    private function fullEventBody(?string ...$parts): ?string
+    {
+        $body = collect($parts)
+            ->map(fn ($part) => trim((string) $part))
+            ->filter()
+            ->unique()
+            ->implode("\n\n");
+
+        return $body !== '' ? $body : null;
+    }
+
+    private function nullableText(mixed $value): ?string
+    {
+        $text = trim((string) $value);
+
+        return $text !== '' ? $text : null;
     }
 
     public function subjects(Student $student): array
@@ -524,16 +561,20 @@ class RepresentanteDashboardService
             ->with(['teacher:id,name', 'messages' => fn ($q) => $q->latest()->limit(1)])
             ->orderByDesc('last_message_at')
             ->get()
-            ->map(function (CommunicationThread $thread) {
+            ->map(function (CommunicationThread $thread) use ($student) {
                 $unread = $thread->messages()
                     ->whereNull('read_at')
                     ->where('sender_role', '!=', 'representante')
                     ->where('sender_role', '!=', 'parent')
                     ->count();
+                $course = $student->courses->firstWhere('teacher_id', $thread->teacher_id);
 
                 return [
                     'id' => $thread->id,
                     'teacher' => $thread->teacher?->name ?? $thread->contact_name ?? 'Docente',
+                    'teacher_id' => $thread->teacher_id,
+                    'course_id' => $course?->id,
+                    'course' => $course?->subject_name,
                     'preview' => $thread->last_message_preview,
                     'last_at' => optional($thread->last_message_at)?->toIso8601String(),
                     'unread' => $unread,
@@ -555,6 +596,8 @@ class RepresentanteDashboardService
         return [
             'id' => $thread->id,
             'teacher' => $thread->teacher?->name ?? $thread->contact_name ?? 'Docente',
+            'teacher_id' => $thread->teacher_id,
+            'course_id' => $student->courses->firstWhere('teacher_id', $thread->teacher_id)?->id,
             'messages' => $thread->messages()->orderBy('created_at')->get()->map(fn (CommunicationMessage $m) => [
                 'id' => $m->id,
                 'body' => $m->body,
@@ -609,6 +652,11 @@ class RepresentanteDashboardService
                 'contact_role' => 'representante',
             ]
         );
+
+        $thread->fill([
+            'contact_name' => $parent->name,
+            'contact_role' => 'representante',
+        ])->save();
 
         $this->sendMessage($parent, $student, $thread, $body);
 
@@ -893,9 +941,13 @@ class RepresentanteDashboardService
                 'due_date' => $a->due_date?->format('Y-m-d'),
                 'date' => $a->due_date?->format('Y-m-d'),
                 'course' => $a->course?->subject_name,
+                'course_id' => $a->course_id,
                 'teacher' => $a->course?->teacher?->name,
                 'weight_percentage' => $a->weight_percentage !== null ? (float) $a->weight_percentage : null,
                 'max_score' => $a->max_score !== null ? (float) $a->max_score : null,
+                'description' => $this->eventDescription($a->description, $a->notes),
+                'notes' => $this->nullableText($a->notes),
+                'body' => $this->fullEventBody($a->description, $a->notes),
                 'color' => $this->eventColor('task'),
             ])
             ->values();
@@ -925,8 +977,12 @@ class RepresentanteDashboardService
                 'title' => $e->title,
                 'date' => optional($e->scheduled_at)?->format('Y-m-d'),
                 'course' => $e->course?->subject_name,
+                'course_id' => $e->course_id,
                 'teacher' => $e->course?->teacher?->name,
                 'topic' => $e->topic,
+                'description' => $this->eventDescription($e->description, $e->instructions, $e->topic),
+                'instructions' => $this->nullableText($e->instructions),
+                'body' => $this->fullEventBody($e->description, $e->instructions),
                 'weight_percentage' => $e->activity?->weight_percentage !== null
                     ? (float) $e->activity->weight_percentage
                     : null,

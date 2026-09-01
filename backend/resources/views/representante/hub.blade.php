@@ -137,6 +137,15 @@
         .event-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
         .event-meta { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
         .event-desc { margin-top: 8px; font-size: 13px; line-height: 1.45; color: var(--text-secondary); }
+        .event-desc.is-preview {
+            display: -webkit-box;
+            -webkit-line-clamp: 3;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+        .event-body { white-space: pre-wrap; word-break: break-word; font-size: 14px; line-height: 1.6; color: var(--text-primary); margin: 12px 0 0; }
+        .event-full { margin-top: 8px; }
+        .event-hint { margin: 8px 0 0; font-size: 11px; font-weight: 700; color: var(--nova-violet); }
         .event-pill {
             display: inline-flex;
             align-items: center;
@@ -216,9 +225,10 @@
             width: 100%; border-radius: 14px; border: 1px solid var(--nova-glass-border);
             background: var(--bg-tertiary); color: var(--text-primary); padding: 11px 12px; margin: 6px 0 12px;
         }
-        .chat-bubble { max-width: 80%; padding: 10px 12px; border-radius: 16px; margin: 8px 0; }
+        .chat-bubble { max-width: 80%; padding: 10px 12px; border-radius: 16px; margin: 8px 0; white-space: pre-wrap; word-break: break-word; }
         .chat-bubble.mine { margin-left: auto; background: var(--nova-gradient); color: #fff; }
         .chat-bubble.theirs { background: var(--bg-tertiary); }
+        .chat-meta { font-size: 10px; font-weight: 700; opacity: .65; margin-top: 4px; }
         .empty { color: var(--text-secondary); font-size: 14px; padding: 18px 0; }
         .hello { margin: 0 0 18px; }
         .hello h1 { font-family: var(--font-display); font-size: 28px; font-weight: 900; letter-spacing: -.04em; margin: 0 0 6px; }
@@ -372,8 +382,23 @@
             border: 1px solid var(--nova-glass-border); border-radius: 16px; padding: 14px; margin-top: 10px;
             background: var(--bg-card); cursor: pointer;
         }
+        .day-event-card.is-selected {
+            border-color: color-mix(in srgb, var(--nova-violet) 50%, var(--nova-glass-border));
+            background: color-mix(in srgb, var(--nova-violet) 7%, var(--bg-card));
+        }
         .day-event-card:hover { border-color: color-mix(in srgb, var(--nova-violet) 40%, var(--nova-glass-border)); }
         .day-event-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+        .inbox { display: grid; grid-template-columns: minmax(220px, 280px) 1fr; gap: 12px; min-height: 420px; }
+        .inbox-list, .inbox-pane {
+            border: 1px solid var(--nova-glass-border); border-radius: 16px; background: var(--bg-secondary);
+        }
+        .inbox-list { padding: 8px; overflow: auto; max-height: 64vh; }
+        .inbox-pane { padding: 14px; display: flex; flex-direction: column; min-height: 380px; }
+        .inbox-row { border-radius: 12px; padding: 10px; cursor: pointer; margin-bottom: 4px; }
+        .inbox-row.active { background: color-mix(in srgb, var(--nova-violet) 12%, transparent); }
+        .inbox-row .preview { font-size: 12px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .inbox-thread { flex: 1; overflow: auto; max-height: 46vh; padding-right: 4px; }
+        .compose-box { border: 1px solid var(--nova-glass-border); border-radius: 14px; padding: 12px; margin-bottom: 12px; background: var(--bg-card); }
         .meta-chip {
             font-size: 11px; font-weight: 800; border-radius: 999px; padding: 3px 9px;
             background: var(--nova-glass); border: 1px solid var(--nova-glass-border); color: var(--text-primary);
@@ -427,6 +452,7 @@
             .cal-grade-event-line { display: none; }
             .calendar-nav { width: 100%; justify-content: flex-start; }
             .split { grid-template-columns: 1fr; }
+            .inbox { grid-template-columns: 1fr; }
             .fam-toast { left: 14px; bottom: calc(14px + env(safe-area-inset-bottom)); }
             .fam-backdrop.is-open { align-items: end; }
             .fam-dialog { border-radius: 24px 24px 16px 16px; padding: 18px 16px; }
@@ -456,7 +482,7 @@
             <button class="nav-item" :class="{ active: view === 'subjects' }" @click="setView('subjects')"><i class="fa-solid fa-book-open"></i> Materias</button>
             <button class="nav-item" :class="{ active: view === 'comms' }" @click="setView('comms')">
                 <i class="fa-solid fa-comments"></i> Comunicación
-                <span x-show="unreadAnnouncements > 0" x-text="unreadAnnouncements" style="margin-left:auto;background:#EC4899;color:#fff;border-radius:99px;padding:1px 7px;font-size:11px;"></span>
+                <span x-show="(unreadAnnouncements + unreadMessages) > 0" x-text="unreadAnnouncements + unreadMessages" style="margin-left:auto;background:#EC4899;color:#fff;border-radius:99px;padding:1px 7px;font-size:11px;"></span>
             </button>
             <button class="nav-item" :class="{ active: view === 'docs' }" @click="setView('docs')"><i class="fa-solid fa-folder-open"></i> Documentos</button>
             <div class="nav-kicker">Acciones</div>
@@ -521,7 +547,7 @@
                 </div>
                 <template x-if="notifications.length === 0"><p class="empty">Sin notificaciones.</p></template>
                 <template x-for="n in notifications" :key="n.id">
-                    <div class="feed-item">
+                    <div class="feed-item" @click="openNotification(n)">
                         <div :class="{ unread: !n.read }" style="font-weight:800" x-text="n.title"></div>
                         <div style="font-size:12px;color:var(--text-secondary)" x-text="n.message"></div>
                     </div>
@@ -750,7 +776,7 @@
                         </template>
                     </div>
                     <div x-show="commTab === 'messages'">
-                        <div class="panel" style="padding:12px;margin-bottom:12px;box-shadow:none">
+                        <div class="compose-box">
                             <strong>Escribirle a un docente</strong>
                             <select x-model="composeCourseId">
                                 <option value="">Elige la materia</option>
@@ -758,17 +784,46 @@
                                     <option :value="sub.id" x-text="sub.name + ' · ' + sub.teacher"></option>
                                 </template>
                             </select>
-                            <textarea rows="2" x-model="newMessage" placeholder="Hola profesor, quería consultar…"></textarea>
-                            <button class="btn btn-primary" @click="messageTeacher(composeCourseId)">Enviar</button>
+                            <textarea id="fam-compose-body" rows="3" x-model="newMessage" placeholder="Hola profesor, quería consultar…"></textarea>
+                            <button class="btn btn-primary" @click="messageTeacher(composeCourseId)">Enviar mensaje</button>
                         </div>
-                        <template x-if="threads.length === 0"><p class="empty">Aún no hay conversaciones. Escríbele al docente arriba o desde una materia.</p></template>
-                        <template x-for="t in threads" :key="t.id">
-                            <div class="feed-item" @click="openThread(t.id)">
-                                <div style="font-weight:800" x-text="t.teacher"></div>
-                                <div style="font-size:12px;color:var(--text-secondary)" x-text="t.preview"></div>
-                                <span class="badge" style="position:static" x-show="t.unread > 0" x-text="t.unread"></span>
+                        <div class="inbox">
+                            <div class="inbox-list">
+                                <template x-if="threads.length === 0"><p class="empty" style="padding:12px">Aún no hay conversaciones. Escríbele al docente arriba o desde una actividad.</p></template>
+                                <template x-for="t in threads" :key="t.id">
+                                    <button type="button" class="inbox-row" :class="{ active: chat?.id === t.id }" @click="openThread(t.id)">
+                                        <div style="display:flex;justify-content:space-between;gap:8px;align-items:center">
+                                            <strong x-text="t.teacher"></strong>
+                                            <span class="badge" style="position:static" x-show="t.unread > 0" x-text="t.unread"></span>
+                                        </div>
+                                        <div class="preview" x-text="t.preview || 'Sin mensajes'"></div>
+                                        <div style="font-size:11px;color:var(--text-tertiary);margin-top:4px" x-text="[t.course, fmtTime(t.last_at)].filter(Boolean).join(' · ')"></div>
+                                    </button>
+                                </template>
                             </div>
-                        </template>
+                            <div class="inbox-pane">
+                                <template x-if="!chat">
+                                    <p class="empty">Elige una conversación para ver el hilo completo, o escribe un mensaje nuevo arriba.</p>
+                                </template>
+                                <template x-if="chat">
+                                    <div style="display:flex;flex-direction:column;min-height:100%">
+                                        <strong x-text="chat.teacher"></strong>
+                                        <div class="inbox-thread">
+                                            <template x-for="m in (chat.messages || [])" :key="m.id">
+                                                <div class="chat-bubble" :class="m.mine ? 'mine' : 'theirs'">
+                                                    <div x-text="m.body"></div>
+                                                    <div class="chat-meta" x-text="(m.mine ? 'Tú' : chat.teacher) + (fmtTime(m.at) ? ' · ' + fmtTime(m.at) : '')"></div>
+                                                </div>
+                                            </template>
+                                        </div>
+                                        <div style="display:flex;gap:8px;margin-top:10px">
+                                            <input x-model="chatBody" @keydown.enter="sendChat()" placeholder="Escribe una respuesta">
+                                            <button class="btn btn-primary" @click="sendChat()">Enviar</button>
+                                        </div>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
                     </div>
                     <div x-show="commTab === 'official'">
                         <template x-for="a in announcements.filter(x => x.official)" :key="'o'+a.id">
@@ -885,17 +940,18 @@
     </div>
 
     <div class="fam-backdrop" :class="{ 'is-open': !!modalName }" x-cloak @click.self="closeAnyModal()">
-        <div class="fam-dialog" :class="{ 'is-visible': modalName === 'day' }" x-cloak @click.stop>
+        <div class="fam-dialog" :class="{ 'is-visible': modalName === 'day' }" x-cloak @click.stop style="width:min(760px,100%) !important">
             <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:8px">
                 <div>
                     <p style="margin:0 0 4px;font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--nova-violet)">Agenda de tu hijo</p>
                     <h3 style="margin:0;text-transform:capitalize" x-text="selectedDay ? fmtLong(selectedDay) : 'Día'"></h3>
+                    <p class="empty" style="padding:6px 0 0;margin:0">Toca una tarjeta para leer el detalle completo y escribirle al docente.</p>
                 </div>
                 <button class="icon-btn" @click="closeAnyModal()" aria-label="Cerrar"><i class="fa-solid fa-xmark"></i></button>
             </div>
             <template x-if="modalName === 'day' && !eventsFor(selectedDay).length"><p class="empty">Sin clases, tareas ni evaluaciones este día.</p></template>
             <template x-for="ev in (modalName === 'day' ? eventsFor(selectedDay) : [])" :key="'sheet'+ev.id">
-                <article class="day-event-card" @click="openEvent(ev)" :style="selectedEvent?.id === ev.id ? 'border-color:color-mix(in srgb, var(--nova-violet) 45%, var(--nova-glass-border))' : ''">
+                <article class="day-event-card" :class="{ 'is-selected': selectedEvent?.id === ev.id }" @click="openEvent(ev)">
                     <div class="event-head">
                         <div>
                             <div style="display:flex;align-items:center;gap:8px;">
@@ -913,10 +969,18 @@
                         <span class="meta-chip" x-show="ev.total_points != null && ev.max_score == null" x-text="(ev.total_points ?? 0) + ' pts'"></span>
                         <span class="meta-chip" x-show="ev.difficulty" x-text="ev.difficulty"></span>
                     </div>
-                    <p class="event-desc" x-text="ev.description || 'Sin descripción por ahora.'"></p>
+                    <p class="event-desc is-preview" x-show="selectedEvent?.id !== ev.id" x-text="preview(eventFullBody(ev), 160)"></p>
+                    <p class="event-hint" x-show="selectedEvent?.id !== ev.id">Toca para ver el detalle completo</p>
+                    <div class="event-full" x-show="selectedEvent?.id === ev.id" @click.stop>
+                        <p class="event-body" x-text="eventFullBody(ev) || 'Sin descripción por ahora.'"></p>
+                        <p class="event-desc" x-show="ev.instructions && eventFullBody(ev).indexOf(ev.instructions) === -1" x-text="'Indicaciones: ' + ev.instructions"></p>
+                        <button class="btn btn-primary" style="margin-top:14px" x-show="ev.course_id || ev.course" @click.stop="askTeacherAbout(ev)">
+                            Escribirle al docente
+                        </button>
+                    </div>
                 </article>
             </template>
-            <div class="day-event-card" x-show="modalName === 'day' && orphanSelectedEvent" x-cloak>
+            <div class="day-event-card is-selected" x-show="modalName === 'day' && orphanSelectedEvent" x-cloak>
                 <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--nova-cyan);margin-bottom:6px" x-text="selectedEvent?.type_label"></div>
                 <h3 style="margin:0;font-size:17px;font-weight:900" x-text="selectedEvent?.title"></h3>
                 <div class="event-meta" x-text="[selectedEvent?.course, selectedEvent?.teacher].filter(Boolean).join(' · ')"></div>
@@ -925,7 +989,10 @@
                     <span class="meta-chip" x-show="selectedEvent?.weight_percentage != null" x-text="(selectedEvent?.weight_percentage ?? 0) + '% del lapso'"></span>
                     <span class="meta-chip" x-show="selectedEvent?.max_score != null" x-text="(selectedEvent?.max_score ?? 0) + ' pts'"></span>
                 </div>
-                <p class="event-desc" x-text="selectedEvent?.description || 'Sin descripción por ahora.'"></p>
+                <p class="event-body" x-text="eventFullBody(selectedEvent) || 'Sin descripción por ahora.'"></p>
+                <button class="btn btn-primary" style="margin-top:14px" x-show="selectedEvent?.course_id || selectedEvent?.course" @click="askTeacherAbout(selectedEvent)">
+                    Escribirle al docente
+                </button>
             </div>
         </div>
 
@@ -1005,7 +1072,10 @@
             <h3 x-text="chat?.teacher"></h3>
             <div style="max-height:46vh;overflow:auto">
                 <template x-for="m in (chat?.messages || [])" :key="m.id">
-                    <div class="chat-bubble" :class="m.mine ? 'mine' : 'theirs'" x-text="m.body"></div>
+                    <div class="chat-bubble" :class="m.mine ? 'mine' : 'theirs'">
+                        <div x-text="m.body"></div>
+                        <div class="chat-meta" x-text="fmtTime(m.at)"></div>
+                    </div>
                 </template>
             </div>
             <div style="display:flex;gap:8px;margin-top:10px">
@@ -1122,6 +1192,7 @@
                 },
                 get themeOptions() { return window.AULA_THEMES || []; },
                 get unreadAnnouncements() { return this.announcements.filter(a => !a.read).length; },
+                get unreadMessages() { return (this.threads || []).reduce((n, t) => n + (Number(t.unread) || 0), 0); },
                 get monthEventCount() {
                     return Object.values(this.calendar.events || {}).reduce((n, list) => n + (list?.length || 0), 0);
                 },
@@ -1155,6 +1226,21 @@
                     const d = new Date(`${value}T12:00:00`);
                     if (Number.isNaN(d.getTime())) return String(value);
                     return d.toLocaleDateString('es-VE', { weekday: 'long', day: 'numeric', month: 'long' });
+                },
+                fmtTime(value) {
+                    if (!value) return '';
+                    const d = new Date(value);
+                    if (Number.isNaN(d.getTime())) return '';
+                    return d.toLocaleString('es-VE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+                },
+                eventFullBody(ev) {
+                    if (!ev) return '';
+                    if (ev.body) return String(ev.body).trim();
+                    return [ev.description, ev.instructions, ev.notes, ev.director_notes, ev.learning_outcome]
+                        .map((part) => String(part || '').trim())
+                        .filter(Boolean)
+                        .filter((part, idx, all) => all.indexOf(part) === idx)
+                        .join('\n\n');
                 },
                 dueParts(value) {
                     if (!value) return { day: '—', mon: '' };
@@ -1204,6 +1290,7 @@
                     this.view = name;
                     this.sidebarOpen = false;
                     this.showThemePicker = false;
+                    if (name !== 'comms') this.chat = null;
                     if (name === 'docs') this.loadBoletasOficiales();
                 },
                 closeOverlays() {
@@ -1213,7 +1300,6 @@
                     this.openProfile = false;
                     this.subjectModal = null;
                     this.announcementModal = null;
-                    this.chat = null;
                     this.showNotif = false;
                 },
                 trendIcon(t) { return t === 'up' ? '↑' : (t === 'down' ? '↓' : '↔'); },
@@ -1221,9 +1307,16 @@
                     window.addEventListener('resize', () => {
                         if (this.showThemePicker) this.placeThemePicker();
                     });
+                    if (location.hash === '#comms') {
+                        this.view = 'comms';
+                        this.commTab = 'messages';
+                    }
                     if (!this.studentId) return;
                     await this.refreshAll();
                     setInterval(() => this.refreshAll(true), 30000);
+                    setInterval(() => {
+                        if (this.view === 'comms' && this.commTab === 'messages') this.pollInbox();
+                    }, 12000);
                 },
                 async refreshAll(silent = false) {
                     if (!this.studentId) return;
@@ -1261,6 +1354,11 @@
                         this.selectedDay = days[0] || this.selectedDay;
                     }
                     const list = this.calendar.events?.[this.selectedDay] || [];
+                    if (this.modalName === 'day' && this.selectedEvent) {
+                        const fresh = list.find(e => e.id === this.selectedEvent.id);
+                        if (fresh) this.selectedEvent = { ...this.selectedEvent, ...fresh };
+                        return;
+                    }
                     this.selectedEvent = list.length ? list[0] : null;
                 },
                 pickDay(date) {
@@ -1339,11 +1437,26 @@
                     });
                     a.read = true;
                 },
-                async openThread(id) {
+                async openThread(id, useModal = false) {
                     const json = await fetch(`/representante/api/mensajes/${id}?estudiante_id=${this.studentId}`, { headers: { Accept: 'application/json' } }).then(r => r.json());
                     this.chat = json.thread;
                     this.chatBody = '';
-                    this.modalName = 'chat';
+                    this.view = 'comms';
+                    this.commTab = 'messages';
+                    this.modalName = useModal ? 'chat' : null;
+                    const row = this.threads.find(t => t.id === id);
+                    if (row) row.unread = 0;
+                },
+                async pollInbox() {
+                    if (!this.studentId) return;
+                    try {
+                        const msgs = await fetch(`/representante/api/mensajes?estudiante_id=${this.studentId}`, { headers: { Accept: 'application/json' } }).then(r => r.json());
+                        this.threads = msgs.threads || [];
+                        if (this.chat?.id) {
+                            const json = await fetch(`/representante/api/mensajes/${this.chat.id}?estudiante_id=${this.studentId}`, { headers: { Accept: 'application/json' } }).then(r => r.json());
+                            if (json.thread) this.chat = json.thread;
+                        }
+                    } catch (_) {}
                 },
                 async sendChat() {
                     if (!this.chatBody.trim() || !this.chat) return;
@@ -1354,7 +1467,20 @@
                     });
                     this.chatBody = '';
                     this.showToast('Mensaje enviado.');
-                    await this.openThread(this.chat.id);
+                    await this.openThread(this.chat.id, this.modalName === 'chat');
+                },
+                askTeacherAbout(ev) {
+                    const courseId = ev?.course_id || this.subjects.find(s => s.name === ev?.course)?.id;
+                    const title = ev?.title || 'esta actividad';
+                    const when = ev?.date ? this.fmtLong(ev.date) : '';
+                    this.composeCourseId = courseId ? String(courseId) : '';
+                    this.newMessage = `Hola, quería consultar sobre «${title}»${when ? ' (' + when + ')' : ''}.\n\n`;
+                    this.closeAnyModal();
+                    this.view = 'comms';
+                    this.commTab = 'messages';
+                    this.chat = null;
+                    if (!courseId) this.showToast('Elige la materia para enviarle el mensaje al docente.');
+                    this.$nextTick(() => document.getElementById('fam-compose-body')?.focus());
                 },
                 async messageTeacher(courseId) {
                     if (!courseId) { this.showToast('Elige una materia.'); return; }
@@ -1378,6 +1504,14 @@
                     this.showToast('Mensaje enviado al docente.');
                     await this.refreshAll();
                     if (json.thread_id) await this.openThread(json.thread_id);
+                },
+                openNotification(n) {
+                    this.showNotif = false;
+                    const haystack = `${n?.title || ''} ${n?.link || ''}`.toLowerCase();
+                    if (haystack.includes('mensaje') || haystack.includes('#comms')) {
+                        this.setView('comms');
+                        this.commTab = 'messages';
+                    }
                 },
                 async submitAbsence() {
                     this.absenceError = '';

@@ -39,9 +39,13 @@
         .thread-list, .thread-main, .thread-side { border: 1px solid var(--nova-glass-border); border-radius: 14px; padding: 10px; background: var(--bg-secondary); }
         .thread-row { border: 1px solid transparent; border-radius: 10px; padding: 8px; cursor: pointer; margin-bottom: 6px; }
         .thread-row.active { border-color: var(--nova-violet); background: color-mix(in srgb, var(--nova-violet) 9%, transparent); }
-        .msg { margin: 8px 0; padding: 8px 10px; border-radius: 11px; max-width: 84%; }
+        .msg { margin: 8px 0; padding: 8px 10px; border-radius: 11px; max-width: 84%; white-space: pre-wrap; word-break: break-word; }
         .msg.teacher { margin-left: auto; background: color-mix(in srgb, var(--nova-violet) 16%, transparent); }
         .msg.student { margin-right: auto; background: color-mix(in srgb, var(--nova-fuchsia) 14%, transparent); }
+        .msg.family { margin-right: auto; background: color-mix(in srgb, var(--nova-cyan, #22d3ee) 18%, transparent); }
+        .msg .meta { display: block; font-size: 10px; font-weight: 700; opacity: .65; margin-top: 6px; }
+        .thread-row { display: block; width: 100%; text-align: left; }
+        .thread-row .unread { display: inline-flex; min-width: 18px; justify-content: center; border-radius: 999px; padding: 1px 6px; font-size: 10px; font-weight: 800; background: var(--nova-fuchsia); color: #fff; margin-left: 6px; }
         .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
         .table { width: 100%; border-collapse: collapse; font-size: 13px; }
         .table th, .table td { text-align: left; border-bottom: 1px solid var(--nova-glass-border); padding: 8px 6px; }
@@ -148,7 +152,8 @@
                 <template x-for="t in threads" :key="t.id">
                     <div class="thread-row" :class="{ active: selectedThreadId === t.id }" @click="selectThread(t.id)">
                         <strong x-text="t.contact_name"></strong>
-                        <span class="pill" x-show="t.contact_role === 'representante'">Familia</span>
+                        <span class="pill" x-show="t.is_family || t.contact_role === 'representante'">Familia</span>
+                        <span class="unread" x-show="t.unread > 0" x-text="t.unread"></span>
                         <br>
                         <small class="muted" x-text="t.last_message_preview || 'Sin mensajes'"></small>
                     </div>
@@ -164,8 +169,9 @@
                         </div>
                         <div style="max-height:340px; overflow:auto; margin-top:10px;">
                             <template x-for="m in selectedThread().messages" :key="m.id">
-                                <div class="msg" :class="m.sender_role === 'teacher' ? 'teacher' : 'student'">
+                                <div class="msg" :class="messageClass(m)">
                                     <div x-text="m.body"></div>
+                                    <small class="meta" x-text="messageMeta(m)"></small>
                                 </div>
                             </template>
                         </div>
@@ -227,10 +233,33 @@ function communicationApp() {
         selectedThread() {
             return this.threads.find(t => t.id === this.selectedThreadId) || null;
         },
-        selectThread(id) {
+        messageClass(m) {
+            if (m.sender_role === 'teacher') return 'teacher';
+            if (m.sender_role === 'representante' || m.sender_role === 'parent') return 'family';
+            return 'student';
+        },
+        messageMeta(m) {
+            const who = m.sender_role === 'teacher'
+                ? 'Tú'
+                : (m.sender_role === 'representante' || m.sender_role === 'parent' ? 'Familia' : 'Estudiante');
+            const raw = m.created_at || m.at;
+            if (!raw) return who;
+            const d = new Date(raw);
+            if (Number.isNaN(d.getTime())) return who;
+            return who + ' · ' + d.toLocaleString('es-VE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+        },
+        async selectThread(id) {
             this.selectedThreadId = id;
             this.quickReplies = [];
             this.chatDraft = '';
+            try {
+                await fetch(`/teacher/communication/threads/${id}/read`, {
+                    method: 'POST',
+                    headers: { 'X-CSRF-TOKEN': this.csrf(), Accept: 'application/json' },
+                });
+                const thread = this.threads.find(t => t.id === id);
+                if (thread) thread.unread = 0;
+            } catch (_) {}
         },
         async generateAnnouncement() {
             this.error = ''; this.notice = '';

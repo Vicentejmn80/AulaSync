@@ -20,7 +20,7 @@ class RepresentanteFamilyHubTest extends TestCase
     {
         Carbon::setTestNow(Carbon::parse('2026-09-10 09:00:00'));
 
-        [$parent, $student] = $this->familyClassroom();
+        [$parent, $student, $teacher, $course] = $this->familyClassroom();
 
         $month = $this->actingAs($parent)
             ->getJson(route('representante.api.calendario', ['estudiante' => $student->id, 'month' => '2026-09']))
@@ -38,6 +38,12 @@ class RepresentanteFamilyHubTest extends TestCase
         $this->assertSame('Matemática', $task['course']);
         $this->assertSame('Prof. Díaz', $task['teacher']);
         $this->assertSame('#F59E0B', $task['color']);
+        $this->assertSame($course->id, $task['course_id']);
+        $this->assertGreaterThan(220, mb_strlen($task['description']));
+        $this->assertStringContainsString('Resolver las páginas 12 a 14.', $task['description']);
+        $this->assertStringContainsString('Incluye planteo y justificación', $task['description']);
+        $this->assertSame('Traer el cuaderno de Matemática.', $task['notes']);
+        $this->assertStringContainsString('Traer el cuaderno de Matemática.', $task['body']);
 
         $eval = collect($month['events']['2026-09-22'] ?? [])->firstWhere('type', 'evaluation');
         $this->assertNotNull($eval);
@@ -46,6 +52,8 @@ class RepresentanteFamilyHubTest extends TestCase
         $this->assertSame(25.0, (float) $eval['total_points']);
         $this->assertSame(30.0, (float) $eval['weight_percentage']);
         $this->assertSame('Prof. Díaz', $eval['teacher']);
+        $this->assertSame('Llegar 10 minutos antes. Solo lápiz y calculadora.', $eval['instructions']);
+        $this->assertStringContainsString('Examen escrito de 10 ítems.', $eval['description']);
     }
 
     public function test_family_summary_exposes_global_kpis_and_reminder_items(): void
@@ -82,13 +90,15 @@ class RepresentanteFamilyHubTest extends TestCase
             ->assertSee('Ausencias del mes')
             ->assertSee('Reportar ausencia')
             ->assertSee('Ver boletín')
+            ->assertSee('Escribirle a un docente')
+            ->assertSee('Toca una tarjeta para leer el detalle completo')
             ->assertSee('fam-backdrop')
             ->assertDontSee('class="overlay"', false)
             ->assertDontSee('class="modal"', false);
     }
 
     /**
-     * @return array{0:User,1:Student}
+     * @return array{0:User,1:Student,2:User,3:Course}
      */
     private function familyClassroom(): array
     {
@@ -134,7 +144,8 @@ class RepresentanteFamilyHubTest extends TestCase
             'course_id' => $course->id,
             'colegio_id' => $colegio->id,
             'title' => 'Guía de fracciones',
-            'description' => 'Resolver las páginas 12 a 14.',
+            'description' => 'Resolver las páginas 12 a 14. Incluye planteo y justificación de cada ejercicio, con evidencia del procedimiento y una reflexión breve al final de la guía para la familia. '.str_repeat('El docente revisará el cuaderno y la claridad del razonamiento. ', 6),
+            'notes' => 'Traer el cuaderno de Matemática.',
             'due_date' => '2026-09-18',
             'type' => Activity::TYPE_TAREA,
             'is_homework' => true,
@@ -161,12 +172,66 @@ class RepresentanteFamilyHubTest extends TestCase
             'title' => 'Parcial de álgebra',
             'topic' => 'Ecuaciones de primer grado',
             'description' => 'Examen escrito de 10 ítems.',
+            'instructions' => 'Llegar 10 minutos antes. Solo lápiz y calculadora.',
             'status' => 'published',
             'scheduled_at' => '2026-09-22 08:00:00',
             'total_points' => 25,
             'passing_score' => 12,
         ]);
 
-        return [$parent, $student];
+        return [$parent, $student, $teacher, $course];
+    }
+
+    public function test_parent_and_teacher_can_exchange_private_messages(): void
+    {
+        [$parent, $student, $teacher, $course] = $this->familyClassroom();
+
+        $started = $this->actingAs($parent)
+            ->postJson(route('representante.api.mensajes.start'), [
+                'estudiante_id' => $student->id,
+                'course_id' => $course->id,
+                'body' => 'Hola profesor, ¿qué entra en el parcial de álgebra?',
+            ])
+            ->assertOk()
+            ->json();
+
+        $threadId = $started['thread_id'];
+        $this->assertNotEmpty($threadId);
+
+        $threads = $this->actingAs($teacher)
+            ->getJson(route('teacher.communication.threads'))
+            ->assertOk()
+            ->json('threads');
+
+        $familyThread = collect($threads)->firstWhere('id', $threadId);
+        $this->assertNotNull($familyThread);
+        $this->assertSame('representante', $familyThread['contact_role']);
+        $this->assertTrue((bool) $familyThread['is_family']);
+        $this->assertGreaterThanOrEqual(1, (int) $familyThread['unread']);
+        $this->assertTrue(
+            collect($familyThread['messages'])->contains(
+                fn ($message) => str_contains((string) $message['body'], 'parcial de álgebra')
+            )
+        );
+
+        $this->actingAs($teacher)
+            ->postJson(route('teacher.communication.messages.send', $threadId), [
+                'body' => 'Hola, entra ecuaciones de primer grado y los ejercicios de la guía.',
+            ])
+            ->assertOk()
+            ->assertJsonPath('success', true);
+
+        $thread = $this->actingAs($parent)
+            ->getJson(route('representante.api.mensajes.show', [
+                'thread' => $threadId,
+                'estudiante_id' => $student->id,
+            ]))
+            ->assertOk()
+            ->json('thread');
+
+        $bodies = collect($thread['messages'])->pluck('body');
+        $this->assertTrue($bodies->contains('Hola profesor, ¿qué entra en el parcial de álgebra?'));
+        $this->assertTrue($bodies->contains('Hola, entra ecuaciones de primer grado y los ejercicios de la guía.'));
+        $this->assertTrue(collect($thread['messages'])->contains(fn ($m) => $m['mine'] === false));
     }
 }
