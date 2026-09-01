@@ -242,6 +242,105 @@
             padding: 14px 16px;
             margin-bottom: 16px;
         }
+        .theme-toggle-wrap { position: relative; z-index: 30; display: flex; align-items: center; gap: 8px; }
+        .theme-picker-backdrop { position: fixed; inset: 0; z-index: 1900; background: transparent; }
+        .theme-picker {
+            position: fixed; top: 72px; left: 16px; width: min(300px, calc(100vw - 24px));
+            max-height: min(70vh, 520px); overflow-y: auto; overflow-x: hidden;
+            background: var(--bg-card); border: 1px solid var(--nova-glass-border);
+            border-radius: 16px; box-shadow: var(--nova-shadow); padding: 12px; z-index: 2000;
+        }
+        @media (min-width: 860px) { .theme-picker { left: 296px; } }
+        .theme-picker h4 { margin: 0 0 8px; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-tertiary); }
+        .theme-picker-option {
+            width: 100%; display: flex; align-items: center; gap: 10px; border: 0; background: transparent;
+            color: var(--text-primary); padding: 8px; border-radius: 12px; cursor: pointer; font-size: 13px; font-weight: 700; text-align: left;
+        }
+        .theme-picker-option:hover, .theme-picker-option.active { background: color-mix(in srgb, var(--nova-violet) 12%, transparent); }
+        .theme-picker-dot { width: 16px; height: 16px; border-radius: 50%; flex-shrink: 0; box-shadow: inset 0 0 0 1px rgba(0,0,0,.08); }
+        .theme-toggle {
+            width: 44px; height: 44px; border-radius: 14px; background: var(--nova-glass);
+            border: 1px solid var(--nova-glass-border); color: var(--nova-violet); cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .sidebar-theme { display: flex; align-items: center; gap: 8px; padding: 8px 4px 14px; }
+        .upcoming-list { display: flex; flex-direction: column; }
+        .upcoming-empty { color: var(--text-tertiary); font-size: 13px; margin: 4px 0 8px; }
+        .upcoming-row {
+            display: flex; align-items: center; gap: 10px; width: 100%;
+            padding: 8px 4px; border: 0; background: transparent; color: inherit;
+            border-bottom: 1px solid color-mix(in srgb, var(--nova-violet) 8%, transparent);
+            border-radius: 12px; cursor: pointer; text-align: left;
+        }
+        .upcoming-row:last-child { border-bottom: 0; }
+        .upcoming-row:hover { background: color-mix(in srgb, var(--nova-violet) 8%, transparent); }
+        .upcoming-date {
+            width: 42px; height: 42px; border-radius: 12px; flex-shrink: 0;
+            background: color-mix(in srgb, var(--grade-accent, #7C3AED) 14%, transparent);
+            color: var(--grade-accent, #7C3AED);
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+        }
+        html.dark .upcoming-date { background: color-mix(in srgb, var(--grade-accent, #7C3AED) 22%, transparent); }
+        .upcoming-date strong { font-size: 14px; line-height: 1; }
+        .upcoming-date span { font-size: 8px; font-weight: 800; letter-spacing: .06em; }
+        .upcoming-copy { min-width: 0; flex: 1; }
+        .upcoming-copy p { font-size: 13px; font-weight: 700; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .upcoming-copy small { color: var(--text-tertiary); font-size: 11px; }
+        .status-pill {
+            font-size: 10px; font-weight: 700; padding: 4px 8px; border-radius: 999px;
+            background: #ECFDF5; color: #059669; white-space: nowrap;
+        }
+        html.dark .status-pill { background: rgba(16,185,129,.15); color: #6EE7B7; }
+        .panel-week-chip {
+            font-size: 11px; font-weight: 800; border-radius: 999px; padding: 4px 10px;
+            background: color-mix(in srgb, var(--nova-violet) 12%, transparent); color: var(--nova-violet);
+        }
+        .calendar-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
+        .calendar-title h2 { font-size: 24px; font-weight: 800; margin: 0 0 4px; }
+        .calendar-title p { margin: 0; color: var(--text-tertiary); font-size: 14px; text-transform: capitalize; }
+        .calendar-nav { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+        .calendar-nav-btn {
+            width: 40px; height: 40px; border-radius: 14px; border: 1px solid var(--nova-glass-border);
+            background: var(--nova-glass); color: var(--text-primary); cursor: pointer; font-weight: 800;
+        }
+        .calendar-nav-btn.today-btn { width: auto; padding: 0 14px; }
+        .calendar-stats { font-size: 12px; font-weight: 800; color: var(--text-tertiary); }
+        .cal-legend { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+        .cal-legend span { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; color: var(--text-secondary); }
+        .cal-legend i { width: 10px; height: 10px; border-radius: 4px; display: inline-block; }
+        .weekdays { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; margin-bottom: 8px; }
+        .weekday { text-align: center; font-size: 12px; font-weight: 700; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: .04em; }
+        .calendar-days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; }
+        .calendar-day {
+            background: var(--bg-secondary); border: 1px solid var(--nova-glass-border); border-radius: 16px;
+            min-height: 118px; max-height: 196px; padding: 8px; position: relative; overflow: hidden;
+            display: flex; flex-direction: column; cursor: pointer; text-align: left; color: inherit;
+        }
+        .calendar-day.has-events { border-color: color-mix(in srgb, var(--nova-violet) 18%, var(--nova-glass-border)); }
+        .calendar-day:hover { border-color: var(--nova-violet); background: var(--nova-glass); }
+        .calendar-day.today { border-color: var(--nova-fuchsia); background: var(--nova-glass); }
+        .calendar-day.empty { background: transparent; border-color: transparent; cursor: default; min-height: 40px; }
+        .day-number { position: absolute; top: 6px; right: 8px; font-size: 12px; font-weight: 700; color: var(--text-tertiary); }
+        .calendar-day.today .day-number { color: var(--nova-fuchsia); font-weight: 800; }
+        .day-content { margin-top: 20px; display: flex; flex-direction: column; gap: 4px; min-height: 0; overflow-y: auto; }
+        .cal-grade-event {
+            display: flex; flex-direction: column; gap: 1px; width: 100%; border: 0; border-radius: 9px;
+            padding: 5px 6px; text-align: left; color: #fff; cursor: pointer;
+            box-shadow: 0 6px 14px -10px rgba(15, 23, 42, .55);
+        }
+        .cal-grade-event-line { display: flex; justify-content: space-between; font-size: 9px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; opacity: .92; }
+        .cal-grade-event-title { font-size: 10px; font-weight: 700; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .more-events { font-size: 9px; color: var(--nova-cyan); cursor: pointer; margin-top: 2px; background: none; border: 0; padding: 0; text-align: left; }
+        .day-event-card {
+            border: 1px solid var(--nova-glass-border); border-radius: 16px; padding: 14px; margin-top: 10px;
+            background: var(--bg-card); cursor: pointer;
+        }
+        .day-event-card:hover { border-color: color-mix(in srgb, var(--nova-violet) 40%, var(--nova-glass-border)); }
+        .day-event-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+        .meta-chip {
+            font-size: 11px; font-weight: 800; border-radius: 999px; padding: 3px 9px;
+            background: var(--nova-glass); border: 1px solid var(--nova-glass-border); color: var(--text-primary);
+        }
         .mobile-bar { display: none; }
         .desktop-day-events { display: block; }
         input, select, textarea { font-size: 16px; }
@@ -294,6 +393,9 @@
             .cal-day { min-height: 42px; padding: 4px 2px; border-radius: 10px; text-align: center; }
             .cal-day .dots { justify-content: center; }
             .desktop-day-events { display: none; }
+            .calendar-day { min-height: 78px; max-height: 120px; padding: 6px; }
+            .cal-grade-event-line { display: none; }
+            .calendar-nav { width: 100%; justify-content: flex-start; }
             .split { grid-template-columns: 1fr; }
             .fab {
                 right: 14px;
@@ -331,10 +433,25 @@
     <div class="mobile-bar">
         <button class="icon-btn" @click="sidebarOpen = !sidebarOpen" aria-label="Menú"><i class="fa-solid fa-bars"></i></button>
         <strong>AulaSync Familia</strong>
-        @include('components.theme-toggle')
+        <div class="theme-toggle-wrap">
+            @include('components.theme-toggle')
+            <button type="button" class="theme-toggle" @click.stop="showThemePicker = !showThemePicker" title="Cambiar colores del tema">
+                <i class="fa-solid fa-palette"></i>
+            </button>
+        </div>
     </div>
 
     <div class="fam-overlay" x-show="sidebarOpen" x-cloak @click="sidebarOpen = false"></div>
+    <div class="theme-picker-backdrop" x-show="showThemePicker" x-cloak @click="showThemePicker = false"></div>
+    <div class="theme-picker" x-show="showThemePicker" x-cloak x-transition.opacity @click.stop>
+        <h4>Colores del tema</h4>
+        <template x-for="theme in themeOptions" :key="theme.id">
+            <button type="button" class="theme-picker-option" :class="{ active: currentThemeId === theme.id }" @click="applyTheme(theme.id)">
+                <span class="theme-picker-dot" :style="`background:${theme.dot}`"></span>
+                <span x-text="theme.label"></span>
+            </button>
+        </template>
+    </div>
 
     <div class="fam-shell">
         <aside class="fam-sidebar" :class="{ open: sidebarOpen }">
@@ -354,6 +471,12 @@
             </button>
             <button class="nav-item" :class="{ active: view === 'docs' }" @click="view = 'docs'; sidebarOpen = false; loadBoletasOficiales()"><i class="fa-solid fa-folder-open"></i> Documentos</button>
             <div style="flex:1"></div>
+            <div class="sidebar-theme">
+                @include('components.theme-toggle')
+                <button type="button" class="theme-toggle" @click.stop="showThemePicker = !showThemePicker" title="Cambiar colores del tema">
+                    <i class="fa-solid fa-palette"></i>
+                </button>
+            </div>
             <button class="nav-item" @click="openProfile = true"><i class="fa-solid fa-user-gear"></i> Editar perfil</button>
             <form method="POST" action="{{ route('logout') }}">
                 @csrf
@@ -375,6 +498,9 @@
                     </div>
                 </div>
                 <div style="display:flex;gap:8px;align-items:center">
+                    <button class="theme-toggle" @click.stop="showThemePicker = !showThemePicker" title="Cambiar colores del tema">
+                        <i class="fa-solid fa-palette"></i>
+                    </button>
                     <button class="icon-btn" @click="toggleNotif()" title="Notificaciones">
                         <i class="fa-solid fa-bell"></i>
                         <span class="badge" x-show="unreadNotif > 0" x-text="unreadNotif"></span>
@@ -423,7 +549,7 @@
                 </div>
                 <div class="week-strip" x-show="view === 'home'">
                     <template x-for="day in weekStrip" :key="'w'+day.date">
-                        <button type="button" class="week-card" :class="{ 'is-today': day.isToday, 'is-on': selectedDay === day.date }" @click="pickDay(day.date)">
+                        <button type="button" class="week-card" :class="{ 'is-today': day.isToday, 'is-on': selectedDay === day.date }" @click="openDay(day.date)">
                             <small x-text="day.dow"></small>
                             <b x-text="day.n"></b>
                             <span x-text="day.label"></span>
@@ -444,14 +570,14 @@
                             <div class="kpi-hint" x-text="summary.average?.label"></div>
                         </article>
                         <article class="kpi">
-                            <div class="kpi-label">Tareas pendientes</div>
-                            <div class="kpi-value" x-text="summary.pending_tasks?.count ?? 0"></div>
-                            <div class="kpi-hint" x-text="summary.pending_tasks?.next_title ? (summary.pending_tasks.next_title + ' · ' + fmt(summary.pending_tasks.next_date)) : 'Sin entregas próximas'"></div>
+                            <div class="kpi-label">Materias</div>
+                            <div class="kpi-value" x-text="summary.courses_count ?? subjects.length ?? 0"></div>
+                            <div class="kpi-hint" x-text="(summary.courses_count ?? subjects.length ?? 0) === 1 ? 'Curso inscrito' : 'Cursos inscritos'"></div>
                         </article>
                         <article class="kpi">
-                            <div class="kpi-label">Próximas evaluaciones</div>
-                            <div class="kpi-value" x-text="summary.evaluations?.count ?? 0"></div>
-                            <div class="kpi-hint" x-text="summary.evaluations?.next_title ? (summary.evaluations.next_title + ' · ' + fmt(summary.evaluations.next_date)) : 'Calendario libre'"></div>
+                            <div class="kpi-label">Ausencias del mes</div>
+                            <div class="kpi-value" x-text="summary.attendance?.absences ?? 0"></div>
+                            <div class="kpi-hint" x-text="(summary.attendance?.tardies ?? 0) + ' retraso' + ((summary.attendance?.tardies ?? 0) === 1 ? '' : 's')"></div>
                         </article>
                     </div>
                 </div>
@@ -459,55 +585,55 @@
                 <div class="split" x-show="view === 'home'">
                     <section class="panel">
                         <div class="cal-head">
-                            <h2 class="section-title" style="margin:0" x-text="calendar.label || 'Calendario'"></h2>
-                            <div>
-                                <button class="btn btn-ghost" @click="shiftMonth(-1)"><i class="fa-solid fa-chevron-left"></i></button>
-                                <button class="btn btn-ghost" @click="shiftMonth(1)"><i class="fa-solid fa-chevron-right"></i></button>
-                            </div>
+                            <h2 class="section-title" style="margin:0">Próximas entregas</h2>
+                            <span class="panel-week-chip" x-show="(summary.pending_tasks?.count || 0) > 0" x-text="(summary.pending_tasks?.count || 0) + ' pendientes'"></span>
                         </div>
-                        <div class="cal-grid">
-                            <template x-for="d in ['L','M','X','J','V','S','D']"><div class="cal-dow" x-text="d"></div></template>
-                            <template x-for="day in monthDays" :key="day.key">
-                                <button class="cal-day" :class="{ active: selectedDay === day.date, today: isToday(day.date) }" :style="day.blank ? 'visibility:hidden' : ''" @click="pickDay(day.date)">
-                                    <div style="font-weight:800;font-size:12px" x-text="day.n"></div>
-                                    <div class="cal-titles desktop-day-events">
-                                        <template x-for="ev in (calendar.events?.[day.date] || []).slice(0,2)" :key="'t'+ev.id">
-                                            <span class="cal-chip" :class="ev.type" x-text="ev.title"></span>
-                                        </template>
-                                    </div>
-                                    <div class="dots">
-                                        <template x-for="ev in (calendar.events?.[day.date] || []).slice(0,3)" :key="ev.id">
-                                            <span class="dot" :class="ev.type"></span>
-                                        </template>
-                                    </div>
-                                </button>
-                            </template>
-                        </div>
-                        <div class="desktop-day-events" style="margin-top:14px">
-                            <strong x-text="selectedDay ? 'Eventos del ' + fmt(selectedDay) : 'Selecciona un día'"></strong>
-                            <template x-if="!(calendar.events?.[selectedDay] || []).length"><p class="empty">Sin eventos este día.</p></template>
-                            <template x-for="ev in (calendar.events?.[selectedDay] || [])" :key="ev.id">
-                                <div class="event-card" @click="openEvent(ev)">
-                                    <div class="event-head">
-                                        <div>
-                                            <div style="display:flex;align-items:center;gap:8px;">
-                                                <span class="dot" :class="ev.type" style="display:inline-block"></span>
-                                                <strong x-text="ev.title"></strong>
-                                            </div>
-                                            <div class="event-meta" x-text="[ev.type_label, ev.course].filter(Boolean).join(' · ')"></div>
+                        <template x-if="(summary.pending_tasks?.items || []).length">
+                            <div class="upcoming-list">
+                                <template x-for="item in (summary.pending_tasks?.items || [])" :key="item.id || item.title">
+                                    <button type="button" class="upcoming-row" :style="`--grade-accent: ${item.color || eventColor(item.type)}`" @click="openReminder(item)">
+                                        <div class="upcoming-date">
+                                            <strong x-text="dueParts(item.due_date || item.date).day"></strong>
+                                            <span x-text="dueParts(item.due_date || item.date).mon"></span>
                                         </div>
-                                        <span class="event-pill">Ver detalle</span>
-                                    </div>
-                                </div>
-                            </template>
-                            <div class="event-card" x-show="selectedEvent" x-cloak style="margin-top:14px;border-color:color-mix(in oklab, var(--nova-violet) 35%, var(--nova-glass-border));">
-                                <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--nova-cyan);margin-bottom:6px;">Detalle de la clase/evento</div>
-                                <h3 style="margin:0;font-size:17px;font-weight:900;" x-text="selectedEvent?.title"></h3>
-                                <div class="event-meta" x-text="[selectedEvent?.type_label, selectedEvent?.course].filter(Boolean).join(' · ')"></div>
-                                <p class="event-desc" x-text="selectedEvent?.description || 'Sin descripción por ahora.'"></p>
+                                        <div class="upcoming-copy">
+                                            <p x-text="item.title"></p>
+                                            <small x-text="[item.course, item.weight_percentage != null ? (item.weight_percentage + '% del lapso') : null].filter(Boolean).join(' · ')"></small>
+                                        </div>
+                                        <span class="status-pill" x-text="item.type_label || 'Tarea'"></span>
+                                    </button>
+                                </template>
                             </div>
+                        </template>
+                        <template x-if="!(summary.pending_tasks?.items || []).length">
+                            <p class="upcoming-empty">No hay entregas próximas. Cuando el docente asigne una tarea, aparecerá aquí.</p>
+                        </template>
+
+                        <div class="cal-head" style="margin-top:18px">
+                            <h2 class="section-title" style="margin:0">Recordatorios</h2>
+                            <span class="panel-week-chip" x-show="(summary.evaluations?.count || 0) > 0" x-text="(summary.evaluations?.count || 0) + ' evaluaciones'"></span>
                         </div>
-                        <button class="btn btn-ghost" style="margin-top:10px" @click="view = 'calendar'">Ver horario completo</button>
+                        <template x-if="(summary.evaluations?.items || []).length">
+                            <div class="upcoming-list">
+                                <template x-for="item in (summary.evaluations?.items || [])" :key="item.id || item.title">
+                                    <button type="button" class="upcoming-row" :style="`--grade-accent: ${item.color || eventColor('evaluation')}`" @click="openReminder(item)">
+                                        <div class="upcoming-date">
+                                            <strong x-text="dueParts(item.date).day"></strong>
+                                            <span x-text="dueParts(item.date).mon"></span>
+                                        </div>
+                                        <div class="upcoming-copy">
+                                            <p x-text="item.title"></p>
+                                            <small x-text="[item.course, item.topic, item.weight_percentage != null ? (item.weight_percentage + '%') : null, item.max_score != null ? (item.max_score + ' pts') : null].filter(Boolean).join(' · ')"></small>
+                                        </div>
+                                        <span class="status-pill" style="background:#FEF2F2;color:#DC2626">Evaluación</span>
+                                    </button>
+                                </template>
+                            </div>
+                        </template>
+                        <template x-if="!(summary.evaluations?.items || []).length">
+                            <p class="upcoming-empty">Sin evaluaciones marcadas. El calendario se actualiza cuando el docente publica una.</p>
+                        </template>
+                        <button class="btn btn-ghost" style="margin-top:12px" @click="view = 'calendar'">Ver calendario</button>
                     </section>
 
                     <section class="panel">
@@ -540,43 +666,59 @@
                     </template>
                 </section>
 
-                <section class="panel" x-show="view === 'calendar'">
-                    <div class="cal-head">
-                        <h2 class="section-title" style="margin:0" x-text="calendar.label || 'Horario y calendario'"></h2>
-                        <div style="display:flex;gap:6px">
-                            <button class="btn btn-ghost" @click="shiftMonth(-1)" aria-label="Mes anterior"><i class="fa-solid fa-chevron-left"></i></button>
-                            <button class="btn btn-ghost" @click="shiftMonth(1)" aria-label="Mes siguiente"><i class="fa-solid fa-chevron-right"></i></button>
+                <section x-show="view === 'calendar'">
+                    <div class="calendar-header">
+                        <div class="calendar-title">
+                            <h2><i class="fa-solid fa-calendar-days" style="color:var(--nova-violet);margin-right:10px"></i>Calendario académico</h2>
+                            <p x-text="calendar.label || 'Agenda de tu hijo'"></p>
+                        </div>
+                        <div class="calendar-nav">
+                            <button type="button" class="calendar-nav-btn" @click="shiftMonth(-1)" aria-label="Mes anterior"><i class="fa-solid fa-chevron-left"></i></button>
+                            <button type="button" class="calendar-nav-btn today-btn" @click="goToday()">Hoy</button>
+                            <button type="button" class="calendar-nav-btn" @click="shiftMonth(1)" aria-label="Mes siguiente"><i class="fa-solid fa-chevron-right"></i></button>
+                            <span class="calendar-stats" x-text="(calendar.total_events ?? monthEventCount) + ' eventos'"></span>
                         </div>
                     </div>
-                    <div class="cal-grid" style="margin-top:8px">
-                        <template x-for="d in ['L','M','X','J','V','S','D']"><div class="cal-dow" x-text="d"></div></template>
-                        <template x-for="day in monthDays" :key="'c'+day.key">
-                            <button class="cal-day" :class="{ active: selectedDay === day.date, today: isToday(day.date) }" :style="day.blank ? 'visibility:hidden' : ''" @click="pickDay(day.date)">
-                                <div style="font-weight:800;font-size:12px" x-text="day.n"></div>
-                                <div class="dots">
-                                    <template x-for="ev in (calendar.events?.[day.date] || []).slice(0,3)" :key="'c'+ev.id">
-                                        <span class="dot" :class="ev.type"></span>
-                                    </template>
-                                </div>
-                            </button>
-                        </template>
+                    <div class="cal-legend">
+                        <span><i style="background:#2563EB"></i>Clase</span>
+                        <span><i style="background:#F59E0B"></i>Tarea</span>
+                        <span><i style="background:#7C3AED"></i>Actividad</span>
+                        <span><i style="background:#DC2626"></i>Evaluación</span>
+                        <span><i style="background:#EC4899"></i>Unidad</span>
+                        <span><i style="background:#FB7185"></i>Asistencia</span>
                     </div>
-                    <div class="desktop-day-events" style="margin-top:16px">
-                        <strong x-text="selectedDay ? 'Eventos del ' + fmt(selectedDay) : 'Selecciona un día'"></strong>
-                        <template x-if="!(calendar.events?.[selectedDay] || []).length"><p class="empty">Sin eventos este día.</p></template>
-                        <template x-for="ev in (calendar.events?.[selectedDay] || [])" :key="'list'+ev.id">
-                            <div class="event-card" @click="openEvent(ev)">
-                                <div class="event-head">
-                                    <div>
-                                        <div style="display:flex;align-items:center;gap:8px;">
-                                            <span class="dot" :class="ev.type" style="display:inline-block"></span>
-                                            <strong x-text="ev.title"></strong>
+                    <div class="weekdays">
+                        <template x-for="d in ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom']" :key="d"><div class="weekday" x-text="d"></div></template>
+                    </div>
+                    <div class="calendar-days">
+                        <template x-for="day in monthDays" :key="'c'+day.key">
+                            <button type="button"
+                                    :class="{
+                                        'calendar-day': !day.blank,
+                                        'calendar-day empty': day.blank,
+                                        today: isToday(day.date),
+                                        'has-events': !day.blank && eventsFor(day.date).length
+                                    }"
+                                    @click="!day.blank && openDay(day.date)">
+                                <template x-if="!day.blank">
+                                    <div style="display:flex;flex-direction:column;min-height:0;height:100%">
+                                        <span class="day-number" x-text="day.n"></span>
+                                        <div class="day-content">
+                                            <template x-for="ev in eventsFor(day.date).slice(0,3)" :key="'chip'+ev.id">
+                                                <span class="cal-grade-event" :style="`background:${ev.color || eventColor(ev.type)}`" @click.stop="openDay(day.date, ev)">
+                                                    <span class="cal-grade-event-line">
+                                                        <span x-text="ev.type_label || ev.course || ''"></span>
+                                                        <span x-text="ev.time_label || ''"></span>
+                                                    </span>
+                                                    <span class="cal-grade-event-title" x-text="ev.title"></span>
+                                                </span>
+                                            </template>
+                                            <button type="button" class="more-events" x-show="eventsFor(day.date).length > 3" @click.stop="openDay(day.date)"
+                                                    x-text="'+' + (eventsFor(day.date).length - 3) + ' más'"></button>
                                         </div>
-                                        <div class="event-meta" x-text="[ev.type_label, ev.course].filter(Boolean).join(' · ')"></div>
                                     </div>
-                                    <span class="event-pill">Ver detalle</span>
-                                </div>
-                            </div>
+                                </template>
+                            </button>
                         </template>
                     </div>
                 </section>
@@ -767,31 +909,49 @@
         </button>
     </div>
 
-    <div class="overlay" x-show="daySheetOpen" x-cloak @click.self="daySheetOpen = false" @keydown.escape.window="daySheetOpen = false">
-        <div class="modal" style="max-width:480px">
+    <div class="overlay" x-show="daySheetOpen" x-cloak @click.self="closeDaySheet()" @keydown.escape.window="closeDaySheet()">
+        <div class="modal" style="max-width:640px">
             <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:8px">
                 <div>
-                    <p style="margin:0 0 4px;font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--nova-violet)">Pendientes del día</p>
-                    <h3 style="margin:0;text-transform:capitalize" x-text="selectedDay ? fmt(selectedDay) : 'Día'"></h3>
+                    <p style="margin:0 0 4px;font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--nova-violet)">Agenda de tu hijo</p>
+                    <h3 style="margin:0;text-transform:capitalize" x-text="selectedDay ? fmtLong(selectedDay) : 'Día'"></h3>
                 </div>
-                <button class="icon-btn" @click="daySheetOpen = false" aria-label="Cerrar"><i class="fa-solid fa-xmark"></i></button>
+                <button class="icon-btn" @click="closeDaySheet()" aria-label="Cerrar"><i class="fa-solid fa-xmark"></i></button>
             </div>
-            <template x-if="!(calendar.events?.[selectedDay] || []).length"><p class="empty">Sin eventos este día.</p></template>
+            <template x-if="!(calendar.events?.[selectedDay] || []).length"><p class="empty">Sin clases, tareas ni evaluaciones este día.</p></template>
             <template x-for="ev in (calendar.events?.[selectedDay] || [])" :key="'sheet'+ev.id">
-                <div class="event-card" @click="openEvent(ev); daySheetOpen = false">
+                <article class="day-event-card" @click="openEvent(ev)" :style="selectedEvent?.id === ev.id ? 'border-color:color-mix(in srgb, var(--nova-violet) 45%, var(--nova-glass-border))' : ''">
                     <div class="event-head">
                         <div>
                             <div style="display:flex;align-items:center;gap:8px;">
-                                <span class="dot" :class="ev.type" style="display:inline-block"></span>
+                                <span class="dot" style="display:inline-block;width:8px;height:8px;background:var(--grade-accent, #7C3AED)" :style="`--grade-accent:${ev.color || eventColor(ev.type)};background:${ev.color || eventColor(ev.type)}`"></span>
                                 <strong x-text="ev.title"></strong>
                             </div>
-                            <div class="event-meta" x-text="[ev.type_label, ev.course].filter(Boolean).join(' · ')"></div>
+                            <div class="event-meta" x-text="[ev.type_label, ev.course, ev.teacher].filter(Boolean).join(' · ')"></div>
                         </div>
-                        <span class="event-pill">Ver</span>
+                        <span class="event-pill" x-text="ev.time_label || ev.type_label"></span>
                     </div>
-                    <div class="event-desc" x-text="preview(ev.description, 160)"></div>
-                </div>
+                    <div class="day-event-meta">
+                        <span class="meta-chip" x-show="ev.topic" x-text="'Tema: ' + ev.topic"></span>
+                        <span class="meta-chip" x-show="ev.weight_percentage != null" x-text="ev.weight_percentage + '% del lapso'"></span>
+                        <span class="meta-chip" x-show="ev.max_score != null" x-text="ev.max_score + ' pts'"></span>
+                        <span class="meta-chip" x-show="ev.total_points != null && ev.max_score == null" x-text="ev.total_points + ' pts'"></span>
+                        <span class="meta-chip" x-show="ev.difficulty" x-text="ev.difficulty"></span>
+                    </div>
+                    <p class="event-desc" x-text="ev.description || 'Sin descripción por ahora.'"></p>
+                </article>
             </template>
+            <div class="day-event-card" x-show="selectedEvent && !(calendar.events?.[selectedDay] || []).some(e => e.id === selectedEvent.id)" x-cloak>
+                <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--nova-cyan);margin-bottom:6px" x-text="selectedEvent?.type_label"></div>
+                <h3 style="margin:0;font-size:17px;font-weight:900" x-text="selectedEvent?.title"></h3>
+                <div class="event-meta" x-text="[selectedEvent?.course, selectedEvent?.teacher].filter(Boolean).join(' · ')"></div>
+                <div class="day-event-meta">
+                    <span class="meta-chip" x-show="selectedEvent?.topic" x-text="'Tema: ' + selectedEvent.topic"></span>
+                    <span class="meta-chip" x-show="selectedEvent?.weight_percentage != null" x-text="selectedEvent.weight_percentage + '% del lapso'"></span>
+                    <span class="meta-chip" x-show="selectedEvent?.max_score != null" x-text="selectedEvent.max_score + ' pts'"></span>
+                </div>
+                <p class="event-desc" x-text="selectedEvent?.description || 'Sin descripción por ahora.'"></p>
+            </div>
         </div>
     </div>
 
@@ -918,8 +1078,10 @@
                 view: 'home',
                 sidebarOpen: false,
                 isDark: document.documentElement.classList.contains('dark'),
+                showThemePicker: false,
+                currentThemeId: document.documentElement.getAttribute('data-theme') || 'light',
                 summary: {},
-                calendar: { events: {}, month: '{{ now()->format('Y-m') }}', label: '' },
+                calendar: { events: {}, month: '{{ now()->format('Y-m') }}', label: '', total_events: 0 },
                 subjects: [],
                 announcements: [],
                 threads: [],
@@ -998,7 +1160,11 @@
                     }
                     return days;
                 },
+                get themeOptions() { return window.AULA_THEMES || []; },
                 get unreadAnnouncements() { return this.announcements.filter(a => !a.read).length; },
+                get monthEventCount() {
+                    return Object.values(this.calendar.events || {}).reduce((n, list) => n + (list?.length || 0), 0);
+                },
                 get boletinUrl() { return this.studentId ? `/representante/boletin/${this.studentId}` : '#'; },
                 get constanciaUrl() { return this.studentId ? `/representante/constancia/${this.studentId}` : '#'; },
                 get monthDays() {
@@ -1016,9 +1182,37 @@
                 },
                 fmt(value) {
                     if (!value) return '';
-                    const d = new Date(value);
+                    const d = new Date(`${value}T12:00:00`);
                     if (Number.isNaN(d.getTime())) return String(value).slice(0, 10);
                     return d.toLocaleDateString('es-VE', { day: '2-digit', month: 'short' });
+                },
+                fmtLong(value) {
+                    if (!value) return '';
+                    const d = new Date(`${value}T12:00:00`);
+                    if (Number.isNaN(d.getTime())) return String(value);
+                    return d.toLocaleDateString('es-VE', { weekday: 'long', day: 'numeric', month: 'long' });
+                },
+                dueParts(value) {
+                    if (!value) return { day: '—', mon: '' };
+                    const d = new Date(`${value}T12:00:00`);
+                    if (Number.isNaN(d.getTime())) return { day: String(value).slice(8, 10), mon: '' };
+                    return {
+                        day: d.getDate(),
+                        mon: d.toLocaleDateString('es-VE', { month: 'short' }).replace('.', '').toUpperCase(),
+                    };
+                },
+                eventColor(type) {
+                    return ({
+                        class: '#2563EB', task: '#F59E0B', activity: '#7C3AED',
+                        evaluation: '#DC2626', plan: '#EC4899', absence: '#FB7185', tardy: '#F97316',
+                    })[type] || '#7C3AED';
+                },
+                eventsFor(date) { return date ? (this.calendar.events?.[date] || []) : []; },
+                applyTheme(themeId) {
+                    if (window.applyAulaTheme) window.applyAulaTheme(themeId);
+                    this.currentThemeId = document.documentElement.getAttribute('data-theme') || themeId;
+                    this.isDark = document.documentElement.classList.contains('dark');
+                    this.showThemePicker = false;
                 },
                 trendIcon(t) { return t === 'up' ? '↑' : (t === 'down' ? '↓' : '↔'); },
                 async init() {
@@ -1050,7 +1244,7 @@
                 },
                 async shiftMonth(delta) {
                     const [y, m] = this.calendar.month.split('-').map(Number);
-                    const d = new Date(y, m - 1 + delta, 1);
+                    const d = new Date(y, m - 1 + (delta || 0), 1);
                     this.calendar.month = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
                     const cal = await fetch(`/representante/api/${this.studentId}/calendario?month=${this.calendar.month}`, { headers: { Accept: 'application/json' } }).then(r => r.json());
                     this.calendar = cal.calendar || this.calendar;
@@ -1065,13 +1259,34 @@
                     this.selectedEvent = list.length ? list[0] : null;
                 },
                 pickDay(date) {
+                    this.openDay(date);
+                },
+                openDay(date, ev = null) {
                     if (!date) return;
                     this.selectedDay = date;
-                    const list = this.calendar.events?.[date] || [];
-                    this.selectedEvent = list.length ? list[0] : null;
-                    if (window.matchMedia('(max-width: 860px)').matches) {
-                        this.daySheetOpen = true;
+                    const list = this.eventsFor(date);
+                    this.selectedEvent = ev || list[0] || null;
+                    this.daySheetOpen = true;
+                },
+                openReminder(item) {
+                    const date = item?.due_date || item?.date;
+                    if (!date) return;
+                    if (date.slice(0, 7) !== this.calendar.month) {
+                        this.calendar.month = date.slice(0, 7);
+                        this.shiftMonth(0).then(() => this.openDay(date, item));
+                        return;
                     }
+                    const match = this.eventsFor(date).find(e => e.id === item.id) || item;
+                    this.openDay(date, match);
+                },
+                closeDaySheet() {
+                    this.daySheetOpen = false;
+                },
+                async goToday() {
+                    const today = '{{ now()->toDateString() }}';
+                    this.calendar.month = today.slice(0, 7);
+                    await this.shiftMonth(0);
+                    this.openDay(today);
                 },
                 isToday(date) {
                     if (!date) return false;
@@ -1202,14 +1417,7 @@
                     await this.refreshAll();
                 },
                 toggleTheme() {
-                    if (typeof window.applyAulaTheme === 'function') {
-                        window.applyAulaTheme(this.isDark ? 'light' : 'dark');
-                    } else {
-                        document.documentElement.classList.toggle('dark');
-                        localStorage.setItem('nova-theme', document.documentElement.classList.contains('dark') ? 'dark' : 'light');
-                        localStorage.setItem('aula-theme', localStorage.getItem('nova-theme'));
-                    }
-                    this.isDark = document.documentElement.classList.contains('dark');
+                    this.showThemePicker = !this.showThemePicker;
                 },
             }));
         });

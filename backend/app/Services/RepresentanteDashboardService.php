@@ -12,6 +12,7 @@ use App\Models\CommunicationMessage;
 use App\Models\CommunicationThread;
 use App\Models\Course;
 use App\Models\CourseEvaluationPlan;
+use App\Models\CourseEvaluationPlanItem;
 use App\Models\Evaluation;
 use App\Models\Grade;
 use App\Models\Notification;
@@ -131,15 +132,16 @@ class RepresentanteDashboardService
                 'count' => $pending->count(),
                 'next_date' => optional($pending->first())['due_date'] ?? null,
                 'next_title' => optional($pending->first())['title'] ?? null,
-                'items' => $pending->take(5)->values(),
+                'items' => $pending->take(8)->values(),
             ],
             'evaluations' => [
                 'count' => $upcomingEvals->count(),
                 'next_date' => optional($upcomingEvals->first())['date'] ?? null,
                 'next_title' => optional($upcomingEvals->first())['title'] ?? null,
-                'items' => $upcomingEvals->take(5)->values(),
+                'items' => $upcomingEvals->take(8)->values(),
             ],
             'absence_requests' => $absenceRequests,
+            'courses_count' => $student->courses->count(),
         ];
     }
 
@@ -159,27 +161,9 @@ class RepresentanteDashboardService
             Activity::query()
                 ->whereIn('course_id', $courseIds)
                 ->whereBetween('due_date', [$start->toDateString(), $end->toDateString()])
-                ->with('course:id,subject_name')
+                ->with(['course:id,subject_name,teacher_id', 'course.teacher:id,name', 'teacher:id,name'])
                 ->get()
-                ->each(function (Activity $activity) use ($events) {
-                    $type = $activity->type === Activity::TYPE_CLASE
-                        ? 'class'
-                        : ($activity->type === Activity::TYPE_TAREA || $activity->is_homework ? 'task' : 'activity');
-
-                    $events->push([
-                        'id' => 'act-'.$activity->id,
-                        'type' => $type,
-                        'type_label' => $type === 'class' ? 'Clase' : ($type === 'task' ? 'Tarea' : 'Actividad'),
-                        'title' => $activity->title,
-                        'course' => $activity->course?->subject_name,
-                        'description' => $this->eventDescription(
-                            $activity->description,
-                            $activity->notes,
-                            $activity->director_notes
-                        ),
-                        'date' => $activity->due_date?->format('Y-m-d'),
-                    ]);
-                });
+                ->each(fn (Activity $activity) => $events->push($this->activityCalendarEvent($activity)));
         }
 
         if (Schema::hasTable('evaluations') && $courseIds->isNotEmpty()) {
@@ -187,19 +171,23 @@ class RepresentanteDashboardService
                 ->whereIn('course_id', $courseIds)
                 ->whereIn('status', ['published', 'scheduled', 'graded'])
                 ->whereBetween('scheduled_at', [$start, $end])
-                ->with('course:id,subject_name')
+                ->with([
+                    'course:id,subject_name,teacher_id',
+                    'course.teacher:id,name',
+                    'teacher:id,name',
+                    'activity:id,weight_percentage,max_score',
+                ])
                 ->get()
-                ->each(function (Evaluation $evaluation) use ($events) {
-                    $events->push([
-                        'id' => 'eval-'.$evaluation->id,
-                        'type' => 'evaluation',
-                        'type_label' => 'Evaluación',
-                        'title' => $evaluation->title,
-                        'course' => $evaluation->course?->subject_name,
-                        'description' => 'Evaluación planificada para este día. Revisa contenidos y criterios de calificación.',
-                        'date' => optional($evaluation->scheduled_at)?->format('Y-m-d'),
-                    ]);
-                });
+                ->each(fn (Evaluation $evaluation) => $events->push($this->evaluationCalendarEvent($evaluation)));
+        }
+
+        if (Schema::hasTable('course_evaluation_plan_items') && $courseIds->isNotEmpty()) {
+            CourseEvaluationPlanItem::query()
+                ->whereHas('plan', fn ($q) => $q->whereIn('course_id', $courseIds))
+                ->whereBetween('due_date', [$start->toDateString(), $end->toDateString()])
+                ->with(['plan.course:id,subject_name,teacher_id', 'plan.course.teacher:id,name'])
+                ->get()
+                ->each(fn (CourseEvaluationPlanItem $item) => $events->push($this->planItemCalendarEvent($item)));
         }
 
         if (Schema::hasTable('attendances')) {
@@ -207,25 +195,13 @@ class RepresentanteDashboardService
                 ->where('student_id', $student->id)
                 ->whereBetween('attended_on', [$start->toDateString(), $end->toDateString()])
                 ->whereIn('status', [Attendance::STATUS_ABSENT, Attendance::STATUS_TARDY])
-                ->with('course:id,subject_name')
+                ->with(['course:id,subject_name,teacher_id', 'course.teacher:id,name'])
                 ->get()
-                ->each(function (Attendance $row) use ($events) {
-                    $events->push([
-                        'id' => 'att-'.$row->id,
-                        'type' => $row->status === Attendance::STATUS_TARDY ? 'tardy' : 'absence',
-                        'type_label' => $row->status === Attendance::STATUS_TARDY ? 'Retraso' : 'Ausencia',
-                        'title' => $row->status === Attendance::STATUS_TARDY ? 'Retraso' : 'Ausencia',
-                        'course' => $row->course?->subject_name,
-                        'description' => $row->status === Attendance::STATUS_TARDY
-                            ? 'Se registró llegada tarde este día.'
-                            : 'Se registró ausencia este día.',
-                        'date' => $row->attended_on?->format('Y-m-d'),
-                    ]);
-                });
+                ->each(fn (Attendance $row) => $events->push($this->attendanceCalendarEvent($row)));
         }
 
-        $byDay = $events
-            ->filter(fn ($e) => ! empty($e['date']))
+        $dated = $events->filter(fn ($e) => ! empty($e['date']))->values();
+        $byDay = $dated
             ->groupBy('date')
             ->map(fn ($group) => $group->values())
             ->toArray();
@@ -233,8 +209,163 @@ class RepresentanteDashboardService
         return [
             'month' => $start->format('Y-m'),
             'label' => $start->locale('es')->translatedFormat('F Y'),
+            'total_events' => $dated->count(),
             'events' => $byDay,
         ];
+    }
+
+    private function activityCalendarEvent(Activity $activity): array
+    {
+        $type = $activity->type === Activity::TYPE_CLASE
+            ? 'class'
+            : ($activity->type === Activity::TYPE_TAREA || $activity->is_homework ? 'task' : 'activity');
+
+        return $this->calendarEventPayload(
+            id: 'act-'.$activity->id,
+            type: $type,
+            typeLabel: $type === 'class' ? 'Clase' : ($type === 'task' ? 'Tarea' : 'Actividad'),
+            title: (string) $activity->title,
+            course: $activity->course?->subject_name,
+            teacher: $activity->course?->teacher?->name ?? $activity->teacher?->name,
+            description: $this->eventDescription($activity->description, $activity->notes, $activity->director_notes),
+            date: $activity->due_date?->format('Y-m-d'),
+            timeLabel: $this->formatTimeLabel($activity->scheduled_time),
+            topic: null,
+            weight: $activity->weight_percentage,
+            maxScore: $activity->max_score,
+        );
+    }
+
+    private function evaluationCalendarEvent(Evaluation $evaluation): array
+    {
+        $topic = trim((string) $evaluation->topic);
+        $description = $this->eventDescription(
+            $evaluation->description,
+            $evaluation->instructions,
+            $topic !== '' ? 'Tema: '.$topic : null,
+            'Evaluación planificada. Revisa el tema, la ponderación y los puntos.'
+        );
+
+        return $this->calendarEventPayload(
+            id: 'eval-'.$evaluation->id,
+            type: 'evaluation',
+            typeLabel: 'Evaluación',
+            title: (string) $evaluation->title,
+            course: $evaluation->course?->subject_name,
+            teacher: $evaluation->course?->teacher?->name ?? $evaluation->teacher?->name,
+            description: $description,
+            date: optional($evaluation->scheduled_at)?->format('Y-m-d'),
+            timeLabel: optional($evaluation->scheduled_at)?->format('H:i'),
+            topic: $topic !== '' ? $topic : null,
+            weight: $evaluation->activity?->weight_percentage,
+            maxScore: $evaluation->total_points ?? $evaluation->activity?->max_score,
+            extra: [
+                'total_points' => $evaluation->total_points,
+                'passing_score' => $evaluation->passing_score,
+                'difficulty' => $evaluation->difficulty,
+            ],
+        );
+    }
+
+    private function planItemCalendarEvent(CourseEvaluationPlanItem $item): array
+    {
+        $course = $item->plan?->course;
+        $category = $item->category === 'formative' ? 'Formativa' : 'Sumativa';
+
+        return $this->calendarEventPayload(
+            id: 'plan-'.$item->id,
+            type: 'plan',
+            typeLabel: 'Unidad evaluativa',
+            title: (string) $item->unit_name,
+            course: $course?->subject_name,
+            teacher: $course?->teacher?->name,
+            description: $this->eventDescription(
+                $item->notes,
+                $item->learning_outcome,
+                trim(($item->assessment_type ?: 'Evaluación').' · '.$category)
+            ),
+            date: optional($item->due_date)?->format('Y-m-d'),
+            timeLabel: null,
+            topic: $item->assessment_type,
+            weight: $item->weight_percentage,
+            extra: [
+                'assessment_type' => $item->assessment_type,
+                'category' => $item->category,
+            ],
+        );
+    }
+
+    private function attendanceCalendarEvent(Attendance $row): array
+    {
+        $tardy = $row->status === Attendance::STATUS_TARDY;
+
+        return $this->calendarEventPayload(
+            id: 'att-'.$row->id,
+            type: $tardy ? 'tardy' : 'absence',
+            typeLabel: $tardy ? 'Retraso' : 'Ausencia',
+            title: $tardy ? 'Retraso' : 'Ausencia',
+            course: $row->course?->subject_name,
+            teacher: $row->course?->teacher?->name,
+            description: $tardy ? 'Se registró llegada tarde este día.' : 'Se registró ausencia este día.',
+            date: $row->attended_on?->format('Y-m-d'),
+        );
+    }
+
+    private function calendarEventPayload(
+        string $id,
+        string $type,
+        string $typeLabel,
+        string $title,
+        ?string $course,
+        ?string $teacher,
+        string $description,
+        ?string $date,
+        ?string $timeLabel = null,
+        ?string $topic = null,
+        mixed $weight = null,
+        mixed $maxScore = null,
+        array $extra = [],
+    ): array {
+        return array_filter([
+            'id' => $id,
+            'type' => $type,
+            'type_label' => $typeLabel,
+            'title' => $title,
+            'course' => $course,
+            'teacher' => $teacher,
+            'description' => $description,
+            'date' => $date,
+            'time_label' => $timeLabel,
+            'topic' => $topic,
+            'weight_percentage' => $weight !== null ? (float) $weight : null,
+            'max_score' => $maxScore !== null ? (float) $maxScore : null,
+            'color' => $this->eventColor($type),
+            ...$extra,
+        ], fn ($value) => $value !== null && $value !== '');
+    }
+
+    private function eventColor(string $type): string
+    {
+        return match ($type) {
+            'class' => '#2563EB',
+            'task' => '#F59E0B',
+            'activity' => '#7C3AED',
+            'evaluation' => '#DC2626',
+            'plan' => '#EC4899',
+            'absence' => '#FB7185',
+            'tardy' => '#F97316',
+            default => '#7C3AED',
+        };
+    }
+
+    private function formatTimeLabel(mixed $value): ?string
+    {
+        $text = trim((string) $value);
+        if ($text === '') {
+            return null;
+        }
+
+        return substr($text, 0, 5);
     }
 
     private function eventDescription(?string ...$candidates): string
@@ -747,7 +878,7 @@ class RepresentanteDashboardService
             })
             ->whereDate('due_date', '>=', now()->toDateString())
             ->orderBy('due_date')
-            ->with('course:id,subject_name')
+            ->with(['course:id,subject_name,teacher_id', 'course.teacher:id,name'])
             ->get();
 
         $gradedIds = $this->recordedGrades($student, $activities->pluck('id'))->pluck('activity_id');
@@ -755,9 +886,17 @@ class RepresentanteDashboardService
         return $activities
             ->reject(fn (Activity $a) => $gradedIds->contains($a->id))
             ->map(fn (Activity $a) => [
+                'id' => 'act-'.$a->id,
+                'type' => 'task',
+                'type_label' => 'Tarea',
                 'title' => $a->title,
                 'due_date' => $a->due_date?->format('Y-m-d'),
+                'date' => $a->due_date?->format('Y-m-d'),
                 'course' => $a->course?->subject_name,
+                'teacher' => $a->course?->teacher?->name,
+                'weight_percentage' => $a->weight_percentage !== null ? (float) $a->weight_percentage : null,
+                'max_score' => $a->max_score !== null ? (float) $a->max_score : null,
+                'color' => $this->eventColor('task'),
             ])
             ->values();
     }
@@ -773,12 +912,26 @@ class RepresentanteDashboardService
             ->whereIn('status', ['published', 'scheduled'])
             ->where('scheduled_at', '>=', now())
             ->orderBy('scheduled_at')
-            ->with('course:id,subject_name')
+            ->with([
+                'course:id,subject_name,teacher_id',
+                'course.teacher:id,name',
+                'activity:id,weight_percentage,max_score',
+            ])
             ->get()
             ->map(fn (Evaluation $e) => [
+                'id' => 'eval-'.$e->id,
+                'type' => 'evaluation',
+                'type_label' => 'Evaluación',
                 'title' => $e->title,
                 'date' => optional($e->scheduled_at)?->format('Y-m-d'),
                 'course' => $e->course?->subject_name,
+                'teacher' => $e->course?->teacher?->name,
+                'topic' => $e->topic,
+                'weight_percentage' => $e->activity?->weight_percentage !== null
+                    ? (float) $e->activity->weight_percentage
+                    : null,
+                'max_score' => $e->total_points !== null ? (float) $e->total_points : null,
+                'color' => $this->eventColor('evaluation'),
             ])
             ->values();
     }
