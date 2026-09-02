@@ -266,6 +266,12 @@ Route::middleware('auth')->group(function () {
                 Route::post('/api/mensajes/{thread}', [RepresentanteController::class, 'sendMessage'])->name('api.mensajes.send');
                 Route::post('/api/mensajes', [RepresentanteController::class, 'startMessage'])->name('api.mensajes.start');
                 Route::post('/api/ausencia', [RepresentanteController::class, 'storeAbsenceJson'])->name('api.ausencia');
+                Route::post('/api/ia/actividad/{activity}', [\App\Http\Controllers\Representante\AIExplanationController::class, 'explainActivity'])->middleware('throttle:20,1')->name('api.ia.actividad');
+                Route::post('/api/ia/evaluacion/{evaluation}', [\App\Http\Controllers\Representante\AIExplanationController::class, 'explainEvaluation'])->middleware('throttle:20,1')->name('api.ia.evaluacion');
+                Route::post('/api/ia/calendario', [\App\Http\Controllers\Representante\AIExplanationController::class, 'summarizeWeek'])->middleware('throttle:20,1')->name('api.ia.calendario');
+                Route::post('/api/ia/calificaciones', [\App\Http\Controllers\Representante\AIExplanationController::class, 'explainGrades'])->middleware('throttle:20,1')->name('api.ia.calificaciones');
+                Route::post('/api/ia/asistencia', [\App\Http\Controllers\Representante\AIExplanationController::class, 'explainAttendance'])->middleware('throttle:20,1')->name('api.ia.asistencia');
+
                 Route::get('/api/notificaciones', [RepresentanteController::class, 'notifications'])->name('api.notificaciones');
                 Route::post('/api/notificaciones/leer', [RepresentanteController::class, 'markNotificationsRead'])->name('api.notificaciones.leer');
                 Route::post('/api/perfil', [RepresentanteController::class, 'updateProfile'])->name('api.perfil');

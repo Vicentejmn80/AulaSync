@@ -597,11 +597,13 @@
                             <div class="kpi-label">Asistencia</div>
                             <div class="kpi-value" x-text="summary.attendance?.percent != null ? summary.attendance.percent + '%' : '—'"></div>
                             <div class="kpi-hint" x-text="summary.attendance?.label"></div>
+                            <button type="button" class="btn btn-ghost" style="margin-top:10px;font-size:11px;padding:6px 10px" @click="explainAttendance()" :disabled="aiLoading"><i class="fa-solid fa-wand-magic-sparkles" style="color:var(--nova-violet);margin-right:4px"></i>Explícame su asistencia</button>
                         </article>
                         <article class="kpi">
                             <div class="kpi-label">Promedio general</div>
                             <div class="kpi-value" x-text="summary.average?.value ?? '—'"></div>
                             <div class="kpi-hint" x-text="summary.average?.label"></div>
+                            <button type="button" class="btn btn-ghost" style="margin-top:10px;font-size:11px;padding:6px 10px" @click="explainGrades()" :disabled="aiLoading"><i class="fa-solid fa-wand-magic-sparkles" style="color:var(--nova-violet);margin-right:4px"></i>Explícame su progreso</button>
                         </article>
                         <article class="kpi">
                             <div class="kpi-label">Materias</div>
@@ -711,6 +713,7 @@
                             <button type="button" class="calendar-nav-btn today-btn" @click="goToday()">Hoy</button>
                             <button type="button" class="calendar-nav-btn" @click="shiftMonth(1)" aria-label="Mes siguiente"><i class="fa-solid fa-chevron-right"></i></button>
                             <span class="calendar-stats" x-text="(calendar.total_events ?? monthEventCount) + ' eventos'"></span>
+                            <button type="button" class="btn btn-ghost" style="font-size:12px;padding:8px 12px" @click="summarizeWeek()" :disabled="aiLoading"><i class="fa-solid fa-wand-magic-sparkles" style="color:var(--nova-violet);margin-right:6px"></i>Resume esta semana</button>
                         </div>
                     </div>
                     <div class="cal-legend">
@@ -985,6 +988,13 @@
                     <p class="event-desc is-preview" x-show="!isExpanded(ev)" x-text="eventFullBody(ev) || 'Sin descripción por ahora.'"></p>
                     <div class="event-full" x-show="isExpanded(ev)" x-cloak @click.stop>
                         <div class="event-md" x-html="renderEventHtml(ev)"></div>
+                        <div x-show="ev.type === 'evaluation'" style="margin-top:10px">
+                            <button type="button" class="btn btn-ghost" style="font-size:12px" @click.stop="explainEvaluation(ev)" :disabled="aiLoading"><i class="fa-solid fa-wand-magic-sparkles" style="color:var(--nova-violet);margin-right:6px"></i>¿Qué debe estudiar?</button>
+                        </div>
+                        <div x-show="ev.type !== 'evaluation'" style="margin-top:10px">
+                            <div style="font-size:12px;font-weight:700;color:var(--text-secondary);margin-bottom:6px">¿No quedó claro qué debe hacer?</div>
+                            <button type="button" class="btn btn-ghost" style="font-size:12px" @click.stop="explainActivity(ev)" :disabled="aiLoading"><i class="fa-solid fa-wand-magic-sparkles" style="color:var(--nova-violet);margin-right:6px"></i>Explícame esta actividad</button>
+                        </div>
                         <button type="button" class="btn btn-primary" style="margin-top:14px" x-show="ev.course_id || ev.course" @click.stop="askTeacherAbout(ev)">
                             Escribirle al docente
                         </button>
@@ -1002,6 +1012,13 @@
                     <span class="meta-chip" x-show="selectedEvent?.max_score != null" x-text="(selectedEvent?.max_score ?? 0) + ' pts'"></span>
                 </div>
                 <div class="event-md" x-html="renderEventHtml(selectedEvent)"></div>
+                <div x-show="selectedEvent?.type === 'evaluation'" style="margin-top:10px">
+                    <button type="button" class="btn btn-ghost" style="font-size:12px" @click="explainEvaluation(selectedEvent)" :disabled="aiLoading"><i class="fa-solid fa-wand-magic-sparkles" style="color:var(--nova-violet);margin-right:6px"></i>¿Qué debe estudiar?</button>
+                </div>
+                <div x-show="selectedEvent?.type !== 'evaluation'" style="margin-top:10px">
+                    <div style="font-size:12px;font-weight:700;color:var(--text-secondary);margin-bottom:6px">¿No quedó claro qué debe hacer?</div>
+                    <button type="button" class="btn btn-ghost" style="font-size:12px" @click="explainActivity(selectedEvent)" :disabled="aiLoading"><i class="fa-solid fa-wand-magic-sparkles" style="color:var(--nova-violet);margin-right:6px"></i>Explícame esta actividad</button>
+                </div>
                 <button type="button" class="btn btn-ghost event-toggle" @click="toggleEvent(selectedEvent)" x-text="isExpanded(selectedEvent) ? 'Ocultar detalle' : 'Ver actividad completa'"></button>
                 <button type="button" class="btn btn-primary" style="margin-top:10px" x-show="selectedEvent?.course_id || selectedEvent?.course" @click="askTeacherAbout(selectedEvent)">
                     Escribirle al docente
@@ -1041,6 +1058,10 @@
         <div class="fam-dialog" :class="{ 'is-visible': modalName === 'subject' }" x-cloak @click.stop>
             <h3 x-text="subjectModal?.name"></h3>
             <p class="empty" x-text="(subjectModal?.teacher || '') + ' · Promedio ' + (subjectModal?.average ?? '—')"></p>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+                <button type="button" class="btn btn-ghost" style="font-size:11px;padding:6px 10px" @click="explainGrades(subjectModal?.id)" :disabled="aiLoading"><i class="fa-solid fa-wand-magic-sparkles" style="color:var(--nova-violet);margin-right:4px"></i>Explícame su progreso</button>
+                <button type="button" class="btn btn-ghost" style="font-size:11px;padding:6px 10px" @click="explainAttendance(subjectModal?.id)" :disabled="aiLoading"><i class="fa-solid fa-wand-magic-sparkles" style="color:var(--nova-violet);margin-right:4px"></i>Explícame su asistencia</button>
+            </div>
             <div style="display:flex;gap:4px;align-items:flex-end;height:90px;margin:12px 0">
                 <template x-for="h in (subjectModal?.history || [])" :key="h.label">
                     <div :title="h.label + ': ' + h.score" :style="'flex:1;background:var(--nova-gradient);border-radius:8px 8px 0 0;height:' + Math.max(8, (h.score / (h.max_score || 20)) * 90) + 'px'"></div>
@@ -1109,6 +1130,22 @@
                 <button class="btn btn-primary" @click="saveProfile()">Guardar</button>
             </div>
         </div>
+
+        <div class="fam-dialog" :class="{ 'is-visible': modalName === 'ai' }" x-cloak @click.stop>
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px">
+                <h3 style="margin:0;font-weight:900" x-text="aiResult?.title || 'Explicación'"></h3>
+                <button class="btn btn-ghost" style="padding:8px 12px" @click="closeAnyModal()">✕</button>
+            </div>
+            <div x-show="aiLoading" style="text-align:center;padding:28px 0;color:var(--text-secondary)">
+                <i class="fa-solid fa-circle-notch fa-spin" style="font-size:22px;color:var(--nova-violet)"></i>
+                <div style="margin-top:10px;font-weight:700">Generando explicación…</div>
+            </div>
+            <div x-show="!aiLoading && aiError" style="color:#fb7185;font-weight:700;white-space:pre-wrap" x-text="aiError"></div>
+            <div x-show="!aiLoading && aiResult?.content" style="white-space:pre-wrap;line-height:1.6;color:var(--text-primary)" x-text="aiResult?.content"></div>
+            <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px">
+                <button class="btn btn-primary" @click="closeAnyModal()">Cerrar</button>
+            </div>
+        </div>
     </div>
 
     <div x-show="toast" x-cloak class="fam-toast" x-text="toast"></div>
@@ -1149,6 +1186,9 @@
                 boletin: null,
                 boletasOficiales: [],
                 loadingBoletas: false,
+                aiLoading: false,
+                aiResult: null,
+                aiError: '',
                 toast: '',
                 absenceError: '',
                 profileMsg: '',
@@ -1388,6 +1428,7 @@
                     this.announcementModal = null;
                     this.showNotif = false;
                     this.expandedEventId = null;
+                    this.aiError = '';
                 },
                 trendIcon(t) { return t === 'up' ? '↑' : (t === 'down' ? '↓' : '↔'); },
                 async init() {
@@ -1648,6 +1689,64 @@
                     if (avg >= 70) return '#fbbf24';
                     if (avg >= 60) return '#fb923c';
                     return '#f87171';
+                },
+                async explainActivity(ev) {
+                    if (!ev || this.aiLoading) return;
+                    const id = ev.source_id || String(ev.id || '').replace(/^\D+-/, '') || ev.id;
+                    if (!id) { this.showToast('No se pudo identificar la actividad.'); return; }
+                    this.aiLoading = true; this.aiError = ''; this.aiResult = null; this.modalName = 'ai';
+                    try {
+                        const { ok, json } = await this.postJson(`/representante/api/ia/actividad/${id}`, { estudiante_id: this.studentId });
+                        if (!ok || !json.success) { this.aiError = json.content || json.message || 'No se pudo generar la explicación.'; if (json.content) this.aiResult = json; return; }
+                        this.aiResult = json;
+                    } catch (_) { this.aiError = 'Error de conexión. Intenta de nuevo.'; }
+                    finally { this.aiLoading = false; }
+                },
+                async explainEvaluation(ev) {
+                    if (!ev || this.aiLoading) return;
+                    const id = ev.source_id || String(ev.id || '').replace(/^\D+-/, '') || ev.id;
+                    if (!id) { this.showToast('No se pudo identificar la evaluación.'); return; }
+                    this.aiLoading = true; this.aiError = ''; this.aiResult = null; this.modalName = 'ai';
+                    try {
+                        const { ok, json } = await this.postJson(`/representante/api/ia/evaluacion/${id}`, { estudiante_id: this.studentId });
+                        if (!ok || !json.success) { this.aiError = json.content || json.message || 'No se pudo generar la explicación.'; if (json.content) this.aiResult = json; return; }
+                        this.aiResult = json;
+                    } catch (_) { this.aiError = 'Error de conexión. Intenta de nuevo.'; }
+                    finally { this.aiLoading = false; }
+                },
+                async summarizeWeek() {
+                    if (this.aiLoading) return;
+                    this.aiLoading = true; this.aiError = ''; this.aiResult = null; this.modalName = 'ai';
+                    try {
+                        const { ok, json } = await this.postJson(`/representante/api/ia/calendario`, { estudiante_id: this.studentId, month: this.calendar.month });
+                        if (!ok || !json.success) { this.aiError = json.content || json.message || 'No se pudo generar el resumen.'; if (json.content) this.aiResult = json; return; }
+                        this.aiResult = json;
+                    } catch (_) { this.aiError = 'Error de conexión. Intenta de nuevo.'; }
+                    finally { this.aiLoading = false; }
+                },
+                async explainGrades(materiaId = null) {
+                    if (this.aiLoading) return;
+                    this.aiLoading = true; this.aiError = ''; this.aiResult = null; this.modalName = 'ai';
+                    try {
+                        const payload = { estudiante_id: this.studentId };
+                        if (materiaId) payload.materia_id = materiaId;
+                        const { ok, json } = await this.postJson(`/representante/api/ia/calificaciones`, payload);
+                        if (!ok || !json.success) { this.aiError = json.content || json.message || 'No se pudo generar la explicación.'; if (json.content) this.aiResult = json; return; }
+                        this.aiResult = json;
+                    } catch (_) { this.aiError = 'Error de conexión. Intenta de nuevo.'; }
+                    finally { this.aiLoading = false; }
+                },
+                async explainAttendance(materiaId = null) {
+                    if (this.aiLoading) return;
+                    this.aiLoading = true; this.aiError = ''; this.aiResult = null; this.modalName = 'ai';
+                    try {
+                        const payload = { estudiante_id: this.studentId };
+                        if (materiaId) payload.materia_id = materiaId;
+                        const { ok, json } = await this.postJson(`/representante/api/ia/asistencia`, payload);
+                        if (!ok || !json.success) { this.aiError = json.content || json.message || 'No se pudo generar la explicación.'; if (json.content) this.aiResult = json; return; }
+                        this.aiResult = json;
+                    } catch (_) { this.aiError = 'Error de conexión. Intenta de nuevo.'; }
+                    finally { this.aiLoading = false; }
                 },
                 showToast(text) {
                     this.toast = text;
