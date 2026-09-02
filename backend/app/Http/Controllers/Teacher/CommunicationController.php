@@ -11,6 +11,7 @@ use App\Models\Course;
 use App\Models\Student;
 use App\Models\Notification;
 use App\Services\AttendanceAlertService;
+use App\Support\DatabaseBoolean;
 use Carbon\Carbon;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
@@ -445,8 +446,10 @@ class CommunicationController extends Controller
         $message = $thread->messages()->create([
             'sender_role' => 'teacher',
             'body' => $body,
-            'ai_suggested' => $aiSuggested,
+            'ai_suggested' => DatabaseBoolean::bind($aiSuggested),
         ]);
+
+        $message->refresh();
 
         $thread->loadMissing('student');
         $parents = $thread->student
