@@ -33,3 +33,12 @@ Thumbs.db
 /frontend-android/.gradle
 /frontend-android/app/build
 /frontend-android/local.properties
+
+# Playwright e2e
+/node_modules
+/test-results
+/playwright-report
+/e2e/test-results
+/e2e/playwright-report
+/e2e/.auth
+/e2e/fixtures.json
