@@ -16,9 +16,8 @@ test.describe('docentes', () => {
     await login(page, fx.teacher, fx.password);
     await page.waitForURL(/\/teacher\/hub/, { timeout: 30_000 });
     await page.goto('/teacher/activities', { waitUntil: 'load' });
-    await page.getByRole('link', { name: /Crear actividad/i }).first().click().catch(async () => {
-      await page.getByText('Crear actividad', { exact: false }).first().click();
-    });
+    const openCreate = page.locator('button.btn-gradient, button.bg-violet-600').filter({ hasText: /Nueva|Crear actividad/ }).first();
+    await openCreate.click();
     await expect(page.locator('h3', { hasText: 'Crear actividad' })).toBeVisible({ timeout: 10_000 });
     await page.locator('select[name="course_id"]').selectOption({ index: 1 });
     await page.locator('input[name="type"][value="actividad"]').check();
