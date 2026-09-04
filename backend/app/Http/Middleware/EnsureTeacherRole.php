@@ -19,9 +19,7 @@ class EnsureTeacherRole
         }
 
         if ($user->role !== 'profesor' && $user->role !== 'super_admin') {
-            return redirect()
-                ->to('/director/dashboard')
-                ->with('warning', 'Esta sección es exclusiva para Docentes. Los Directores tienen acceso en su panel institucional.');
+            abort(Response::HTTP_FORBIDDEN, 'Esta sección es exclusiva para Docentes.');
         }
 
         return $next($request);

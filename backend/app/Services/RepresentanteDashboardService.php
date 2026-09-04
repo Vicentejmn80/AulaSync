@@ -74,8 +74,22 @@ class RepresentanteDashboardService
             'document_id' => $student->document_id,
             'initials' => mb_strtoupper(mb_substr($student->name, 0, 1)),
             'school' => $student->colegio?->name,
-            'courses_count' => $student->courses?->count() ?? 0,
+            'courses_count' => $this->enrolledCoursesCount($student),
         ];
+    }
+
+    private function enrolledCoursesCount(Student $student): int
+    {
+        return (int) $student->courses()->count();
+    }
+
+    /**
+     * Always query the pivot. An eager-loaded empty `courses` collection
+     * (same P1 footgun) would otherwise hide enrolled activities from the calendar.
+     */
+    private function enrolledCourseIds(Student $student): Collection
+    {
+        return $student->courses()->pluck('courses.id');
     }
 
     public function summary(Student $student): array
@@ -141,7 +155,7 @@ class RepresentanteDashboardService
                 'items' => $upcomingEvals->take(8)->values(),
             ],
             'absence_requests' => $absenceRequests,
-            'courses_count' => $student->courses->count(),
+            'courses_count' => $this->enrolledCoursesCount($student),
         ];
     }
 
@@ -153,51 +167,67 @@ class RepresentanteDashboardService
             $start = now()->startOfMonth();
         }
         $end = $start->copy()->endOfMonth();
-        $courseIds = $student->courses->pluck('id');
+        $courseIds = $this->enrolledCourseIds($student);
 
         $events = collect();
 
         if (Schema::hasTable('activities') && $courseIds->isNotEmpty()) {
-            Activity::query()
-                ->whereIn('course_id', $courseIds)
-                ->whereBetween('due_date', [$start->toDateString(), $end->toDateString()])
-                ->with(['course:id,subject_name,teacher_id', 'course.teacher:id,name', 'teacher:id,name'])
-                ->get()
-                ->each(fn (Activity $activity) => $events->push($this->activityCalendarEvent($activity)));
+            try {
+                Activity::query()
+                    ->whereIn('course_id', $courseIds)
+                    ->whereBetween('due_date', [$start->toDateString(), $end->toDateString()])
+                    ->with(['course:id,subject_name,teacher_id', 'course.teacher:id,name', 'teacher:id,name'])
+                    ->get()
+                    ->each(fn (Activity $activity) => $events->push($this->activityCalendarEvent($activity)));
+            } catch (\Throwable $e) {
+                report($e);
+            }
         }
 
         if (Schema::hasTable('evaluations') && $courseIds->isNotEmpty()) {
-            Evaluation::query()
-                ->whereIn('course_id', $courseIds)
-                ->whereIn('status', ['published', 'scheduled', 'graded'])
-                ->whereBetween('scheduled_at', [$start, $end])
-                ->with([
-                    'course:id,subject_name,teacher_id',
-                    'course.teacher:id,name',
-                    'teacher:id,name',
-                    'activity:id,weight_percentage,max_score',
-                ])
-                ->get()
-                ->each(fn (Evaluation $evaluation) => $events->push($this->evaluationCalendarEvent($evaluation)));
+            try {
+                Evaluation::query()
+                    ->whereIn('course_id', $courseIds)
+                    ->whereIn('status', ['published', 'scheduled', 'graded'])
+                    ->whereBetween('scheduled_at', [$start, $end])
+                    ->with([
+                        'course:id,subject_name,teacher_id',
+                        'course.teacher:id,name',
+                        'teacher:id,name',
+                        'activity:id,weight_percentage,max_score',
+                    ])
+                    ->get()
+                    ->each(fn (Evaluation $evaluation) => $events->push($this->evaluationCalendarEvent($evaluation)));
+            } catch (\Throwable $e) {
+                report($e);
+            }
         }
 
         if (Schema::hasTable('course_evaluation_plan_items') && $courseIds->isNotEmpty()) {
-            CourseEvaluationPlanItem::query()
-                ->whereHas('plan', fn ($q) => $q->whereIn('course_id', $courseIds))
-                ->whereBetween('due_date', [$start->toDateString(), $end->toDateString()])
-                ->with(['plan.course:id,subject_name,teacher_id', 'plan.course.teacher:id,name'])
-                ->get()
-                ->each(fn (CourseEvaluationPlanItem $item) => $events->push($this->planItemCalendarEvent($item)));
+            try {
+                CourseEvaluationPlanItem::query()
+                    ->whereHas('plan', fn ($q) => $q->whereIn('course_id', $courseIds))
+                    ->whereBetween('due_date', [$start->toDateString(), $end->toDateString()])
+                    ->with(['plan.course:id,subject_name,teacher_id', 'plan.course.teacher:id,name'])
+                    ->get()
+                    ->each(fn (CourseEvaluationPlanItem $item) => $events->push($this->planItemCalendarEvent($item)));
+            } catch (\Throwable $e) {
+                report($e);
+            }
         }
 
         if (Schema::hasTable('attendances')) {
-            Attendance::query()
-                ->where('student_id', $student->id)
-                ->whereBetween('attended_on', [$start->toDateString(), $end->toDateString()])
-                ->whereIn('status', [Attendance::STATUS_ABSENT, Attendance::STATUS_TARDY])
-                ->with(['course:id,subject_name,teacher_id', 'course.teacher:id,name'])
-                ->get()
-                ->each(fn (Attendance $row) => $events->push($this->attendanceCalendarEvent($row)));
+            try {
+                Attendance::query()
+                    ->where('student_id', $student->id)
+                    ->whereBetween('attended_on', [$start->toDateString(), $end->toDateString()])
+                    ->whereIn('status', [Attendance::STATUS_ABSENT, Attendance::STATUS_TARDY])
+                    ->with(['course:id,subject_name,teacher_id', 'course.teacher:id,name'])
+                    ->get()
+                    ->each(fn (Attendance $row) => $events->push($this->attendanceCalendarEvent($row)));
+            } catch (\Throwable $e) {
+                report($e);
+            }
         }
 
         $dated = $events->filter(fn ($e) => ! empty($e['date']))->values();
@@ -210,7 +240,8 @@ class RepresentanteDashboardService
             'month' => $start->format('Y-m'),
             'label' => $start->locale('es')->translatedFormat('F Y'),
             'total_events' => $dated->count(),
-            'events' => $byDay,
+            // Empty PHP [] becomes JSON [] and Alpine eventsFor(date) misses keys.
+            'events' => $byDay === [] ? new \stdClass() : $byDay,
         ];
     }
 

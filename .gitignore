@@ -28,6 +28,11 @@ Thumbs.db
 /backend/.env.local
 /backend/.phpunit.result.cache
 /backend/auth.json
+/backend/tests/evidence/
+/backend/e2e/test-results/
+/backend/playwright-report/
+/backend/test-results/
+/backend/blob-report/
 
 # Frontend (Android)
 /frontend-android/.gradle

@@ -607,8 +607,8 @@
                         </article>
                         <article class="kpi">
                             <div class="kpi-label">Materias</div>
-                            <div class="kpi-value" x-text="summary.courses_count ?? subjects.length ?? 0"></div>
-                            <div class="kpi-hint" x-text="(summary.courses_count ?? subjects.length ?? 0) === 1 ? 'Curso inscrito' : 'Cursos inscritos'"></div>
+                            <div class="kpi-value" x-text="enrolledCount"></div>
+                            <div class="kpi-hint" x-text="enrolledCount === 1 ? 'Curso inscrito' : 'Cursos inscritos'"></div>
                         </article>
                         <article class="kpi">
                             <div class="kpi-label">Ausencias del mes</div>
@@ -674,7 +674,7 @@
 
                     <section class="panel">
                         <h2 class="section-title">Materias</h2>
-                        <template x-if="subjects.length === 0"><p class="empty">Este estudiante aún no está inscrito en cursos.</p></template>
+                        <template x-if="enrolledCount === 0 && subjects.length === 0"><p class="empty">Este estudiante aún no está inscrito en cursos.</p></template>
                         <template x-for="sub in subjects" :key="sub.id">
                             <div class="subject-row" @click="openSubject(sub.id)">
                                 <div>
@@ -1161,8 +1161,8 @@
                 isDark: document.documentElement.classList.contains('dark'),
                 showThemePicker: false,
                 currentThemeId: document.documentElement.getAttribute('data-theme') || 'light',
-                summary: {},
-                calendar: { events: {}, month: '{{ now()->format('Y-m') }}', label: '', total_events: 0 },
+                summary: { courses_count: @json($students->first()['courses_count'] ?? 0) },
+                calendar: @json($calendar),
                 subjects: [],
                 announcements: [],
                 threads: [],
@@ -1259,6 +1259,17 @@
                     return { ok: res.ok, status: res.status, json };
                 },
                 get currentStudent() { return this.students.find(s => String(s.id) === String(this.studentId)); },
+                get enrolledCount() {
+                    const fromStudent = this.currentStudent?.courses_count;
+                    if (fromStudent !== undefined && fromStudent !== null && fromStudent !== '') {
+                        return Number(fromStudent);
+                    }
+                    const fromSummary = this.summary?.courses_count;
+                    if (fromSummary !== undefined && fromSummary !== null && fromSummary !== '') {
+                        return Number(fromSummary);
+                    }
+                    return (this.subjects || []).length;
+                },
                 get parentFirstName() {
                     const name = @json($parent['name'] ?? 'familia');
                     return String(name).trim().split(/\s+/)[0] || 'familia';
@@ -1447,34 +1458,58 @@
                         if (this.view === 'comms' && this.commTab === 'messages') this.pollInbox();
                     }, 12000);
                 },
+                async fetchJson(url) {
+                    try {
+                        const res = await fetch(url, {
+                            credentials: 'same-origin',
+                            headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                        });
+                        return await res.json().catch(() => ({}));
+                    } catch (_) {
+                        return {};
+                    }
+                },
                 async refreshAll(silent = false) {
                     if (!this.studentId) return;
                     const id = this.studentId;
                     const month = this.calendar.month;
-                    const [sum, cal, subs, anns, msgs, notif] = await Promise.all([
-                        fetch(`/representante/api/${id}/resumen`, { headers: { Accept: 'application/json' } }).then(r => r.json()),
-                        fetch(`/representante/api/${id}/calendario?month=${month}`, { headers: { Accept: 'application/json' } }).then(r => r.json()),
-                        fetch(`/representante/api/${id}/materias`, { headers: { Accept: 'application/json' } }).then(r => r.json()),
-                        fetch(`/representante/api/anuncios?estudiante_id=${id}`, { headers: { Accept: 'application/json' } }).then(r => r.json()),
-                        fetch(`/representante/api/mensajes?estudiante_id=${id}`, { headers: { Accept: 'application/json' } }).then(r => r.json()),
-                        fetch(`/representante/api/notificaciones`, { headers: { Accept: 'application/json' } }).then(r => r.json()),
+                    // Apply each payload as it arrives. Waiting for Promise.all before
+                    // assignment (P1 leftover) left the SSR calendar at 0 events whenever
+                    // a sibling fetch hung or returned unparseable JSON.
+                    await Promise.all([
+                        this.fetchJson(`/representante/api/${id}/resumen`).then((json) => {
+                            if (json.summary) this.summary = json.summary;
+                        }),
+                        this.fetchJson(`/representante/api/${id}/calendario?month=${month}`).then((json) => {
+                            if (json.calendar) this.calendar = json.calendar;
+                        }),
+                        this.fetchJson(`/representante/api/${id}/materias`).then((json) => {
+                            if (Array.isArray(json.subjects)) this.subjects = json.subjects;
+                        }),
+                        this.fetchJson(`/representante/api/anuncios?estudiante_id=${id}`).then((json) => {
+                            if (Array.isArray(json.announcements)) this.announcements = json.announcements;
+                        }),
+                        this.fetchJson(`/representante/api/mensajes?estudiante_id=${id}`).then((json) => {
+                            if (Array.isArray(json.threads)) this.threads = json.threads;
+                        }),
+                        this.fetchJson(`/representante/api/notificaciones`).then((json) => {
+                            if (Array.isArray(json.items)) this.notifications = json.items;
+                            if (json.unread != null) this.unreadNotif = json.unread;
+                        }),
                     ]);
-                    this.summary = sum.summary || {};
-                    this.calendar = cal.calendar || this.calendar;
-                    this.subjects = subs.subjects || [];
-                    this.announcements = anns.announcements || [];
-                    this.threads = msgs.threads || [];
-                    this.notifications = notif.items || [];
-                    this.unreadNotif = notif.unread || 0;
                     this.absence.student_id = id;
                     this.ensureSelectedDay();
                 },
                 async shiftMonth(delta) {
                     const [y, m] = this.calendar.month.split('-').map(Number);
                     const d = new Date(y, m - 1 + (delta || 0), 1);
-                    this.calendar.month = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
-                    const cal = await fetch(`/representante/api/${this.studentId}/calendario?month=${this.calendar.month}`, { headers: { Accept: 'application/json' } }).then(r => r.json());
-                    this.calendar = cal.calendar || this.calendar;
+                    const month = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+                    const cal = await this.fetchJson(`/representante/api/${this.studentId}/calendario?month=${month}`);
+                    if (cal.calendar) {
+                        this.calendar = cal.calendar;
+                    } else {
+                        this.calendar.month = month;
+                    }
                     this.ensureSelectedDay();
                 },
                 ensureSelectedDay() {

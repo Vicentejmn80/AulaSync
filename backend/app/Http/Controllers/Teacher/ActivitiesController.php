@@ -6,10 +6,12 @@ use App\Http\Controllers\Controller;
 use App\Models\Activity;
 use App\Models\Course;
 use App\Services\LessonAiService;
+use App\Services\ProductTelemetry;
 use App\Support\GradingScale;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
@@ -219,23 +221,25 @@ class ActivitiesController extends Controller
             }
         }
 
-        Activity::create($activityData);
+        DB::transaction(function () use ($activityData, $course, $resolvedType, $isHomework) {
+            $activity = Activity::create($activityData);
 
-        app(ProductTelemetry::class)->record([
-            'user_id' => auth()->id(),
-            'colegio_id' => $course->colegio_id,
-            'role' => 'profesor',
-            'source' => 'teacher',
-            'event' => 'activity_created',
-            'action' => 'store',
-            'category' => $this->telemetryCategoryFor('activity'),
-            'status' => 'success',
-            'meta' => [
-                'activity_id' => $activity->id,
-                'type' => $resolvedType,
-                'is_homework' => $isHomework,
-            ],
-        ]);
+            app(ProductTelemetry::class)->record([
+                'user_id' => auth()->id(),
+                'colegio_id' => $course->colegio_id,
+                'role' => 'profesor',
+                'source' => 'teacher',
+                'event' => 'activity_created',
+                'action' => 'store',
+                'category' => 'planning',
+                'status' => 'success',
+                'meta' => [
+                    'activity_id' => $activity->id,
+                    'type' => $resolvedType,
+                    'is_homework' => $isHomework,
+                ],
+            ]);
+        });
 
         return redirect()->route('teacher.activities.index')->with('success', 'Actividad creada correctamente.');
     }

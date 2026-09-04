@@ -29,6 +29,19 @@ class RepresentanteController extends Controller
         $students = $this->dashboard->linkedStudents($user);
         $reasons = $this->dashboard->reasons($user);
         $school = optional($students->first())->colegio;
+        $calendar = [
+            'month' => now()->format('Y-m'),
+            'label' => '',
+            'total_events' => 0,
+            'events' => new \stdClass(),
+        ];
+        if ($students->isNotEmpty()) {
+            try {
+                $calendar = $this->dashboard->calendar($students->first());
+            } catch (\Throwable $e) {
+                report($e);
+            }
+        }
 
         return response()
             ->view('representante.hub', [
@@ -38,6 +51,7 @@ class RepresentanteController extends Controller
                     'label' => $r->label,
                     'requires_comment' => (bool) $r->requires_comment,
                 ])->values(),
+                'calendar' => $calendar,
                 'schoolName' => $school?->name,
                 'parent' => [
                     'name' => $user->name,

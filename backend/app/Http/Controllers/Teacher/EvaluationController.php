@@ -8,9 +8,11 @@ use App\Models\Evaluation;
 use App\Models\EvaluationAttempt;
 use App\Services\EvaluationPlanService;
 use App\Services\EvaluationSyncService;
+use App\Services\ProductTelemetry;
 use App\Support\GradingScale;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
@@ -305,13 +307,33 @@ class EvaluationController extends Controller
         }
 
         try {
-            $evaluation = $this->sync->persist($teacher, array_merge($data, [
-                'generated_by_ai' => (bool) ($data['generated_by_ai'] ?? false),
-                'add_to_plan' => true,
-                'weight_percentage' => (float) ($data['weight_percentage'] ?? $data['percentage'] ?? $data['weight'] ?? 20),
-                'scheduled_at' => $data['scheduled_at'] ?? $data['date'] ?? $data['due_date'] ?? null,
-                'description' => $data['description'] ?? null,
-            ]));
+            $evaluation = DB::transaction(function () use ($teacher, $data) {
+                $evaluation = $this->sync->persist($teacher, array_merge($data, [
+                    'generated_by_ai' => (bool) ($data['generated_by_ai'] ?? false),
+                    'add_to_plan' => true,
+                    'weight_percentage' => (float) ($data['weight_percentage'] ?? $data['percentage'] ?? $data['weight'] ?? 20),
+                    'scheduled_at' => $data['scheduled_at'] ?? $data['date'] ?? $data['due_date'] ?? null,
+                    'description' => $data['description'] ?? null,
+                ]));
+
+                app(ProductTelemetry::class)->record([
+                    'user_id' => $teacher->id,
+                    'colegio_id' => $teacher->colegio_id,
+                    'role' => 'profesor',
+                    'source' => 'evaluation_controller',
+                    'event' => 'evaluation_created',
+                    'action' => 'store',
+                    'category' => 'academic',
+                    'status' => 'success',
+                    'meta' => [
+                        'evaluation_id' => $evaluation->id,
+                        'title' => $evaluation->title,
+                        'generated_by_ai' => $evaluation->generated_by_ai,
+                    ],
+                ]);
+
+                return $evaluation;
+            });
         } catch (\Throwable $e) {
             Log::error('Evaluation store failed', ['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
 
@@ -323,23 +345,6 @@ class EvaluationController extends Controller
                 'data' => [],
             ], 200);
         }
-
-        // Register telemetry for Super Admin dashboard
-        app(ProductTelemetry::class)->record([
-            'user_id' => $teacher->id,
-            'colegio_id' => $teacher->colegio_id,
-            'role' => 'profesor',
-            'source' => 'evaluation_controller',
-            'event' => 'evaluation_created',
-            'action' => 'store',
-            'category' => 'academic',
-            'status' => 'success',
-            'meta' => [
-                'evaluation_id' => $evaluation->id,
-                'title' => $evaluation->title,
-                'generated_by_ai' => $evaluation->generated_by_ai,
-            ],
-        ]);
 
         $payload = $this->serializeEvaluation($evaluation);
 
