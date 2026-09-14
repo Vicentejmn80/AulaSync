@@ -46,6 +46,18 @@
             opacity: 0; pointer-events: none; transition: opacity 0.3s;
         }
         .slide-over-backdrop.open { opacity: 1; pointer-events: auto; }
+        .review-modal-backdrop {
+            position: fixed;
+            inset: 0;
+            z-index: 12000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 1.25rem;
+            background: rgba(2, 6, 23, 0.78);
+            backdrop-filter: blur(10px);
+        }
+        .review-modal-card { width: min(32rem, 100%); }
     </style>
 </head>
 <body class="min-h-screen" x-data="planificacionesApp()">
@@ -184,7 +196,7 @@
                 {{-- Actions --}}
                 <div class="mt-6 flex gap-3 border-t border-white/10 pt-5">
                     <button x-show="slidePlan.status !== 'aprobado'"
-                            @click="approvePlan(slidePlan.id)"
+                            @click="openApprove(slidePlan.id)"
                             class="flex-1 rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-2.5 text-sm font-bold text-emerald-200 transition hover:bg-emerald-400/20">
                         <i class="fa-solid fa-check mr-1.5"></i>Aprobar
                     </button>
@@ -200,26 +212,6 @@
             </div>
         </template>
     </div>
-
-    {{-- Reject modal --}}
-    <template x-if="rejectingId">
-        <div class="fixed inset-0 z-70 flex items-center justify-center bg-black/60 backdrop-blur-sm" @click.self="rejectingId = null">
-            <div class="glass-card mx-4 w-full max-w-md rounded-[2rem] p-6">
-                <h3 class="text-lg font-bold text-white">Rechazar planificación</h3>
-                <p class="mt-2 text-sm text-slate-400">Indica el motivo o feedback para el docente:</p>
-                <textarea x-model="rejectFeedback"
-                          class="mt-4 w-full rounded-xl border border-white/10 bg-white/5 p-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/50"
-                          rows="3" placeholder="Ej: Falta alineación con el currículo, ajustar objetivos..."></textarea>
-                <div class="mt-4 flex justify-end gap-2">
-                    <button @click="rejectingId = null" class="rounded-xl border border-white/10 px-4 py-2 text-sm text-slate-300 hover:bg-white/5">Cancelar</button>
-                    <button @click="submitReject()"
-                            class="rounded-xl bg-rose-500 px-4 py-2 text-sm font-bold text-white hover:bg-rose-600">
-                        Enviar rechazo con feedback
-                    </button>
-                </div>
-            </div>
-        </div>
-    </template>
 
     <main class="mx-auto max-w-7xl px-5 py-6 lg:px-8">
         <header class="mb-8 flex flex-col gap-5 rounded-[2rem] border border-white/10 bg-white/[.045] p-5 shadow-2xl shadow-black/20 backdrop-blur-2xl lg:flex-row lg:items-center lg:justify-between">
@@ -396,7 +388,7 @@
                             </div>
                             <div class="flex gap-2" @click.stop>
                                 @if($plan->status !== 'aprobado')
-                                    <button @click="approvePlan({{ $plan->id }})"
+                                    <button @click="openApprove({{ $plan->id }})"
                                             class="rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-2 text-sm font-bold text-emerald-200 transition hover:bg-emerald-400/20">
                                         <i class="fa-solid fa-check mr-1.5"></i>Aprobar
                                     </button>
@@ -432,6 +424,66 @@
 
     @include('components.ai-assistant-bubble')
 
+    <div x-show="approvingId"
+         x-cloak
+         class="review-modal-backdrop"
+         @keydown.escape.window="closeApprove()"
+         @click.self="closeApprove()">
+        <div class="review-modal-card glass-card rounded-[2rem] p-6" @click.stop>
+            <p class="text-xs font-bold uppercase tracking-[.25em] text-emerald-200">Confirmación</p>
+            <h3 class="mt-2 text-lg font-bold text-white">¿Aprobar esta planificación?</h3>
+            <p class="mt-2 text-sm text-slate-400">El docente recibirá una notificación de que Dirección aprobó su plan.</p>
+            <div class="mt-5 flex justify-end gap-2">
+                <button type="button" @click="closeApprove()" :disabled="reviewBusy"
+                        class="rounded-xl border border-white/10 px-4 py-2 text-sm text-slate-300 hover:bg-white/5 disabled:opacity-50">
+                    Cancelar
+                </button>
+                <button type="button" @click="submitApprove()" :disabled="reviewBusy"
+                        class="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-600 disabled:opacity-50">
+                    <span x-text="reviewBusy ? 'Aprobando...' : 'Sí, aprobar'"></span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div x-show="rejectingId"
+         x-cloak
+         class="review-modal-backdrop"
+         @keydown.escape.window="closeReject()"
+         @click.self="closeReject()">
+        <div class="review-modal-card glass-card rounded-[2rem] p-6" @click.stop>
+            <p class="text-xs font-bold uppercase tracking-[.25em] text-rose-200">Revisión académica</p>
+            <h3 class="mt-2 text-lg font-bold text-white">¿Rechazar esta planificación?</h3>
+            <p class="mt-2 text-sm text-slate-400">
+                Escribe el motivo. El docente lo verá en una notificación y podrá corregir el plan para reenviarlo.
+            </p>
+            <label class="mt-4 block text-xs font-bold uppercase tracking-wider text-slate-400" for="reject-feedback">
+                Motivo del rechazo
+            </label>
+            <textarea id="reject-feedback"
+                      x-model="rejectFeedback"
+                      x-ref="rejectFeedback"
+                      class="mt-2 w-full rounded-xl border border-white/10 bg-white/5 p-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-rose-500/50"
+                      rows="4"
+                      maxlength="1000"
+                      placeholder="Ej: Falta alinear los objetivos con el currículo de 5to y las actividades de cierre no evalúan lo planificado."></textarea>
+            <div class="mt-1 flex items-center justify-between gap-3">
+                <p class="text-xs text-rose-300" x-show="rejectError" x-text="rejectError"></p>
+                <p class="ml-auto text-[11px] text-slate-500" x-text="(rejectFeedback || '').length + '/1000'"></p>
+            </div>
+            <div class="mt-4 flex justify-end gap-2">
+                <button type="button" @click="closeReject()" :disabled="reviewBusy"
+                        class="rounded-xl border border-white/10 px-4 py-2 text-sm text-slate-300 hover:bg-white/5 disabled:opacity-50">
+                    Cancelar
+                </button>
+                <button type="button" @click="submitReject()" :disabled="reviewBusy"
+                        class="rounded-xl bg-rose-500 px-4 py-2 text-sm font-bold text-white hover:bg-rose-600 disabled:opacity-50">
+                    <span x-text="reviewBusy ? 'Enviando...' : 'Rechazar y notificar'"></span>
+                </button>
+            </div>
+        </div>
+    </div>
+
     <script>
         function planificacionesApp() {
             return {
@@ -440,7 +492,10 @@
                 slideLoading: false,
                 slideError: null,
                 rejectingId: null,
+                approvingId: null,
                 rejectFeedback: '',
+                rejectError: '',
+                reviewBusy: false,
                 expandedSessions: [],
 
                 openSlide(id) {
@@ -617,7 +672,21 @@
                     }));
                 },
 
-                async approvePlan(id) {
+                openApprove(id) {
+                    this.approvingId = id;
+                    this.rejectingId = null;
+                    this.rejectError = '';
+                },
+
+                closeApprove() {
+                    if (this.reviewBusy) return;
+                    this.approvingId = null;
+                },
+
+                async submitApprove() {
+                    const id = this.approvingId;
+                    if (!id || this.reviewBusy) return;
+                    this.reviewBusy = true;
                     try {
                         const res = await fetch(`/director/planificaciones/${id}/approve`, {
                             method: 'POST',
@@ -626,23 +695,44 @@
                                 'Accept': 'application/json'
                             }
                         });
-                        const data = await res.json();
+                        const data = await res.json().catch(() => ({}));
                         if (data.success) {
                             this.closeSlide();
                             window.location.reload();
+                            return;
                         }
+                        this.rejectError = data.message || 'No se pudo aprobar la planificación.';
                     } catch (e) {
                         console.warn('Approve failed', e);
+                    } finally {
+                        this.reviewBusy = false;
                     }
                 },
 
                 openReject(id) {
                     this.rejectingId = id;
+                    this.approvingId = null;
                     this.rejectFeedback = '';
+                    this.rejectError = '';
+                    this.$nextTick(() => this.$refs.rejectFeedback?.focus());
+                },
+
+                closeReject() {
+                    if (this.reviewBusy) return;
+                    this.rejectingId = null;
+                    this.rejectError = '';
                 },
 
                 async submitReject() {
-                    if (!this.rejectingId) return;
+                    if (!this.rejectingId || this.reviewBusy) return;
+                    const feedback = (this.rejectFeedback || '').trim();
+                    if (feedback.length < 10) {
+                        this.rejectError = 'Escribe el motivo del rechazo (mínimo 10 caracteres) para que el docente sepa qué corregir.';
+                        this.$refs.rejectFeedback?.focus();
+                        return;
+                    }
+                    this.rejectError = '';
+                    this.reviewBusy = true;
                     try {
                         const res = await fetch(`/director/planificaciones/${this.rejectingId}/reject`, {
                             method: 'POST',
@@ -651,16 +741,23 @@
                                 'Content-Type': 'application/json',
                                 'Accept': 'application/json'
                             },
-                            body: JSON.stringify({ feedback: this.rejectFeedback })
+                            body: JSON.stringify({ feedback })
                         });
-                        const data = await res.json();
+                        const data = await res.json().catch(() => ({}));
                         if (data.success) {
                             this.rejectingId = null;
                             this.closeSlide();
                             window.location.reload();
+                            return;
                         }
+                        this.rejectError = data.errors?.feedback?.[0]
+                            || data.message
+                            || 'No se pudo rechazar la planificación.';
                     } catch (e) {
+                        this.rejectError = 'No se pudo enviar el rechazo. Inténtalo de nuevo.';
                         console.warn('Reject failed', e);
+                    } finally {
+                        this.reviewBusy = false;
                     }
                 }
             }

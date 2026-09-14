@@ -70,7 +70,7 @@
     <div class="top">
         <div>
             <a class="crumb" href="{{ route('historial') }}"><i class="fa-solid fa-arrow-left"></i> Mis planificaciones</a>
-            <h1>Nueva planificación</h1>
+            <h1>{{ ($planning->status ?? null) === 'rechazado' ? 'Corregir planificación' : 'Nueva planificación' }}</h1>
             <p class="muted" style="margin:0; max-width:640px;">Elige el estilo de clase, pide las tarjetas a la IA o créalas a mano. Luego edita, agrega o elimina cada sesión antes de guardar.</p>
         </div>
         <div style="display:flex; gap:8px; flex-wrap:wrap;">
@@ -78,6 +78,14 @@
             <button class="btn btn-soft" type="button" @click="addSession()"><i class="fa-solid fa-plus"></i> Nueva sesión</button>
         </div>
     </div>
+
+    @if(($planning->status ?? null) === 'rechazado' && !empty($planning->rejection_feedback))
+        <div class="card" style="margin-bottom:16px; border-color:#fecdd3; background:color-mix(in srgb, #ffe4e6 70%, var(--bg-card));">
+            <p style="margin:0 0 6px; font-size:11px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; color:#9f1239;">Dirección rechazó este plan</p>
+            <p style="margin:0; color:#9f1239; font-size:14px; line-height:1.5;">{{ $planning->rejection_feedback }}</p>
+            <p class="subtle" style="margin:10px 0 0; color:#be123c;">Corrige las sesiones según este motivo y guarda para reenviar a Dirección.</p>
+        </div>
+    @endif
 
     <div class="tabs">
         <button class="tab" :class="{ active: mode === 'manual' }" @click="mode = 'manual'"><i class="fa-solid fa-pen"></i> Manual</button>
@@ -193,7 +201,7 @@
     <div class="save-bar">
         <button class="btn btn-ai" type="button" :disabled="isLoading" @click="save()" style="padding:12px 18px; font-size:14px;">
             <i class="fa-solid" :class="isLoading ? 'fa-circle-notch fa-spin' : 'fa-floppy-disk'"></i>
-            <span x-text="isLoading ? 'Guardando…' : 'Guardar planificación'"></span>
+            <span x-text="isLoading ? 'Guardando…' : ({{ ($planning->status ?? null) === 'rechazado' ? 'true' : 'false' }} ? 'Guardar y reenviar' : 'Guardar planificación')"></span>
         </button>
     </div>
     <div class="toast" x-show="toast" x-text="toast" x-cloak></div>

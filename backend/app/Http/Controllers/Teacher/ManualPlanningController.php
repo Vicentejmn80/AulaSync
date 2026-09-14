@@ -44,11 +44,18 @@ class ManualPlanningController extends Controller
                     ->find($id);
                 
                 if ($historial && isset($historial->payload['sessions'])) {
+                    $payload = is_array($historial->payload) ? $historial->payload : [];
                     $planning = (object) [
                         'id' => $historial->id,
                         'planificacion_id' => $historial->id,
                         'sessions' => $historial->payload['sessions'],
                         'course_id' => $historial->payload['course_id'] ?? null,
+                        'status' => $historial->status,
+                        'tema' => $historial->tema,
+                        'rejection_feedback' => $payload['rechazo_motivo']
+                            ?? $payload['rechazo_feedback']
+                            ?? $payload['ultimo_rechazo']
+                            ?? null,
                     ];
                 }
             } elseif ($planning) {
@@ -56,7 +63,7 @@ class ManualPlanningController extends Controller
                     ->where('colegio_id', $colegioId)
                     ->latest('id')
                     ->limit(80)
-                    ->get(['id', 'payload'])
+                    ->get(['id', 'payload', 'status', 'tema'])
                     ->first(function (Planificacion $plan) use ($planning) {
                         $payload = $plan->payload;
                         return is_array($payload)
@@ -66,6 +73,13 @@ class ManualPlanningController extends Controller
 
                 if ($linkedPlan) {
                     $planning->planificacion_id = $linkedPlan->id;
+                    $linkedPayload = is_array($linkedPlan->payload) ? $linkedPlan->payload : [];
+                    $planning->status = $linkedPlan->status;
+                    $planning->tema = $linkedPlan->tema;
+                    $planning->rejection_feedback = $linkedPayload['rechazo_motivo']
+                        ?? $linkedPayload['rechazo_feedback']
+                        ?? $linkedPayload['ultimo_rechazo']
+                        ?? null;
                 }
             }
         }
@@ -234,6 +248,14 @@ class ManualPlanningController extends Controller
 
                 if ($existingPlan) {
                     $originalStatus = (string) ($existingPlan->status ?? '');
+                    $oldPayload = is_array($existingPlan->payload) ? $existingPlan->payload : [];
+                    $previousRejection = $oldPayload['rechazo_feedback']
+                        ?? $oldPayload['rechazo_motivo']
+                        ?? $oldPayload['ultimo_rechazo']
+                        ?? null;
+                    if ($previousRejection) {
+                        $payload['ultimo_rechazo'] = $previousRejection;
+                    }
                     $newStatus = $originalStatus === 'rechazado'
                         ? 'pendiente_revision'
                         : ($originalStatus !== '' ? $originalStatus : 'pendiente');

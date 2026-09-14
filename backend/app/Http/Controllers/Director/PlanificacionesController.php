@@ -117,6 +117,7 @@ class PlanificacionesController extends Controller
             $courseName = (string) ($payload['course_name'] ?? '');
             $rechazoMotivo = $payload['rechazo_motivo']
                 ?? $payload['rechazo_feedback']
+                ?? $payload['ultimo_rechazo']
                 ?? '';
 
             $sessionsData = collect($sessions)
@@ -179,12 +180,19 @@ class PlanificacionesController extends Controller
     public function reject(Request $request, int $id): JsonResponse
     {
         $validated = $request->validate([
-            'feedback' => ['nullable', 'string', 'max:1000'],
+            'feedback' => ['required', 'string', 'min:10', 'max:1000'],
+        ], [
+            'feedback.required' => 'Debes indicar el motivo del rechazo para que el docente sepa qué corregir.',
+            'feedback.min' => 'El motivo del rechazo debe tener al menos 10 caracteres.',
         ]);
 
+        $feedback = trim($validated['feedback']);
         $plan = $this->baseQuery()->findOrFail($id);
-        $payload = $plan->payload ?? [];
-        $payload['rechazo_feedback'] = $validated['feedback'] ?? null;
+        $payload = is_array($plan->payload) ? $plan->payload : [];
+        $payload['rechazo_feedback'] = $feedback;
+        $payload['rechazo_motivo'] = $feedback;
+        $payload['rechazado_at'] = now()->toIso8601String();
+        $payload['rechazado_por'] = (string) ($request->user()->name ?? 'Dirección');
         $plan->update([
             'status' => 'rechazado',
             'payload' => $payload,
@@ -193,20 +201,21 @@ class PlanificacionesController extends Controller
         Log::info('PLAN_RECHAZADA', [
             'planificacion_id' => $plan->id,
             'teacher_id' => $plan->user_id,
-            'feedback' => $validated['feedback'] ?? null,
+            'feedback' => $feedback,
         ]);
 
+        $tema = trim((string) ($plan->tema ?? '')) ?: 'sin título';
         Notification::create([
             'user_id' => $plan->user_id,
             'colegio_id' => $request->user()->colegio_id,
             'title' => 'Planificación rechazada',
-            'message' => 'El director rechazó tu planificación «' . ($plan->tema ?? '') . '»' . ($validated['feedback'] ? '. Motivo: ' . $validated['feedback'] : ''),
+            'message' => "Dirección rechazó tu planificación «{$tema}». Motivo: {$feedback}. Ábrela, corrígela y envía una nueva versión.",
             'link' => route('teacher.planner.show', ['id' => $plan->id]),
         ]);
 
         return response()->json([
             'success' => true,
-            'message' => 'Planificación rechazada. El docente recibirá el feedback.',
+            'message' => 'Planificación rechazada. El docente recibirá el motivo por notificación.',
             'status' => 'rechazado',
         ]);
     }

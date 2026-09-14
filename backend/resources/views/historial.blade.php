@@ -360,9 +360,10 @@
                             <span class="hist-status {{ $statusMeta['class'] }}">
                                 <i class="fas {{ $statusMeta['icon'] }}"></i>{{ $statusMeta['label'] }}
                             </span>
-                            @if($status === 'rechazado' && !empty($payload['rechazo_feedback']))
+                            @if($status === 'rechazado' && (!empty($payload['rechazo_feedback']) || !empty($payload['rechazo_motivo'])))
                                 <div class="mt-2 mb-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">
-                                    <strong>Feedback Dirección:</strong> {{ \Illuminate\Support\Str::limit($payload['rechazo_feedback'], 120) }}
+                                    <strong>Motivo de Dirección:</strong>
+                                    {{ $payload['rechazo_feedback'] ?? $payload['rechazo_motivo'] }}
                                 </div>
                             @endif
                             <h3>{{ $plan->tema ?: 'Sin título' }}</h3>
@@ -391,7 +392,11 @@
                                 <button type="button" class="btn-hist-delete btn-delete-plan" data-plan-id="{{ $plan->id }}" data-plan-title="{{ $plan->tema }}" title="Eliminar">
                                     <i class="fas fa-trash-alt"></i>
                                 </button>
-                                @if($isManual)
+                                @if($status === 'rechazado')
+                                    <a href="{{ route('teacher.planner.show', ['id' => $plan->id]) }}" class="btn-hist-open btn-manual">
+                                        <i class="fas fa-pen me-1"></i> Corregir y reenviar
+                                    </a>
+                                @elseif($isManual)
                                     <a href="{{ route('teacher.planner.manual', $plan->id) }}" class="btn-hist-open btn-manual"><i class="fas fa-pen me-1"></i> Editar</a>
                                     <a href="{{ route('teacher.hub', ['plan_block' => $plan->id, 'month' => $manualMonth]) }}" class="btn-hist-open btn-manual"><i class="fas fa-eye me-1"></i> Calendario</a>
                                 @elseif($isBulk && $courseId)
