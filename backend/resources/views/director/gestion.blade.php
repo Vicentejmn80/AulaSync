@@ -339,7 +339,7 @@
                                     <input x-show="editKey === 's'+row.id+'.section'" x-cloak class="hub-input w-20" x-model="editValue" @keydown.enter="saveEdit(row, 'section')" @blur="saveEdit(row, 'section')"></td>
                                 <td><span class="text-sm text-slate-500" x-text="row.courses_count + ' curso(s)'"></span></td>
                                 <td class="text-right whitespace-nowrap">
-                                    <button class="hub-btn hub-btn-ghost !py-1.5 !text-xs" @click="openFamilyShare(row)"><i class="fa-solid fa-share-nodes"></i> Familia</button>
+                                    <button type="button" class="hub-btn hub-btn-ghost !py-1.5 !text-xs" @click.stop="openFamilyShare(row)"><i class="fa-solid fa-share-nodes"></i> Familia</button>
                                     <button class="hub-btn hub-btn-danger !py-1.5 !text-xs" @click="queueDelete(row, 'student')"><i class="fa-solid fa-trash-can"></i></button>
                                 </td>
                             </tr>
@@ -687,8 +687,8 @@
     </div>
 
     {{-- Share invite --}}
-    <div x-show="inviteShare" x-cloak class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 px-4 py-6" @keydown.escape.window="inviteShare = null">
-        <div class="w-full max-w-lg rounded-3xl p-6 shadow-2xl" style="background:var(--bg-card);color:var(--text-primary)">
+    <div x-show="inviteShare" x-cloak class="fixed inset-0 z-[12000] flex items-center justify-center bg-slate-900/70 px-4 py-6" @keydown.escape.window="inviteShare = null" @click.self="inviteShare = null">
+        <div class="w-full max-w-lg rounded-3xl p-6 shadow-2xl" style="background:var(--bg-card);color:var(--text-primary)" @click.stop>
             <p class="text-xs font-bold uppercase tracking-widest text-indigo-500" x-text="inviteShare?.kind === 'family' ? 'Familia' : 'Profesor creado'"></p>
             <h3 class="mt-1 text-xl font-extrabold" x-text="inviteShare?.kind === 'family' ? ('Invitar a la familia de ' + (inviteShare?.name || '')) : ((inviteShare?.name || '') + ' listo')"></h3>
             <p class="mt-2 text-sm text-slate-500" x-show="inviteShare?.kind === 'family'">
@@ -1118,7 +1118,7 @@
                                 course_ids: this.form.course_ids,
                                 sibling_student_id: this.form.sibling_student_id || null,
                             });
-                            this.inviteShare = json.family_invite || null;
+                            this.inviteShare = json.family_invite || this.familyShareFromRow(json.student || {});
                             this.showToast(json.message || 'Alumno matriculado.');
                         }
                         if (this.panel === 'courses') {
@@ -1136,6 +1136,8 @@
                         this.creating = false;
                         await this.refresh();
                         if (!this.inviteShare) this.showToast('Listo.');
+                    } catch (e) {
+                        if (!this.toast) this.showToast(e?.message || 'No se pudo completar.');
                     } finally { this.saving = false; }
                 },
                 startEdit(row, field) { this.editKey = 's' + row.id + '.' + field; this.editValue = row[field] || ''; },
@@ -1195,9 +1197,34 @@
                 openShare(row) {
                     this.inviteShare = row;
                 },
+                familyShareFromRow(row) {
+                    const link = String(row?.invitation_link || '').trim();
+                    return {
+                        kind: 'family',
+                        id: row?.id,
+                        name: row?.name || '',
+                        invite_code: row?.invite_code || '',
+                        invitation_link: /^https?:\/\//i.test(link) ? link : '',
+                        school_code: row?.school_code || this.schoolInviteCode || '',
+                        students: Array.isArray(row?.students) && row.students.length
+                            ? row.students
+                            : [{ id: row?.id, name: row?.name, grade: row?.grade, section: row?.section }],
+                    };
+                },
                 async openFamilyShare(row) {
-                    const json = await this.api('GET', routes.familyInvite(row.id));
-                    this.inviteShare = json.family_invite || null;
+                    if (!row?.id) return;
+                    this.inviteShare = this.familyShareFromRow(row);
+                    try {
+                        const json = await this.api('GET', routes.familyInvite(row.id));
+                        if (json?.family_invite) {
+                            this.inviteShare = json.family_invite;
+                        }
+                    } catch (e) {
+                        if (!this.shareLink(this.inviteShare)) {
+                            this.inviteShare = null;
+                            this.showToast(e?.message || 'No se pudo generar el enlace familiar.');
+                        }
+                    }
                 },
                 shareLink(row) {
                     const link = String(row?.invitation_link || '').trim();
@@ -1261,16 +1288,17 @@
                     this.showToast(json.message || 'Email reenviado.');
                 },
                 async api(method, url, body) {
+                    const verb = String(method || 'GET').toUpperCase();
                     const headers = {
-                        'Content-Type': 'application/json',
                         'Accept': 'application/json',
                         'X-CSRF-TOKEN': csrf,
                     };
-                    const res = await fetch(url, {
-                        method,
-                        headers,
-                        body: method === 'DELETE' ? null : JSON.stringify(body || {}),
-                    });
+                    const opts = { method: verb, headers };
+                    if (!['GET', 'HEAD', 'DELETE'].includes(verb)) {
+                        headers['Content-Type'] = 'application/json';
+                        opts.body = JSON.stringify(body || {});
+                    }
+                    const res = await fetch(url, opts);
                     const json = await res.json().catch(() => ({}));
                     if (!res.ok) throw this.fail(json);
                     return json;

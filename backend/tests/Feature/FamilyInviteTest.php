@@ -32,6 +32,52 @@ class FamilyInviteTest extends TestCase
         $this->assertDatabaseCount('family_invites', 1);
     }
 
+    public function test_existing_student_without_invite_gets_a_family_link_in_snapshot_and_modal_payload(): void
+    {
+        [$director, $colegio] = $this->school();
+        $student = Student::create([
+            'colegio_id' => $colegio->id,
+            'teacher_id' => $director->id,
+            'name' => 'Valeria Navarro',
+            'grade' => '5to',
+        ]);
+
+        $this->assertDatabaseCount('family_invites', 0);
+
+        $snapshot = $this->actingAs($director)
+            ->getJson(route('director.gestion.snapshot'))
+            ->assertOk()
+            ->json();
+
+        $row = collect($snapshot['students'])->firstWhere('id', $student->id);
+        $this->assertNotEmpty($row['invitation_link']);
+        $this->assertNotEmpty($row['invite_code']);
+        $this->assertStringContainsString('/familia/unirse?', $row['invitation_link']);
+        $this->assertStringContainsString('code=FAM-', $row['invitation_link']);
+        $this->assertSame(1, FamilyInvite::query()->count());
+
+        $this->actingAs($director)
+            ->getJson(route('director.gestion.students.family-invite', $student->id))
+            ->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('family_invite.kind', 'family')
+            ->assertJsonPath('family_invite.name', 'Valeria Navarro')
+            ->assertJsonPath('family_invite.invite_code', $row['invite_code']);
+    }
+
+    public function test_gestion_hub_renders_the_family_share_dialog_without_get_bodies(): void
+    {
+        [$director] = $this->school();
+
+        $this->actingAs($director)
+            ->get(route('director.gestion'))
+            ->assertOk()
+            ->assertSee('Invitar a la familia', false)
+            ->assertSee('Link de registro', false)
+            ->assertSee('familyShareFromRow', false)
+            ->assertSee("['GET', 'HEAD', 'DELETE']", false);
+    }
+
     public function test_a_sibling_reuses_the_same_family_invite(): void
     {
         [$director] = $this->school();

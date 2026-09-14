@@ -463,6 +463,7 @@ class DirectorActionService
                         'family_mode' => 'new',
                     ], $course);
 
+                    app(FamilyInviteService::class)->ensureForStudent($model, $director);
                     $this->enrollStudentInGradeCourses($colegioId, $model, $director);
                     $created->push($model);
                     $groupCreatedIds[] = $model->id;

@@ -73,12 +73,25 @@ class ManagementHubController extends Controller
             ->get()
             ->keyBy('family_code');
 
-        $students = Student::query()
+        $studentModels = Student::query()
             ->where('colegio_id', $colegioId)
             ->with(['courses:id,subject_name,grade,section'])
             ->orderBy('name')
-            ->get()
-            ->map(fn (Student $student) => $this->serializeStudent($student, $familyInvites->get($student->family_code)));
+            ->get();
+
+        foreach ($studentModels as $student) {
+            if ($familyInvites->has($student->family_code)) {
+                continue;
+            }
+
+            $invite = $this->families->ensureForStudent($student, $request->user());
+            $invite->loadMissing('colegio:id,name,invite_code');
+            $familyInvites->put($invite->family_code, $invite);
+        }
+
+        $students = $studentModels->map(
+            fn (Student $student) => $this->serializeStudent($student, $familyInvites->get($student->family_code))
+        );
 
         $courses = Course::query()
             ->where('colegio_id', $colegioId)
@@ -661,16 +674,18 @@ class ManagementHubController extends Controller
 
     private function serializeStudent(Student $student, ?FamilyInvite $invite = null): array
     {
-        $link = $invite?->registrationUrl();
+        $invite?->loadMissing('colegio:id,name,invite_code');
+        $grade = GradeLabel::canonical($student->grade) ?: $student->grade;
 
         return [
             'id' => $student->id,
             'name' => $student->name,
-            'grade' => GradeLabel::canonical($student->grade) ?: $student->grade,
+            'grade' => $grade,
             'section' => $student->section,
             'family_code' => $student->family_code,
             'invite_code' => $invite?->invite_code,
-            'invitation_link' => $link,
+            'invitation_link' => $invite?->registrationUrl(),
+            'school_code' => $invite?->colegio?->invite_code,
             'family_status' => $invite ? 'listo' : 'sin_invitar',
             'courses_count' => $student->relationLoaded('courses') ? $student->courses->count() : ($student->courses_count ?? 0),
             'courses' => $student->relationLoaded('courses')
