@@ -465,6 +465,68 @@ class DirectorAnalyticsQueryService
         ];
     }
 
+    public function getEnrollmentHotspots(int $colegioId): array
+    {
+        $byGrade = Student::query()
+            ->where('colegio_id', $colegioId)
+            ->selectRaw('grade, COUNT(*) as total')
+            ->groupBy('grade')
+            ->get();
+
+        if ($byGrade->isEmpty()) {
+            return [
+                'message' => 'No hay alumnos registrados todavía, así que no puedo identificar el grado con mayor matrícula.',
+                'data' => ['grades' => [], 'top_grade' => null, 'top_section' => null],
+            ];
+        }
+
+        $bySection = Student::query()
+            ->where('colegio_id', $colegioId)
+            ->selectRaw('grade, section, COUNT(*) as total')
+            ->groupBy('grade', 'section')
+            ->get();
+
+        $topGrade = $byGrade
+            ->sortByDesc(fn ($row) => [(int) $row->total, $this->gradeNumber((string) $row->grade)])
+            ->first();
+        $topSection = $bySection
+            ->sortByDesc(fn ($row) => [(int) $row->total, $this->gradeNumber((string) $row->grade)])
+            ->first();
+
+        $gradeLabel = (string) ($topGrade?->grade ?? 'sin grado');
+        $gradeCount = (int) ($topGrade?->total ?? 0);
+        $sectionLabel = trim((string) ($topSection?->grade ?? '').' '.((string) ($topSection?->section ?? '') !== '' ? 'sección '.$topSection->section : 'sin sección'));
+        $sectionCount = (int) ($topSection?->total ?? 0);
+
+        $gradeTable = $this->markdownTable(
+            ['Grado', 'Alumnos'],
+            $byGrade
+                ->sortByDesc('total')
+                ->map(fn ($row) => [(string) $row->grade, (string) $row->total])
+                ->values()
+                ->all()
+        );
+
+        return [
+            'message' => "El grado con más alumnos inscritos es {$gradeLabel} ({$gradeCount} alumno(s)). "
+                ."La sección con mayor matrícula es {$sectionLabel} ({$sectionCount} alumno(s)).\n"
+                ."Resumen por grado:\n{$gradeTable}",
+            'data' => [
+                'grades' => $byGrade->values(),
+                'sections' => $bySection->values(),
+                'top_grade' => [
+                    'grade' => $topGrade?->grade,
+                    'total' => $gradeCount,
+                ],
+                'top_section' => [
+                    'grade' => $topSection?->grade,
+                    'section' => $topSection?->section,
+                    'total' => $sectionCount,
+                ],
+            ],
+        ];
+    }
+
     // ─── Rendimiento por clase (get_class_performance) ──────────────────────
 
     public function getClassPerformance(int $colegioId, string $grade, ?string $section = null, ?string $subject = null): array

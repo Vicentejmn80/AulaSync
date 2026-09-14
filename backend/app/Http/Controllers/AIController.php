@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Models\Planificacion;
 use App\Services\DirectorAlertService;
+use App\Support\LessonTemplate;
+use App\Support\PedagogicalGenerationPrompt;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Http;
@@ -69,18 +71,21 @@ class AIController extends Controller
 
         $temaInput = $request->input('prompt');
         $context = $this->buildContextFromUser();
-        $systemPrompt = 'Eres un experto pedagogo. Responde ÚNICAMENTE con un JSON válido, sin texto extra ni markdown. Estructura exacta: {"tema":"...", "objetivo":"...", "inicio":{"actividades":[]}, "desarrollo":{"actividades":[]}, "cierre":{"actividades":[]}, "recursos":[]}';
+        $methodology = LessonTemplate::forUser(Auth::user());
+        $systemPrompt = 'Eres un experto pedagogo. Responde ÚNICAMENTE con un JSON válido, sin texto extra ni markdown. Estructura exacta: {"tema":"...", "objetivo":"...", "inicio":{"actividades":[]}, "desarrollo":{"actividades":[]}, "cierre":{"actividades":[]}, "recursos":[]}. El parámetro methodology es «'.$methodology.'».'
+            ."\n\n".PedagogicalGenerationPrompt::rules($methodology);
         if ($context !== '') {
             $systemPrompt .= "\n\n" . $context;
         }
 
-        $userMessage = 'Planifica una clase sobre: ' . $temaInput;
+        $userMessage = 'Planifica una clase sobre: ' . $temaInput . '. methodology='.$methodology.'.';
 
         try {
             $response = Http::withToken($apiKey)
                 ->timeout(60)
                 ->post('https://api.openai.com/v1/chat/completions', [
                     'model' => 'gpt-5.1 mini',
+                    'temperature' => 0.75,
                     'messages' => [
                         ['role' => 'system', 'content' => $systemPrompt],
                         ['role' => 'user', 'content' => $userMessage],
@@ -147,7 +152,10 @@ class AIController extends Controller
         $instruction = $request->input('instruction');
 
         $phaseLabel = ['inicio' => 'Inicio', 'desarrollo' => 'Desarrollo', 'cierre' => 'Cierre'][$phase];
-        $systemPrompt = 'Eres un experto pedagogo. Te dan el contenido actual de la sección "' . $phaseLabel . '" de una planificación de clase (lista de actividades). El usuario pide una mejora con una instrucción concreta. Debes devolver ÚNICAMENTE un JSON con la misma estructura: {"actividades": ["actividad 1", "actividad 2", ...]}. Sin texto extra, sin markdown, sin explicaciones. Solo el JSON.';
+        $methodology = LessonTemplate::forUser(Auth::user());
+        $systemPrompt = 'Eres un experto pedagogo. Te dan el contenido actual de la sección "' . $phaseLabel . '" de una planificación de clase (lista de actividades). El usuario pide una mejora con una instrucción concreta. Debes devolver ÚNICAMENTE un JSON con la misma estructura: {"actividades": ["actividad 1", "actividad 2", ...]}. Sin texto extra, sin markdown, sin explicaciones. Solo el JSON.'
+            ."\n\n".PedagogicalGenerationPrompt::rules($methodology)
+            ."\nNo uses frases cliché. Cada actividad debe decir qué hace el docente y qué hacen los estudiantes.";
         $userMessage = "Contenido actual de la sección " . $phaseLabel . ":\n" . $content . "\n\nInstrucción del profesor: " . $instruction . "\n\nDevuelve el nuevo contenido mejorado en JSON con clave \"actividades\" (array de strings).";
 
         try {

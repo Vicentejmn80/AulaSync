@@ -32,6 +32,28 @@ class AiChatHistoryAndStudentDeleteTest extends TestCase
         $this->assertSame([], app(AiChatHistoryService::class)->load($director->id));
     }
 
+    public function test_chat_history_does_not_leak_between_users_in_same_browser_session(): void
+    {
+        [$director, $colegio] = $this->directorContext();
+        $teacher = User::factory()->create([
+            'role' => 'profesor',
+            'colegio_id' => $colegio->id,
+            'onboarding_completed' => true,
+            'name' => 'Arturo Uslar',
+        ]);
+
+        $this->actingAs($director)->postJson(route('ai.chat.history.store'), [
+            'messages' => [
+                ['role' => 'user', 'text' => '¿Cuántos alumnos hay inscritos?'],
+                ['role' => 'assistant', 'text' => 'Hay 12 alumnos registrados.'],
+            ],
+        ])->assertOk();
+
+        $this->actingAs($teacher)->getJson(route('ai.chat.history'))
+            ->assertOk()
+            ->assertJsonPath('messages', []);
+    }
+
     public function test_director_can_delete_student_from_staff_page(): void
     {
         [$director, $colegio] = $this->directorContext();

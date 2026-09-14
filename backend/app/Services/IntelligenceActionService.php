@@ -6,6 +6,8 @@ use App\Models\Activity;
 use App\Models\Course;
 use App\Models\User;
 use App\Models\UserSettings;
+use App\Support\LessonTemplate;
+use App\Support\PedagogicalGenerationPrompt;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Session;
 
@@ -177,27 +179,36 @@ class IntelligenceActionService
         $sectionLabel = $course->section ? ' / '.$course->section : '';
         $courseLabel = $course->subject_name.' · '.$course->grade.$sectionLabel;
 
-        $system = 'Eres un asistente de planificación docente para AulaSync. Propones contenido pedagógico realista y específico de la materia. No inventes datos de alumnos. Responde SOLO JSON: {"items": [{"title": "...", "description": "..."}]}. Títulos de máximo 80 caracteres y descripciones de máximo 300 caracteres, en español.';
+        try {
+            $methodology = LessonTemplate::forUser($teacher);
+            $system = 'Eres un asistente de planificación docente para AulaSync. '
+                .'Propones contenido pedagógico realista, único y específico de la materia. No inventes datos de alumnos. '
+                .'Responde SOLO JSON: {"items": [{"title": "...", "description": "..."}]}. '
+                .'Títulos de máximo 80 caracteres. Descripciones de clase: accionables (qué dice/hace el docente y los alumnos), 400 a 900 caracteres. '
+                .'Parámetro methodology='.$methodology.".\n\n"
+                .PedagogicalGenerationPrompt::rules($methodology);
 
-        $user = <<<PROMPT
+            $user = <<<PROMPT
 Profesor: {$teacher->name}
 Curso: {$courseLabel}
+methodology: {$methodology}
 Propón exactamente {$count} {$typeLabel}.
+La 1ª es Introducción, las intermedias Práctica (repaso de 3 min + 80% práctico) y la última Consolidación.
+PROHIBIDO repetir frases cliché o la misma estructura en ítems consecutivos.
 
 Temas y actividades recientes del curso (para continuar la secuencia, no repetir):
 {$recent}
 
 Rendimiento real del grupo: {$performanceLine}
 
-Cada propuesta debe tener "title" (tema o título concreto) y "description" (qué se hará, breve y accionable).
+Cada propuesta debe tener "title" (tema o título concreto) y "description" (guion accionable, no un resumen genérico).
 PROMPT;
 
-        try {
             $response = Http::timeout(60)
                 ->withToken((string) config('services.openai.key'))
                 ->post('https://api.openai.com/v1/chat/completions', [
                     'model' => (string) config('services.openai.intelligence_model', 'gpt-4o-mini'),
-                    'temperature' => 0.4,
+                    'temperature' => 0.75,
                     'response_format' => ['type' => 'json_object'],
                     'messages' => [
                         ['role' => 'system', 'content' => $system],

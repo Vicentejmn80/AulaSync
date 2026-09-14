@@ -2078,6 +2078,12 @@ PROMPT;
             ]));
         }
 
+        if (preg_match('/\b(?:grado|grados|seccion|secciones)\b/u', $value)
+            && preg_match('/\b(?:mas|mayor)\b/u', $value)
+            && preg_match('/\b(?:alumnos|estudiantes|inscritos|matricula)\b/u', $value)) {
+            return $this->pack('query_academic', ['query_type' => 'enrollment_hotspots']);
+        }
+
         if (preg_match('/cuantos profesores/u', $value)) {
             return $this->pack('query_academic', ['query_type' => 'school_stats', 'stat' => 'teachers']);
         }

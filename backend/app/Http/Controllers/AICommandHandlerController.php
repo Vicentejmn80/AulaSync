@@ -20,6 +20,7 @@ use App\Services\SpeechToTextService;
 use App\Services\StudentGradeAccumulationService;
 use App\Support\GradingScale;
 use App\Support\LessonTemplate;
+use App\Support\PedagogicalGenerationPrompt;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -148,7 +149,7 @@ class AICommandHandlerController extends Controller
                             'title' => ['type' => 'string'],
                             'description' => [
                                 'type' => 'string',
-                                'description' => "Markdown obligatorio con la plantilla activa del profesor ({$templateLabel}). Encabezados EXACTOS en negrita y en este orden: {$templateHeaders}. No uses encabezados de otra plantilla. Mínimo 3 párrafos, viñetas y negritas en conceptos clave.",
+                                'description' => "Markdown obligatorio con la metodología activa ({$templateLabel}, methodology={$lessonTemplate}). Encabezados EXACTOS en negrita y en este orden: {$templateHeaders}. Cada clase debe ser única: PROHIBIDO frases cliché («pregunta disparadora», «se explicitan saberes previos», «exposición ordenada para el cuaderno»). Incluye qué dice/hace el docente y los alumnos, con una técnica concreta (mímica, rol, digital, debate, estaciones o reto). Mínimo 3 párrafos.",
                             ],
                             'max_score' => ['type' => 'integer'],
                             'weight_percentage' => ['type' => 'number'],
@@ -233,7 +234,7 @@ class AICommandHandlerController extends Controller
                 'type' => 'function',
                 'function' => [
                     'name' => 'bulkPlan',
-                    'description' => 'Genera planificación mensual o por rango parcial para cualquier mes/año. Respeta días pedidos por el usuario. Lunes suele ser teoría/cuaderno, martes-miércoles práctica guiada y jueves práctica/lúdica. Cada sesión guarda descripción Markdown detallada.',
+                    'description' => 'Genera planificación mensual o por rango parcial para cualquier mes/año. Respeta días pedidos por el usuario. Cada sesión debe ser pedagógicamente distinta (introducción / práctica / consolidación) y seguir la metodología activa del docente. PROHIBIDO copiar la misma plantilla de texto en clases consecutivas.',
                     'parameters' => [
                         'type' => 'object',
                         'properties' => [
@@ -921,10 +922,8 @@ class AICommandHandlerController extends Controller
                 '- Si bulkPlan devuelve requires_confirmation, significa que faltaban datos o había conflictos; repregunta entonces. Pero si la instrucción original era completa y clara, evita ese paso pasando confirmed desde el inicio.',
                 '- CRÍTICO: el target_month es OBLIGATORIO para bulkPlan. Si el usuario menciona un mes (abril, mayo, junio, etc.), DEBES incluirlo en el llamado a la herramienta.',
                 '',
-                'REGLAS DE ORO — DESCRIPCIONES PEDAGÓGICAS (createActivity Y bulkPlan):',
-                "- OBLIGATORIO: la plantilla activa del profesor es «{$templateLabel}» (id interno: {$lessonTemplate}).",
-                "- Estructura EXACTA en Markdown, encabezados en MAYÚSCULAS y negrita, en este orden: {$templateSections}.",
-                '- PROHIBIDO usar encabezados de otra plantilla (INICIO/DESARROLLO/CIERRE, MOTIVACIÓN/PRESENTACIÓN, 5E o DESAFÍO/INVESTIGACIÓN) si no coinciden con la plantilla activa.',
+                PedagogicalGenerationPrompt::rules($lessonTemplate, $templateSections),
+                '- PROHIBIDO usar encabezados de otra plantilla si no coinciden con la metodología activa.',
                 '- Riqueza: al menos tres párrafos sustantivos separados por línea en blanco; listas y **negritas**.',
                 '',
                 'MAPA DE INTENCIONES → HERRAMIENTA:',
@@ -2427,7 +2426,6 @@ class AICommandHandlerController extends Controller
                 }
                 $topic = $topics[count($plan) % count($topics)];
                 $sessionNum = $isThursday ? $thursdayCount + 1 : $mondayCount + 1;
-                $titleDescriptive = $this->generateSessionTitle($topic, $isThursday, $sessionNum);
 
                 Log::info('bulkPlan.slot_generated', [
                     'date' => $cursor->format('Y-m-d'),
@@ -2435,25 +2433,42 @@ class AICommandHandlerController extends Controller
                     'is_thursday' => $isThursday,
                     'course_id' => $args['course_id'] ?? null,
                     'topic' => $topic,
-                    'title' => $titleDescriptive,
                     'occurrence_number' => $dayOccurrences[$dow],
                     'max_occurrences' => $maxOccurrencesPerDay ?: 'unlimited',
                 ]);
                 $plan[] = [
                     'date' => $cursor->format('Y-m-d'),
-                    'title' => $titleDescriptive,
+                    'title' => $topic,
+                    'session_num' => $sessionNum,
+                    'topic' => $topic,
                     'type' => $isThursday ? 'actividad' : 'clase',
-                    'description' => $this->buildBulkPlanSessionDescription(
-                        $topic,
-                        $isThursday,
-                        $teacherId,
-                        $this->activeLessonTemplateFor($teacherId)
-                    ),
                     'weight_percentage' => $isThursday ? 15 : 0,
                     'max_score' => $isThursday ? 20 : 0,
+                    'is_thursday' => $isThursday,
                 ];
             }
             $cursor->addDay();
+        }
+
+        $sessionCount = count($plan);
+        $lessonTemplate = $this->activeLessonTemplateFor($teacherId);
+        foreach ($plan as $index => $entry) {
+            $role = PedagogicalGenerationPrompt::sessionRole($index, $sessionCount);
+            $plan[$index]['title'] = $this->generateSessionTitle(
+                (string) ($entry['topic'] ?? $entry['title'] ?? 'Plan mensual'),
+                (bool) ($entry['is_thursday'] ?? false),
+                (int) ($entry['session_num'] ?? ($index + 1)),
+                $role
+            );
+            $plan[$index]['description'] = $this->buildBulkPlanSessionDescription(
+                (string) ($entry['topic'] ?? 'el tema del curso'),
+                (bool) ($entry['is_thursday'] ?? false),
+                $teacherId,
+                $lessonTemplate,
+                $index,
+                $sessionCount
+            );
+            unset($plan[$index]['session_num'], $plan[$index]['topic'], $plan[$index]['is_thursday']);
         }
 
         $conflictQuery = Activity::where('teacher_id', $teacherId)
@@ -3909,162 +3924,53 @@ class AICommandHandlerController extends Controller
     }
 
     /**
-     * Plantilla rica en Markdown para cada hueco de bulkPlan.
+     * Descripción Markdown por sesión de bulkPlan: única por índice, rol y metodología.
      */
-    private function buildBulkPlanSessionDescription(string $topic, bool $isThursday, int $teacherId = 0, ?string $template = null): string
-    {
-        $topicEsc = trim($topic) !== '' ? $topic : 'el tema del curso';
+    private function buildBulkPlanSessionDescription(
+        string $topic,
+        bool $isThursday,
+        int $teacherId = 0,
+        ?string $template = null,
+        int $sessionIndex = 0,
+        int $sessionCount = 1,
+    ): string {
         $template = LessonTemplate::normalize(
             $template ?: $this->activeLessonTemplateFor($teacherId)
         );
 
-        if ($template === 'directa') {
-            if ($isThursday) {
-                return <<<MD
-**MOTIVACIÓN**
+        $markdown = PedagogicalGenerationPrompt::fallbackLessonMarkdown(
+            $topic,
+            $template,
+            $sessionIndex,
+            max(1, $sessionCount)
+        );
 
-Activamos saberes previos sobre {$topicEsc} con una pregunta-problema breve y dos ejemplos cotidianos. Se aclara el propósito de la práctica y por qué importa dominar el procedimiento hoy.
-
-**PRESENTACIÓN**
-
-El docente modela **un ejercicio resuelto** de {$topicEsc} en pizarra: enunciado, pasos numerados y resultado verificado. Se copian al cuaderno el formato y los **criterios de corrección** (procedimiento, exactitud, presentación).
-
-**PRÁCTICA GUIADA**
-
-Estaciones o trabajo en parejas: una ronda con apoyo del docente y otra de aplicación. Se corrigen errores frecuentes en voz alta y se deja un desafío opcional para quienes terminen primero.
-
-**CIERRE REFLEXIVO**
-
-Juego rápido o ronda de justificaciones sobre {$topicEsc}. Ticket de salida: “Lo más importante fue…” y una dificultad detectada. Se anuncia el puente con la próxima clase.
-MD;
-            }
-
-            return <<<MD
-**MOTIVACIÓN**
-
-Se presenta {$topicEsc} con una **pregunta disparadora** y un mapa mental colectivo. Se explicitan saberes previos y el objetivo: qué podrán explicar y aplicar al finalizar.
-
-**PRESENTACIÓN**
-
-Exposición **ordenada para el cuaderno**: definición en negrita, **dos ejemplos resueltos** y un **contraejemplo**. Incluye un esquema numerado y preguntas de procesamiento.
-
-**PRÁCTICA GUIADA**
-
-Los alumnos resuelven ítems con apoyo. El docente circula, corrige y pide justificar cada paso. Todo lo esencial queda redactado para copiar y subrayar.
-
-**CIERRE REFLEXIVO**
-
-Mini-resumen en parejas de tres frases. Juego breve de consolidación. Tarea puente opcional de un ítem para la próxima sesión práctica.
-MD;
+        if ($isThursday && ! str_contains(mb_strtolower($markdown), 'reto')) {
+            $markdown .= "\n\nEsta sesión privilegia práctica colaborativa o lúdica: los alumnos producen evidencia de ".$topic.', no copian un resumen.';
         }
 
-        if ($template === 'constructivista') {
-            if ($isThursday) {
-                return <<<MD
-**ACTIVACIÓN**
-
-Situación problemática breve sobre {$topicEsc} que conecta con la vida cotidiana. Se recogen hipótesis iniciales del grupo.
-
-**EXPLORACIÓN**
-
-Estaciones de laboratorio o práctica: los alumnos prueban, comparan resultados y registran evidencias en el cuaderno.
-
-**EXPLICACIÓN**
-
-Se formaliza el procedimiento correcto de {$topicEsc} con lenguaje disciplinar, un ejemplo modelo y criterios de calidad.
-
-**APLICACIÓN**
-
-Desafío en parejas o estaciones de transferencia. Incluye un ítem opcional de mayor complejidad.
-
-**EVALUACIÓN**
-
-Ticket de salida y autoevaluación: qué se dominó, qué falta y un ejemplo propio de {$topicEsc}.
-MD;
-            }
-
-            return <<<MD
-**ACTIVACIÓN**
-
-Pregunta provocadora sobre {$topicEsc}. Se activa la curiosidad y se registran ideas previas en un mapa colectivo.
-
-**EXPLORACIÓN**
-
-Los alumnos exploran el fenómeno o concepto con observaciones, lecturas cortas o ejemplos concretos antes de la definición formal.
-
-**EXPLICACIÓN**
-
-El docente sistematiza {$topicEsc}: definición, dos ejemplos resueltos y un error frecuente. Esquema numerado para copiar.
-
-**APLICACIÓN**
-
-Preguntas de procesamiento y un caso nuevo. Trabajo individual o en parejas para transferir el concepto.
-
-**EVALUACIÓN**
-
-Metacognición de tres frases y un ítem de cierre. Se deja puente opcional hacia la próxima práctica.
-MD;
-        }
-
-        if ($isThursday) {
-            return <<<MD
-**INICIO** (motivación y saberes previos)
-
-Activamos conocimientos previos sobre {$topicEsc} con una pregunta-problema breve y dos ejemplos cotidianos. Se registra en voz alta qué se entiende ya y qué falta aclarar, para ajustar el ritmo de la práctica.
-
-**DESARROLLO** (explicación y contenido para copiar)
-
-Se organizan **estaciones de trabajo** o **laboratorio guiado** sobre {$topicEsc}: una estación con ejercicios modelo en la pizarra (para copiar el formato), otra con aplicación en parejas y una tercera con desafío opcional. En el cuaderno deben dejar: enunciado, procedimiento y resultado verificado. Incluye **criterios de corrección** al pie (qué se valora: procedimiento, exactitud, presentación).
-
-**CIERRE** (actividad de fijación o juego)
-
-Cierre con **juego rápido** (quiz de 5 ítems o “¿verdadero o falso?”) o **ronda de justificaciones** sobre {$topicEsc}. Ticket de salida de una línea: “Lo más importante fue…” y una dificultad detectada. Se anuncia el vínculo con la próxima clase teórica.
-MD;
-        }
-
-        return <<<MD
-**INICIO** (motivación y saberes previos)
-
-Se presenta {$topicEsc} con una **pregunta disparadora** y un mapa mental colectivo en pizarra. Se explicitan **saberes previos** que el curso ya domina y se delimita el objetivo de la clase: qué van a poder explicar y aplicar al finalizar.
-
-**DESARROLLO** (explicación y contenido para copiar)
-
-Exposición **ordenada para el cuaderno**: definición en negrita, **dos ejemplos resueltos** y un **contraejemplo** o error frecuente. Incluye un **esquema numerado** (pasos o propiedades) y **preguntas de procesamiento** para resolver en clase. Todo lo esencial debe quedar redactado para **copiar y subrayar** conceptos clave.
-
-**CIERRE** (actividad de fijación o juego)
-
-**Juego breve de consolidación** (sorteo de tarjetas, “completa el hueco” o memoria conceptual) sobre {$topicEsc}. **Metacognición**: en parejas, un mini-resumen de tres frases. Se deja **tarea puente** opcional si el docente lo desea (1 ítem para preparar el jueves práctico).
-MD;
+        return $markdown;
     }
 
     /**
-     * Genera título descriptivo para sesiones de bulkPlan (varía según tipo y secuencia).
+     * Genera título descriptivo para sesiones de bulkPlan (varía según secuencia pedagógica).
      */
-    private function generateSessionTitle(string $topic, bool $isThursday, int $sessionNum): string
+    private function generateSessionTitle(string $topic, bool $isThursday, int $sessionNum, string $role = 'practica'): string
     {
         $topicCapitalized = ucfirst(trim($topic));
+        $roleLabel = match ($role) {
+            'introduccion' => 'Introducción',
+            'consolidacion' => 'Consolidación',
+            default => $isThursday ? 'Taller práctico' : 'Práctica',
+        };
 
-        if ($isThursday) {
-            $patterns = [
-                "{$topicCapitalized}: Ejercicios prácticos",
-                "{$topicCapitalized}: Taller grupal",
-                "{$topicCapitalized}: Práctica guiada",
-                "{$topicCapitalized}: Actividad lúdica",
-                "{$topicCapitalized}: Laboratorio",
-            ];
+        $flavors = $isThursday
+            ? ['reto en equipo', 'estaciones', 'juego de fijación', 'laboratorio', 'producción']
+            : ['enigma inicial', 'rol', 'debate', 'mímica', 'aplicación'];
 
-            return $patterns[($sessionNum - 1) % count($patterns)];
-        } else {
-            $patterns = [
-                "{$topicCapitalized}: Introducción",
-                "{$topicCapitalized}: Conceptos clave",
-                "{$topicCapitalized}: Teoría fundamental",
-                "{$topicCapitalized}: Profundización",
-                "{$topicCapitalized}: Repaso teórico",
-            ];
+        $flavor = $flavors[($sessionNum - 1) % count($flavors)];
 
-            return $patterns[($sessionNum - 1) % count($patterns)];
-        }
+        return "{$topicCapitalized}: {$roleLabel} ({$flavor})";
     }
 
     private function buildNeeAdaptation(string $neeType): string

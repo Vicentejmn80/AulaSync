@@ -94,6 +94,53 @@ class DirectorDataAgentIntentRoutingTest extends TestCase
         $this->assertStringContainsString($teacher->name, (string) $response->json('message'));
     }
 
+    public function test_grade_with_most_students_query_returns_enrollment_hotspots(): void
+    {
+        [$director, $colegio, $teacher] = $this->seedSchool();
+
+        Student::create([
+            'colegio_id' => $colegio->id,
+            'teacher_id' => $teacher->id,
+            'name' => 'Alumno Tres A',
+            'grade' => '3ro',
+            'section' => 'A',
+            'family_code' => 'FAM-3A',
+        ]);
+        Student::create([
+            'colegio_id' => $colegio->id,
+            'teacher_id' => $teacher->id,
+            'name' => 'Alumno Tres B',
+            'grade' => '3ro',
+            'section' => 'A',
+            'family_code' => 'FAM-3B',
+        ]);
+        Student::create([
+            'colegio_id' => $colegio->id,
+            'teacher_id' => $teacher->id,
+            'name' => 'Alumno Tres C',
+            'grade' => '3ro',
+            'section' => 'A',
+            'family_code' => 'FAM-3C',
+        ]);
+
+        $response = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => '¿Cuál de todos los grados tiene más alumnos inscritos?',
+        ]);
+
+        $response->assertOk();
+        $payload = json_encode($response->json(), JSON_UNESCAPED_UNICODE);
+        $this->assertStringNotContainsString('No entendí esa orden', (string) $response->json('message'));
+        $this->assertStringContainsString('3ro', $payload ?: '');
+        $this->assertContains('query_academic', $response->json('tools') ?? []);
+
+        $followUp = $this->actingAs($director)->postJson(route('director.ai.command'), [
+            'prompt' => '¿En qué sección o grados hay más alumnos?',
+        ]);
+        $followUp->assertOk();
+        $this->assertFalse((bool) ($followUp->json('needs_clarification') ?? false));
+        $this->assertStringContainsString('sección con mayor matrícula', mb_strtolower((string) $followUp->json('message')));
+    }
+
     /**
      * @return array{0:User,1:Colegio,2:User}
      */

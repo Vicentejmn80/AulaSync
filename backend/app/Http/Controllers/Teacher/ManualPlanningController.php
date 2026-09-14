@@ -9,6 +9,7 @@ use App\Models\ManualPlanning;
 use App\Models\Planificacion;
 use App\Services\DirectorAlertService;
 use App\Support\LessonTemplate;
+use App\Support\PedagogicalGenerationPrompt;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -411,10 +412,14 @@ class ManualPlanningController extends Controller
             .'Responde SOLO JSON válido, sin markdown. '
             .'Estructura exacta: {"sessions":[{"date":"YYYY-MM-DD","title":"","phases":{}}]}. '
             .'Cada phases debe incluir exactamente estas claves: '.implode(', ', $phaseKeys).'. '
-            .'El estilo pedagógico obligatorio es «'.LessonTemplate::label($template).'». '
-            .'Redacta clases concretas, accionables y de 4 a 8 líneas por fase. No inventes el nombre del colegio.';
+            .'El parámetro methodology es «'.$template.'» ('.LessonTemplate::label($template).'). '
+            .'No inventes el nombre del colegio.'."\n\n"
+            .PedagogicalGenerationPrompt::rules($template, LessonTemplate::promptLine($template))."\n"
+            .'Redacta cada fase con 4 a 8 líneas accionables: qué dice o hace el docente y qué hacen los estudiantes. '
+            .'La 1ª sesión es Introducción, las intermedias Práctica/Desarrollo (repaso de 3 min + 80% práctico) y la última Consolidación.';
 
         $userMessage = 'Curso: '.$courseLabel.'. '
+            .'methodology: '.$template.'. '
             .'Fechas sugeridas (usa estas u otras cercanas): '.implode(', ', $dates).'. '
             .'Cantidad de sesiones: '.$count.'. '
             .'Ejemplo de phases: '.json_encode($phaseExample, JSON_UNESCAPED_UNICODE).'. '
@@ -425,7 +430,7 @@ class ManualPlanningController extends Controller
                 ->timeout(70)
                 ->post('https://api.openai.com/v1/chat/completions', [
                     'model' => 'gpt-4o-mini',
-                    'temperature' => 0.4,
+                    'temperature' => 0.75,
                     'response_format' => ['type' => 'json_object'],
                     'messages' => [
                         ['role' => 'system', 'content' => $system],

@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\Cache;
 class AiChatHistoryService
 {
     public const SESSION_KEY = 'ai_chat_history';
+    public const SESSION_USER_KEY = 'ai_chat_history_user_id';
 
     private const TTL_SECONDS = 86400;
 
@@ -20,7 +21,8 @@ class AiChatHistoryService
         }
 
         $fromSession = session(self::SESSION_KEY);
-        if (is_array($fromSession) && $fromSession !== []) {
+        $sessionOwnerId = (int) session(self::SESSION_USER_KEY, 0);
+        if ($sessionOwnerId === $userId && is_array($fromSession) && $fromSession !== []) {
             return $this->normalize($fromSession);
         }
 
@@ -37,6 +39,7 @@ class AiChatHistoryService
     {
         $normalized = $this->normalize($messages);
         session([self::SESSION_KEY => $normalized]);
+        session([self::SESSION_USER_KEY => $userId]);
         Cache::put($this->cacheKey($userId), $normalized, self::TTL_SECONDS);
         $this->rememberUserId($userId);
 
@@ -46,6 +49,7 @@ class AiChatHistoryService
     public function forget(?int $userId): void
     {
         session()->forget(self::SESSION_KEY);
+        session()->forget(self::SESSION_USER_KEY);
         if ($userId) {
             Cache::forget($this->cacheKey($userId));
         }

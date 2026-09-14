@@ -3847,6 +3847,13 @@ class AICommandController extends Controller
             ], null];
         }
 
+        // "¿Qué grado/sección tiene más alumnos inscritos?"
+        if (preg_match('/\b(?:grado|grados|secci[oó]n|secciones)\b.*\b(?:m[aá]s|mayor)\b.*\b(?:alumnos|estudiantes|inscritos|matr[ií]cula)\b/iu', trim($text))) {
+            return [[
+                'query_type' => 'enrollment_hotspots',
+            ], null];
+        }
+
         // "¿Quién es el más destacado?" / "mejor alumno"
         if (preg_match('/(?:m[aá]s\s+destacado|el\s+destacado|mejor\s+alumno|primer\s+lugar)/iu', trim($text))) {
             return [[
@@ -3989,6 +3996,7 @@ class AICommandController extends Controller
                 isset($data['section']) ? (string) $data['section'] : null,
             ),
             'section_counts' => $this->analytics->getSectionCounts($colegioId),
+            'enrollment_hotspots' => $this->analytics->getEnrollmentHotspots($colegioId),
             'declining_students' => $this->analytics->getDecliningStudents(
                 $colegioId,
                 isset($data['grade']) ? (string) $data['grade'] : null,
