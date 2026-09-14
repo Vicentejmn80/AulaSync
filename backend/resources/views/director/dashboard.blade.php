@@ -11,6 +11,7 @@
     </script>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="prefetch" href="{{ route('director.gestion') }}">
     @include('partials.nova-theme')
     <style>
         [x-cloak] { display: none !important; }
@@ -693,6 +694,22 @@
             screen: 'dashboard',
         };
         window.AI_PAGE_CONTEXT = window.novaContext;
+        (function prefetchGestion() {
+            const run = () => {
+                fetch(@json(route('director.gestion.snapshot')), { headers: { 'Accept': 'application/json' } })
+                    .then((res) => res.json())
+                    .then((json) => {
+                        if (!json?.counts) return;
+                        sessionStorage.setItem(
+                            'as.gestion.snapshot.' + @json(auth()->user()?->colegio_id),
+                            JSON.stringify({ at: Date.now(), data: json })
+                        );
+                    })
+                    .catch(() => {});
+            };
+            if ('requestIdleCallback' in window) requestIdleCallback(run, { timeout: 2500 });
+            else setTimeout(run, 400);
+        })();
     </script>
 
     @include('components.ai-assistant-bubble')

@@ -29,7 +29,8 @@ class ManagementHubTest extends TestCase
             ->assertSee('Alumnos')
             ->assertSee('Materias')
             ->assertSee('Seleccionar todo')
-            ->assertSee('grade-dossier');
+            ->assertSee('grade-dossier')
+            ->assertSee('__GESTION_SNAPSHOT__', false);
     }
 
     public function test_snapshot_returns_counts_and_lists(): void
@@ -63,6 +64,63 @@ class ManagementHubTest extends TestCase
             ->assertJsonPath('counts.courses', 1)
             ->assertJsonPath('teachers.0.name', 'Ana Rojas')
             ->assertJsonPath('students.0.name', 'Luis Perez');
+    }
+
+    public function test_snapshot_query_count_stays_bounded_without_enrollment_sync(): void
+    {
+        [$director, $colegio] = $this->directorContext();
+        $teacher = User::factory()->create([
+            'role' => 'profesor',
+            'colegio_id' => $colegio->id,
+            'name' => 'Ana Rojas',
+            'onboarding_completed' => true,
+        ]);
+        $course = Course::create([
+            'teacher_id' => $teacher->id,
+            'colegio_id' => $colegio->id,
+            'subject_name' => 'Matemática',
+            'grade' => '1ro',
+            'invite_code' => 'CUR-MAT-1B',
+        ]);
+        foreach (['Luis Perez', 'Ana Marin', 'Pedro Ruiz'] as $name) {
+            $student = Student::create([
+                'colegio_id' => $colegio->id,
+                'teacher_id' => $teacher->id,
+                'name' => $name,
+                'grade' => '1ro',
+            ]);
+            $course->students()->attach($student->id, ['enrolled_at' => now()]);
+        }
+
+        \Illuminate\Support\Facades\DB::flushQueryLog();
+        \Illuminate\Support\Facades\DB::enableQueryLog();
+
+        $this->actingAs($director)
+            ->getJson(route('director.gestion.snapshot'))
+            ->assertOk()
+            ->assertJsonPath('counts.students', 3)
+            ->assertJsonPath('courses.0.students_count', 3);
+
+        $queries = count(\Illuminate\Support\Facades\DB::getQueryLog());
+        $this->assertLessThan(25, $queries, "Snapshot ran {$queries} queries; expected a small bounded set.");
+    }
+
+    public function test_gestion_page_embeds_snapshot_so_cards_are_not_empty_on_first_paint(): void
+    {
+        [$director, $colegio] = $this->directorContext();
+        Student::create([
+            'colegio_id' => $colegio->id,
+            'teacher_id' => $director->id,
+            'name' => 'Luis Perez',
+            'grade' => '1ro',
+        ]);
+
+        $this->actingAs($director)
+            ->get(route('director.gestion'))
+            ->assertOk()
+            ->assertSee('__GESTION_SNAPSHOT__', false)
+            ->assertSee('Luis Perez', false)
+            ->assertSee('"students":1', false);
     }
 
     public function test_hub_can_invite_teacher_and_create_student_json(): void

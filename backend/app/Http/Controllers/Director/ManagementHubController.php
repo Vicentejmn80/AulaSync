@@ -2,9 +2,7 @@
 
 namespace App\Http\Controllers\Director;
 
-use App\Helpers\InviteCodeHelper;
 use App\Http\Controllers\Controller;
-use App\Models\Colegio;
 use App\Models\Course;
 use App\Models\FamilyInvite;
 use App\Models\Materia;
@@ -14,6 +12,7 @@ use App\Models\User;
 use App\Services\DirectorActionService;
 use App\Services\FamilyInviteService;
 use App\Services\InvitationService;
+use App\Services\ManagementHubSnapshotService;
 use App\Services\PersonNameSanitizer;
 use App\Services\StudentEnrollmentService;
 use App\Support\GradeLabel;
@@ -29,115 +28,24 @@ class ManagementHubController extends Controller
         private PersonNameSanitizer $names,
         private InvitationService $invitations,
         private FamilyInviteService $families,
+        private ManagementHubSnapshotService $snapshots,
     ) {}
 
-    public function index(): View
+    public function index(Request $request): View
     {
-        return view('director.gestion');
+        return view('director.gestion', [
+            'initialSnapshot' => $this->snapshots->payload($request->user()),
+        ]);
     }
 
     public function snapshot(Request $request): JsonResponse
     {
-        $colegioId = (int) $request->user()->colegio_id;
-        $this->enrollment->syncColegioEnrollments($colegioId, $request->user());
+        return response()->json($this->snapshots->payload($request->user()));
+    }
 
-        $teachers = User::query()
-            ->where('colegio_id', $colegioId)
-            ->where('role', 'profesor')
-            ->with(['courses' => function ($query) {
-                $query->withCount('students')->orderBy('subject_name')->orderBy('grade')->orderBy('section');
-            }])
-            ->orderBy('name')
-            ->get(['id', 'name', 'email', 'role', 'colegio_id'])
-            ->map(fn (User $teacher) => $this->serializeTeacher($teacher));
-
-        $invites = TeacherInvite::query()
-            ->where('colegio_id', $colegioId)
-            ->whereNull('claimed_by')
-            ->whereNull('claimed_at')
-            ->whereNull('revoked_at')
-            ->where(function ($query) {
-                $query->whereNull('expires_at')->orWhere('expires_at', '>', now());
-            })
-            ->with(['courses' => function ($query) {
-                $query->withCount('students')->orderBy('subject_name')->orderBy('grade');
-            }, 'latestInvitation', 'colegio:id,invite_code'])
-            ->latest('id')
-            ->get()
-            ->map(fn (TeacherInvite $invite) => $this->serializeInvite($invite));
-
-        $familyInvites = FamilyInvite::query()
-            ->where('colegio_id', $colegioId)
-            ->whereNull('revoked_at')
-            ->with('colegio:id,name,invite_code')
-            ->get()
-            ->keyBy('family_code');
-
-        $studentModels = Student::query()
-            ->where('colegio_id', $colegioId)
-            ->with(['courses:id,subject_name,grade,section'])
-            ->orderBy('name')
-            ->get();
-
-        foreach ($studentModels as $student) {
-            if ($familyInvites->has($student->family_code)) {
-                continue;
-            }
-
-            $invite = $this->families->ensureForStudent($student, $request->user());
-            $invite->loadMissing('colegio:id,name,invite_code');
-            $familyInvites->put($invite->family_code, $invite);
-        }
-
-        $students = $studentModels->map(
-            fn (Student $student) => $this->serializeStudent($student, $familyInvites->get($student->family_code))
-        );
-
-        $courses = Course::query()
-            ->where('colegio_id', $colegioId)
-            ->with(['teacher:id,name', 'pendingInvite:id,name,invite_code', 'students:id,name,grade,section'])
-            ->withCount('students')
-            ->orderBy('grade')
-            ->orderBy('subject_name')
-            ->get()
-            ->map(fn (Course $course) => $this->serializeCourse($course));
-
-        $materias = Materia::query()
-            ->where('colegio_id', $colegioId)
-            ->withCount('courses')
-            ->orderBy('name')
-            ->get()
-            ->map(fn (Materia $materia) => [
-                'id' => $materia->id,
-                'name' => $materia->name,
-                'courses_count' => $materia->courses_count,
-            ]);
-
-        $grades = $courses->pluck('grade')
-            ->merge($students->pluck('grade'))
-            ->map(fn ($grade) => GradeLabel::canonical((string) $grade))
-            ->filter()
-            ->unique()
-            ->values();
-
-        return response()->json([
-            'success' => true,
-            'counts' => [
-                'teachers' => $teachers->count() + $invites->count(),
-                'teachers_active' => $teachers->count(),
-                'teachers_pending' => $invites->count(),
-                'students' => $students->count(),
-                'courses' => $courses->count(),
-                'materias' => $materias->count(),
-            ],
-            'teachers' => $teachers,
-            'invites' => $invites,
-            'students' => $students,
-            'courses' => $courses,
-            'materias' => $materias,
-            'grades' => $grades,
-            'school_invite_code' => Colegio::query()->whereKey($colegioId)->value('invite_code'),
-        ]);
+    private function forgetSnapshot(?User $user = null): void
+    {
+        $this->snapshots->forget((int) ($user?->colegio_id ?: auth()->user()?->colegio_id));
     }
 
     public function storeTeacher(Request $request): JsonResponse
@@ -162,6 +70,7 @@ class ManagementHubController extends Controller
 
         $invite = $invite->fresh(['courses', 'latestInvitation', 'colegio:id,invite_code']);
         $serialized = $this->serializeInvite($invite);
+        $this->forgetSnapshot($request->user());
         $mailNote = $serialized['mail_sent']
             ? " Se ha enviado un email de invitación a {$invite->email}."
             : ($invite->email
@@ -192,6 +101,7 @@ class ManagementHubController extends Controller
         abort_unless((int) $invite->colegio_id === (int) $request->user()->colegio_id, 404);
 
         $invitation = $this->invitations->resendForTeacherInvite($invite, $request->user());
+        $this->forgetSnapshot($request->user());
 
         return response()->json([
             'success' => true,
@@ -244,6 +154,7 @@ class ManagementHubController extends Controller
 
         $invite = $this->families->ensureForStudent($student->fresh(), $request->user());
         $share = $this->families->serialize($invite, $student);
+        $this->forgetSnapshot($request->user());
 
         return response()->json([
             'success' => true,
@@ -258,6 +169,7 @@ class ManagementHubController extends Controller
         abort_unless((int) $student->colegio_id === (int) $request->user()->colegio_id, 404);
 
         $invite = $this->families->ensureForStudent($student, $request->user());
+        $this->forgetSnapshot($request->user());
 
         return response()->json([
             'success' => true,
@@ -287,6 +199,7 @@ class ManagementHubController extends Controller
         }
 
         $result = $this->actions->updateStudent($request->user(), $payload);
+        $this->forgetSnapshot($request->user());
 
         return response()->json([
             'success' => true,
@@ -348,6 +261,7 @@ class ManagementHubController extends Controller
         $course = $result['course'];
 
         $created = ! ($result['was_existing'] ?? false);
+        $this->forgetSnapshot($director);
 
         return response()->json([
             'success' => true,
@@ -373,6 +287,7 @@ class ManagementHubController extends Controller
             'grade' => $data['grade'] ?? null,
             'section' => array_key_exists('section', $data) ? ($data['section'] ?: null) : null,
         ], fn ($value) => $value !== null));
+        $this->forgetSnapshot($request->user());
 
         return response()->json([
             'success' => true,
@@ -439,6 +354,7 @@ class ManagementHubController extends Controller
         foreach ($owned as $course) {
             $this->enrollment->syncCourseWithGradeStudents($course->fresh(), $request->user());
         }
+        $this->forgetSnapshot($request->user());
 
         return response()->json([
             'success' => true,
@@ -455,6 +371,7 @@ class ManagementHubController extends Controller
         $result = $this->actions->createSubject($request->user(), [
             'subject_name' => $data['name'],
         ]);
+        $this->forgetSnapshot($request->user());
 
         return response()->json([
             'success' => true,
@@ -481,6 +398,7 @@ class ManagementHubController extends Controller
 
         $name = $materia->name;
         $materia->delete();
+        $this->forgetSnapshot($request->user());
 
         return response()->json([
             'success' => true,
@@ -496,6 +414,7 @@ class ManagementHubController extends Controller
             'teacher_id' => null,
             'teacher_invite_id' => null,
         ]);
+        $this->forgetSnapshot($request->user());
 
         return response()->json([
             'success' => true,
@@ -556,6 +475,8 @@ class ManagementHubController extends Controller
             $deleted++;
         }
 
+        $this->forgetSnapshot($director);
+
         return response()->json([
             'success' => true,
             'message' => $deleted === 0 ? 'No había elementos para eliminar.' : "Se eliminaron {$deleted} registro(s). Los cursos de un profesor quedan huérfanos para reasignar.",
@@ -592,6 +513,7 @@ class ManagementHubController extends Controller
         }
 
         $scope = $data['subject_name'].(! empty($data['grade']) ? ' · '.$data['grade'] : '');
+        $this->forgetSnapshot($request->user());
 
         return response()->json([
             'success' => true,
@@ -637,106 +559,19 @@ class ManagementHubController extends Controller
         $invite->update(['course_ids' => $ids]);
     }
 
-    private function serializeTeacher(User $teacher): array
-    {
-        return [
-            'id' => $teacher->id,
-            'kind' => 'teacher',
-            'name' => $teacher->name,
-            'email' => $teacher->email,
-            'status' => 'activo',
-            'courses' => $teacher->courses->map(fn (Course $course) => $this->courseChip($course))->values()->all(),
-        ];
-    }
-
     private function serializeInvite(TeacherInvite $invite): array
     {
-        $courses = $invite->relationLoaded('courses')
-            ? $invite->courses
-            : Course::query()->where('teacher_invite_id', $invite->id)->withCount('students')->get();
-
-        $magic = $invite->pendingMagicInvitation();
-
-        return [
-            'id' => $invite->id,
-            'kind' => 'invite',
-            'name' => $invite->display_name ?? $invite->name,
-            'email' => $invite->email,
-            'invite_code' => $invite->invite_code,
-            'invitation_code' => $invite->invite_code,
-            'invitation_link' => $invite->shareableLink(),
-            'invitation_expires_at' => $magic?->expires_at?->toIso8601String(),
-            'mail_sent' => $magic !== null,
-            'status' => 'pendiente',
-            'courses' => $courses->map(fn (Course $course) => $this->courseChip($course))->values()->all(),
-        ];
+        return $this->snapshots->serializeInvite($invite);
     }
 
     private function serializeStudent(Student $student, ?FamilyInvite $invite = null): array
     {
-        $invite?->loadMissing('colegio:id,name,invite_code');
-        $grade = GradeLabel::canonical($student->grade) ?: $student->grade;
-
-        return [
-            'id' => $student->id,
-            'name' => $student->name,
-            'grade' => $grade,
-            'section' => $student->section,
-            'family_code' => $student->family_code,
-            'invite_code' => $invite?->invite_code,
-            'invitation_link' => $invite?->registrationUrl(),
-            'school_code' => $invite?->colegio?->invite_code,
-            'family_status' => $invite ? 'listo' : 'sin_invitar',
-            'courses_count' => $student->relationLoaded('courses') ? $student->courses->count() : ($student->courses_count ?? 0),
-            'courses' => $student->relationLoaded('courses')
-                ? $student->courses->map(fn (Course $course) => $this->courseChip($course))->values()->all()
-                : [],
-        ];
+        return $this->snapshots->serializeStudent($student, $invite);
     }
 
     private function serializeCourse(Course $course): array
     {
-        $teacherName = $course->teacher?->name ?: $course->pendingInvite?->name;
-        $students = $course->relationLoaded('students') ? $course->students : collect();
-
-        $grade = GradeLabel::canonical($course->grade) ?: $course->grade;
-
-        return [
-            'id' => $course->id,
-            'materia_id' => $course->materia_id,
-            'subject_name' => $course->subject_name,
-            'grade' => $grade,
-            'section' => $course->section,
-            'invite_code' => $course->invite_code,
-            'teacher_id' => $course->teacher_id,
-            'invite_id' => $course->teacher_invite_id,
-            'teacher_name' => $teacherName,
-            'pending' => (bool) $course->teacher_invite_id && ! $course->teacher_id,
-            'orphan' => $teacherName === null || $teacherName === '',
-            'assignment_status' => $teacherName ? 'occupied' : 'open',
-            'students_count' => $course->students_count ?? $students->count(),
-            'students' => $students->map(fn (Student $student) => [
-                'id' => $student->id,
-                'name' => $student->name,
-                'grade' => GradeLabel::canonical($student->grade) ?: $student->grade,
-                'section' => $student->section,
-            ])->values()->all(),
-            'label' => trim($course->subject_name.' · '.$grade.($course->section ? ' '.$course->section : '')),
-        ];
-    }
-
-    private function courseChip(Course $course): array
-    {
-        $grade = GradeLabel::canonical($course->grade) ?: $course->grade;
-
-        return [
-            'id' => $course->id,
-            'subject_name' => $course->subject_name,
-            'grade' => $grade,
-            'section' => $course->section,
-            'students_count' => $course->students_count ?? null,
-            'label' => trim($course->subject_name.' · '.$grade.($course->section ? ' '.$course->section : '')),
-        ];
+        return $this->snapshots->serializeCourse($course);
     }
 
     private function gradeBucket(?string $grade): ?int

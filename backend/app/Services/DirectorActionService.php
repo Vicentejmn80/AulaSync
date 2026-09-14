@@ -180,7 +180,10 @@ class DirectorActionService
             ];
         });
 
-        return $this->issueTeacherInvitationIfNeeded($director, $result);
+        $issued = $this->issueTeacherInvitationIfNeeded($director, $result);
+        $this->flushHub($colegioId);
+
+        return $issued;
     }
 
     /**
@@ -257,6 +260,7 @@ class DirectorActionService
             ->whereRaw('LOWER(name) = ?', [mb_strtolower($name)])
             ->exists();
         $materia = $this->findOrCreateMateria($colegioId, $name);
+        $this->flushHub($colegioId);
 
         return [
             'materia' => $materia,
@@ -498,6 +502,8 @@ class DirectorActionService
                 'students' => 'No se pudieron verificar todos los estudiantes creados.',
             ]);
         }
+
+        $this->flushHub($colegioId);
 
         return [
             'created' => $verified,
@@ -1987,6 +1993,11 @@ class DirectorActionService
         }
 
         return $colegioId;
+    }
+
+    private function flushHub(int $colegioId): void
+    {
+        app(ManagementHubSnapshotService::class)->forget($colegioId);
     }
 
     private function subjectSearchStem(string $subject): string

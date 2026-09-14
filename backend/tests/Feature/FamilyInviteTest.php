@@ -32,7 +32,7 @@ class FamilyInviteTest extends TestCase
         $this->assertDatabaseCount('family_invites', 1);
     }
 
-    public function test_existing_student_without_invite_gets_a_family_link_in_snapshot_and_modal_payload(): void
+    public function test_existing_student_without_invite_gets_a_family_link_from_the_family_endpoint(): void
     {
         [$director, $colegio] = $this->school();
         $student = Student::create([
@@ -50,19 +50,21 @@ class FamilyInviteTest extends TestCase
             ->json();
 
         $row = collect($snapshot['students'])->firstWhere('id', $student->id);
-        $this->assertNotEmpty($row['invitation_link']);
-        $this->assertNotEmpty($row['invite_code']);
-        $this->assertStringContainsString('/familia/unirse?', $row['invitation_link']);
-        $this->assertStringContainsString('code=FAM-', $row['invitation_link']);
-        $this->assertSame(1, FamilyInvite::query()->count());
+        $this->assertNotNull($row);
+        $this->assertSame('Valeria Navarro', $row['name']);
+        $this->assertDatabaseCount('family_invites', 0);
 
-        $this->actingAs($director)
+        $payload = $this->actingAs($director)
             ->getJson(route('director.gestion.students.family-invite', $student->id))
             ->assertOk()
             ->assertJsonPath('success', true)
             ->assertJsonPath('family_invite.kind', 'family')
             ->assertJsonPath('family_invite.name', 'Valeria Navarro')
-            ->assertJsonPath('family_invite.invite_code', $row['invite_code']);
+            ->json('family_invite');
+
+        $this->assertStringContainsString('/familia/unirse?', $payload['invitation_link']);
+        $this->assertStringContainsString('code=FAM-', $payload['invitation_link']);
+        $this->assertSame(1, FamilyInvite::query()->count());
     }
 
     public function test_gestion_hub_renders_the_family_share_dialog_without_get_bodies(): void

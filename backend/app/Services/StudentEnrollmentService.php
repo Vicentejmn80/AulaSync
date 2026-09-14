@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Observers\StudentObserver;
 use App\Support\GradeLabel;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\ValidationException;
 
@@ -66,6 +67,7 @@ class StudentEnrollmentService
 
         if (! $course->students()->where('students.id', $student->id)->exists()) {
             $course->students()->attach($student->id, ['enrolled_at' => now()]);
+            app(ManagementHubSnapshotService::class)->forget((int) $course->colegio_id);
         }
 
         return $student;
@@ -158,9 +160,24 @@ class StudentEnrollmentService
      */
     public function syncColegioEnrollments(int $colegioId, ?User $actor = null): array
     {
-        $students = Student::query()->where('colegio_id', $colegioId)->get();
-        $courses = Course::query()->where('colegio_id', $colegioId)->get();
-        $linksCreated = 0;
+        $students = Student::query()->where('colegio_id', $colegioId)->get(['id', 'grade', 'section', 'colegio_id']);
+        $courses = Course::query()->where('colegio_id', $colegioId)->get(['id', 'grade', 'section', 'colegio_id']);
+        if ($students->isEmpty() || $courses->isEmpty()) {
+            return [
+                'links_created' => 0,
+                'already_synced' => 0,
+                'students_count' => $students->count(),
+                'courses_count' => $courses->count(),
+            ];
+        }
+
+        $existing = DB::table('course_student')
+            ->whereIn('course_id', $courses->pluck('id'))
+            ->get(['course_id', 'student_id'])
+            ->mapWithKeys(fn ($row) => [((int) $row->course_id).':'.((int) $row->student_id) => true]);
+
+        $now = now();
+        $insert = [];
         $alreadySynced = 0;
 
         foreach ($students as $student) {
@@ -168,18 +185,30 @@ class StudentEnrollmentService
                 if (! $this->matchesGradeAndSection($student, $course)) {
                     continue;
                 }
-                if ($course->students()->where('students.id', $student->id)->exists()) {
+                $key = ((int) $course->id).':'.((int) $student->id);
+                if (isset($existing[$key])) {
                     $alreadySynced++;
-
                     continue;
                 }
-                $this->attachExisting($course, $student, $actor);
-                $linksCreated++;
+                $insert[] = [
+                    'course_id' => $course->id,
+                    'student_id' => $student->id,
+                    'enrolled_at' => $now,
+                ];
+                $existing[$key] = true;
             }
         }
 
+        foreach (array_chunk($insert, 500) as $chunk) {
+            DB::table('course_student')->insertOrIgnore($chunk);
+        }
+
+        if ($insert !== []) {
+            app(ManagementHubSnapshotService::class)->forget($colegioId);
+        }
+
         return [
-            'links_created' => $linksCreated,
+            'links_created' => count($insert),
             'already_synced' => $alreadySynced,
             'students_count' => $students->count(),
             'courses_count' => $courses->count(),

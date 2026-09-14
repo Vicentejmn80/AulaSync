@@ -182,6 +182,12 @@
             color: var(--text-secondary); font-size: .8rem;
         }
         .grade-roster { max-height: 17.5rem; overflow: auto; padding-right: .15rem; }
+        .hub-skel {
+            display: inline-block; border-radius: .6rem;
+            background: linear-gradient(90deg, color-mix(in srgb, var(--text-primary) 8%, transparent), color-mix(in srgb, var(--text-primary) 16%, transparent), color-mix(in srgb, var(--text-primary) 8%, transparent));
+            background-size: 200% 100%; animation: hubSkel 1.1s ease infinite;
+        }
+        @keyframes hubSkel { 0% { background-position: 100% 0; } 100% { background-position: -100% 0; } }
     </style>
 </head>
 <body class="min-h-screen" x-data="gestionHub()" x-init="init()">
@@ -216,7 +222,10 @@
                     <span class="flex h-11 w-11 items-center justify-center rounded-2xl bg-amber-100 text-amber-700"><i class="fa-solid fa-book"></i></span>
                     <span class="text-xs font-semibold uppercase tracking-wide text-slate-400">Catálogo</span>
                 </div>
-                <p class="text-4xl font-extrabold tabular-nums" x-text="counts.materias">0</p>
+                <p class="text-4xl font-extrabold tabular-nums">
+                    <span x-show="loading" x-cloak class="hub-skel h-10 w-16 align-middle"></span>
+                    <span x-show="!loading" x-text="counts.materias">{{ $initialSnapshot['counts']['materias'] ?? '' }}</span>
+                </p>
                 <p class="mt-1 text-sm font-medium text-slate-500">Materias</p>
             </button>
             <button type="button" @click="openPanel('courses')" class="hub-card p-6 text-left" :class="panel === 'courses' && 'active'">
@@ -224,7 +233,10 @@
                     <span class="flex h-11 w-11 items-center justify-center rounded-2xl bg-violet-100 text-violet-700"><i class="fa-solid fa-book-open"></i></span>
                     <span class="text-xs font-semibold uppercase tracking-wide text-slate-400">Oferta</span>
                 </div>
-                <p class="text-4xl font-extrabold tabular-nums" x-text="counts.courses">0</p>
+                <p class="text-4xl font-extrabold tabular-nums">
+                    <span x-show="loading" x-cloak class="hub-skel h-10 w-16 align-middle"></span>
+                    <span x-show="!loading" x-text="counts.courses">{{ $initialSnapshot['counts']['courses'] ?? '' }}</span>
+                </p>
                 <p class="mt-1 text-sm font-medium text-slate-500">Cursos</p>
             </button>
             <button type="button" @click="openPanel('teachers')" class="hub-card p-6 text-left" :class="panel === 'teachers' && 'active'">
@@ -232,16 +244,22 @@
                     <span class="flex h-11 w-11 items-center justify-center rounded-2xl bg-cyan-100 text-cyan-700"><i class="fa-solid fa-chalkboard-user"></i></span>
                     <span class="text-xs font-semibold uppercase tracking-wide text-slate-400">Plantel</span>
                 </div>
-                <p class="text-4xl font-extrabold tabular-nums" x-text="counts.teachers">0</p>
+                <p class="text-4xl font-extrabold tabular-nums">
+                    <span x-show="loading" x-cloak class="hub-skel h-10 w-16 align-middle"></span>
+                    <span x-show="!loading" x-text="counts.teachers">{{ $initialSnapshot['counts']['teachers'] ?? '' }}</span>
+                </p>
                 <p class="mt-1 text-sm font-medium text-slate-500">Profesores</p>
-                <p class="mt-2 text-xs text-slate-400"><span x-text="counts.teachers_active"></span> activos · <span x-text="counts.teachers_pending"></span> pendientes</p>
+                <p class="mt-2 text-xs text-slate-400" x-show="!loading"><span x-text="counts.teachers_active"></span> activos · <span x-text="counts.teachers_pending"></span> pendientes</p>
             </button>
             <button type="button" @click="openPanel('students')" class="hub-card p-6 text-left" :class="panel === 'students' && 'active'">
                 <div class="mb-6 flex items-center justify-between">
                     <span class="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700"><i class="fa-solid fa-user-graduate"></i></span>
                     <span class="text-xs font-semibold uppercase tracking-wide text-slate-400">Nómina</span>
                 </div>
-                <p class="text-4xl font-extrabold tabular-nums" x-text="counts.students">0</p>
+                <p class="text-4xl font-extrabold tabular-nums">
+                    <span x-show="loading" x-cloak class="hub-skel h-10 w-16 align-middle"></span>
+                    <span x-show="!loading" x-text="counts.students">{{ $initialSnapshot['counts']['students'] ?? '' }}</span>
+                </p>
                 <p class="mt-1 text-sm font-medium text-slate-500">Alumnos</p>
             </button>
         </div>
@@ -282,7 +300,7 @@
                 </template>
             </div>
 
-            <div class="hub-table-wrap">
+            <div class="hub-table-wrap" x-show="!loading">
                 <table class="hub-table" x-show="panel === 'teachers'">
                     <thead><tr>
                         <th class="w-10"></th>
@@ -492,6 +510,9 @@
                     </div>
                 </div>
             </div>
+            <p class="px-2 py-4 text-sm text-slate-400" x-show="loading">
+                <span class="hub-skel h-4 w-48"></span>
+            </p>
             <p class="px-2 py-4 text-sm text-slate-400" x-show="emptyState" x-text="emptyCopy"></p>
         </section>
     </div>
@@ -727,8 +748,13 @@
     </div>
 
     <script>
+        window.__GESTION_SNAPSHOT__ = @json($initialSnapshot ?? null);
+        window.__GESTION_COLEGIO__ = @json(auth()->user()?->colegio_id);
         function gestionHub() {
             const csrf = document.querySelector('meta[name="csrf-token"]').content;
+            const boot = window.__GESTION_SNAPSHOT__ && window.__GESTION_SNAPSHOT__.counts
+                ? window.__GESTION_SNAPSHOT__
+                : null;
             const routes = {
                 snapshot: @json(route('director.gestion.snapshot')),
                 teachers: @json(route('director.gestion.teachers.store')),
@@ -762,8 +788,8 @@
                 gradeMeta,
                 panel: new URLSearchParams(location.search).get('panel') || 'materias',
                 query: '',
-                counts: { teachers: 0, teachers_active: 0, teachers_pending: 0, students: 0, courses: 0, materias: 0 },
-                teachers: [], invites: [], students: [], courses: [], materias: [], grades: [],
+                counts: boot?.counts || { teachers: 0, teachers_active: 0, teachers_pending: 0, students: 0, courses: 0, materias: 0 },
+                teachers: boot?.teachers || [], invites: boot?.invites || [], students: boot?.students || [], courses: boot?.courses || [], materias: boot?.materias || [], grades: boot?.grades || [],
                 highlights: {},
                 selected: null,
                 selectedCourse: null,
@@ -772,8 +798,9 @@
                 gradeFilter: '',
                 expandedGrade: null,
                 creating: false,
+                loading: !boot,
                 inviteShare: null,
-                schoolInviteCode: '',
+                schoolInviteCode: boot?.school_invite_code || '',
                 saving: false,
                 form: {},
                 editKey: '',
@@ -839,6 +866,7 @@
                     return rows.length > 0 && rows.every(row => this.isSelected(row.kind, row.id));
                 },
                 get emptyState() {
+                    if (this.loading) return false;
                     if (this.panel === 'courses') return false;
                     if (this.panel === 'teachers') return this.filteredPeople.length === 0;
                     if (this.panel === 'materias') return this.filteredMaterias.length === 0;
@@ -888,7 +916,13 @@
                 async init() {
                     window.novaContext = { type: 'director_school', screen: 'gestion' };
                     window.AI_PAGE_CONTEXT = window.novaContext;
-                    await this.refresh();
+                    if (!boot) {
+                        const cached = this.readCache();
+                        if (cached?.counts) this.applySnapshot(cached);
+                        await this.refresh();
+                    } else {
+                        this.writeCache(boot);
+                    }
                     window.addEventListener('aula-sync-ai-busy', (e) => {
                         const n = e.detail?.count || null;
                         this.aiBusy = true;
@@ -1033,18 +1067,43 @@
                 async refresh() {
                     const res = await fetch(routes.snapshot, { headers: { 'Accept': 'application/json' } });
                     const json = await res.json();
-                    this.counts = json.counts;
-                    this.teachers = json.teachers;
-                    this.invites = json.invites;
-                    this.students = json.students;
-                    this.courses = json.courses;
-                    this.materias = json.materias || [];
-                    this.grades = json.grades;
-                    this.schoolInviteCode = json.school_invite_code || this.schoolInviteCode || '';
+                    this.applySnapshot(json);
                     if (this.selected) {
                         const next = this.people.find(p => p.kind === this.selected.kind && p.id === this.selected.id);
                         if (next) this.selected = { ...next, key: next.kind + next.id };
                     }
+                },
+                applySnapshot(json) {
+                    if (!json || !json.counts) return;
+                    this.counts = json.counts;
+                    this.teachers = json.teachers || [];
+                    this.invites = json.invites || [];
+                    this.students = json.students || [];
+                    this.courses = json.courses || [];
+                    this.materias = json.materias || [];
+                    this.grades = json.grades || [];
+                    this.schoolInviteCode = json.school_invite_code || this.schoolInviteCode || '';
+                    this.loading = false;
+                    this.writeCache(json);
+                },
+                cacheKey() {
+                    return 'as.gestion.snapshot.' + (window.__GESTION_COLEGIO__ || '0');
+                },
+                readCache() {
+                    try {
+                        const raw = sessionStorage.getItem(this.cacheKey());
+                        if (!raw) return null;
+                        const parsed = JSON.parse(raw);
+                        if (!parsed?.data || Date.now() - parsed.at > 120000) return null;
+                        return parsed.data;
+                    } catch {
+                        return null;
+                    }
+                },
+                writeCache(data) {
+                    try {
+                        sessionStorage.setItem(this.cacheKey(), JSON.stringify({ at: Date.now(), data }));
+                    } catch {}
                 },
                 select(row) {
                     this.selected = { ...row, key: row.kind + row.id };
