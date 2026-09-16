@@ -11,6 +11,7 @@ use App\Models\ReportCard;
 use App\Models\ReportCardGrade;
 use App\Models\Student;
 use App\Models\User;
+use App\Support\DatabaseBoolean;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -173,7 +174,7 @@ class AcademicReportCardService
                         'course_name' => $this->courseName($course),
                         'grade'       => round($average, 2),
                         'letter_grade' => $this->letterGrade($average),
-                        'is_manual'   => false,
+                        'is_manual'   => DatabaseBoolean::bind(false),
                     ];
                 }
 
@@ -191,9 +192,10 @@ class AcademicReportCardService
                     ]
                 );
 
-                // Refresh grades (delete non-manual, re-insert)
+                // Refresh grades (delete non-manual, re-insert).
+                // PostgreSQL rejects boolean = integer; Laravel would bind PHP false as 0.
                 ReportCardGrade::where('report_card_id', $card->id)
-                    ->where('is_manual', false)
+                    ->whereRaw(DatabaseBoolean::equals('is_manual', false))
                     ->delete();
 
                 foreach ($courseGrades as $cg) {
@@ -314,7 +316,7 @@ class AcademicReportCardService
                     'grade'                => $newGrade ?? $rcGrade->grade,
                     'letter_grade'         => $newGrade !== null ? $this->letterGrade($newGrade) : $rcGrade->letter_grade,
                     'teacher_observations' => $gradeRow['teacher_observations'] ?? $rcGrade->teacher_observations,
-                    'is_manual'            => true,
+                    'is_manual'            => DatabaseBoolean::bind(true),
                 ]);
             }
         }
