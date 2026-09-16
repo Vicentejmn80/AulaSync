@@ -2,21 +2,30 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>Iniciar Sesión · AulaSync</title>
+    @include('partials.nav-prefetch', [
+        'prefetchLogin' => false,
+        'prefetchHub' => false,
+        'idlePrefetch' => [],
+    ])
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <style>
         *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+        html, body { overflow-x: hidden; max-width: 100%; }
         body {
             font-family: 'Inter', system-ui, -apple-system, sans-serif;
             min-height: 100vh;
+            min-height: 100dvh;
             display: flex;
             align-items: center;
             justify-content: center;
             background: #FBFAF7;
-            overflow: hidden;
+            overflow-x: hidden;
             position: relative;
             color: #1E1133;
+            padding: 16px;
+            padding-bottom: max(16px, env(safe-area-inset-bottom));
         }
 
         body::before {
@@ -110,10 +119,11 @@
         }
         .field input {
             width: 100%; padding: .75rem 1rem;
+            min-height: 48px;
             background: rgba(255,255,255,.94);
             border: 1px solid rgba(237, 221, 247, .95);
             border-radius: .875rem; color: #1E1133;
-            font-size: .92rem; outline: none;
+            font-size: 16px; outline: none;
             transition: border-color .2s, box-shadow .2s;
         }
         .field input::placeholder { color: rgba(107,77,135,.45); }
@@ -141,12 +151,37 @@
         /* Submit */
         .btn-submit {
             width: 100%; padding: .85rem;
+            min-height: 48px;
             background: linear-gradient(135deg, #8b5cf6, #d946ef 55%, #f472b6);
             color: #fff; font-weight: 800; font-size: .95rem;
             border: none; border-radius: .875rem; cursor: pointer;
             box-shadow: 0 10px 24px rgba(217,70,239,.22);
             transition: opacity .15s, transform .15s, box-shadow .15s;
         }
+        .btn-submit:disabled { opacity: .72; cursor: wait; transform: none; }
+
+        .login-skeleton {
+            display: none;
+            position: fixed;
+            inset: 0;
+            z-index: 40;
+            background: #FBFAF7;
+            padding: 24px 16px;
+        }
+        .login-skeleton.is-on { display: block; }
+        .sk-bar {
+            height: 14px; border-radius: 999px;
+            background: linear-gradient(90deg, #f3e8ff 25%, #fce7f3 50%, #f3e8ff 75%);
+            background-size: 200% 100%;
+            animation: sk 1.1s ease-in-out infinite;
+        }
+        .sk-card {
+            max-width: 420px; margin: 48px auto 0;
+            background: #fff; border-radius: 1.5rem; padding: 20px;
+            border: 1px solid #eeddf7;
+        }
+        .sk-row { height: 72px; border-radius: 1rem; margin-top: 12px; }
+        @keyframes sk { 0% { background-position: 100% 0; } 100% { background-position: -100% 0; } }
         .btn-submit:hover {
             opacity: .92; transform: translateY(-2px);
             box-shadow: 0 12px 34px rgba(217,70,239,.28);
@@ -195,23 +230,23 @@
                         </div>
         @endif
 
-        <form method="POST" action="{{ route('login', absolute: false) }}">
+        <form method="POST" action="{{ route('login', absolute: false) }}" id="login-form">
                                 @csrf
             <div class="field">
-                <label>Correo Electrónico</label>
-                <input type="email" name="email" value="{{ old('email') }}" placeholder="tu@correo.com" required autofocus>
+                <label for="email">Correo Electrónico</label>
+                <input id="email" type="email" name="email" value="{{ old('email') }}" placeholder="tu@correo.com" required autofocus autocomplete="username" inputmode="email" enterkeyhint="next">
                 @error('email')<span class="field-error">{{ $message }}</span>@enderror
                                 </div>
             <div class="field">
-                <label>Contraseña</label>
-                <input type="password" name="password" placeholder="Tu contraseña" required>
+                <label for="password">Contraseña</label>
+                <input id="password" type="password" name="password" placeholder="Tu contraseña" required autocomplete="current-password" enterkeyhint="go">
                 @error('password')<span class="field-error">{{ $message }}</span>@enderror
                                 </div>
             <div class="remember-row">
                 <input type="checkbox" name="remember" id="rememberMe">
                 <label for="rememberMe">Recordarme</label>
                                 </div>
-            <button type="submit" class="btn-submit">
+            <button type="submit" class="btn-submit" id="login-submit">
                 <i class="fa-solid fa-right-to-bracket" style="margin-right:.5rem;"></i>Entrar Ahora
             </button>
                             </form>
@@ -222,9 +257,32 @@
         </p>
     </div>
 
+    <div class="login-skeleton" id="login-skeleton" aria-live="polite" aria-busy="true">
+        <div class="sk-card">
+            <div class="sk-bar" style="width:46%;height:18px;"></div>
+            <div class="sk-bar sk-row"></div>
+            <div class="sk-bar sk-row"></div>
+            <div class="sk-bar sk-row"></div>
+            <p style="margin-top:18px;font-size:.85rem;color:#6B4D87;font-weight:700;">Entrando a tu espacio…</p>
+        </div>
+    </div>
+
     {{-- Limpia SW/cache en auth para evitar login con CSRF caducado (419) --}}
     <script>
         (function () {
+            var form = document.getElementById('login-form');
+            var skeleton = document.getElementById('login-skeleton');
+            var submit = document.getElementById('login-submit');
+            if (form) {
+                form.addEventListener('submit', function () {
+                    if (skeleton) skeleton.classList.add('is-on');
+                    if (submit) {
+                        submit.disabled = true;
+                        submit.innerHTML = '<i class="fa-solid fa-spinner fa-spin" style="margin-right:.5rem;"></i>Entrando…';
+                    }
+                    try { sessionStorage.setItem('as.login.optimistic', '1'); } catch (e) {}
+                });
+            }
             if (!('serviceWorker' in navigator)) return;
             navigator.serviceWorker.getRegistrations().then(function (regs) {
                 regs.forEach(function (r) { r.unregister(); });

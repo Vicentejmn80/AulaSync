@@ -71,6 +71,7 @@ class AuthenticatedSessionController extends Controller
 
         if ($user->role === 'profesor') {
             app(TeacherInviteClaimService::class)->claimForUser($user->fresh());
+            $request->session()->put('teacher.hub.claimed', true);
 
             return redirect()->to('/teacher/hub');
         }

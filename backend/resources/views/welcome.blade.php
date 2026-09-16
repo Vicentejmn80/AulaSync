@@ -16,6 +16,11 @@
     <meta property="og:description" content="Planificación, tareas, calificaciones, asistencia y comunicación en un solo lugar.">
     <meta property="og:locale" content="es_VE">
 
+    @include('partials.nav-prefetch', [
+        'prefetchLogin' => true,
+        'prefetchHub' => false,
+        'idlePrefetch' => [url('/login')],
+    ])
     <link rel="icon" href="/favicon.ico?v=3" sizes="any">
     <link rel="icon" type="image/png" href="/favicon-32x32.png?v=3" sizes="32x32">
     <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=3">
@@ -1411,7 +1416,7 @@
                 </ul>
 
                 <div class="az-nav-actions">
-                    <a href="{{ route('login') }}" class="az-btn az-btn-secondary az-btn-sm">Iniciar Sesión</a>
+                    <a href="{{ route('login') }}" class="az-btn az-btn-secondary az-btn-sm" rel="prefetch">Iniciar Sesión</a>
                     <button type="button" class="az-btn az-btn-primary az-btn-sm" data-open-demo>Solicitar Demo</button>
                 </div>
 
@@ -1426,7 +1431,7 @@
                 <a href="#implementacion">Recursos</a>
                 <a href="#faq">Preguntas frecuentes</a>
                 <div class="az-nav-actions">
-                    <a href="{{ route('login') }}" class="az-btn az-btn-secondary">Iniciar Sesión</a>
+                    <a href="{{ route('login') }}" class="az-btn az-btn-secondary" rel="prefetch">Iniciar Sesión</a>
                     <button type="button" class="az-btn az-btn-primary" data-open-demo>Solicitar Demo</button>
                 </div>
             </div>

@@ -6,8 +6,9 @@
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>AulaSync · Hub Académico Inteligente</title>
     @vite(['resources/css/app.css', 'resources/js/app.js'])
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css" media="print" onload="this.media='all'">
+    <noscript><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css"></noscript>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@600;700;800;900&display=swap" rel="stylesheet">
@@ -46,7 +47,8 @@
             --font-display: 'Manrope', 'Inter', system-ui, sans-serif;
         }
 
-        html { color-scheme: light; }
+        html { color-scheme: light; overflow-x: hidden; -webkit-text-size-adjust: 100%; }
+        body { overflow-x: hidden; max-width: 100%; }
         html.dark { color-scheme: dark; }
 
         html.dark {
@@ -425,9 +427,21 @@
             }
 
             .calendar-grid {
-                padding: 10px 8px 12px;
-                border-radius: 18px;
-                min-height: 0;
+                display: none;
+            }
+
+            .calendar-agenda {
+                display: flex !important;
+                flex-direction: column;
+                gap: 10px;
+            }
+
+            .teacher-thumb-nav {
+                display: flex !important;
+            }
+
+            #hub-mobile-top {
+                display: flex !important;
             }
 
             .weekdays {
@@ -508,6 +522,11 @@
         }
 
         @media (min-width: 768px) {
+            .calendar-agenda,
+            .teacher-thumb-nav,
+            #hub-mobile-top {
+                display: none !important;
+            }
             #hub-sidebar {
                 position: relative;
                 left: auto;
@@ -521,7 +540,76 @@
             }
         }
 
-        #hub-sidebar::before {
+        .calendar-agenda { display: none; }
+        .teacher-thumb-nav {
+            display: none;
+            position: fixed;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: 125;
+            height: calc(64px + env(safe-area-inset-bottom));
+            padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
+            background: var(--bg-secondary);
+            border-top: 1px solid var(--nova-glass-border);
+            box-shadow: 0 -8px 24px rgba(28, 20, 60, 0.08);
+            justify-content: space-around;
+            align-items: stretch;
+            gap: 4px;
+        }
+        .teacher-thumb-nav button,
+        .teacher-thumb-nav a {
+            flex: 1;
+            min-height: 48px;
+            border: 0;
+            background: transparent;
+            color: var(--text-tertiary);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 3px;
+            font-size: 10px;
+            font-weight: 800;
+            text-decoration: none;
+            border-radius: 14px;
+        }
+        .teacher-thumb-nav .is-active {
+            color: var(--nova-violet);
+            background: color-mix(in srgb, var(--nova-violet) 12%, transparent);
+        }
+        .teacher-thumb-nav i { font-size: 16px; }
+        #hub-mobile-top { display: none; }
+        .agenda-day {
+            border: 1px solid var(--nova-glass-border);
+            background: var(--bg-card);
+            border-radius: 16px;
+            overflow: hidden;
+        }
+        .agenda-day summary {
+            list-style: none;
+            min-height: 48px;
+            padding: 12px 14px;
+            font-weight: 800;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            color: var(--text-primary);
+        }
+        .agenda-day summary::-webkit-details-marker { display: none; }
+        .agenda-item {
+            width: 100%;
+            border: 0;
+            border-top: 1px solid var(--nova-glass-border);
+            background: transparent;
+            text-align: left;
+            padding: 12px 14px;
+            min-height: 48px;
+            color: var(--text-primary);
+        }
+
+        .sidebar-brand::before {
             content: '';
             position: absolute;
             top: 0;
@@ -4563,7 +4651,34 @@
 
 <div id="hub-root" x-data="teacherHub()" x-init="init()">
 
-    {{-- Móvil: overlay + barra superior con menú hamburguesa --}}
+    {{-- Móvil: barra superior ligera (navegación principal está en el pulgar) --}}
+    <header
+        id="hub-mobile-top"
+        class="fixed top-0 left-0 right-0 z-[120] items-center gap-3 border-b px-4"
+        style="height: 56px; padding-top: max(0.35rem, env(safe-area-inset-top)); border-color: var(--nova-glass-border); background: var(--bg-secondary);"
+    >
+        <span class="min-w-0 truncate text-sm font-bold" style="color: var(--text-primary);">AulaSync</span>
+        <span class="ml-auto text-[11px] font-semibold" style="color: var(--text-tertiary);" x-text="view === 'calendar' ? 'Calendario' : (view === 'course' ? 'Curso' : 'Inicio')"></span>
+    </header>
+
+    <nav class="teacher-thumb-nav" aria-label="Navegación rápida">
+        <button type="button" @click="loadWelcome()" :class="{ 'is-active': view === 'welcome' }">
+            <i class="fa-solid fa-house"></i>Inicio
+        </button>
+        <button type="button" @click="loadCalendar()" :class="{ 'is-active': view === 'calendar' }">
+            <i class="fa-solid fa-calendar-days"></i>Agenda
+        </button>
+        <button type="button" @click="sidebarOpen = true" :class="{ 'is-active': view === 'course' }">
+            <i class="fa-solid fa-book-open"></i>Cursos
+        </button>
+        <a href="{{ route('teacher.communication.index') }}">
+            <i class="fa-solid fa-comments"></i>Chat
+        </a>
+        <button type="button" @click="sidebarOpen = !sidebarOpen">
+            <i class="fa-solid fa-ellipsis"></i>Más
+        </button>
+    </nav>
+
     <div
         x-show="sidebarOpen"
         x-transition.opacity
@@ -4572,24 +4687,6 @@
         x-cloak
         aria-hidden="true"
     ></div>
-
-    <header
-        class="fixed top-0 left-0 right-0 z-[120] flex h-14 items-center gap-3 border-b px-4 md:hidden"
-        style="padding-top: max(0.5rem, env(safe-area-inset-top)); border-color: var(--nova-glass-border); background: var(--bg-secondary); backdrop-filter: blur(12px);"
-    >
-        <button
-            type="button"
-            @click="sidebarOpen = !sidebarOpen"
-            class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border transition hover:opacity-90"
-            style="border-color: var(--nova-glass-border); color: var(--text-primary); background: var(--nova-glass);"
-            :aria-expanded="sidebarOpen"
-            aria-controls="hub-sidebar"
-            aria-label="Menú de navegación"
-        >
-            <i class="fa-solid text-lg" :class="sidebarOpen ? 'fa-xmark' : 'fa-bars'"></i>
-        </button>
-        <span class="min-w-0 truncate text-sm font-bold" style="color: var(--text-primary);">AulaSync</span>
-    </header>
 
     {{-- SIDEBAR NOVA --}}
     <aside
@@ -5336,6 +5433,30 @@
                         <strong>IA activa:</strong> Di <em>"Planifica Fracciones para Matemáticas 3ro"</em> y el calendario se llenará automáticamente.
                     </p>
                 </div>
+
+                {{-- Agenda móvil (lista/acordeón). El grid pesado queda para desktop. --}}
+                <template x-if="calendarData">
+                    <div class="calendar-agenda">
+                        <template x-if="calendarAgendaDays().length === 0">
+                            <p style="color:var(--text-tertiary);font-size:14px;padding:12px 4px;">No hay entregas este mes.</p>
+                        </template>
+                        <template x-for="row in calendarAgendaDays()" :key="row.date">
+                            <details class="agenda-day" open>
+                                <summary>
+                                    <span x-text="row.label"></span>
+                                    <span style="font-size:11px;color:var(--text-tertiary);" x-text="row.items.length + ' ítem(s)'"></span>
+                                </summary>
+                                <template x-for="act in row.items" :key="act.id">
+                                    <button type="button" class="agenda-item" @click="setActivityContext(act); openActivityModal(act)">
+                                        <strong x-text="act.title"></strong>
+                                        <span style="display:block;font-size:12px;color:var(--text-tertiary);margin-top:4px;"
+                                              x-text="(act.time_label || '') + ' · ' + (act.course_name || act.grade || '')"></span>
+                                    </button>
+                                </template>
+                            </details>
+                        </template>
+                    </div>
+                </template>
 
                 {{-- Grid calendario --}}
                 <template x-if="calendarData">
@@ -6413,6 +6534,7 @@ function teacherHub() {
         dashQuery:       '',
         view:            'welcome',
         canvasLoading:   false,
+        hubUserId:       {{ (int) auth()->id() }},
         coursesLoading:  false,
         stats:           null,
         courses:         [],
@@ -6652,8 +6774,45 @@ function teacherHub() {
             }
         },
 
+        cacheKey(kind) {
+            return 'as.hub.' + kind + '.' + this.hubUserId;
+        },
+
+        hydrateFromCache() {
+            try {
+                const stats = sessionStorage.getItem(this.cacheKey('stats'));
+                if (stats) {
+                    this.stats = JSON.parse(stats);
+                    this.canvasLoading = false;
+                }
+                const courses = sessionStorage.getItem(this.cacheKey('courses'));
+                if (courses) {
+                    this.courses = JSON.parse(courses);
+                    this.coursesLoading = false;
+                }
+            } catch (e) {}
+            try { sessionStorage.removeItem('as.login.optimistic'); } catch (e) {}
+        },
+
+        persistCache(kind, payload) {
+            try {
+                sessionStorage.setItem(this.cacheKey(kind), JSON.stringify(payload));
+            } catch (e) {}
+        },
+
+        calendarAgendaDays() {
+            const byDay = this.calendarData?.activities_by_day || {};
+            return Object.keys(byDay).sort().map((date) => {
+                const items = byDay[date] || [];
+                const parsed = new Date(date + 'T12:00:00');
+                const label = Number.isNaN(parsed.getTime())
+                    ? date
+                    : parsed.toLocaleDateString('es-VE', { weekday: 'short', day: 'numeric', month: 'short' });
+                return { date, label, items };
+            }).filter((row) => row.items.length > 0);
+        },
+
         async init() {
-            // Initialize theme state
             this.isDarkMode = document.documentElement.classList.contains('dark');
             this.currentThemeId = document.documentElement.getAttribute('data-theme') || 'light';
             window.addEventListener('aula-theme-changed', (event) => {
@@ -6665,16 +6824,16 @@ function teacherHub() {
             const targetActivityId = Number(params.get('activity') || 0);
             const openActivityId = Number(params.get('open_activity') || 0);
             const requestedView = params.get('view');
+            this.hydrateFromCache();
 
-            await this.refreshCourseSidebar();
-
+            const sidebarPromise = this.refreshCourseSidebar();
             const urlCourse = {{ $initialCourseId ?? 'null' }};
             const deepLinkActivityId = openActivityId > 0 ? openActivityId : (shouldOpenGrades ? 0 : targetActivityId);
 
             if (this.planBlockFilter || requestedView === 'calendar') {
-                await this.loadCalendar();
+                await Promise.all([sidebarPromise, this.loadCalendar()]);
             } else if (urlCourse) {
-                await this.loadCourse(urlCourse);
+                await Promise.all([sidebarPromise, this.loadCourse(urlCourse)]);
                 if (shouldOpenGrades && this.courseData?.activities?.length) {
                     let targetActivity = null;
                     if (targetActivityId > 0) {
@@ -6688,7 +6847,7 @@ function teacherHub() {
                     }
                 }
             } else {
-                await this.loadWelcome();
+                await Promise.all([sidebarPromise, this.loadWelcome()]);
             }
 
             // Deep-link: abrir modal de clase desde notificación (?open_activity=ID)
@@ -6756,7 +6915,7 @@ function teacherHub() {
             this.view          = 'welcome';
             this.courseData    = null;
             this.currentCourseId = null;
-            this.canvasLoading = true;
+            if (!this.stats) this.canvasLoading = true;
             this.setNovaContext(null);
 
             try {
@@ -6764,6 +6923,7 @@ function teacherHub() {
                     headers: { 'Accept': 'application/json' }
                 });
                 this.stats = await res.json();
+                this.persistCache('stats', this.stats);
             } catch (e) {
                 console.warn('Stats fetch failed', e);
             } finally {
@@ -8905,12 +9065,13 @@ function teacherHub() {
         },
 
         async refreshCourseSidebar() {
-            this.coursesLoading = true;
+            if (!this.courses.length) this.coursesLoading = true;
             try {
                 const res    = await fetch('{{ route('teacher.api.courses') }}', {
                     headers: { 'Accept': 'application/json' }
                 });
                 this.courses = await res.json();
+                this.persistCache('courses', this.courses);
             } catch (e) {
                 console.warn('Courses sidebar fetch failed', e);
             } finally {

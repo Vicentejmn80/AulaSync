@@ -1,0 +1,85 @@
+<?php
+
+namespace Tests\Feature;
+
+use App\Models\Colegio;
+use App\Models\User;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\TestCase;
+
+class TeacherHubPerformanceUxTest extends TestCase
+{
+    use RefreshDatabase;
+
+    public function test_landing_prefetches_login_for_faster_navigation(): void
+    {
+        $response = $this->get('/');
+
+        $response->assertOk();
+        $response->assertSee('rel="prefetch"', false);
+        $response->assertSee('/login', false);
+        $response->assertHeader('Link');
+        $this->assertStringContainsString('/login', (string) $response->headers->get('Link'));
+        $this->assertStringContainsString('rel=prefetch', (string) $response->headers->get('Link'));
+    }
+
+    public function test_login_shows_optimistic_skeleton_and_touch_targets(): void
+    {
+        $response = $this->get('/login');
+
+        $response->assertOk();
+        $response->assertSee('id="login-skeleton"', false);
+        $response->assertSee('as.login.optimistic', false);
+        $response->assertSee('autocomplete="username"', false);
+        $response->assertSee('inputmode="email"', false);
+        $response->assertSee('min-height: 48px', false);
+        $response->assertSee('overflow-x: hidden', false);
+    }
+
+    public function test_teacher_login_marks_invite_claim_so_hub_skips_duplicate_work(): void
+    {
+        $user = User::factory()->create([
+            'role' => 'profesor',
+            'onboarding_completed' => true,
+        ]);
+
+        $response = $this->post('/login', [
+            'email' => $user->email,
+            'password' => 'password',
+        ]);
+
+        $response->assertRedirect('/teacher/hub');
+        $this->assertTrue(session('teacher.hub.claimed'));
+    }
+
+    public function test_teacher_hub_is_mobile_first_and_bootstraps_once_per_session(): void
+    {
+        $colegio = Colegio::create([
+            'name' => 'Colegio Móvil',
+            'invite_code' => 'MOV-2001',
+            'codes_pin' => Colegio::hashPinFromInvite('MOV-2001'),
+        ]);
+
+        $teacher = User::factory()->create([
+            'role' => 'profesor',
+            'colegio_id' => $colegio->id,
+            'onboarding_completed' => true,
+        ]);
+
+        $first = $this->actingAs($teacher)->get('/teacher/hub');
+
+        $first->assertOk();
+        $first->assertSee('teacher-thumb-nav', false);
+        $first->assertSee('calendar-agenda', false);
+        $first->assertSee('hydrateFromCache()', false);
+        $first->assertSee('Promise.all([sidebarPromise', false);
+        $first->assertSee('overflow-x: hidden', false);
+        $first->assertHeader('Cache-Control');
+        $this->assertStringContainsString('private', strtolower((string) $first->headers->get('Cache-Control')));
+        $this->assertTrue(session('teacher.hub.bootstrapped'));
+
+        $second = $this->actingAs($teacher)->get('/teacher/hub');
+        $second->assertOk();
+        $this->assertTrue(session('teacher.hub.bootstrapped'));
+    }
+}

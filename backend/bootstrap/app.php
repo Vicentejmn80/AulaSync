@@ -15,6 +15,7 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $middleware->web(append: [
             \App\Http\Middleware\PreventAuthPageCache::class,
+            \App\Http\Middleware\PrefetchHotRoutes::class,
         ]);
 
         $middleware->alias([

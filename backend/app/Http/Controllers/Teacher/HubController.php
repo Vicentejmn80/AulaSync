@@ -42,10 +42,16 @@ class HubController extends Controller
         $teacher = auth()->user();
         $teacher->loadMissing('settings');
 
-        // Reclama invitaciones DOC- pendientes (p.ej. si el onboarding no vinculó cursos)
-        $this->inviteClaim->claimForUser($teacher->fresh());
-        $teacher->refresh();
-        $this->enrollment->syncTeacherCourses($teacher);
+        // Claim + sync son caros: una vez por sesión. El login ya puede haber reclamado.
+        if (! $request->session()->get('teacher.hub.bootstrapped')) {
+            if (! $request->session()->get('teacher.hub.claimed')) {
+                $this->inviteClaim->claimForUser($teacher->fresh());
+                $teacher->refresh();
+            }
+            $this->enrollment->syncTeacherCourses($teacher);
+            $request->session()->put('teacher.hub.bootstrapped', true);
+            $request->session()->put('teacher.hub.claimed', true);
+        }
 
         $quotes = [
             'La educación es el arma más poderosa que puedes usar para cambiar el mundo. — Nelson Mandela',
