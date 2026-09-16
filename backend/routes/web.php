@@ -107,6 +107,12 @@ Route::middleware('auth')->group(function () {
             ->group(function () {
                 Route::get('/dashboard', [DirectorDashboardController::class, 'index'])
                     ->name('dashboard');
+                Route::get('/api/dashboard/at-risk', [DirectorDashboardController::class, 'atRiskStudents'])
+                    ->name('api.dashboard.at-risk');
+                Route::get('/api/dashboard/pending-grades', [DirectorDashboardController::class, 'pendingGrades'])
+                    ->name('api.dashboard.pending-grades');
+                Route::get('/api/dashboard/school-health', [DirectorDashboardController::class, 'schoolHealth'])
+                    ->name('api.dashboard.school-health');
                 Route::get('/gestion', [DirectorManagementHubController::class, 'index'])
                     ->name('gestion');
                 Route::get('/gestion/snapshot', [DirectorManagementHubController::class, 'snapshot'])

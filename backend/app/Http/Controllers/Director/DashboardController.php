@@ -11,8 +11,10 @@ use App\Models\Planificacion;
 use App\Models\Student;
 use App\Models\TeacherInvite;
 use App\Models\User;
+use App\Services\DirectorAnalyticsQueryService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\View\View;
 
@@ -21,10 +23,16 @@ class DashboardController extends Controller
     private const WEIGHTED_AVERAGE_SQL = '
         CASE
             WHEN SUM(activities.max_score * activities.weight_percentage) > 0
-            THEN SUM(grades.score * activities.weight_percentage) / SUM(activities.max_score * activities.weight_percentage) * 100
-            ELSE AVG((grades.score / activities.max_score) * 100)
+            THEN SUM(grades.score * activities.weight_percentage) * 100.0 / SUM(activities.max_score * activities.weight_percentage)
+            ELSE AVG((grades.score * 100.0) / NULLIF(activities.max_score, 0))
         END
     ';
+
+    private const AT_RISK_THRESHOLD = 60;
+
+    public function __construct(private DirectorAnalyticsQueryService $analytics)
+    {
+    }
 
     public function index(Request $request): View
     {
@@ -61,26 +69,7 @@ class DashboardController extends Controller
         $globalAverage = $globalAverageQuery
             ->value('avg_pct');
 
-        $atRiskStudentsQuery = Grade::query()
-            ->join('activities', 'grades.activity_id', '=', 'activities.id')
-            ->join('students', 'grades.student_id', '=', 'students.id')
-            ->join('courses', 'activities.course_id', '=', 'courses.id')
-            ->where('activities.max_score', '>', 0)
-            ->where('activities.colegio_id', $colegioId)
-            ->where('courses.colegio_id', $colegioId)
-            ->where('students.colegio_id', $colegioId)
-            ->where('grades.colegio_id', $colegioId)
-            ->groupBy('students.id', 'students.name')
-            ->selectRaw('
-                students.id,
-                students.name,
-                ' . self::WEIGHTED_AVERAGE_SQL . ' as avg_pct
-            ')
-            ->havingRaw('(' . self::WEIGHTED_AVERAGE_SQL . ') < 60');
-        $this->onlyPublishedGrades($atRiskStudentsQuery);
-        $atRiskStudents = $atRiskStudentsQuery
-            ->get()
-            ->count();
+        $atRiskStudents = $this->atRiskStudentsQuery($colegioId)->get()->count();
 
         $teacherCount = User::where('role', 'profesor')
             ->where('colegio_id', $colegioId)
@@ -95,32 +84,42 @@ class DashboardController extends Controller
 
         $kpis = [
             [
+                'id' => 'enrollment',
                 'label' => 'Matrícula Total',
                 'value' => number_format($totalStudents),
                 'hint' => 'Alumnos registrados en la institución',
                 'icon' => 'fa-users',
                 'accent' => 'from-cyan-400 to-blue-500',
+                'action' => null,
             ],
             [
+                'id' => 'average',
                 'label' => 'Promedio Global',
                 'value' => $globalAverage !== null ? round((float) $globalAverage, 1) . '%' : '—',
                 'hint' => 'Promedio ponderado sobre registros de notas',
                 'icon' => 'fa-chart-line',
                 'accent' => 'from-violet-400 to-fuchsia-500',
+                'action' => null,
             ],
             [
+                'id' => 'compliance',
                 'label' => 'Cumplimiento Docente',
                 'value' => $teacherCompliance . '%',
                 'hint' => $teachersWithPendingGrades . ' docentes con actividades pendientes',
                 'icon' => 'fa-clipboard-check',
                 'accent' => 'from-emerald-400 to-cyan-500',
+                'action' => 'pending',
+                'action_label' => 'Ver docentes pendientes',
             ],
             [
+                'id' => 'at-risk',
                 'label' => 'Riesgo Académico',
                 'value' => number_format($atRiskStudents),
                 'hint' => 'Alumnos con promedio menor a 60%',
                 'icon' => 'fa-triangle-exclamation',
                 'accent' => 'from-amber-400 to-rose-500',
+                'action' => 'at-risk',
+                'action_label' => 'Ver alumnos en riesgo',
             ],
         ];
 
@@ -320,7 +319,113 @@ class DashboardController extends Controller
         return view('director.profesores', compact('teachers'));
     }
 
+    public function atRiskStudents(Request $request): JsonResponse
+    {
+        $colegioId = (int) $request->user()->colegio_id;
+        $rows = $this->atRiskStudentsQuery($colegioId)->limit(40)->get();
+
+        return response()->json([
+            'ok' => true,
+            'threshold' => self::AT_RISK_THRESHOLD,
+            'count' => $rows->count(),
+            'students' => $rows->map(fn ($row) => [
+                'id' => (int) $row->id,
+                'name' => $row->name,
+                'grade' => $row->grade,
+                'section' => $row->section,
+                'average' => round((float) $row->avg_pct, 1),
+            ])->values(),
+        ]);
+    }
+
+    public function pendingGrades(Request $request): JsonResponse
+    {
+        $rows = $this->pendingGradeActivities((int) $request->user()->colegio_id);
+
+        $teachers = $rows->groupBy('teacher_id')->map(function (Collection $activities) {
+            $first = $activities->first();
+            $courses = $activities
+                ->unique('course_id')
+                ->map(fn ($row) => [
+                    'course_id' => (int) $row->course_id,
+                    'subject_name' => $row->subject_name,
+                    'grade' => $row->grade,
+                    'section' => $row->section,
+                    'label' => trim($row->subject_name.' '.$row->grade.($row->section ? ' / '.$row->section : '')),
+                    'missing_count' => (int) $activities->where('course_id', $row->course_id)->sum('missing_count'),
+                ])
+                ->values();
+
+            return [
+                'teacher_id' => (int) $first->teacher_id,
+                'teacher_name' => $first->teacher_name,
+                'missing_count' => (int) $activities->sum('missing_count'),
+                'activity_count' => $activities->count(),
+                'courses' => $courses,
+                'activities' => $activities->map(fn ($row) => [
+                    'activity_id' => (int) $row->activity_id,
+                    'title' => $row->activity_title,
+                    'course' => trim($row->subject_name.' '.$row->grade.($row->section ? ' / '.$row->section : '')),
+                    'missing_count' => (int) $row->missing_count,
+                ])->values(),
+            ];
+        })->values();
+
+        return response()->json([
+            'ok' => true,
+            'count' => $teachers->count(),
+            'teachers' => $teachers,
+        ]);
+    }
+
+    public function schoolHealth(Request $request): JsonResponse
+    {
+        $health = $this->analytics->getSchoolHealth((int) $request->user()->colegio_id);
+
+        return response()->json([
+            'ok' => true,
+            'message' => $health['message'] ?? '',
+            'data' => $health['data'] ?? [],
+            'generated_at' => now()->toIso8601String(),
+        ]);
+    }
+
+    private function atRiskStudentsQuery(int $colegioId)
+    {
+        $query = Grade::query()
+            ->join('activities', 'grades.activity_id', '=', 'activities.id')
+            ->join('students', 'grades.student_id', '=', 'students.id')
+            ->join('courses', 'activities.course_id', '=', 'courses.id')
+            ->where('activities.max_score', '>', 0)
+            ->where('activities.colegio_id', $colegioId)
+            ->where('courses.colegio_id', $colegioId)
+            ->where('students.colegio_id', $colegioId)
+            ->where('grades.colegio_id', $colegioId)
+            ->groupBy('students.id', 'students.name', 'students.grade', 'students.section')
+            ->selectRaw('
+                students.id,
+                students.name,
+                students.grade,
+                students.section,
+                ' . self::WEIGHTED_AVERAGE_SQL . ' as avg_pct
+            ')
+            ->havingRaw('(' . self::WEIGHTED_AVERAGE_SQL . ') < ?', [self::AT_RISK_THRESHOLD])
+            ->orderBy('avg_pct');
+
+        $this->onlyPublishedGrades($query);
+
+        return $query;
+    }
+
     private function teachersWithPendingGrades(int $colegioId): int
+    {
+        return $this->pendingGradeActivities($colegioId)
+            ->pluck('teacher_id')
+            ->unique()
+            ->count();
+    }
+
+    private function pendingGradeActivities(int $colegioId): Collection
     {
         return Activity::query()
             ->where('activities.type', '!=', 'clase')
@@ -328,18 +433,41 @@ class DashboardController extends Controller
             ->where('activities.weight_percentage', '>', 0)
             ->join('courses', 'activities.course_id', '=', 'courses.id')
             ->where('courses.colegio_id', $colegioId)
+            ->join('users as teachers', 'activities.teacher_id', '=', 'teachers.id')
+            ->where('teachers.role', 'profesor')
+            ->where('teachers.colegio_id', $colegioId)
             ->leftJoin('course_student', 'courses.id', '=', 'course_student.course_id')
             ->leftJoin('grades', function ($join) {
                 $join->on('grades.activity_id', '=', 'activities.id')
                     ->on('grades.student_id', '=', 'course_student.student_id');
             })
-            ->groupBy('activities.teacher_id', 'activities.id')
+            ->groupBy(
+                'activities.id',
+                'activities.teacher_id',
+                'activities.title',
+                'teachers.name',
+                'courses.id',
+                'courses.subject_name',
+                'courses.grade',
+                'courses.section'
+            )
             ->havingRaw('COUNT(course_student.student_id) > COUNT(grades.id)')
-            ->select('activities.teacher_id')
-            ->get()
-            ->pluck('teacher_id')
-            ->unique()
-            ->count();
+            ->orderBy('teachers.name')
+            ->orderBy('courses.subject_name')
+            ->selectRaw('
+                activities.id as activity_id,
+                activities.teacher_id,
+                activities.title as activity_title,
+                teachers.name as teacher_name,
+                courses.id as course_id,
+                courses.subject_name,
+                courses.grade,
+                courses.section,
+                COUNT(course_student.student_id) as enrolled,
+                COUNT(grades.id) as graded,
+                COUNT(course_student.student_id) - COUNT(grades.id) as missing_count
+            ')
+            ->get();
     }
 
     private function gradePerformance(int $colegioId): array

@@ -84,6 +84,15 @@
         :root:not(.dark) .director-setup-step-pending {
             background: rgba(255, 255, 255, 0.72);
         }
+        .kpi-action { cursor: pointer; text-align: left; width: 100%; }
+        .kpi-action:focus-visible { outline: 2px solid rgba(34, 211, 238, 0.7); outline-offset: 3px; }
+        .director-insight-modal { background: linear-gradient(145deg, rgba(15,23,42,.96), rgba(15,23,42,.9)); }
+        :root:not(.dark) .director-insight-modal {
+            background: var(--bg-card);
+            border-color: var(--nova-glass-border);
+            color: var(--text-primary);
+        }
+        .health-line { white-space: pre-line; }
         :root:not(.dark) .border-rose-400\/30 { border-color: rgba(225, 29, 72, 0.35); }
         :root:not(.dark) .border-rose-400\/40 { border-color: rgba(225, 29, 72, 0.45); }
         :root:not(.dark) .border-violet-400\/30 { border-color: rgba(139, 92, 246, 0.35); }
@@ -170,7 +179,7 @@
         <div class="executive-grid absolute inset-0 opacity-40"></div>
     </div>
 
-    <main class="director-dash-main mx-auto max-w-7xl px-5 py-6 lg:px-8">
+    <main class="director-dash-main mx-auto max-w-7xl px-5 py-6 lg:px-8" x-data="directorDashboardInsights()">
         <header class="director-dash-header mb-6 flex flex-col gap-4 overflow-visible rounded-[2rem] border border-white/10 bg-white/[.045] p-5 shadow-2xl shadow-black/20 backdrop-blur-2xl" style="position:relative;z-index:100">
             <div class="flex items-start justify-between gap-3">
                 <div class="flex min-w-0 items-center gap-3">
@@ -210,6 +219,13 @@
                     <i class="fa-solid fa-scale-balanced mr-2 text-cyan-300"></i>Planes
                 </a>
             </nav>
+            <div class="flex flex-wrap items-center gap-2">
+                <button type="button" @click="open('health')"
+                        class="inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-violet-500 to-cyan-400 px-4 py-2.5 text-sm font-black text-white shadow-lg shadow-cyan-500/20 transition hover:opacity-90">
+                    <i class="fa-solid fa-wand-magic-sparkles"></i>
+                    Generar Resumen de Hoy
+                </button>
+            </div>
         </header>
 
         @if($needsSetup || session('director_setup') || request()->boolean('setup'))
@@ -299,17 +315,35 @@
 
         <section class="mb-8 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             @foreach($kpis as $kpi)
-                <article class="glass-card group rounded-[1.75rem] p-5 transition duration-300 hover:-translate-y-1">
+                @if(!empty($kpi['action']))
+                    <button type="button" @click="open('{{ $kpi['action'] }}')"
+                            class="kpi-action glass-card group rounded-[1.75rem] p-5 transition duration-300 hover:-translate-y-1">
+                @else
+                    <article class="glass-card group rounded-[1.75rem] p-5 transition duration-300 hover:-translate-y-1">
+                @endif
                     <div class="mb-5 flex items-center justify-between">
                         <div class="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br {{ $kpi['accent'] }} shadow-lg shadow-black/20">
                             <i class="fa-solid {{ $kpi['icon'] }} text-white"></i>
                         </div>
-                        <span class="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-slate-300">Live</span>
+                        @if(!empty($kpi['action']))
+                            <span class="rounded-full border border-cyan-400/30 bg-cyan-400/10 px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-cyan-200">Ver lista</span>
+                        @else
+                            <span class="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-slate-300">Live</span>
+                        @endif
                     </div>
                     <p class="text-sm font-semibold text-slate-400">{{ $kpi['label'] }}</p>
                     <p class="mt-2 text-3xl font-black tracking-tight text-white sm:text-4xl">{{ $kpi['value'] }}</p>
                     <p class="mt-3 text-xs leading-5 text-slate-400">{{ $kpi['hint'] }}</p>
-                </article>
+                    @if(!empty($kpi['action_label']))
+                        <p class="mt-3 text-[11px] font-bold uppercase tracking-wide text-cyan-300">
+                            {{ $kpi['action_label'] }} <i class="fa-solid fa-arrow-right ml-1 text-[10px]"></i>
+                        </p>
+                    @endif
+                @if(!empty($kpi['action']))
+                    </button>
+                @else
+                    </article>
+                @endif
             @endforeach
         </section>
 
@@ -407,10 +441,11 @@
                 <p class="text-xs font-bold uppercase tracking-[.25em] text-violet-200">Management Brief</p>
                 <h2 class="mt-2 text-xl font-black text-white">Lectura ejecutiva</h2>
                 <div class="mt-5 grid gap-3 md:grid-cols-3">
-                    <div class="rounded-2xl border border-white/10 bg-white/[.045] p-4">
+                    <button type="button" @click="open('pending')" class="kpi-action rounded-2xl border border-white/10 bg-white/[.045] p-4 text-left transition hover:bg-white/10">
                         <p class="text-3xl font-black text-cyan-200">{{ $teachersWithPendingGrades }}</p>
                         <p class="mt-1 text-sm text-slate-400">docentes con pendientes por calificar</p>
-                    </div>
+                        <p class="mt-2 text-[11px] font-bold uppercase tracking-wide text-cyan-300">Ver lista <i class="fa-solid fa-arrow-right ml-1 text-[10px]"></i></p>
+                    </button>
                     <div class="rounded-2xl border border-white/10 bg-white/[.045] p-4">
                         <p class="text-3xl font-black text-violet-200">{{ count($lowPerformingRooms) }}</p>
                         <p class="mt-1 text-sm text-slate-400">salones requieren seguimiento</p>
@@ -666,6 +701,97 @@
                 </a>
             </div>
         </section>
+
+        <div x-show="panel" x-cloak x-transition.opacity class="fixed inset-0 z-[80] flex items-end justify-center bg-black/55 p-4 sm:items-center" @keydown.escape.window="close()">
+            <div class="absolute inset-0" @click="close()"></div>
+            <section class="director-insight-modal relative z-10 max-h-[86vh] w-full max-w-2xl overflow-hidden rounded-[2rem] border border-white/15 shadow-2xl" @click.stop>
+                <header class="flex items-start justify-between gap-3 border-b border-white/10 px-5 py-4">
+                    <div>
+                        <p class="text-[11px] font-bold uppercase tracking-[.25em] text-cyan-300" x-text="panelMeta.kicker"></p>
+                        <h2 class="mt-1 text-xl font-black text-white" x-text="panelMeta.title"></h2>
+                        <p class="mt-1 text-sm text-slate-400" x-text="panelMeta.subtitle"></p>
+                    </div>
+                    <button type="button" @click="close()" class="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 text-slate-300 transition hover:bg-white/10" aria-label="Cerrar">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </header>
+                <div class="max-h-[68vh] overflow-y-auto px-5 py-4">
+                    <div x-show="loading" class="flex items-center gap-3 py-10 text-slate-300">
+                        <i class="fa-solid fa-spinner fa-spin text-cyan-300"></i>
+                        <span>Cargando datos del colegio…</span>
+                    </div>
+                    <p x-show="!loading && error" class="rounded-2xl border border-rose-400/30 bg-rose-400/10 p-4 text-sm text-rose-200" x-text="error"></p>
+
+                    <div x-show="!loading && !error && panel === 'at-risk'">
+                        <template x-if="atRisk.length === 0">
+                            <p class="rounded-2xl border border-white/10 bg-white/[.045] p-5 text-sm text-slate-300">Ningún alumno está por debajo de 60% con las notas publicadas.</p>
+                        </template>
+                        <div class="space-y-2">
+                            <template x-for="student in atRisk" :key="student.id">
+                                <div class="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[.045] px-4 py-3">
+                                    <div class="min-w-0">
+                                        <p class="truncate font-bold text-white" x-text="student.name"></p>
+                                        <p class="text-xs text-slate-400" x-text="[student.grade, student.section].filter(Boolean).join(' / ')"></p>
+                                    </div>
+                                    <span class="rounded-full border border-amber-300/30 bg-amber-400/10 px-3 py-1 text-sm font-black text-amber-200" x-text="student.average.toFixed(1) + '%'"></span>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+
+                    <div x-show="!loading && !error && panel === 'pending'">
+                        <template x-if="pending.length === 0">
+                            <p class="rounded-2xl border border-white/10 bg-white/[.045] p-5 text-sm text-slate-300">Todos los docentes tienen las actividades evaluables calificadas.</p>
+                        </template>
+                        <div class="space-y-3">
+                            <template x-for="teacher in pending" :key="teacher.teacher_id">
+                                <div class="rounded-2xl border border-white/10 bg-white/[.045] p-4">
+                                    <div class="flex items-start justify-between gap-3">
+                                        <p class="font-bold text-white" x-text="teacher.teacher_name"></p>
+                                        <span class="rounded-full border border-cyan-400/30 bg-cyan-400/10 px-3 py-1 text-[11px] font-bold text-cyan-200" x-text="teacher.missing_count + ' sin nota'"></span>
+                                    </div>
+                                    <div class="mt-3 space-y-1.5">
+                                        <template x-for="course in teacher.courses" :key="course.course_id">
+                                            <p class="text-sm text-slate-300">
+                                                <i class="fa-solid fa-book-open mr-1.5 text-xs text-cyan-300"></i>
+                                                <span x-text="course.label"></span>
+                                                <span class="text-xs text-slate-500" x-text="' · ' + course.missing_count + ' pendiente(s)'"></span>
+                                            </p>
+                                        </template>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+
+                    <div x-show="!loading && !error && panel === 'health'">
+                        <div class="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                            <div class="rounded-2xl border border-white/10 bg-white/[.045] p-3">
+                                <p class="text-[11px] font-bold uppercase tracking-wide text-slate-400">Promedio</p>
+                                <p class="mt-1 text-xl font-black text-white" x-text="health?.average_grades != null ? health.average_grades + '%' : '—'"></p>
+                            </div>
+                            <div class="rounded-2xl border border-white/10 bg-white/[.045] p-3">
+                                <p class="text-[11px] font-bold uppercase tracking-wide text-slate-400">Asistencia</p>
+                                <p class="mt-1 text-xl font-black text-white" x-text="health?.attendance != null ? health.attendance + '%' : '—'"></p>
+                            </div>
+                            <div class="rounded-2xl border border-white/10 bg-white/[.045] p-3">
+                                <p class="text-[11px] font-bold uppercase tracking-wide text-slate-400">En riesgo</p>
+                                <p class="mt-1 text-xl font-black text-amber-200" x-text="health?.at_risk_count ?? 0"></p>
+                            </div>
+                            <div class="rounded-2xl border border-white/10 bg-white/[.045] p-3">
+                                <p class="text-[11px] font-bold uppercase tracking-wide text-slate-400">Tendencia</p>
+                                <p class="mt-1 text-xl font-black text-white" x-text="healthTrendLabel()"></p>
+                            </div>
+                        </div>
+                        <p class="health-line rounded-2xl border border-white/10 bg-white/[.045] p-4 text-sm leading-6 text-slate-200" x-text="healthMessage"></p>
+                        <div class="mt-3 grid gap-2 text-sm text-slate-300" x-show="health?.best_course || health?.worst_course">
+                            <p x-show="health?.best_course"><span class="font-semibold text-emerald-300">Mejor curso:</span> <span x-text="health?.best_course"></span></p>
+                            <p x-show="health?.worst_course"><span class="font-semibold text-amber-200">Requiere seguimiento:</span> <span x-text="health?.worst_course"></span></p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </div>
     </main>
 
     <script>
@@ -689,6 +815,79 @@
                 },
             };
         }
+        window.directorDashboardInsights = function directorDashboardInsights() {
+            const endpoints = {
+                'at-risk': @json(route('director.api.dashboard.at-risk')),
+                pending: @json(route('director.api.dashboard.pending-grades')),
+                health: @json(route('director.api.dashboard.school-health')),
+            };
+            const meta = {
+                'at-risk': {
+                    kicker: 'Riesgo académico',
+                    title: 'Alumnos en riesgo',
+                    subtitle: 'Promedio ponderado menor a 60% con notas publicadas.',
+                },
+                pending: {
+                    kicker: 'Cumplimiento docente',
+                    title: 'Calificaciones pendientes',
+                    subtitle: 'Actividades evaluables sin nota para alumnos matriculados.',
+                },
+                health: {
+                    kicker: 'Resumen diario IA',
+                    title: 'Salud escolar de hoy',
+                    subtitle: 'Asistencia, rendimiento y alertas prioritarias del colegio.',
+                },
+            };
+
+            return {
+                panel: null,
+                loading: false,
+                error: null,
+                atRisk: [],
+                pending: [],
+                health: null,
+                healthMessage: '',
+                get panelMeta() {
+                    return meta[this.panel] || { kicker: '', title: '', subtitle: '' };
+                },
+                healthTrendLabel() {
+                    if (!this.health) return '—';
+                    const dir = this.health.trend_direction;
+                    if (this.health.trend == null) {
+                        return dir === 'down' ? 'Baja' : (dir === 'up' ? 'Alza' : 'Estable');
+                    }
+                    const sign = this.health.trend > 0 ? '+' : '';
+                    return sign + this.health.trend + ' pts';
+                },
+                close() {
+                    this.panel = null;
+                    this.loading = false;
+                    this.error = null;
+                },
+                async open(kind) {
+                    this.panel = kind;
+                    this.error = null;
+                    this.loading = true;
+                    try {
+                        const res = await fetch(endpoints[kind], { headers: { 'Accept': 'application/json' } });
+                        const data = await res.json();
+                        if (!res.ok || data.ok === false) {
+                            throw new Error(data.message || data.error || 'No se pudo cargar el resumen.');
+                        }
+                        if (kind === 'at-risk') this.atRisk = data.students || [];
+                        if (kind === 'pending') this.pending = data.teachers || [];
+                        if (kind === 'health') {
+                            this.health = data.data || {};
+                            this.healthMessage = data.message || '';
+                        }
+                    } catch (e) {
+                        this.error = e.message || 'Ocurrió un error al consultar los datos.';
+                    } finally {
+                        this.loading = false;
+                    }
+                },
+            };
+        };
         window.novaContext = window.novaContext || {
             type: 'director_school',
             screen: 'dashboard',
