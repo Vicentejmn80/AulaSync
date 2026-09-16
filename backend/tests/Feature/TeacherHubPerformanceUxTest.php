@@ -33,7 +33,6 @@ class TeacherHubPerformanceUxTest extends TestCase
         $response->assertSee('autocomplete="username"', false);
         $response->assertSee('inputmode="email"', false);
         $response->assertSee('min-height: 48px', false);
-        $response->assertSee('overflow-x: hidden', false);
     }
 
     public function test_teacher_login_marks_invite_claim_so_hub_skips_duplicate_work(): void
@@ -52,7 +51,7 @@ class TeacherHubPerformanceUxTest extends TestCase
         $this->assertTrue(session('teacher.hub.claimed'));
     }
 
-    public function test_teacher_hub_is_mobile_first_and_bootstraps_once_per_session(): void
+    public function test_teacher_hub_keeps_web_visuals_and_scrolls_on_mobile(): void
     {
         $colegio = Colegio::create([
             'name' => 'Colegio Móvil',
@@ -69,11 +68,14 @@ class TeacherHubPerformanceUxTest extends TestCase
         $first = $this->actingAs($teacher)->get('/teacher/hub');
 
         $first->assertOk();
-        $first->assertSee('teacher-thumb-nav', false);
-        $first->assertSee('calendar-agenda', false);
+        $first->assertSee('fa-bars', false);
+        $first->assertSee('calendar-grid', false);
+        $first->assertSee('Menú de navegación', false);
+        $first->assertDontSee('teacher-thumb-nav', false);
+        $first->assertDontSee('calendar-agenda', false);
         $first->assertSee('hydrateFromCache()', false);
         $first->assertSee('Promise.all([sidebarPromise', false);
-        $first->assertSee('overflow-x: hidden', false);
+        $first->assertSee('overflow-x: auto', false);
         $first->assertHeader('Cache-Control');
         $this->assertStringContainsString('private', strtolower((string) $first->headers->get('Cache-Control')));
         $this->assertTrue(session('teacher.hub.bootstrapped'));
