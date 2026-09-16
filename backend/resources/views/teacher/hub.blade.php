@@ -380,8 +380,6 @@
             .calendar-grid,
             .calendar-header,
             .calendar-nav,
-            .dash-header,
-            .dash-toolbar,
             .dash-stat-strip,
             .ai-command-card,
             .ai-hint-cal {
@@ -476,9 +474,81 @@
                 overflow: auto;
             }
 
-            .dash-greeting { font-size: 22px; }
-            .dash-toolbar { width: auto; min-width: max-content; }
-            .dash-search { min-width: 220px; flex: 0 0 auto; }
+            .dash-header {
+                flex-direction: column;
+                align-items: stretch;
+                overflow: visible;
+                gap: 14px;
+            }
+
+            .dash-header-main {
+                width: 100%;
+                min-width: 0;
+                flex: 1 1 auto;
+            }
+
+            .dash-greeting {
+                font-size: clamp(1.35rem, 6.5vw, 1.75rem);
+                white-space: normal;
+                word-break: normal;
+                overflow-wrap: break-word;
+            }
+
+            .dash-subtitle {
+                max-width: none;
+            }
+
+            .dash-toolbar {
+                width: 100%;
+                min-width: 0;
+                justify-content: flex-start;
+                flex-wrap: wrap;
+                overflow-x: auto;
+            }
+
+            .dash-search { min-width: 0; flex: 1 1 180px; max-width: 100%; }
+
+            .next-activity-box {
+                overflow: hidden;
+            }
+
+            .next-activity-main {
+                display: flex;
+                flex-direction: column;
+                align-items: stretch;
+                gap: 10px;
+                min-width: 0;
+                width: 100%;
+                overflow: visible;
+            }
+
+            .next-activity-time-wrap {
+                display: flex;
+                align-items: baseline;
+                gap: 10px;
+                min-width: 0;
+            }
+
+            .next-activity-copy {
+                min-width: 0;
+                width: 100%;
+            }
+
+            .next-activity-copy h2 {
+                font-size: 17px;
+                overflow-wrap: anywhere;
+                word-break: normal;
+            }
+
+            .next-activity-type {
+                align-self: flex-start;
+            }
+
+            .next-activity-queue-item {
+                grid-template-columns: minmax(64px, auto) minmax(0, 1fr) auto;
+                min-width: 0;
+                width: 100%;
+            }
             .modal-overlay { padding: 16px; align-items: center; }
             .modal-nova {
                 max-width: 100%;
@@ -1099,6 +1169,11 @@
             flex-wrap: wrap;
         }
 
+        .dash-header-main {
+            flex: 1 1 auto;
+            min-width: 0;
+        }
+
         .dash-eyebrow {
             display: flex;
             align-items: center;
@@ -1438,12 +1513,15 @@
 
         .next-activity-box {
             width: 100%;
+            max-width: 100%;
             border: 1px solid var(--nova-glass-border);
             border-left: 6px solid var(--next-accent, #7C3AED);
             border-radius: 22px;
             padding: 6px;
             margin-bottom: 16px;
             color: inherit;
+            overflow: hidden;
+            box-sizing: border-box;
             background:
                 linear-gradient(135deg, color-mix(in srgb, var(--next-accent, #7C3AED) 16%, var(--bg-card)), var(--bg-card));
             box-shadow: 0 16px 32px -22px var(--next-accent, rgba(124, 58, 237, 0.6));
@@ -1456,12 +1534,14 @@
 
         .next-activity-toggle {
             width: 100%;
+            max-width: 100%;
             border: 0;
             background: transparent;
             padding: 14px 16px;
             text-align: left;
             cursor: pointer;
             color: inherit;
+            box-sizing: border-box;
         }
 
         .next-activity-toggle:disabled {
@@ -1510,11 +1590,17 @@
             letter-spacing: .04em;
         }
 
+        .next-activity-copy {
+            min-width: 0;
+        }
+
         .next-activity-copy h2 {
             margin: 0 0 4px;
             font-size: 20px;
             font-weight: 800;
             color: var(--text-primary);
+            overflow-wrap: anywhere;
+            word-break: normal;
         }
 
         .next-activity-copy p {
@@ -1573,15 +1659,10 @@
         }
 
         @media (max-width: 767px) {
-            .next-activity-main {
-                grid-template-columns: auto 1fr auto;
-                gap: 16px;
-                min-width: 520px;
-                overflow-x: auto;
-            }
             .next-activity-queue-item {
-                grid-template-columns: auto 1fr auto;
-                min-width: 480px;
+                grid-template-columns: minmax(64px, auto) minmax(0, 1fr) auto;
+                min-width: 0;
+                width: 100%;
             }
         }
 
@@ -2024,15 +2105,6 @@
         }
 
         @media (max-width: 767px) {
-            .dash-header {
-                flex-direction: row;
-                flex-wrap: nowrap;
-                align-items: center;
-                overflow-x: auto;
-                -webkit-overflow-scrolling: touch;
-                gap: 12px;
-            }
-
             .dash-stat-strip {
                 justify-content: flex-start;
                 flex-wrap: nowrap;
@@ -4583,7 +4655,6 @@
             <i class="fa-solid text-lg" :class="sidebarOpen ? 'fa-xmark' : 'fa-bars'"></i>
         </button>
         <span class="min-w-0 truncate text-sm font-bold" style="color: var(--text-primary);">AulaSync</span>
-        <span class="ml-auto truncate text-[11px] font-semibold" style="color: var(--text-tertiary);" x-text="view === 'calendar' ? 'Calendario' : (view === 'course' ? 'Curso' : 'Inicio')"></span>
     </header>
 
     {{-- SIDEBAR NOVA --}}
