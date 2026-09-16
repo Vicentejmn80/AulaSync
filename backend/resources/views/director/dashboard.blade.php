@@ -93,6 +93,38 @@
             color: var(--text-primary);
         }
         .health-line { white-space: pre-line; }
+        .director-insight-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 10050;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: max(1rem, env(safe-area-inset-top)) 1rem max(1rem, env(safe-area-inset-bottom));
+            background: rgba(2, 6, 23, 0.72);
+            backdrop-filter: blur(6px);
+        }
+        .director-insight-modal {
+            display: flex;
+            flex-direction: column;
+            width: min(42rem, 100%);
+            max-height: min(92dvh, 920px);
+            overflow: hidden;
+        }
+        .director-insight-body {
+            flex: 1 1 auto;
+            min-height: 0;
+            overflow-y: auto;
+            overscroll-behavior: contain;
+            padding-bottom: 1.25rem;
+        }
+        .director-insight-footer {
+            flex-shrink: 0;
+            border-top: 1px solid rgba(255,255,255,.1);
+            padding: .85rem 1.25rem 1.1rem;
+            background: rgba(15, 23, 42, 0.55);
+        }
+        :root:not(.dark) .director-insight-footer { background: var(--bg-secondary); border-color: var(--nova-glass-border); }
         :root:not(.dark) .border-rose-400\/30 { border-color: rgba(225, 29, 72, 0.35); }
         :root:not(.dark) .border-rose-400\/40 { border-color: rgba(225, 29, 72, 0.45); }
         :root:not(.dark) .border-violet-400\/30 { border-color: rgba(139, 92, 246, 0.35); }
@@ -179,7 +211,8 @@
         <div class="executive-grid absolute inset-0 opacity-40"></div>
     </div>
 
-    <main class="director-dash-main mx-auto max-w-7xl px-5 py-6 lg:px-8" x-data="directorDashboardInsights()">
+    <div x-data="directorDashboardInsights()">
+    <main class="director-dash-main mx-auto max-w-7xl px-5 py-6 lg:px-8">
         <header class="director-dash-header mb-6 flex flex-col gap-4 overflow-visible rounded-[2rem] border border-white/10 bg-white/[.045] p-5 shadow-2xl shadow-black/20 backdrop-blur-2xl" style="position:relative;z-index:100">
             <div class="flex items-start justify-between gap-3">
                 <div class="flex min-w-0 items-center gap-3">
@@ -286,33 +319,6 @@
             </section>
         @endif
 
-        <section class="mb-8 rounded-[2rem] border border-white/10 bg-white/[.045] p-5 shadow-2xl shadow-black/20 backdrop-blur-2xl">
-            <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                <div>
-                    <p class="text-[11px] font-bold uppercase tracking-[.25em] text-cyan-300">Acceso institucional</p>
-                    <h2 class="mt-1 text-xl font-black text-white">Código del colegio</h2>
-                    <p class="mt-1 max-w-xl text-sm text-slate-400">
-                        Compártelo con docentes y representantes. Está protegido con el PIN del colegio: se revela 20 segundos y vuelve a bloquearse.
-                        PIN por defecto: los <strong class="text-slate-200">últimos 4 dígitos</strong> del código de invitación.
-                    </p>
-                </div>
-                <div class="flex flex-col items-start gap-3 sm:items-end">
-                    @if($colegio)
-                        <x-code-reveal
-                            type="school"
-                            label="Código de colegio"
-                            :pin-hint="\App\Models\Colegio::defaultPinFromInvite($colegio->invite_code)"
-                        />
-                    @else
-                        <p class="text-sm text-slate-500">Sin colegio vinculado.</p>
-                    @endif
-                </div>
-            </div>
-            <div class="mt-5">
-                <x-school-pin-manager :colegio="$colegio" />
-            </div>
-        </section>
-
         <section class="mb-8 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             @foreach($kpis as $kpi)
                 @if(!empty($kpi['action']))
@@ -406,7 +412,17 @@
                                         <p class="mt-1 text-xs text-slate-400">{{ $alert['body'] }}</p>
                                     </div>
                                 </div>
-                                @if($alert['action_url'])
+                                @if(($alert['type'] ?? '') === 'inactive')
+                                    <button type="button" @click="open('inactive')"
+                                            class="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-white/10 px-3 py-1.5 text-xs font-semibold text-cyan-200 transition hover:bg-white/10">
+                                        <i class="fa-solid fa-arrow-right"></i>Ver detalle de docentes
+                                    </button>
+                                @elseif(($alert['type'] ?? '') === 'stuck')
+                                    <button type="button" @click="open('stuck')"
+                                            class="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-white/10 px-3 py-1.5 text-xs font-semibold text-cyan-200 transition hover:bg-white/10">
+                                        <i class="fa-solid fa-arrow-right"></i>Ver planificaciones estancadas
+                                    </button>
+                                @elseif($alert['action_url'])
                                     <a href="{{ $alert['action_url'] }}"
                                        class="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-white/10 px-3 py-1.5 text-xs font-semibold text-cyan-200 transition hover:bg-white/10">
                                         <i class="fa-solid fa-arrow-right"></i>{{ $alert['action_text'] }}
@@ -416,7 +432,8 @@
                         @endforeach
                     @else
                         @forelse($lowPerformingRooms as $room)
-                            <div class="rounded-2xl border border-white/10 bg-white/[.045] p-4">
+                            <button type="button" @click="open('rooms')"
+                                    class="kpi-action w-full rounded-2xl border border-white/10 bg-white/[.045] p-4 text-left transition hover:bg-white/10">
                                 <div class="flex items-start justify-between gap-3">
                                     <div>
                                         <p class="font-bold text-white">{{ $room['name'] }}</p>
@@ -425,7 +442,8 @@
                                     <span class="rounded-full border border-amber-300/30 bg-amber-400/10 px-3 py-1 text-sm font-black text-amber-200">{{ $room['average'] }}%</span>
                                 </div>
                                 <p class="mt-3 text-sm leading-6 text-slate-300">{{ $room['recommendation'] }}</p>
-                            </div>
+                                <p class="mt-2 text-[11px] font-bold uppercase tracking-wide text-cyan-300">Ver análisis completo <i class="fa-solid fa-arrow-right ml-1 text-[10px]"></i></p>
+                            </button>
                         @empty
                             <div class="rounded-2xl border border-white/10 bg-white/[.045] p-5 text-sm text-slate-300">
                                 AulaSync AI no detecta alertas. Todos los indicadores están estables.
@@ -446,10 +464,11 @@
                         <p class="mt-1 text-sm text-slate-400">docentes con pendientes por calificar</p>
                         <p class="mt-2 text-[11px] font-bold uppercase tracking-wide text-cyan-300">Ver lista <i class="fa-solid fa-arrow-right ml-1 text-[10px]"></i></p>
                     </button>
-                    <div class="rounded-2xl border border-white/10 bg-white/[.045] p-4">
+                    <button type="button" @click="open('rooms')" class="kpi-action rounded-2xl border border-white/10 bg-white/[.045] p-4 text-left transition hover:bg-white/10">
                         <p class="text-3xl font-black text-violet-200">{{ count($lowPerformingRooms) }}</p>
                         <p class="mt-1 text-sm text-slate-400">salones requieren seguimiento</p>
-                    </div>
+                        <p class="mt-2 text-[11px] font-bold uppercase tracking-wide text-violet-300">Ver detalle <i class="fa-solid fa-arrow-right ml-1 text-[10px]"></i></p>
+                    </button>
                     <div class="rounded-2xl border border-white/10 bg-white/[.045] p-4">
                         <p class="text-3xl font-black text-emerald-200">{{ now()->format('d/m') }}</p>
                         <p class="mt-1 text-sm text-slate-400">corte analítico actualizado</p>
@@ -702,10 +721,13 @@
             </div>
         </section>
 
-        <div x-show="panel" x-cloak x-transition.opacity class="fixed inset-0 z-[80] flex items-end justify-center bg-black/55 p-4 sm:items-center" @keydown.escape.window="close()">
+    </main>
+
+    <template x-teleport="body">
+        <div x-show="panel" x-cloak x-transition.opacity class="director-insight-overlay" @keydown.escape.window="close()">
             <div class="absolute inset-0" @click="close()"></div>
-            <section class="director-insight-modal relative z-10 max-h-[86vh] w-full max-w-2xl overflow-hidden rounded-[2rem] border border-white/15 shadow-2xl" @click.stop>
-                <header class="flex items-start justify-between gap-3 border-b border-white/10 px-5 py-4">
+            <section class="director-insight-modal relative z-10 rounded-[2rem] border border-white/15 shadow-2xl" @click.stop role="dialog" aria-modal="true">
+                <header class="flex shrink-0 items-start justify-between gap-3 border-b border-white/10 px-5 py-4">
                     <div>
                         <p class="text-[11px] font-bold uppercase tracking-[.25em] text-cyan-300" x-text="panelMeta.kicker"></p>
                         <h2 class="mt-1 text-xl font-black text-white" x-text="panelMeta.title"></h2>
@@ -715,7 +737,7 @@
                         <i class="fa-solid fa-xmark"></i>
                     </button>
                 </header>
-                <div class="max-h-[68vh] overflow-y-auto px-5 py-4">
+                <div class="director-insight-body px-5 py-4">
                     <div x-show="loading" class="flex items-center gap-3 py-10 text-slate-300">
                         <i class="fa-solid fa-spinner fa-spin text-cyan-300"></i>
                         <span>Cargando datos del colegio…</span>
@@ -723,6 +745,7 @@
                     <p x-show="!loading && error" class="rounded-2xl border border-rose-400/30 bg-rose-400/10 p-4 text-sm text-rose-200" x-text="error"></p>
 
                     <div x-show="!loading && !error && panel === 'at-risk'">
+                        <p class="mb-3 text-xs leading-5 text-slate-400">Promedio ponderado institucional con notas <strong class="text-slate-200">publicadas</strong>. Umbral de alerta: 60%.</p>
                         <template x-if="atRisk.length === 0">
                             <p class="rounded-2xl border border-white/10 bg-white/[.045] p-5 text-sm text-slate-300">Ningún alumno está por debajo de 60% con las notas publicadas.</p>
                         </template>
@@ -731,7 +754,7 @@
                                 <div class="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[.045] px-4 py-3">
                                     <div class="min-w-0">
                                         <p class="truncate font-bold text-white" x-text="student.name"></p>
-                                        <p class="text-xs text-slate-400" x-text="[student.grade, student.section].filter(Boolean).join(' / ')"></p>
+                                        <p class="text-xs text-slate-400" x-text="'Grado / sección: ' + [student.grade, student.section].filter(Boolean).join(' / ')"></p>
                                     </div>
                                     <span class="rounded-full border border-amber-300/30 bg-amber-400/10 px-3 py-1 text-sm font-black text-amber-200" x-text="student.average.toFixed(1) + '%'"></span>
                                 </div>
@@ -740,23 +763,29 @@
                     </div>
 
                     <div x-show="!loading && !error && panel === 'pending'">
+                        <p class="mb-3 text-xs leading-5 text-slate-400">Actividades evaluables con alumnos matriculados que aún no tienen nota registrada. Se listan los alumnos faltantes por tarea.</p>
                         <template x-if="pending.length === 0">
                             <p class="rounded-2xl border border-white/10 bg-white/[.045] p-5 text-sm text-slate-300">Todos los docentes tienen las actividades evaluables calificadas.</p>
                         </template>
-                        <div class="space-y-3">
+                        <div class="space-y-4">
                             <template x-for="teacher in pending" :key="teacher.teacher_id">
                                 <div class="rounded-2xl border border-white/10 bg-white/[.045] p-4">
                                     <div class="flex items-start justify-between gap-3">
                                         <p class="font-bold text-white" x-text="teacher.teacher_name"></p>
-                                        <span class="rounded-full border border-cyan-400/30 bg-cyan-400/10 px-3 py-1 text-[11px] font-bold text-cyan-200" x-text="teacher.missing_count + ' sin nota'"></span>
+                                        <span class="rounded-full border border-cyan-400/30 bg-cyan-400/10 px-3 py-1 text-[11px] font-bold text-cyan-200" x-text="teacher.missing_count + ' nota(s) pendiente(s)'"></span>
                                     </div>
-                                    <div class="mt-3 space-y-1.5">
-                                        <template x-for="course in teacher.courses" :key="course.course_id">
-                                            <p class="text-sm text-slate-300">
-                                                <i class="fa-solid fa-book-open mr-1.5 text-xs text-cyan-300"></i>
-                                                <span x-text="course.label"></span>
-                                                <span class="text-xs text-slate-500" x-text="' · ' + course.missing_count + ' pendiente(s)'"></span>
-                                            </p>
+                                    <div class="mt-3 space-y-3">
+                                        <template x-for="activity in teacher.activities" :key="activity.activity_id">
+                                            <div class="rounded-xl border border-white/10 bg-black/20 p-3">
+                                                <p class="font-semibold text-white" x-text="activity.title"></p>
+                                                <p class="mt-1 text-xs text-slate-400">
+                                                    <span x-text="activity.course"></span>
+                                                    <span x-show="activity.due_date" x-text="' · Entrega: ' + activity.due_date"></span>
+                                                </p>
+                                                <p class="mt-2 text-sm text-cyan-200" x-text="activity.summary + ' · faltan ' + activity.missing_count"></p>
+                                                <p class="mt-2 text-xs font-bold uppercase tracking-wide text-slate-500">Alumnos sin calificar</p>
+                                                <p class="mt-1 text-sm leading-6 text-slate-300" x-text="(activity.missing_students || []).join(', ') || '—'"></p>
+                                            </div>
                                         </template>
                                     </div>
                                 </div>
@@ -764,23 +793,86 @@
                         </div>
                     </div>
 
+                    <div x-show="!loading && !error && panel === 'rooms'">
+                        <p class="mb-3 text-xs leading-5 text-slate-400" x-text="roomsNote"></p>
+                        <template x-if="rooms.length === 0">
+                            <p class="rounded-2xl border border-white/10 bg-white/[.045] p-5 text-sm text-slate-300">No hay salones con datos suficientes para señalar seguimiento.</p>
+                        </template>
+                        <div class="space-y-3">
+                            <template x-for="room in rooms" :key="room.course_id || room.name">
+                                <div class="rounded-2xl border border-white/10 bg-white/[.045] p-4">
+                                    <div class="flex items-start justify-between gap-3">
+                                        <div>
+                                            <p class="font-bold text-white" x-text="room.name"></p>
+                                            <p class="mt-1 text-xs text-slate-400" x-text="room.grades_count + ' notas publicadas analizadas'"></p>
+                                        </div>
+                                        <span class="rounded-full border border-amber-300/30 bg-amber-400/10 px-3 py-1 text-sm font-black text-amber-200" x-text="room.average + '%'"></span>
+                                    </div>
+                                    <p class="mt-3 text-sm leading-6 text-slate-300" x-text="room.recommendation"></p>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+
+                    <div x-show="!loading && !error && panel === 'inactive'">
+                        <template x-if="inactiveTeachers.length === 0">
+                            <p class="rounded-2xl border border-white/10 bg-white/[.045] p-5 text-sm text-slate-300">Todos los docentes registraron actividades en el calendario esta semana.</p>
+                        </template>
+                        <div class="space-y-3">
+                            <template x-for="teacher in inactiveTeachers" :key="teacher.id">
+                                <div class="rounded-2xl border border-rose-400/30 bg-rose-400/10 p-4">
+                                    <p class="font-bold text-white" x-text="teacher.name"></p>
+                                    <p class="mt-2 text-sm leading-6 text-slate-300" x-text="teacher.detail"></p>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+
+                    <div x-show="!loading && !error && panel === 'stuck'">
+                        <template x-if="stuckPlans.length === 0">
+                            <p class="rounded-2xl border border-white/10 bg-white/[.045] p-5 text-sm text-slate-300">No hay planificaciones estancadas por más de 48 horas.</p>
+                        </template>
+                        <div class="space-y-3">
+                            <template x-for="item in stuckPlans" :key="item.teacher_name">
+                                <div class="rounded-2xl border border-amber-400/30 bg-amber-400/10 p-4">
+                                    <p class="font-bold text-white" x-text="item.teacher_name"></p>
+                                    <p class="mt-2 text-sm text-slate-300" x-text="item.count + ' planificación(es) sin revisión · la más antigua: ' + item.oldest"></p>
+                                    <a :href="@json(route('director.planificaciones', ['status' => 'pendiente']))"
+                                       class="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-white/10 px-3 py-1.5 text-xs font-semibold text-cyan-200 transition hover:bg-white/10">
+                                        <i class="fa-solid fa-arrow-right"></i>Abrir bandeja de planificaciones
+                                    </a>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+
                     <div x-show="!loading && !error && panel === 'health'">
                         <div class="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                            <button type="button" @click="open('at-risk')" class="rounded-2xl border border-white/10 bg-white/[.045] p-3 text-left transition hover:bg-white/10">
+                                <p class="text-[11px] font-bold uppercase tracking-wide text-slate-400">En riesgo</p>
+                                <p class="mt-1 text-xl font-black text-amber-200" x-text="health?.at_risk_count ?? 0"></p>
+                            </button>
+                            <button type="button" @click="open('pending')" class="rounded-2xl border border-white/10 bg-white/[.045] p-3 text-left transition hover:bg-white/10">
+                                <p class="text-[11px] font-bold uppercase tracking-wide text-slate-400">Pendientes</p>
+                                <p class="mt-1 text-xs font-bold text-cyan-200">Ver calificaciones</p>
+                            </button>
+                            <button type="button" @click="open('rooms')" class="rounded-2xl border border-white/10 bg-white/[.045] p-3 text-left transition hover:bg-white/10">
+                                <p class="text-[11px] font-bold uppercase tracking-wide text-slate-400">Salones</p>
+                                <p class="mt-1 text-xs font-bold text-violet-200">Ver seguimiento</p>
+                            </button>
+                            <div class="rounded-2xl border border-white/10 bg-white/[.045] p-3">
+                                <p class="text-[11px] font-bold uppercase tracking-wide text-slate-400">Tendencia</p>
+                                <p class="mt-1 text-xl font-black text-white" x-text="healthTrendLabel()"></p>
+                            </div>
+                        </div>
+                        <div class="mb-4 grid grid-cols-2 gap-3">
                             <div class="rounded-2xl border border-white/10 bg-white/[.045] p-3">
                                 <p class="text-[11px] font-bold uppercase tracking-wide text-slate-400">Promedio</p>
                                 <p class="mt-1 text-xl font-black text-white" x-text="health?.average_grades != null ? health.average_grades + '%' : '—'"></p>
                             </div>
                             <div class="rounded-2xl border border-white/10 bg-white/[.045] p-3">
-                                <p class="text-[11px] font-bold uppercase tracking-wide text-slate-400">Asistencia</p>
+                                <p class="text-[11px] font-bold uppercase tracking-wide text-slate-400">Asistencia (30 días)</p>
                                 <p class="mt-1 text-xl font-black text-white" x-text="health?.attendance != null ? health.attendance + '%' : '—'"></p>
-                            </div>
-                            <div class="rounded-2xl border border-white/10 bg-white/[.045] p-3">
-                                <p class="text-[11px] font-bold uppercase tracking-wide text-slate-400">En riesgo</p>
-                                <p class="mt-1 text-xl font-black text-amber-200" x-text="health?.at_risk_count ?? 0"></p>
-                            </div>
-                            <div class="rounded-2xl border border-white/10 bg-white/[.045] p-3">
-                                <p class="text-[11px] font-bold uppercase tracking-wide text-slate-400">Tendencia</p>
-                                <p class="mt-1 text-xl font-black text-white" x-text="healthTrendLabel()"></p>
                             </div>
                         </div>
                         <p class="health-line rounded-2xl border border-white/10 bg-white/[.045] p-4 text-sm leading-6 text-slate-200" x-text="healthMessage"></p>
@@ -790,9 +882,17 @@
                         </div>
                     </div>
                 </div>
+                <footer class="director-insight-footer" x-show="panel === 'health' && !loading">
+                    <div class="flex flex-wrap gap-2">
+                        <button type="button" @click="open('at-risk')" class="rounded-xl border border-white/10 px-3 py-2 text-xs font-bold text-cyan-200 hover:bg-white/10">Alumnos en riesgo</button>
+                        <button type="button" @click="open('pending')" class="rounded-xl border border-white/10 px-3 py-2 text-xs font-bold text-cyan-200 hover:bg-white/10">Docentes pendientes</button>
+                        <button type="button" @click="open('rooms')" class="rounded-xl border border-white/10 px-3 py-2 text-xs font-bold text-cyan-200 hover:bg-white/10">Salones en seguimiento</button>
+                    </div>
+                </footer>
             </section>
         </div>
-    </main>
+    </template>
+    </div>
 
     <script>
         function gradeBars(performanceData) {
@@ -816,10 +916,12 @@
             };
         }
         window.directorDashboardInsights = function directorDashboardInsights() {
+            const bootstrap = @json($insightBootstrap ?? ['rooms' => [], 'inactive_teachers' => [], 'stuck_planificaciones' => []]);
             const endpoints = {
                 'at-risk': @json(route('director.api.dashboard.at-risk')),
                 pending: @json(route('director.api.dashboard.pending-grades')),
                 health: @json(route('director.api.dashboard.school-health')),
+                rooms: @json(route('director.api.dashboard.low-performing-rooms')),
             };
             const meta = {
                 'at-risk': {
@@ -830,7 +932,22 @@
                 pending: {
                     kicker: 'Cumplimiento docente',
                     title: 'Calificaciones pendientes',
-                    subtitle: 'Actividades evaluables sin nota para alumnos matriculados.',
+                    subtitle: 'Qué actividad falta calificar y qué alumnos están sin nota.',
+                },
+                rooms: {
+                    kicker: 'Seguimiento académico',
+                    title: 'Salones que requieren atención',
+                    subtitle: 'Cursos con menor promedio ponderado y recomendación concreta.',
+                },
+                inactive: {
+                    kicker: 'Alerta operativa',
+                    title: 'Docentes sin actividad reciente',
+                    subtitle: 'Sin registros en el calendario desde el inicio de la semana.',
+                },
+                stuck: {
+                    kicker: 'Planificaciones',
+                    title: 'Revisiones estancadas',
+                    subtitle: 'Docentes con planificaciones pendientes de revisión por más de 48 horas.',
                 },
                 health: {
                     kicker: 'Resumen diario IA',
@@ -845,6 +962,10 @@
                 error: null,
                 atRisk: [],
                 pending: [],
+                rooms: bootstrap.rooms || [],
+                roomsNote: '',
+                inactiveTeachers: bootstrap.inactive_teachers || [],
+                stuckPlans: bootstrap.stuck_planificaciones || [],
                 health: null,
                 healthMessage: '',
                 get panelMeta() {
@@ -863,10 +984,25 @@
                     this.panel = null;
                     this.loading = false;
                     this.error = null;
+                    document.documentElement.classList.remove('overflow-hidden');
                 },
                 async open(kind) {
                     this.panel = kind;
                     this.error = null;
+                    document.documentElement.classList.add('overflow-hidden');
+
+                    if (kind === 'inactive' || kind === 'stuck') {
+                        this.loading = false;
+                        return;
+                    }
+
+                    if (kind === 'rooms' && (bootstrap.rooms || []).length > 0) {
+                        this.rooms = bootstrap.rooms;
+                        this.roomsNote = 'Salones con menor rendimiento según el corte actual del dashboard.';
+                        this.loading = false;
+                        return;
+                    }
+
                     this.loading = true;
                     try {
                         const res = await fetch(endpoints[kind], { headers: { 'Accept': 'application/json' } });
@@ -876,6 +1012,10 @@
                         }
                         if (kind === 'at-risk') this.atRisk = data.students || [];
                         if (kind === 'pending') this.pending = data.teachers || [];
+                        if (kind === 'rooms') {
+                            this.rooms = data.rooms || [];
+                            this.roomsNote = data.note || '';
+                        }
                         if (kind === 'health') {
                             this.health = data.data || {};
                             this.healthMessage = data.message || '';

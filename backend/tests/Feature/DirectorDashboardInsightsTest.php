@@ -26,7 +26,9 @@ class DirectorDashboardInsightsTest extends TestCase
             ->assertSee('Ver alumnos en riesgo')
             ->assertSee('Ver docentes pendientes')
             ->assertSee('Generar Resumen de Hoy')
-            ->assertSee('directorDashboardInsights', false);
+            ->assertSee('directorDashboardInsights', false)
+            ->assertDontSee('Acceso institucional')
+            ->assertDontSee('Código del colegio');
     }
 
     public function test_at_risk_endpoint_lists_students_below_sixty_with_average(): void
@@ -75,7 +77,26 @@ class DirectorDashboardInsightsTest extends TestCase
             ->assertJsonPath('teachers.0.courses.0.subject_name', 'Lenguaje')
             ->assertJsonPath('teachers.0.courses.0.grade', '4to')
             ->assertJsonPath('teachers.0.courses.0.section', 'B')
-            ->assertJsonPath('teachers.0.activities.0.title', 'Ensayo 1');
+            ->assertJsonPath('teachers.0.activities.0.title', 'Ensayo 1')
+            ->assertJsonPath('teachers.0.activities.0.enrolled', 1)
+            ->assertJsonPath('teachers.0.activities.0.graded', 0)
+            ->assertJsonPath('teachers.0.activities.0.missing_students.0', 'Jason Hernández');
+    }
+
+    public function test_low_performing_rooms_endpoint_returns_detail(): void
+    {
+        [$director, $colegio, $teacher] = $this->school();
+        $course = $this->course($colegio, $teacher, 'Matemática');
+        $student = $this->student($colegio, $teacher, 'Ana Pérez', '5to', 'A');
+        $course->students()->attach($student->id);
+        $activity = $this->activity($colegio, $teacher, $course, 'Parcial');
+        $this->publishGrade($activity, $student, $colegio, 8);
+
+        $this->actingAs($director)
+            ->getJson(route('director.api.dashboard.low-performing-rooms'))
+            ->assertOk()
+            ->assertJsonPath('ok', true)
+            ->assertJsonStructure(['rooms' => [['name', 'average', 'recommendation', 'grades_count']]]);
     }
 
     public function test_school_health_endpoint_returns_executive_snapshot(): void

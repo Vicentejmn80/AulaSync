@@ -15,6 +15,7 @@ use App\Services\DirectorAnalyticsQueryService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\View\View;
 
@@ -124,7 +125,7 @@ class DashboardController extends Controller
         ];
 
         $gradePerformance = $this->gradePerformance($colegioId);
-        $lowPerformingRooms = $this->lowPerformingRooms($colegioId);
+        $lowPerformingRooms = $this->buildLowPerformingRooms($colegioId);
 
         if ($colegioId) {
             $planificacionesRecientes = Planificacion::query()
@@ -264,6 +265,19 @@ class DashboardController extends Controller
         $stuckCount = $stuckPlanificaciones->count();
         $inactiveTeachersCount = $teachersWithoutActivity->count();
 
+        $insightBootstrap = [
+            'rooms' => $lowPerformingRooms,
+            'inactive_teachers' => $teachersWithoutActivity
+                ->map(fn (User $teacher) => [
+                    'id' => $teacher->id,
+                    'name' => $teacher->name,
+                    'detail' => "{$teacher->name} no registró actividades con fecha en el calendario desde el inicio de esta semana (lunes). Conviene confirmar si está enfermo, de permiso o si necesita apoyo para cargar evaluaciones.",
+                ])
+                ->values()
+                ->all(),
+            'stuck_planificaciones' => $stuckPlanificacionesConDepartamento->values()->all(),
+        ];
+
         $colegio = $colegioId ? Colegio::find($colegioId) : null;
 
         $institution = [
@@ -296,7 +310,8 @@ class DashboardController extends Controller
             'totalStudents',
             'totalCourses',
             'pendingInvites',
-            'needsSetup'
+            'needsSetup',
+            'insightBootstrap',
         ));
     }
 
@@ -340,9 +355,14 @@ class DashboardController extends Controller
 
     public function pendingGrades(Request $request): JsonResponse
     {
-        $rows = $this->pendingGradeActivities((int) $request->user()->colegio_id);
+        $colegioId = (int) $request->user()->colegio_id;
+        $rows = $this->pendingGradeActivities($colegioId);
+        $missingByActivity = $this->missingStudentNamesByActivity(
+            $colegioId,
+            $rows->pluck('activity_id')->map(fn ($id) => (int) $id)->unique()->values()->all()
+        );
 
-        $teachers = $rows->groupBy('teacher_id')->map(function (Collection $activities) {
+        $teachers = $rows->groupBy('teacher_id')->map(function (Collection $activities) use ($missingByActivity) {
             $first = $activities->first();
             $courses = $activities
                 ->unique('course_id')
@@ -362,12 +382,22 @@ class DashboardController extends Controller
                 'missing_count' => (int) $activities->sum('missing_count'),
                 'activity_count' => $activities->count(),
                 'courses' => $courses,
-                'activities' => $activities->map(fn ($row) => [
-                    'activity_id' => (int) $row->activity_id,
-                    'title' => $row->activity_title,
-                    'course' => trim($row->subject_name.' '.$row->grade.($row->section ? ' / '.$row->section : '')),
-                    'missing_count' => (int) $row->missing_count,
-                ])->values(),
+                'activities' => $activities->map(function ($row) use ($missingByActivity) {
+                    $activityId = (int) $row->activity_id;
+                    $missingStudents = $missingByActivity[$activityId] ?? [];
+
+                    return [
+                        'activity_id' => $activityId,
+                        'title' => $row->activity_title,
+                        'course' => trim($row->subject_name.' '.$row->grade.($row->section ? ' / '.$row->section : '')),
+                        'due_date' => $row->due_date ? (string) $row->due_date : null,
+                        'enrolled' => (int) $row->enrolled,
+                        'graded' => (int) $row->graded,
+                        'missing_count' => (int) $row->missing_count,
+                        'missing_students' => $missingStudents,
+                        'summary' => (int) $row->graded.' de '.(int) $row->enrolled.' alumnos calificados',
+                    ];
+                })->values(),
             ];
         })->values();
 
@@ -375,6 +405,18 @@ class DashboardController extends Controller
             'ok' => true,
             'count' => $teachers->count(),
             'teachers' => $teachers,
+        ]);
+    }
+
+    public function lowPerformingRooms(Request $request): JsonResponse
+    {
+        $rooms = $this->buildLowPerformingRooms((int) $request->user()->colegio_id);
+
+        return response()->json([
+            'ok' => true,
+            'count' => count($rooms),
+            'rooms' => $rooms,
+            'note' => 'Salones ordenados por promedio ponderado (notas publicadas). Umbral de seguimiento: promedio por debajo de 65%.',
         ]);
     }
 
@@ -445,6 +487,7 @@ class DashboardController extends Controller
                 'activities.id',
                 'activities.teacher_id',
                 'activities.title',
+                'activities.due_date',
                 'teachers.name',
                 'courses.id',
                 'courses.subject_name',
@@ -458,6 +501,7 @@ class DashboardController extends Controller
                 activities.id as activity_id,
                 activities.teacher_id,
                 activities.title as activity_title,
+                activities.due_date as due_date,
                 teachers.name as teacher_name,
                 courses.id as course_id,
                 courses.subject_name,
@@ -468,6 +512,43 @@ class DashboardController extends Controller
                 COUNT(course_student.student_id) - COUNT(grades.id) as missing_count
             ')
             ->get();
+    }
+
+    /**
+     * @param  array<int>  $activityIds
+     * @return array<int, array<int, string>>
+     */
+    private function missingStudentNamesByActivity(int $colegioId, array $activityIds): array
+    {
+        if ($activityIds === []) {
+            return [];
+        }
+
+        $rows = DB::table('activities')
+            ->join('courses', 'activities.course_id', '=', 'courses.id')
+            ->join('course_student', 'courses.id', '=', 'course_student.course_id')
+            ->join('students', 'course_student.student_id', '=', 'students.id')
+            ->leftJoin('grades', function ($join) {
+                $join->on('grades.activity_id', '=', 'activities.id')
+                    ->on('grades.student_id', '=', 'students.id');
+            })
+            ->where('activities.colegio_id', $colegioId)
+            ->where('courses.colegio_id', $colegioId)
+            ->where('students.colegio_id', $colegioId)
+            ->whereIn('activities.id', $activityIds)
+            ->whereNull('grades.id')
+            ->orderBy('activities.id')
+            ->orderBy('students.name')
+            ->get(['activities.id as activity_id', 'students.name']);
+
+        $grouped = [];
+        foreach ($rows as $row) {
+            $id = (int) $row->activity_id;
+            $grouped[$id] ??= [];
+            $grouped[$id][] = (string) $row->name;
+        }
+
+        return $grouped;
     }
 
     private function gradePerformance(int $colegioId): array
@@ -498,7 +579,7 @@ class DashboardController extends Controller
         })->values()->toArray();
     }
 
-    private function lowPerformingRooms(int $colegioId): array
+    private function buildLowPerformingRooms(int $colegioId): array
     {
         $query = Grade::query()
             ->join('activities', 'grades.activity_id', '=', 'activities.id')
@@ -524,10 +605,15 @@ class DashboardController extends Controller
             ->limit(3)
             ->get()
             ->map(fn ($room) => [
+                'course_id' => (int) $room->id,
+                'subject_name' => $room->subject_name,
+                'grade' => $room->grade,
+                'section' => $room->section,
                 'name' => trim($room->subject_name . ' · ' . $room->grade . ($room->section ? ' / ' . $room->section : '')),
                 'average' => round((float) $room->avg_pct, 1),
                 'grades_count' => (int) $room->grades_count,
                 'recommendation' => $this->recommendationFor((float) $room->avg_pct),
+                'severity' => (float) $room->avg_pct < 50 ? 'critical' : 'watch',
             ])
             ->toArray();
     }
