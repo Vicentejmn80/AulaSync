@@ -7,8 +7,8 @@ use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * Prefetch de rutas públicas calientes y cache privada del hub autenticado.
- * No prefetch del hub HTML desde invitados: esa petición redirige a /login.
+ * Cache privada del hub autenticado.
+ * No se prefetcha /login: en móvil el toque espera a que ese prefetch termine.
  */
 class PrefetchHotRoutes
 {
@@ -20,20 +20,10 @@ class PrefetchHotRoutes
             return $response;
         }
 
-        if ($request->is('/')) {
-            $this->appendLink($response, '</login>; rel=prefetch; as=document');
-        }
-
         if ($request->is('teacher/hub')) {
             $response->headers->set('Cache-Control', 'private, no-cache');
         }
 
         return $response;
-    }
-
-    private function appendLink(Response $response, string $link): void
-    {
-        $existing = $response->headers->get('Link');
-        $response->headers->set('Link', $existing ? $existing.', '.$link : $link);
     }
 }

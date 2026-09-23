@@ -1,44 +1,25 @@
-{{-- Prefetch de las rutas calientes Landing → Login → Hub. No cachea HTML de auth. --}}
+{{-- DNS only. No document prefetch/prerender of /login: on mobile Chrome the tap waits until that request finishes. --}}
 <link rel="dns-prefetch" href="https://cdnjs.cloudflare.com">
 <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
-@if(!empty($prefetchLogin ?? true))
-<link rel="prefetch" href="{{ url('/login') }}" as="document">
-{{-- Prerender same-origin: el clic reutiliza el documento ya pintado. --}}
-<script type="speculationrules">
-{
-  "prerender": [{
-    "source": "list",
-    "urls": ["/login"],
-    "eagerness": "immediate"
-  }]
-}
-</script>
-<script>
-    if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.getRegistrations().then(function (regs) {
-            regs.forEach(function (r) { r.unregister(); });
-        });
-    }
-</script>
-@endif
 @if(!empty($prefetchHub ?? false))
 <link rel="prefetch" href="{{ url('/teacher/hub') }}" as="document">
 @endif
+@if(!empty($prefetchLogin ?? false))
 <script>
-    (function () {
-        var urls = @json($idlePrefetch ?? []);
-        if (!urls.length) return;
-        var run = function () {
-            urls.forEach(function (href) {
-                if (!href) return;
-                var link = document.createElement('link');
-                link.rel = 'prefetch';
-                link.href = href;
-                link.as = 'document';
-                document.head.appendChild(link);
+    if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+        navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' }).then(function (reg) {
+            var pending = reg.waiting || reg.installing;
+            if (pending) pending.postMessage({ type: 'SKIP_WAITING' });
+            reg.addEventListener('updatefound', function () {
+                var installing = reg.installing;
+                if (!installing) return;
+                installing.addEventListener('statechange', function () {
+                    if (installing.state === 'installed' && navigator.serviceWorker.controller) {
+                        installing.postMessage({ type: 'SKIP_WAITING' });
+                    }
+                });
             });
-        };
-        if ('requestIdleCallback' in window) requestIdleCallback(run, { timeout: 1800 });
-        else setTimeout(run, 400);
-    })();
+        }).catch(function () {});
+    }
 </script>
+@endif

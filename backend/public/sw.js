@@ -1,7 +1,7 @@
-const CACHE_NAME = "laravel-pwa-v3-no-auth-cache";
+const CACHE_NAME = "laravel-pwa-v4-auth-network-only";
 const OFFLINE_URL = "/offline.html";
 
-/** Rutas que el SW NO debe interceptar (auth + CSRF). */
+/** Auth nunca se cachea. El navegador (o navigation preload) va directo a red. */
 const AUTH_PREFIXES = [
     "/login",
     "/register",
@@ -15,7 +15,7 @@ const AUTH_PREFIXES = [
 const FILES_TO_CACHE = [OFFLINE_URL];
 
 function isAuthPath(pathname) {
-    return AUTH_PREFIXES.some((prefix) => pathname.startsWith(prefix));
+    return AUTH_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(prefix + "/"));
 }
 
 function isStaticAsset(request) {
@@ -27,7 +27,6 @@ function isStaticAsset(request) {
     );
 }
 
-// Pre-cache solo offline page (nunca cachear "/" ni login)
 self.addEventListener("install", (event) => {
     event.waitUntil(
         caches.open(CACHE_NAME).then((cache) => cache.addAll(FILES_TO_CACHE))
@@ -36,17 +35,23 @@ self.addEventListener("install", (event) => {
 });
 
 self.addEventListener("activate", (event) => {
-    event.waitUntil(
-        caches.keys().then((keys) =>
-            Promise.all(
-                keys.map((key) => {
-                    if (key !== CACHE_NAME) {
-                        return caches.delete(key);
-                    }
-                })
-            )
-        )
-    );
+    event.waitUntil((async () => {
+        if (self.registration.navigationPreload) {
+            await self.registration.navigationPreload.enable();
+        }
+        const keys = await caches.keys();
+        await Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key)));
+        const cache = await caches.open(CACHE_NAME);
+        const cached = await cache.keys();
+        await Promise.all(cached.map((request) => {
+            try {
+                if (isAuthPath(new URL(request.url).pathname)) {
+                    return cache.delete(request);
+                }
+            } catch (e) {}
+            return Promise.resolve();
+        }));
+    })());
     self.clients.claim();
 });
 
@@ -58,23 +63,41 @@ self.addEventListener("message", (event) => {
 
 self.addEventListener("fetch", (event) => {
     const request = event.request;
-    const url = new URL(request.url);
 
-    if (url.protocol !== "http:" && url.protocol !== "https:") {
-        return;
-    }
-
-    // POST/PUT/DELETE: dejar que el navegador maneje directo (login, forms, CSRF)
     if (request.method !== "GET") {
         return;
     }
 
-    // Auth pages: NO interceptar — evita Failed to fetch y CSRF stale
-    if (url.origin === self.location.origin && isAuthPath(url.pathname)) {
+    let url;
+    try {
+        url = new URL(request.url);
+    } catch (e) {
         return;
     }
 
-    // Navegación: red primero, fallback offline (sin cachear HTML)
+    if (url.origin !== self.location.origin) {
+        return;
+    }
+
+    if (isAuthPath(url.pathname)) {
+        if (!event.preloadResponse) {
+            return;
+        }
+        event.respondWith((async () => {
+            try {
+                const preloaded = await Promise.race([
+                    event.preloadResponse,
+                    new Promise((resolve) => setTimeout(() => resolve(undefined), 400)),
+                ]);
+                if (preloaded) {
+                    return preloaded;
+                }
+            } catch (e) {}
+            return fetch(request, { cache: "no-store", credentials: "same-origin" });
+        })());
+        return;
+    }
+
     if (request.mode === "navigate") {
         event.respondWith(
             fetch(request).catch(() => caches.match(OFFLINE_URL))
@@ -82,7 +105,6 @@ self.addEventListener("fetch", (event) => {
         return;
     }
 
-    // Assets estáticos: cache-first
     if (isStaticAsset(request)) {
         event.respondWith(
             caches.match(request).then((cached) => {
@@ -101,7 +123,6 @@ self.addEventListener("fetch", (event) => {
         return;
     }
 
-    // Todo lo demás: red directa, sin guardar en cache
     event.respondWith(fetch(request));
 });
 

@@ -19,7 +19,6 @@
     @include('partials.nav-prefetch', [
         'prefetchLogin' => true,
         'prefetchHub' => false,
-        'idlePrefetch' => [url('/login')],
     ])
     <link rel="icon" href="/favicon.ico?v=3" sizes="any">
     <link rel="icon" type="image/png" href="/favicon-32x32.png?v=3" sizes="32x32">
@@ -33,6 +32,8 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 
     <style>
+        html, body, a, button { touch-action: manipulation; }
+
         /* ============================================================
            AulaSync — Design tokens
            ============================================================ */
@@ -1336,6 +1337,7 @@
            Responsive base
            ============================================================ */
         @media (max-width: 900px) {
+            [data-reveal] { opacity: 1; transform: none; transition: none; }
             .az-container { padding: 0 18px; }
             .az-panel-copy h3 { font-size: 1.35rem; }
         }
@@ -1431,7 +1433,7 @@
                 </ul>
 
                 <div class="az-nav-actions">
-                    <a href="{{ route('login') }}" class="az-btn az-btn-secondary az-btn-sm" rel="prefetch" data-login-link>
+                    <a href="{{ route('login') }}" class="az-btn az-btn-secondary az-btn-sm" data-login-link>
                         <span class="az-login-label">Iniciar Sesión</span>
                     </a>
                     <button type="button" class="az-btn az-btn-primary az-btn-sm" data-open-demo>Solicitar Demo</button>
@@ -1448,7 +1450,7 @@
                 <a href="#implementacion">Recursos</a>
                 <a href="#faq">Preguntas frecuentes</a>
                 <div class="az-nav-actions">
-                    <a href="{{ route('login') }}" class="az-btn az-btn-secondary" rel="prefetch" data-login-link>
+                    <a href="{{ route('login') }}" class="az-btn az-btn-secondary" data-login-link>
                         <span class="az-login-label">Iniciar Sesión</span>
                     </a>
                     <button type="button" class="az-btn az-btn-primary" data-open-demo>Solicitar Demo</button>
@@ -2099,13 +2101,11 @@
                 });
             });
             document.querySelectorAll('[data-login-link]').forEach(function (link) {
-                link.addEventListener('click', function () {
+                link.addEventListener('pointerdown', function () {
                     closeMobileMenu();
                     link.classList.add('is-loading');
                     link.setAttribute('aria-busy', 'true');
-                    var label = link.querySelector('.az-login-label');
-                    if (label) label.textContent = 'Abriendo…';
-                });
+                }, { passive: true });
             });
             window.addEventListener('resize', function () {
                 if (window.innerWidth > 900) closeMobileMenu();
@@ -2145,7 +2145,10 @@
 
             /* ── Scroll reveal ─────────────────────────────────────── */
             var revealItems = document.querySelectorAll('[data-reveal]');
-            if ('IntersectionObserver' in window && revealItems.length) {
+            var isNarrow = window.matchMedia('(max-width: 900px)').matches;
+            if (isNarrow) {
+                revealItems.forEach(function (el) { el.classList.add('is-visible'); });
+            } else if ('IntersectionObserver' in window && revealItems.length) {
                 var observer = new IntersectionObserver(function (entries) {
                     entries.forEach(function (entry) {
                         if (entry.isIntersecting) {

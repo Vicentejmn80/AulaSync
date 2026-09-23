@@ -11,18 +11,22 @@ class TeacherHubPerformanceUxTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_landing_prefetches_login_for_faster_navigation(): void
+    public function test_landing_login_link_does_not_wait_on_prefetch(): void
     {
         $response = $this->get('/');
 
         $response->assertOk();
-        $response->assertSee('rel="prefetch"', false);
         $response->assertSee('data-login-link', false);
-        $response->assertSee('speculationrules', false);
-        $response->assertSee('/login', false);
-        $response->assertHeader('Link');
-        $this->assertStringContainsString('/login', (string) $response->headers->get('Link'));
-        $this->assertStringContainsString('rel=prefetch', (string) $response->headers->get('Link'));
+        $response->assertSee('touch-action: manipulation', false);
+        $response->assertSee('href="'.url('/login').'"', false);
+        $response->assertDontSee('speculationrules', false);
+        $response->assertDontSee('rel="prefetch"', false);
+        $this->assertStringNotContainsString('rel=prefetch', (string) $response->headers->get('Link'));
+
+        $worker = file_get_contents(public_path('sw.js'));
+        $this->assertStringContainsString('navigationPreload', $worker);
+        $this->assertStringContainsString("cache: \"no-store\"", $worker);
+        $this->assertStringContainsString('"/login"', $worker);
     }
 
     public function test_login_shows_optimistic_skeleton_and_touch_targets(): void
