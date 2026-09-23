@@ -21,6 +21,7 @@ use App\Support\GradingScale;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\View\View;
@@ -97,67 +98,95 @@ class HubController extends Controller
         $teacher = auth()->user();
         $this->syncTeacherEnrollmentsIfStale($teacher);
 
-        $courseIds = Course::where('teacher_id', $teacher->id)->pluck('id');
-        $activityIds = Activity::whereIn('course_id', $courseIds)->pluck('id');
+        // ── Cache 60 s — avoids repeated DB hammering on the startup burst ──
+        // Cache is invalidated explicitly from Grade/Activity store/update routes.
+        $cacheKey = "teacher.stats.{$teacher->id}." . now()->format('YmdHi');
+        // Round to nearest 60s bucket so all requests within the same minute share the result.
+        $bucketKey = 'teacher.hub.stats.' . $teacher->id . '.' . (int) (time() / 60);
 
-        $totalStudents = Course::whereIn('id', $courseIds)
-            ->with('students')
-            ->get()
-            ->flatMap(fn ($c) => $c->students->pluck('id'))
-            ->unique()
-            ->count();
+        $payload = Cache::remember($bucketKey, 60, function () use ($teacher) {
+            return $this->computeStats($teacher);
+        });
 
+        return response()->json($payload);
+    }
+
+    /**
+     * Heavy stats computation — called at most once per 60-second bucket per teacher.
+     * Optimized: one eager-loaded course query instead of 3 separate queries.
+     */
+    private function computeStats(User $teacher): array
+    {
+        // ── 1 query: courses + students (pivot) + activities (id + key fields) ──
+        $hasScheduled = Schema::hasColumn('activities', 'scheduled_time');
+        $activitySelect = array_filter([
+            'id', 'course_id', 'type', 'is_homework', 'evaluation_id',
+            'title', 'due_date', 'plan_block_id', 'director_notes',
+            'nee_type', 'nee_adaptation', 'nee_student_id',
+            $hasScheduled ? 'scheduled_time' : null,
+        ]);
+
+        // Load courses eager with minimal student IDs and all relevant activities
+        $courses = Course::where('teacher_id', $teacher->id)
+            ->with([
+                'students:id',                        // only student IDs (join via pivot)
+                'activities' => fn ($q) => $q->select($activitySelect)
+                    ->with('course:id,subject_name,grade,section'),
+            ])
+            ->get(['id']);
+
+        $courseIds   = $courses->pluck('id');
+        $allActivities = $courses->flatMap(fn ($c) => $c->activities);
+        $activityIds = $allActivities->pluck('id');
+
+        $totalStudents   = $courses->flatMap(fn ($c) => $c->students->pluck('id'))->unique()->count();
         $totalCourses    = $courseIds->count();
         $totalActivities = $activityIds->count();
 
-        $avgGrade = null;
-        if ($activityIds->isNotEmpty()) {
-            $avgGrade = Grade::whereIn('activity_id', $activityIds)->avg('score');
-        }
+        // ── 2 queries: grade avg + this-week count via DB (avoid loading all rows) ──
+        $avgGrade = $activityIds->isNotEmpty()
+            ? Grade::whereIn('activity_id', $activityIds)->avg('score')
+            : null;
 
-        // Activities due this week
-        $activitiesThisWeek = Activity::whereIn('course_id', $courseIds)
-            ->whereBetween('due_date', [now()->startOfWeek(), now()->endOfWeek()])
+        $now       = now();
+        $todayStr  = $now->toDateString();
+        $weekStart = $now->copy()->startOfWeek()->toDateString();
+        $weekEnd   = $now->copy()->endOfWeek()->toDateString();
+
+        $activitiesThisWeek = $allActivities
+            ->filter(fn ($a) => $a->due_date >= $weekStart && $a->due_date <= $weekEnd)
             ->count();
 
-        $upcomingColumns = ['id', 'title', 'due_date', 'course_id', 'type', 'is_homework', 'evaluation_id'];
-        if (Schema::hasColumn('activities', 'scheduled_time')) {
-            $upcomingColumns[] = 'scheduled_time';
-        }
-
-        $upcomingRaw = Activity::whereIn('course_id', $courseIds)
-            ->where('due_date', '>=', now()->toDateString())
-            ->orderBy('due_date')
-            ->orderBy('id')
-            ->limit(12)
-            ->with('course:id,subject_name,grade,section')
-            ->get($upcomingColumns);
+        // ── Upcoming activities (no extra query — use already-loaded collection) ──
+        $upcomingRaw = $allActivities
+            ->filter(fn ($a) => $a->due_date >= $todayStr)
+            ->sortBy([['due_date', 'asc'], ['id', 'asc']])
+            ->take(12)
+            ->values();
 
         $upcomingQueue = $this->serializeUpcomingQueue($upcomingRaw)
             ->sortBy(fn ($item) => ($item['due_date'] ?? '').'|'.($item['time_label'] ?? '99:99').'|'.($item['id'] ?? 0))
             ->take(6)
             ->values();
         $upcomingActivities = $upcomingQueue->take(5)->values();
-        $nextActivity = $upcomingQueue->first();
+        $nextActivity       = $upcomingQueue->first();
 
-        $todayActivities = Activity::whereIn('course_id', $courseIds)
-            ->whereDate('due_date', now()->toDateString())
-            ->with('course:id,subject_name,grade,section')
-            ->orderBy('course_id')
-            ->orderBy('title')
-            ->get();
+        // ── Today activities (no extra query) ──
+        $todayActivities = $allActivities
+            ->filter(fn ($a) => (string) $a->due_date === $todayStr)
+            ->sortBy([['course_id', 'asc'], ['title', 'asc']])
+            ->values();
 
-        // Climate: computed from recent grade average
-        $climate = $this->computeClimate($avgGrade);
+        $climate = $this->computeClimate($avgGrade !== null ? (float) $avgGrade : null);
 
-        // Grade trend: current week vs previous week average, only if both have data.
+        // ── Grade trend: 2 cheap aggregate queries ──
         $gradeTrend = null;
         if ($activityIds->isNotEmpty()) {
-            $currentWeekAvg = Grade::whereIn('activity_id', $activityIds)
-                ->whereBetween('created_at', [now()->startOfWeek(), now()->endOfWeek()])
+            $currentWeekAvg  = Grade::whereIn('activity_id', $activityIds)
+                ->whereBetween('created_at', [$now->copy()->startOfWeek(), $now->copy()->endOfWeek()])
                 ->avg('score');
             $previousWeekAvg = Grade::whereIn('activity_id', $activityIds)
-                ->whereBetween('created_at', [now()->subWeek()->startOfWeek(), now()->subWeek()->endOfWeek()])
+                ->whereBetween('created_at', [$now->copy()->subWeek()->startOfWeek(), $now->copy()->subWeek()->endOfWeek()])
                 ->avg('score');
 
             if ($currentWeekAvg !== null && $previousWeekAvg !== null) {
@@ -169,12 +198,12 @@ class HubController extends Controller
             }
         }
 
-        return response()->json([
+        return [
             'total_courses'        => $totalCourses,
             'total_students'       => $totalStudents,
             'total_activities'     => $totalActivities,
             'activities_this_week' => $activitiesThisWeek,
-            'avg_grade'            => $avgGrade ? round($avgGrade, 1) : null,
+            'avg_grade'            => $avgGrade !== null ? round((float) $avgGrade, 1) : null,
             'climate'              => $climate,
             'grade_trend'          => $gradeTrend,
             'next_activity'        => $nextActivity,
@@ -182,7 +211,7 @@ class HubController extends Controller
             'upcoming_queue'       => $upcomingQueue->take(5)->values(),
             'today_grade_list'     => $this->buildTodayGradeList($todayActivities),
             'attendance'           => $this->attendanceSnapshot($teacher->id, $courseIds),
-        ]);
+        ];
     }
 
     private function attendanceSnapshot(int $teacherId, $courseIds): ?array

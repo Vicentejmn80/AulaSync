@@ -350,41 +350,119 @@
     {{-- Limpia SW/cache en auth para evitar login con CSRF caducado (419) --}}
     <script>
         (function () {
-            var form = document.getElementById('login-form');
-            var skeleton = document.getElementById('login-skeleton');
-            var submit = document.getElementById('login-submit');
-            var timeoutMsg = document.getElementById('login-loader-timeout-msg');
-            var retryBtn = document.getElementById('login-loader-retry');
-            var timeoutHandle = null;
-            if (retryBtn) {
-                retryBtn.addEventListener('click', function () {
-                    window.location.reload();
+            // ── Service-worker / cache cleanup ────────────────────────────────
+            if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.getRegistrations().then(function (regs) {
+                    regs.forEach(function (r) { r.unregister(); });
                 });
             }
-            if (form) {
-                form.addEventListener('submit', function () {
-                    if (skeleton) skeleton.classList.add('is-on');
-                    if (timeoutHandle) clearTimeout(timeoutHandle);
-                    timeoutHandle = setTimeout(function () {
-                        if (timeoutMsg) timeoutMsg.classList.add('is-on');
-                        if (retryBtn) retryBtn.classList.add('is-on');
-                    }, 9000);
-                    if (submit) {
-                        submit.disabled = true;
-                        submit.innerHTML = '<i class="fa-solid fa-spinner fa-spin" style="margin-right:.5rem;"></i>Entrando…';
-                    }
-                    try { sessionStorage.setItem('as.login.optimistic', '1'); } catch (e) {}
-                });
-            }
-            if (!('serviceWorker' in navigator)) return;
-            navigator.serviceWorker.getRegistrations().then(function (regs) {
-                regs.forEach(function (r) { r.unregister(); });
-            });
             if ('caches' in window) {
                 caches.keys().then(function (keys) {
                     keys.forEach(function (k) { caches.delete(k); });
                 });
             }
+
+            // ── Element refs ──────────────────────────────────────────────────
+            var form       = document.getElementById('login-form');
+            var skeleton   = document.getElementById('login-skeleton');
+            var submit     = document.getElementById('login-submit');
+            var timeoutMsg = document.getElementById('login-loader-timeout-msg');
+            var retryBtn   = document.getElementById('login-loader-retry');
+
+            if (!form) return;
+
+            var controller     = null;   // AbortController for the in-flight fetch
+            var timeoutHandle  = null;
+            var TIMEOUT_MS     = 9000;
+
+            // ── Retry: abort any in-flight request, then reload ───────────────
+            if (retryBtn) {
+                retryBtn.addEventListener('click', function () {
+                    if (controller) {
+                        controller.abort();
+                        controller = null;
+                    }
+                    window.location.reload();
+                });
+            }
+
+            // ── Intercept submit with fetch + AbortController ─────────────────
+            form.addEventListener('submit', function (e) {
+                e.preventDefault();     // stop native navigation
+
+                if (skeleton) skeleton.classList.add('is-on');
+                if (submit) {
+                    submit.disabled = true;
+                    submit.innerHTML = '<i class="fa-solid fa-spinner fa-spin" style="margin-right:.5rem;"></i>Entrando…';
+                }
+                try { sessionStorage.setItem('as.login.optimistic', '1'); } catch (_) {}
+
+                // Build form-encoded body from the real form fields
+                var body = new URLSearchParams(new FormData(form)).toString();
+
+                // Create a fresh AbortController for this attempt
+                controller = new AbortController();
+
+                // 9 s hard timeout — abort the fetch and show retry
+                if (timeoutHandle) clearTimeout(timeoutHandle);
+                timeoutHandle = setTimeout(function () {
+                    if (controller) {
+                        controller.abort();   // ← cancels the in-flight fetch
+                        controller = null;
+                    }
+                    if (timeoutMsg) timeoutMsg.classList.add('is-on');
+                    if (retryBtn)   retryBtn.classList.add('is-on');
+                }, TIMEOUT_MS);
+
+                fetch(form.action, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'Accept': 'text/html,application/xhtml+xml',
+                    },
+                    body: body,
+                    signal: controller.signal,
+                    redirect: 'manual',   // don't auto-follow; we read the Location header
+                })
+                .then(function (res) {
+                    clearTimeout(timeoutHandle);
+                    controller = null;
+
+                    // Laravel returns 302 → fetch(redirect:'manual') gives opaqueredirect
+                    // The Location header is inaccessible in opaqueredirect, so we fall back
+                    // to a meta-refresh style reload which lets the browser follow the cookie.
+                    if (res.type === 'opaqueredirect' || res.redirected) {
+                        // Navigate to the final URL the server sent us
+                        window.location.href = res.url || '/teacher/hub';
+                        return;
+                    }
+
+                    // 200 with errors (wrong credentials) — reload so the error blade renders
+                    if (res.ok) {
+                        // Replace page with the HTML response (login page with errors)
+                        res.text().then(function (html) {
+                            document.open(); document.write(html); document.close();
+                        });
+                        return;
+                    }
+
+                    // 419 CSRF expired or other error — reload to get a fresh token
+                    window.location.reload();
+                })
+                .catch(function (err) {
+                    clearTimeout(timeoutHandle);
+                    controller = null;
+
+                    if (err && err.name === 'AbortError') {
+                        // Timeout already showed the retry UI — nothing more to do
+                        return;
+                    }
+
+                    // Network error — reload for a clean retry
+                    window.location.reload();
+                });
+            });
         })();
     </script>
 </body>
