@@ -182,6 +182,80 @@
         }
         .sk-row { height: 72px; border-radius: 1rem; margin-top: 12px; }
         @keyframes sk { 0% { background-position: 100% 0; } 100% { background-position: -100% 0; } }
+        .as-loader {
+            margin-top: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 76px;
+        }
+        .as-orbit {
+            position: relative;
+            width: 72px;
+            height: 72px;
+            border-radius: 999px;
+            border: 2px solid rgba(217, 70, 239, 0.22);
+            animation: asPulse 1.8s ease-in-out infinite;
+        }
+        .as-orbit::before,
+        .as-orbit::after {
+            content: '';
+            position: absolute;
+            border-radius: 999px;
+        }
+        .as-orbit::before {
+            inset: -2px;
+            border-top: 3px solid #8b5cf6;
+            border-right: 3px solid transparent;
+            animation: asSpin 1.15s linear infinite;
+        }
+        .as-orbit::after {
+            width: 18px;
+            height: 18px;
+            top: 27px;
+            left: 27px;
+            background: linear-gradient(135deg, #8b5cf6, #d946ef 55%, #f472b6);
+            box-shadow: 0 8px 18px rgba(139, 92, 246, 0.28);
+        }
+        .as-loader-copy {
+            margin-top: 10px;
+            font-size: .86rem;
+            color: #6B4D87;
+            font-weight: 700;
+            text-align: center;
+        }
+        .as-loader-sub {
+            margin-top: 8px;
+            font-size: .78rem;
+            color: #7f5ea4;
+            text-align: center;
+            display: none;
+        }
+        .as-loader-sub.is-on {
+            display: block;
+        }
+        .as-retry-btn {
+            display: none;
+            margin: 12px auto 0;
+            border: 0;
+            border-radius: 999px;
+            padding: .56rem 1rem;
+            font-size: .8rem;
+            font-weight: 700;
+            color: #fff;
+            background: linear-gradient(135deg, #8b5cf6, #d946ef 55%, #f472b6);
+            cursor: pointer;
+        }
+        .as-retry-btn.is-on {
+            display: inline-flex;
+            align-items: center;
+            gap: .4rem;
+        }
+        @keyframes asSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        @keyframes asPulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(217,70,239,.10); transform: scale(1); }
+            50% { box-shadow: 0 0 0 10px rgba(217,70,239,.04); transform: scale(1.03); }
+        }
         .btn-submit:hover {
             opacity: .92; transform: translateY(-2px);
             box-shadow: 0 12px 34px rgba(217,70,239,.28);
@@ -262,8 +336,14 @@
             <div class="sk-bar" style="width:46%;height:18px;"></div>
             <div class="sk-bar sk-row"></div>
             <div class="sk-bar sk-row"></div>
-            <div class="sk-bar sk-row"></div>
-            <p style="margin-top:18px;font-size:.85rem;color:#6B4D87;font-weight:700;">Entrando a tu espacio…</p>
+            <div class="as-loader" aria-hidden="true">
+                <div class="as-orbit"></div>
+            </div>
+            <p class="as-loader-copy" id="login-loader-copy">Preparando tu espacio AulaSync…</p>
+            <p class="as-loader-sub" id="login-loader-timeout-msg">Esto está tardando más de lo normal. Puedes reintentar.</p>
+            <button type="button" class="as-retry-btn" id="login-loader-retry">
+                <i class="fa-solid fa-rotate-right"></i> Reintentar
+            </button>
         </div>
     </div>
 
@@ -273,9 +353,22 @@
             var form = document.getElementById('login-form');
             var skeleton = document.getElementById('login-skeleton');
             var submit = document.getElementById('login-submit');
+            var timeoutMsg = document.getElementById('login-loader-timeout-msg');
+            var retryBtn = document.getElementById('login-loader-retry');
+            var timeoutHandle = null;
+            if (retryBtn) {
+                retryBtn.addEventListener('click', function () {
+                    window.location.reload();
+                });
+            }
             if (form) {
                 form.addEventListener('submit', function () {
                     if (skeleton) skeleton.classList.add('is-on');
+                    if (timeoutHandle) clearTimeout(timeoutHandle);
+                    timeoutHandle = setTimeout(function () {
+                        if (timeoutMsg) timeoutMsg.classList.add('is-on');
+                        if (retryBtn) retryBtn.classList.add('is-on');
+                    }, 9000);
                     if (submit) {
                         submit.disabled = true;
                         submit.innerHTML = '<i class="fa-solid fa-spinner fa-spin" style="margin-right:.5rem;"></i>Entrando…';

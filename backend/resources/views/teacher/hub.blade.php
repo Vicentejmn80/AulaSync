@@ -6829,7 +6829,8 @@ function teacherHub() {
                 }
             });
 
-            this.loadNotifications();
+            // Avoid competing with critical first-render requests.
+            setTimeout(() => this.loadNotifications(), 1200);
             if (!this._notificationPollTimer) {
                 this._notificationPollTimer = setInterval(() => {
                     if (!document.hidden && !this.showNotifications) {

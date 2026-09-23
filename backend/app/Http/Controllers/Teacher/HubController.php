@@ -10,6 +10,7 @@ use App\Models\Course;
 use App\Models\Grade;
 use App\Models\Notification;
 use App\Models\Student;
+use App\Models\User;
 use App\Services\AttendanceSummaryService;
 use App\Services\FamilyInviteService;
 use App\Services\StudentEnrollmentService;
@@ -51,6 +52,7 @@ class HubController extends Controller
             $this->enrollment->syncTeacherCourses($teacher);
             $request->session()->put('teacher.hub.bootstrapped', true);
             $request->session()->put('teacher.hub.claimed', true);
+            $request->session()->put('teacher.hub.last_enrollment_sync_at', now()->timestamp);
         }
 
         $quotes = [
@@ -93,7 +95,7 @@ class HubController extends Controller
     public function apiStats(): JsonResponse
     {
         $teacher = auth()->user();
-        $this->enrollment->syncTeacherCourses($teacher);
+        $this->syncTeacherEnrollmentsIfStale($teacher);
 
         $courseIds = Course::where('teacher_id', $teacher->id)->pluck('id');
         $activityIds = Activity::whereIn('course_id', $courseIds)->pluck('id');
@@ -233,7 +235,7 @@ class HubController extends Controller
 
     public function apiCourses(): JsonResponse
     {
-        $this->enrollment->syncTeacherCourses(auth()->user());
+        $this->syncTeacherEnrollmentsIfStale(auth()->user());
 
         $courses = Course::where('teacher_id', auth()->id())
             ->withCount(['students', 'activities'])
@@ -895,5 +897,32 @@ class HubController extends Controller
             6 => '#0891B2',
             default => '#64748B',
         };
+    }
+
+    /**
+     * Enrollment sync is expensive for large schools.
+     * Keep hub data fresh but avoid repeating the same sync on every
+     * initial request burst (hub HTML + stats + courses).
+     */
+    private function syncTeacherEnrollmentsIfStale(User $teacher, int $cooldownSeconds = 120): void
+    {
+        if ($teacher->role !== 'profesor' || ! $teacher->colegio_id) {
+            return;
+        }
+
+        if (! request()->hasSession()) {
+            $this->enrollment->syncTeacherCourses($teacher);
+            return;
+        }
+
+        $session = request()->session();
+        $last = (int) $session->get('teacher.hub.last_enrollment_sync_at', 0);
+        $now = now()->timestamp;
+        if ($last > 0 && ($now - $last) < $cooldownSeconds) {
+            return;
+        }
+
+        $this->enrollment->syncTeacherCourses($teacher);
+        $session->put('teacher.hub.last_enrollment_sync_at', $now);
     }
 }
