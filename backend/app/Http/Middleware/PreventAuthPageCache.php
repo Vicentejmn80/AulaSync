@@ -30,6 +30,14 @@ class PreventAuthPageCache
     {
         $response = $next($request);
 
+        if ($request->is('login') && $request->isMethod('GET')) {
+            // no-store cancela el prerender de Chrome y deja el clic esperando la red.
+            // max-age=0 sigue obligando a revalidar; el snapshot de prerender sí se puede usar.
+            $response->headers->set('Cache-Control', 'private, max-age=0, must-revalidate');
+            $response->headers->set('Vary', 'Cookie');
+            return $response;
+        }
+
         if ($request->is(...self::AUTH_PATHS)) {
             $response->headers->set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
             $response->headers->set('Pragma', 'no-cache');

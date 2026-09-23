@@ -9,7 +9,8 @@
         'prefetchHub' => false,
         'idlePrefetch' => [],
     ])
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" media="print" onload="this.media='all'">
+    <noscript><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"></noscript>
     <style>
         *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
         html, body { overflow-x: hidden; max-width: 100%; }

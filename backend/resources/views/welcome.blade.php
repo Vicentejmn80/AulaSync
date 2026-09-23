@@ -400,6 +400,21 @@
         .az-mobile-menu .az-nav-actions { flex-direction: column; align-items: stretch; margin-top: 12px; }
         .az-mobile-menu .az-btn { width: 100%; }
 
+        .az-btn.is-loading { pointer-events: none; }
+        .az-btn.is-loading .az-login-label::before {
+            content: '';
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            margin-right: 8px;
+            border: 2px solid currentColor;
+            border-right-color: transparent;
+            border-radius: 50%;
+            vertical-align: -2px;
+            animation: az-login-spin .6s linear infinite;
+        }
+        @keyframes az-login-spin { to { transform: rotate(360deg); } }
+
         @media (max-width: 900px) {
             .az-nav-links { display: none; }
             .az-nav-inner > .az-nav-actions { display: none; }
@@ -1416,7 +1431,9 @@
                 </ul>
 
                 <div class="az-nav-actions">
-                    <a href="{{ route('login') }}" class="az-btn az-btn-secondary az-btn-sm" rel="prefetch">Iniciar Sesión</a>
+                    <a href="{{ route('login') }}" class="az-btn az-btn-secondary az-btn-sm" rel="prefetch" data-login-link>
+                        <span class="az-login-label">Iniciar Sesión</span>
+                    </a>
                     <button type="button" class="az-btn az-btn-primary az-btn-sm" data-open-demo>Solicitar Demo</button>
                 </div>
 
@@ -1431,7 +1448,9 @@
                 <a href="#implementacion">Recursos</a>
                 <a href="#faq">Preguntas frecuentes</a>
                 <div class="az-nav-actions">
-                    <a href="{{ route('login') }}" class="az-btn az-btn-secondary" rel="prefetch">Iniciar Sesión</a>
+                    <a href="{{ route('login') }}" class="az-btn az-btn-secondary" rel="prefetch" data-login-link>
+                        <span class="az-login-label">Iniciar Sesión</span>
+                    </a>
                     <button type="button" class="az-btn az-btn-primary" data-open-demo>Solicitar Demo</button>
                 </div>
             </div>
@@ -2075,7 +2094,18 @@
                 document.body.style.overflow = isOpen ? 'hidden' : '';
             });
             mobileMenu.querySelectorAll('a, button').forEach(function (link) {
-                link.addEventListener('click', closeMobileMenu);
+                link.addEventListener('click', function () {
+                    closeMobileMenu();
+                });
+            });
+            document.querySelectorAll('[data-login-link]').forEach(function (link) {
+                link.addEventListener('click', function () {
+                    closeMobileMenu();
+                    link.classList.add('is-loading');
+                    link.setAttribute('aria-busy', 'true');
+                    var label = link.querySelector('.az-login-label');
+                    if (label) label.textContent = 'Abriendo…';
+                });
             });
             window.addEventListener('resize', function () {
                 if (window.innerWidth > 900) closeMobileMenu();

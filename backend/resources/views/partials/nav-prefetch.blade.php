@@ -3,6 +3,23 @@
 <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
 @if(!empty($prefetchLogin ?? true))
 <link rel="prefetch" href="{{ url('/login') }}" as="document">
+{{-- Prerender same-origin: el clic reutiliza el documento ya pintado. --}}
+<script type="speculationrules">
+{
+  "prerender": [{
+    "source": "list",
+    "urls": ["/login"],
+    "eagerness": "immediate"
+  }]
+}
+</script>
+<script>
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then(function (regs) {
+            regs.forEach(function (r) { r.unregister(); });
+        });
+    }
+</script>
 @endif
 @if(!empty($prefetchHub ?? false))
 <link rel="prefetch" href="{{ url('/teacher/hub') }}" as="document">

@@ -17,6 +17,8 @@ class TeacherHubPerformanceUxTest extends TestCase
 
         $response->assertOk();
         $response->assertSee('rel="prefetch"', false);
+        $response->assertSee('data-login-link', false);
+        $response->assertSee('speculationrules', false);
         $response->assertSee('/login', false);
         $response->assertHeader('Link');
         $this->assertStringContainsString('/login', (string) $response->headers->get('Link'));
