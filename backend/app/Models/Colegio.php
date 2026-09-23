@@ -14,6 +14,7 @@ class Colegio extends Model
         'invite_code',
         'codes_pin',
         'director_user_id',
+        'logo_path',
     ];
 
     protected $hidden = [

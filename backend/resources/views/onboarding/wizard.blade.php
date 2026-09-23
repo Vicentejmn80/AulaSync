@@ -16,7 +16,7 @@
                     <div class="onboarding-progress-bar" :style="{ width: progress + '%' }"></div>
                 </div>
 
-                <form x-ref="wizardForm" method="POST" action="{{ url('/onboarding') }}">
+                <form x-ref="wizardForm" method="POST" action="{{ url('/onboarding') }}" enctype="multipart/form-data">
                     @csrf
                     <input type="hidden" name="role" x-model="role">
                     <input type="hidden" name="school_code" x-model="schoolCode">
@@ -278,9 +278,32 @@
                                     <input type="text" class="form-control rounded-3" name="nombre_institucion" placeholder="Ej. Colegio San Martín">
                                 </div>
                                 <div class="col-12 col-lg-4">
-                                    <label class="form-label">Logotipo</label>
-                                    <div class="rounded-3 border border-dashed border-violet-300/30 bg-white/[.045] px-3 py-2 text-sm text-slate-400">
-                                        <i class="fa-solid fa-image me-1"></i> Placeholder institucional
+                                <label class="form-label">Logotipo</label>
+                                    <div x-data="{ logoPreview: null }" class="rounded-3 border border-dashed border-violet-300/30 bg-white/[.045] px-3 py-2 text-sm text-slate-400">
+                                        <div class="flex items-center gap-3">
+                                            <div class="w-20 h-20 flex items-center justify-center rounded-md bg-white/5 overflow-hidden">
+                                                <img x-show="logoPreview" :src="logoPreview" alt="Logo preview" class="max-h-full max-w-full object-contain">
+                                                <div x-show="!logoPreview" class="text-slate-400 px-2 text-center">
+                                                    <i class="fa-solid fa-image text-2xl"></i>
+                                                </div>
+                                            </div>
+                                            <div class="flex-1">
+                                                <div class="mb-2 text-sm text-slate-600">Sube el logotipo de tu institución. Formatos: PNG, JPG, WEBP, SVG.</div>
+                                                <div class="flex gap-2">
+                                                    <label class="btn btn-outline-primary inline-flex items-center px-3 py-2 rounded cursor-pointer">
+                                                        <input type="file" name="logo" accept="image/png,image/jpeg,image/webp,image/svg+xml" class="hidden" @change="(e) => {
+                                                            const f = e.target.files && e.target.files[0];
+                                                            if (!f) { logoPreview = null; return; }
+                                                            const reader = new FileReader();
+                                                            reader.onload = (ev) => logoPreview = ev.target.result;
+                                                            reader.readAsDataURL(f);
+                                                        }">
+                                                        <i class="fa-solid fa-upload me-2"></i> Subir logo
+                                                    </label>
+                                                    <button type="button" class="btn btn-light" @click="logoPreview = null; $el.closest('form').querySelector('input[name=logo]').value = ''">Quitar</button>
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                                 <div class="col-12 col-md-6">

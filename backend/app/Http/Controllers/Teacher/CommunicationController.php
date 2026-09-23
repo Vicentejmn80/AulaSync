@@ -149,11 +149,16 @@ class CommunicationController extends Controller
         $attachments = [];
         if ($request->hasFile('files')) {
             foreach ((array) $request->file('files') as $file) {
-                $path = $file->store('communication-attachments', 'public');
+                // Store attachments in private disk to avoid direct public URLs.
+                // Use 'local' disk (storage/app/communication-attachments/...) and record metadata.
+                $path = $file->store('communication-attachments/'.$teacher->id, 'local');
                 $attachments[] = [
                     'type' => 'file',
                     'name' => $file->getClientOriginalName(),
                     'path' => $path,
+                    'mime' => $file->getClientMimeType(),
+                    'size' => (int) $file->getSize(),
+                    'disk' => 'local',
                 ];
             }
         }
@@ -200,7 +205,97 @@ class CommunicationController extends Controller
             'reads as read_count' => fn ($q) => $q->whereNotNull('read_at'),
         ]);
 
+        // For client convenience, expose secure download_url for attachments stored privately.
+        $mapped = [];
+        foreach (($announcement->attachments ?? []) as $i => $att) {
+            if (($att['disk'] ?? null) === 'local') {
+                $mapped[] = array_merge($att, ['download_url' => route('communication.attachment.download', ['announcement' => $announcement->id, 'idx' => $i])]);
+            } else {
+                $mapped[] = array_merge($att, ['download_url' => null]);
+            }
+        }
+        $announcement->attachments = $mapped;
+
         return response()->json(['success' => true, 'announcement' => $announcement]);
+    }
+
+    /**
+     * Download a protected attachment for a communication announcement.
+     * Authorization enforced server-side: teacher (owner), director (same colegio),
+     * representative (must be authorized for provided student_id), super_admin.
+     *
+     * URL: GET /communication/attachments/{announcement}/{idx}
+     */
+    public function downloadAttachment(Request $request, CommunicationAnnouncement $announcement, int $idx)
+    {
+        $user = $request->user();
+        if (! $user) {
+            return response()->json(['success' => false, 'error' => 'No autenticado.'], 401);
+        }
+
+        // Normalize attachments array
+        $attachments = $announcement->attachments ?? [];
+        if (! isset($attachments[$idx])) {
+            return response()->json(['success' => false, 'error' => 'Adjunto no encontrado.'], 404);
+        }
+
+        $att = $attachments[$idx];
+        // Only serve attachments stored on private 'local' disk. Public-disk attachments must be migrated manually.
+        if (($att['disk'] ?? null) !== 'local') {
+            // Do not serve public attachments via this endpoint; require migration.
+            return response()->json(['success' => false, 'error' => 'Adjunto no disponible. Requiere migración segura.'], 404);
+        }
+
+        // Authorization:
+        $role = $user->role ?? null;
+        if ($role === 'profesor') {
+            // Owner teacher only
+            if ((int) $announcement->teacher_id !== (int) $user->id) {
+                return response()->json(['success' => false, 'error' => 'No autorizado.'], 403);
+            }
+        } elseif ($role === 'director') {
+            if ((int) $announcement->colegio_id !== (int) $user->colegio_id) {
+                return response()->json(['success' => false, 'error' => 'No autorizado.'], 403);
+            }
+        } elseif ($role === 'representante') {
+            // Representatives must pass estudiante_id to prove access to the student targeted by the announcement
+            $studentId = $request->input('estudiante_id') ?? $request->query('estudiante_id');
+            if (! $studentId) {
+                return response()->json(['success' => false, 'error' => 'estudiante_id requerido para representantes.'], 422);
+            }
+            // Use RepresentanteDashboardService to authorize student ownership
+            $dashboard = app(\App\Services\RepresentanteDashboardService::class);
+            try {
+                $student = $dashboard->authorizeStudent($user, (int) $studentId);
+            } catch (\Throwable $e) {
+                return response()->json(['success' => false, 'error' => 'No autorizado para ese estudiante.'], 403);
+            }
+            // Check announcement targeting: if announcement targets a course, ensure student is enrolled
+            $targeting = $announcement->targeting ?? [];
+            $courseId = $targeting['course_id'] ?? null;
+            if (! empty($courseId) && ! $student->courses->contains('id', (int) $courseId)) {
+                return response()->json(['success' => false, 'error' => 'Adjunto no pertenece al estudiante indicado.'], 404);
+            }
+        } elseif ($role === 'super_admin') {
+            // allow super admin
+        } else {
+            return response()->json(['success' => false, 'error' => 'Rol no autorizado.'], 403);
+        }
+
+        // Path checks: prevent traversal and ensure storage prefix
+        $path = (string) ($att['path'] ?? '');
+        if (! str_starts_with($path, 'communication-attachments/')) {
+            return response()->json(['success' => false, 'error' => 'Path inválido.'], 403);
+        }
+
+        $disk = 'local';
+        if (! \Illuminate\Support\Facades\Storage::disk($disk)->exists($path)) {
+            return response()->json(['success' => false, 'error' => 'Archivo no encontrado.'], 404);
+        }
+
+        // Serve file securely
+        $name = $att['name'] ?? basename($path);
+        return \Illuminate\Support\Facades\Storage::disk($disk)->download($path, $name);
     }
 
     public function markReadDemo(CommunicationAnnouncement $announcement): JsonResponse

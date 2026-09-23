@@ -846,8 +846,14 @@
                             <div class="feed-item" @click="openAnnouncement(a)">
                                 <div style="font-weight:800" x-text="a.title"></div>
                                 <div style="font-size:12px" x-show="(a.attachments || []).length">
-                                    <template x-for="att in a.attachments" :key="att.url || att.name">
-                                        <a :href="att.url" target="_blank" x-text="att.name || 'Adjunto'"></a>
+                                    <template x-for="att in a.attachments" :key="att.download_url || att.name">
+                                        <template x-if="att.type === 'file'">
+                                            <a x-show="att.download_url" :href="att.download_url" target="_blank" x-text="att.name || 'Adjunto'"></a>
+                                            <span x-show="!att.download_url" x-text="'Adjunto pendiente de migración'"></span>
+                                        </template>
+                                        <template x-if="att.type === 'drive'">
+                                            <a :href="att.url" target="_blank" x-text="att.name || 'Enlace'"></a>
+                                        </template>
                                     </template>
                                 </div>
                             </div>

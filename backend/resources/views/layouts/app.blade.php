@@ -80,8 +80,21 @@
     <!-- Navbar simplified from dashboard.blade.php -->
     <nav class="navbar navbar-expand-lg navbar-light bg-white py-3 shadow-sm sticky-top">
         <div class="container">
-            <a class="navbar-brand" href="{{ route('dashboard') }}">
-                <i class="fas fa-robot me-2"></i>AulaSync
+            <a class="navbar-brand d-flex align-items-center gap-2" href="{{ route('dashboard') }}">
+                @auth
+                    @php $school = Auth::user()->colegio ?? null; @endphp
+                    @if($school && $school->logo_path)
+                        <img src="{{ \Illuminate\Support\Facades\Storage::disk('public')->url($school->logo_path) }}" alt="{{ $school->name }}" class="me-2" style="height:32px;width:auto;object-fit:contain;">
+                        <span class="navbar-brand">{{ $school->name }}</span>
+                    @else
+                        <i class="fas fa-robot me-2"></i><span class="navbar-brand">AulaSync</span>
+                        @if($school)
+                            <span class="ms-2 d-none d-md-inline text-muted" style="font-weight:600">{{ $school->name }}</span>
+                        @endif
+                    @endif
+                @else
+                    <i class="fas fa-robot me-2"></i>AulaSync
+                @endauth
             </a>
             
             <div class="ms-auto d-flex align-items-center">

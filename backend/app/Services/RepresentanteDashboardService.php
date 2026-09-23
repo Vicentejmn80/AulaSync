@@ -545,13 +545,34 @@ class RepresentanteDashboardService
             : [];
 
         return $rows->map(function (CommunicationAnnouncement $announcement) use ($readIds) {
+            $attachments = $announcement->attachments ?? [];
+            $mapped = [];
+            foreach ($attachments as $i => $att) {
+                if (($att['disk'] ?? null) === 'local') {
+                    $mapped[] = [
+                        'name' => $att['name'] ?? basename((string) ($att['path'] ?? '')),
+                        'mime' => $att['mime'] ?? null,
+                        'size' => $att['size'] ?? null,
+                        'download_url' => route('communication.attachment.download', ['announcement' => $announcement->id, 'idx' => $i]),
+                    ];
+                } else {
+                    // Public-disk attachments are not exposed via direct download until migrated.
+                    $mapped[] = [
+                        'name' => $att['name'] ?? basename((string) ($att['path'] ?? '')),
+                        'mime' => $att['mime'] ?? null,
+                        'size' => $att['size'] ?? null,
+                        'download_url' => null,
+                    ];
+                }
+            }
+
             return [
                 'id' => $announcement->id,
                 'title' => $announcement->title,
                 'body' => $announcement->body,
                 'date' => optional($announcement->sent_at ?? $announcement->created_at)?->toIso8601String(),
                 'author' => $announcement->teacher?->name ?? 'Colegio',
-                'attachments' => $announcement->attachments ?? [],
+                'attachments' => $mapped,
                 'read' => in_array($announcement->id, $readIds, true),
                 'official' => in_array(($announcement->targeting['audience_type'] ?? ''), ['all', 'families', 'representantes'], true)
                     || empty($announcement->targeting['course_id'] ?? null),

@@ -16,6 +16,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 
 class OnboardingController extends Controller
 {
@@ -186,6 +187,20 @@ class OnboardingController extends Controller
                 $nombreInstitucion = $colegio->name;
             }
 
+            // Handle optional logo upload (director onboarding or general)
+            $logoPathPublicUrl = null;
+            if ($request->hasFile('logo')) {
+                $request->validate([
+                    'logo' => 'file|mimes:png,jpg,jpeg,webp,svg|max:4096',
+                ]);
+                $logoFile = $request->file('logo');
+                // Store on public disk so it can be displayed immediately (logo is non-sensitive)
+                $stored = $logoFile->store('school-logos/'.$user->id, 'public');
+                if ($stored) {
+                    $logoPathPublicUrl = Storage::disk('public')->url($stored);
+                }
+            }
+
             if ($role !== 'representante') {
                 $user->settings()->updateOrCreate(
                 ['user_id' => $user->id],
@@ -202,7 +217,7 @@ class OnboardingController extends Controller
                     'tono' => $request->input('tono', 'amigable'),
                     'clases_semana' => (int) ($validated['clases_semana'] ?? 5),
                     'duracion_clase_min' => (int) ($validated['duracion_clase'] ?? 60),
-                    'preferencias' => [
+                    'preferencias' => array_merge([
                         'horarios' => $request->input('horarios', []),
                         'incluir' => $request->input('incluir', []),
                         'cantidad_docentes' => $validated['cantidad_docentes'] ?? null,
@@ -210,7 +225,7 @@ class OnboardingController extends Controller
                         'periodo_academico' => $validated['periodo_academico'] ?? null,
                         'logo_placeholder' => 'nova-institution-placeholder',
                         'vision_pedagogica' => $validated['vision_pedagogica'] ?? null,
-                    ],
+                    ], $logoPathPublicUrl ? ['logo_path' => $logoPathPublicUrl, 'logo_disk' => 'public'] : []),
                 ],
             );
             }
@@ -222,6 +237,24 @@ class OnboardingController extends Controller
                 'asignatura_principal' => ! empty($materiasAsignadas) ? implode(',', $materiasAsignadas) : null,
                 'horario_clases' => ($role === 'profesor' || $role === 'representante') ? $diasClase : [],
             ];
+
+            // If director created/updated a colegio and uploaded a logo, persist path on the colegio record as well.
+            if (isset($stored) && ! empty($stored)) {
+                try {
+                    if (isset($colegio) && $colegio instanceof Colegio) {
+                        $colegio->logo_path = $stored;
+                        $colegio->save();
+                    } else if ($user->colegio_id) {
+                        $c = Colegio::find($user->colegio_id);
+                        if ($c) {
+                            $c->logo_path = $stored;
+                            $c->save();
+                        }
+                    }
+                } catch (\Throwable $e) {
+                    Log::warning('No se pudo guardar logo en Colegio: ' . $e->getMessage());
+                }
+            }
 
             if ($role === 'representante') {
                 $updateData['family_code'] = $familyCode;

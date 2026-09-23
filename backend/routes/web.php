@@ -401,6 +401,10 @@ Route::middleware('auth')->group(function () {
                 Route::post('/threads/{thread}/quick-replies', [CommunicationController::class, 'suggestQuickReply'])->name('messages.quick_replies');
             });
 
+            // Protected attachment download for communications (server-side authorization)
+            Route::get('/communication/attachments/{announcement}/{idx}', [\App\Http\Controllers\Teacher\CommunicationController::class, 'downloadAttachment'])
+                ->name('communication.attachment.download');
+
             Route::prefix('teacher/attendance')->name('teacher.attendance.')->group(function () {
                 Route::get('/', [AttendanceController::class, 'index'])->name('index');
                 Route::get('/roster', [AttendanceController::class, 'roster'])->name('roster');
