@@ -208,28 +208,28 @@
         #sync-overlay.is-on    { display: flex; }
         #sync-overlay.is-vis   { opacity: 1; }
 
-        /* SVG canvas */
+        /* SVG canvas — scaled so the central mark lands near 72px */
         .sync-svg {
-            width: min(200px, 60vw);
-            height: min(200px, 60vw);
+            width: min(360px, 92vw);
+            height: min(360px, 92vw);
             overflow: visible;
         }
 
         /* Connecting lines */
         .sync-line {
             stroke: #8b5cf6;
-            stroke-width: 1.5px;
+            stroke-width: 2.75px;
             stroke-linecap: round;
             fill: none;
             animation: lineDraw 2.2s cubic-bezier(0.4, 0, 0.2, 1) infinite both;
         }
         @keyframes lineDraw {
-            0%   { stroke-dashoffset: 80; opacity: 0; }
+            0%   { stroke-dashoffset: 131; opacity: 0; }
             12%  { opacity: .9; }
             42%  { stroke-dashoffset: 0;  opacity: 1; }
             58%  { stroke-dashoffset: 0;  opacity: 1; }
             88%  { opacity: .9; }
-            100% { stroke-dashoffset: 80; opacity: 0; }
+            100% { stroke-dashoffset: 131; opacity: 0; }
         }
 
         /* Role dots */
@@ -258,17 +258,18 @@
         /* Rotating status text */
         .sync-text-wrap {
             position: relative;
-            height: 20px;
-            margin-top: 22px;
-            width: 230px;
+            height: 1.75rem;
+            margin-top: 1.75rem;
+            width: min(360px, 90vw);
             text-align: center;
         }
         .sync-msg {
             position: absolute;
             inset: 0;
-            font-size: .86rem;
-            font-weight: 700;
-            color: #6B4D87;
+            font-size: 1.2rem;
+            font-weight: 800;
+            letter-spacing: -0.01em;
+            color: #4c1d6e;
             text-align: center;
             opacity: 0;
             transition: opacity .55s ease;
@@ -369,51 +370,44 @@
 
         {{-- Animation section --}}
         <div id="sync-anim">
-            <svg class="sync-svg" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <svg class="sync-svg" viewBox="0 0 340 340" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <defs>
                     {{-- Brand gradient: violet → fuchsia → pink --}}
-                    <linearGradient id="brandGrad" x1="0" y1="0" x2="200" y2="200" gradientUnits="userSpaceOnUse">
+                    <linearGradient id="brandGrad" x1="0" y1="0" x2="340" y2="340" gradientUnits="userSpaceOnUse">
                         <stop offset="0%"   stop-color="#8b5cf6"/>
                         <stop offset="55%"  stop-color="#d946ef"/>
                         <stop offset="100%" stop-color="#f472b6"/>
                     </linearGradient>
                 </defs>
 
-                {{-- ── Connecting lines: center(100,100) → each role dot ── --}}
-                {{-- Top (director) --}}
+                {{-- Lines from center to role dots. Radius 131 keeps the old 80/44 proportion against the 72px mark. --}}
                 <line class="sync-line"
-                      x1="100" y1="100" x2="100" y2="20"
-                      stroke-dasharray="80" stroke-dashoffset="80"/>
-                {{-- Right (docente) --}}
+                      x1="170" y1="170" x2="170" y2="39"
+                      stroke-dasharray="131" stroke-dashoffset="131"/>
                 <line class="sync-line"
-                      x1="100" y1="100" x2="180" y2="100"
-                      stroke-dasharray="80" stroke-dashoffset="80"
+                      x1="170" y1="170" x2="301" y2="170"
+                      stroke-dasharray="131" stroke-dashoffset="131"
                       style="animation-delay:.55s"/>
-                {{-- Bottom (representante) --}}
                 <line class="sync-line"
-                      x1="100" y1="100" x2="100" y2="180"
-                      stroke-dasharray="80" stroke-dashoffset="80"
+                      x1="170" y1="170" x2="170" y2="301"
+                      stroke-dasharray="131" stroke-dashoffset="131"
                       style="animation-delay:1.1s"/>
-                {{-- Left (alumno) --}}
                 <line class="sync-line"
-                      x1="100" y1="100" x2="20" y2="100"
-                      stroke-dasharray="80" stroke-dashoffset="80"
+                      x1="170" y1="170" x2="39" y2="170"
+                      stroke-dasharray="131" stroke-dashoffset="131"
                       style="animation-delay:1.65s"/>
 
-                {{-- ── Role dots ── --}}
-                <circle class="sync-dot" cx="100" cy="20"  r="7" fill="url(#brandGrad)" style="animation-delay:.33s"/>
-                <circle class="sync-dot" cx="180" cy="100" r="7" fill="url(#brandGrad)" style="animation-delay:.88s"/>
-                <circle class="sync-dot" cx="100" cy="180" r="7" fill="url(#brandGrad)" style="animation-delay:1.43s"/>
-                <circle class="sync-dot" cx="20"  cy="100" r="7" fill="url(#brandGrad)" style="animation-delay:1.98s"/>
+                <circle class="sync-dot" cx="170" cy="39"  r="13" fill="url(#brandGrad)" style="animation-delay:.33s"/>
+                <circle class="sync-dot" cx="301" cy="170" r="13" fill="url(#brandGrad)" style="animation-delay:.88s"/>
+                <circle class="sync-dot" cx="170" cy="301" r="13" fill="url(#brandGrad)" style="animation-delay:1.43s"/>
+                <circle class="sync-dot" cx="39"  cy="170" r="13" fill="url(#brandGrad)" style="animation-delay:1.98s"/>
 
-                {{-- ── Central logo ── --}}
-                {{-- Gradient background rect --}}
+                {{-- 72px tile → ~76px on the 360px canvas (between h-16 and h-20) --}}
                 <rect class="sync-logo-bg"
-                      x="78" y="78" width="44" height="44" rx="11"
+                      x="134" y="134" width="72" height="72" rx="18"
                       fill="url(#brandGrad)"/>
-                {{-- School emoji as image (same source as the card logo) --}}
                 <image href="/images/emoji leyendo sin fondo.png"
-                       x="84" y="84" width="32" height="32"
+                       x="146" y="146" width="48" height="48"
                        preserveAspectRatio="xMidYMid meet"/>
             </svg>
 
@@ -502,6 +496,33 @@
                 if (syncTimeout) syncTimeout.classList.add('is-on');
             }
 
+            function hideLoader() {
+                stopTextRotation();
+                if (timeoutHandle) { clearTimeout(timeoutHandle); timeoutHandle = null; }
+                if (syncOverlay) syncOverlay.classList.remove('is-on', 'is-vis');
+                if (glassCard) glassCard.classList.remove('is-fading');
+                if (submit) {
+                    submit.disabled = false;
+                    submit.innerHTML = '<i class="fa-solid fa-right-to-bracket" style="margin-right:.5rem;"></i>Entrar Ahora';
+                }
+            }
+
+            function showLoginError(message) {
+                hideLoader();
+                var box = document.querySelector('.alert-box');
+                if (!box) {
+                    box = document.createElement('div');
+                    box.className = 'alert-box';
+                    box.innerHTML = '<ul></ul>';
+                    form.parentNode.insertBefore(box, form);
+                }
+                var list = box.querySelector('ul');
+                list.innerHTML = '';
+                var item = document.createElement('li');
+                item.textContent = message;
+                list.appendChild(item);
+            }
+
             // ── Retry ─────────────────────────────────────────────────────────
             if (retryBtn) {
                 retryBtn.addEventListener('click', function () {
@@ -536,28 +557,26 @@
                     headers:  {
                         'Content-Type':     'application/x-www-form-urlencoded',
                         'X-Requested-With': 'XMLHttpRequest',
-                        'Accept':           'text/html,application/xhtml+xml',
+                        'Accept':           'application/json',
                     },
                     body:     body,
                     signal:   controller.signal,
-                    redirect: 'manual',
                 })
                 .then(function (res) {
                     clearTimeout(timeoutHandle);
                     controller = null;
 
-                    // 302 from Laravel → opaqueredirect (redirect: 'manual')
-                    if (res.type === 'opaqueredirect' || res.redirected) {
-                        window.location.href = res.url || '/teacher/hub';
-                        return;
+                    if (res.status === 422) {
+                        return res.json().then(function (data) {
+                            var emailError = data && data.errors && data.errors.email && data.errors.email[0];
+                            showLoginError(emailError || (data && data.message) || 'No pudimos iniciar sesión.');
+                        });
                     }
 
-                    // 200 with validation errors → replace page
                     if (res.ok) {
-                        res.text().then(function (html) {
-                            document.open(); document.write(html); document.close();
+                        return res.json().then(function (data) {
+                            window.location.assign((data && data.redirect) || '/dashboard');
                         });
-                        return;
                     }
 
                     // 419 CSRF expired or other server error → reload for fresh token

@@ -4,9 +4,10 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
+use App\Models\User;
 use App\Services\AiChatHistoryService;
 use App\Services\ProductTelemetry;
-use App\Services\TeacherInviteClaimService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -25,8 +26,13 @@ class AuthenticatedSessionController extends Controller
 
     /**
      * Handle an incoming authentication request.
+     *
+     * Auth itself is a credential check plus one last_login write.
+     * Invite claim and enrollment sync used to run here for teachers and
+     * held the login response (the loader waits on this request). That work
+     * now runs after the teacher hub HTML is sent.
      */
-    public function store(LoginRequest $request): RedirectResponse
+    public function store(LoginRequest $request): RedirectResponse|JsonResponse
     {
         $request->authenticate();
 
@@ -35,7 +41,7 @@ class AuthenticatedSessionController extends Controller
         $user = $request->user();
 
         if (! $user) {
-            return redirect('/login');
+            return $this->authenticatedResponse($request, '/login');
         }
 
         $user->forceFill(['last_login_at' => now()])->save();
@@ -48,6 +54,11 @@ class AuthenticatedSessionController extends Controller
             'status' => 'success',
         ]);
 
+        return $this->authenticatedResponse($request, $this->homeFor($user));
+    }
+
+    private function homeFor(User $user): string
+    {
         if (strcasecmp((string) $user->email, 'vicentejmn80@gmail.com') === 0 && ! $user->isSuperAdmin()) {
             DB::table('users')->where('id', $user->id)->update([
                 'role' => 'super_admin',
@@ -58,25 +69,34 @@ class AuthenticatedSessionController extends Controller
         }
 
         if ($user->isSuperAdmin()) {
-            return redirect('/super-admin');
+            return '/super-admin';
         }
 
         if (! $user->onboarding_completed) {
-            return redirect('/onboarding');
+            return '/onboarding';
         }
 
         if ($user->role === 'director') {
-            return redirect()->to('/director/dashboard');
+            return '/director/dashboard';
         }
 
         if ($user->role === 'profesor') {
-            app(TeacherInviteClaimService::class)->claimForUser($user->fresh());
-            $request->session()->put('teacher.hub.claimed', true);
-
-            return redirect()->to('/teacher/hub');
+            return '/teacher/hub';
         }
 
-        return redirect()->route('dashboard');
+        return route('dashboard');
+    }
+
+    private function authenticatedResponse(Request $request, string $target): RedirectResponse|JsonResponse
+    {
+        if ($request->expectsJson() || $request->ajax()) {
+            return response()->json([
+                'ok' => true,
+                'redirect' => $target,
+            ]);
+        }
+
+        return redirect()->to($target);
     }
 
     /**

@@ -15,6 +15,7 @@ use App\Services\DirectorAnalyticsQueryService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\View\View;
@@ -41,6 +42,39 @@ class DashboardController extends Controller
         $settings = $user->settings;
         $colegioId = $user->colegio_id;
 
+        // Promedios, riesgo, cumplimiento y alertas escanean notas × actividades.
+        // Eso es lo que mantenía el loader de login >20s: el navegador no
+        // muestra el dashboard hasta que este HTML termina. 90s de caché
+        // saca ese cálculo del camino de cada inicio de sesión.
+        $snapshot = Cache::remember(
+            'director.dashboard.v1.'.($colegioId ?: 'none'),
+            90,
+            fn () => $this->buildDashboardSnapshot($colegioId ? (int) $colegioId : null)
+        );
+
+        $colegio = $colegioId ? Colegio::find($colegioId) : null;
+
+        $institution = [
+            'name' => $colegio?->name ?? $settings?->nombre_institucion ?? 'Aulasync',
+            'period' => data_get($settings?->preferencias, 'periodo_academico', now()->year . '-' . now()->copy()->addYear()->year),
+            'campuses' => data_get($settings?->preferencias, 'cantidad_sedes', 1),
+            'invite_code_masked' => true,
+            'has_codes_pin' => filled($colegio?->codes_pin),
+        ];
+
+        return view('director.dashboard', array_merge($snapshot, compact(
+            'user',
+            'settings',
+            'colegio',
+            'institution',
+        )));
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function buildDashboardSnapshot(?int $colegioId): array
+    {
         $planificacionesRecientes = collect();
         $actividadesRecientes = collect();
         $profesores = collect();
@@ -278,21 +312,7 @@ class DashboardController extends Controller
             'stuck_planificaciones' => $stuckPlanificacionesConDepartamento->values()->all(),
         ];
 
-        $colegio = $colegioId ? Colegio::find($colegioId) : null;
-
-        $institution = [
-            'name' => $colegio?->name ?? $settings?->nombre_institucion ?? 'Aulasync',
-            'period' => data_get($settings?->preferencias, 'periodo_academico', now()->year . '-' . now()->copy()->addYear()->year),
-            'campuses' => data_get($settings?->preferencias, 'cantidad_sedes', 1),
-            'invite_code_masked' => true,
-            'has_codes_pin' => filled($colegio?->codes_pin),
-        ];
-
-        return view('director.dashboard', compact(
-            'user',
-            'settings',
-            'colegio',
-            'institution',
+        return compact(
             'kpis',
             'gradePerformance',
             'lowPerformingRooms',
@@ -312,7 +332,7 @@ class DashboardController extends Controller
             'pendingInvites',
             'needsSetup',
             'insightBootstrap',
-        ));
+        );
     }
 
     public function profesores(Request $request): View

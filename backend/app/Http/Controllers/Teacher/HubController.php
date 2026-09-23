@@ -44,16 +44,25 @@ class HubController extends Controller
         $teacher = auth()->user();
         $teacher->loadMissing('settings');
 
-        // Claim + sync son caros: una vez por sesión. El login ya puede haber reclamado.
+        // Claim + matrícula no bloquean el HTML: el loader de login espera esta
+        // respuesta. El trabajo corre después de enviarla, una vez por sesión.
         if (! $request->session()->get('teacher.hub.bootstrapped')) {
-            if (! $request->session()->get('teacher.hub.claimed')) {
-                $this->inviteClaim->claimForUser($teacher->fresh());
-                $teacher->refresh();
-            }
-            $this->enrollment->syncTeacherCourses($teacher);
             $request->session()->put('teacher.hub.bootstrapped', true);
             $request->session()->put('teacher.hub.claimed', true);
             $request->session()->put('teacher.hub.last_enrollment_sync_at', now()->timestamp);
+
+            $teacherId = (int) $teacher->id;
+            $claim = $this->inviteClaim;
+            $enrollment = $this->enrollment;
+            \Illuminate\Support\defer(function () use ($teacherId, $claim, $enrollment): void {
+                $fresh = User::query()->find($teacherId);
+                if (! $fresh instanceof User) {
+                    return;
+                }
+
+                $claim->claimForUser($fresh);
+                $enrollment->syncTeacherCourses($fresh->fresh());
+            });
         }
 
         $quotes = [

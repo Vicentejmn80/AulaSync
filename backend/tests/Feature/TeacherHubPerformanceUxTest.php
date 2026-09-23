@@ -28,14 +28,14 @@ class TeacherHubPerformanceUxTest extends TestCase
         $response = $this->get('/login');
 
         $response->assertOk();
-        $response->assertSee('id="login-skeleton"', false);
+        $response->assertSee('id="sync-overlay"', false);
         $response->assertSee('as.login.optimistic', false);
         $response->assertSee('autocomplete="username"', false);
         $response->assertSee('inputmode="email"', false);
         $response->assertSee('min-height: 48px', false);
     }
 
-    public function test_teacher_login_marks_invite_claim_so_hub_skips_duplicate_work(): void
+    public function test_teacher_login_returns_without_blocking_on_invite_claim(): void
     {
         $user = User::factory()->create([
             'role' => 'profesor',
@@ -48,7 +48,17 @@ class TeacherHubPerformanceUxTest extends TestCase
         ]);
 
         $response->assertRedirect('/teacher/hub');
-        $this->assertTrue(session('teacher.hub.claimed'));
+        $this->assertFalse((bool) session('teacher.hub.claimed'));
+
+        $this->post('/logout');
+
+        $ajax = $this->postJson('/login', [
+            'email' => $user->email,
+            'password' => 'password',
+        ]);
+
+        $ajax->assertOk();
+        $ajax->assertJsonPath('redirect', '/teacher/hub');
     }
 
     public function test_teacher_hub_keeps_web_visuals_and_scrolls_on_mobile(): void
