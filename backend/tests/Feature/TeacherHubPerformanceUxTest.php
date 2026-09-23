@@ -16,7 +16,9 @@ class TeacherHubPerformanceUxTest extends TestCase
         $response = $this->get('/');
 
         $response->assertOk();
-        $response->assertSee('data-login-link', false);
+        $response->assertSee('>Iniciar Sesión</a>', false);
+        $response->assertDontSee('data-login-link', false);
+        $response->assertDontSee('pointer-events: none', false);
         $response->assertSee('touch-action: manipulation', false);
         $response->assertSee('href="'.url('/login').'"', false);
         $response->assertDontSee('speculationrules', false);
