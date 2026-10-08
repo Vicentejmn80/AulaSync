@@ -4,14 +4,14 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
-use App\Models\User;
+use App\Support\AuthHome;
 use App\Services\AiChatHistoryService;
 use App\Services\ProductTelemetry;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\View\View;
 
 class AuthenticatedSessionController extends Controller
@@ -44,7 +44,12 @@ class AuthenticatedSessionController extends Controller
             return $this->authenticatedResponse($request, '/login');
         }
 
-        $user->forceFill(['last_login_at' => now()])->save();
+        try {
+            $user->forceFill(['last_login_at' => now()])->save();
+        } catch (\Throwable $e) {
+            Log::warning('auth.login.last_login_failed', ['user_id' => $user->id, 'error' => $e->getMessage()]);
+        }
+
         app(ProductTelemetry::class)->record([
             'user' => $user,
             'source' => 'auth',
@@ -54,42 +59,12 @@ class AuthenticatedSessionController extends Controller
             'status' => 'success',
         ]);
 
-        return $this->authenticatedResponse($request, $this->homeFor($user));
-    }
-
-    private function homeFor(User $user): string
-    {
-        if (strcasecmp((string) $user->email, 'vicentejmn80@gmail.com') === 0 && ! $user->isSuperAdmin()) {
-            DB::table('users')->where('id', $user->id)->update([
-                'role' => 'super_admin',
-                'onboarding_completed' => DB::raw('true'),
-                'updated_at' => now(),
-            ]);
-            $user->refresh();
-        }
-
-        if ($user->isSuperAdmin()) {
-            return '/super-admin';
-        }
-
-        if (! $user->onboarding_completed) {
-            return '/onboarding';
-        }
-
-        if ($user->role === 'director') {
-            return '/director/dashboard';
-        }
-
-        if ($user->role === 'profesor') {
-            return '/teacher/hub';
-        }
-
-        return route('dashboard');
+        return $this->authenticatedResponse($request, AuthHome::pathFor($user));
     }
 
     private function authenticatedResponse(Request $request, string $target): RedirectResponse|JsonResponse
     {
-        if ($request->expectsJson() || $request->ajax()) {
+        if ($this->wantsLoginJson($request)) {
             return response()->json([
                 'ok' => true,
                 'redirect' => $target,
@@ -97,6 +72,13 @@ class AuthenticatedSessionController extends Controller
         }
 
         return redirect()->to($target);
+    }
+
+    private function wantsLoginJson(Request $request): bool
+    {
+        return $request->expectsJson()
+            || $request->ajax()
+            || $request->header('X-AulaSync-Login') === '1';
     }
 
     /**

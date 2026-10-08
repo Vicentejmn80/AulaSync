@@ -503,6 +503,7 @@
                 <a href="{{ url('/super-admin/health') }}" class="{{ ($section ?? '') === 'health' ? 'active' : '' }}">Salud</a>
                 <a href="{{ url('/super-admin/insights') }}" class="{{ ($section ?? '') === 'insights' ? 'active' : '' }}">Hallazgos</a>
                 <a href="{{ url('/super-admin/users') }}" class="{{ ($section ?? '') === 'users' ? 'active' : '' }}">Usuarios</a>
+                <a href="{{ url('/super-admin/formacion') }}" class="{{ ($section ?? '') === 'formacion' ? 'active' : '' }}">Formación</a>
                 <form method="POST" action="{{ url('/logout') }}" style="margin:0;">
                     @csrf
                     <button type="submit">Salir</button>

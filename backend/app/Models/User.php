@@ -32,6 +32,7 @@ class User extends Authenticatable
         'asignatura_principal',
         'horario_clases',
         'onboarding_completed',
+        'saas_access',
         'last_login_at',
         'family_code',
     ];
@@ -58,6 +59,7 @@ class User extends Authenticatable
             'password' => 'hashed',
             'horario_clases' => 'array',
             'onboarding_completed' => 'boolean',
+            'saas_access' => 'boolean',
             'last_login_at' => 'datetime',
         ];
     }
@@ -65,6 +67,20 @@ class User extends Authenticatable
     public function isSuperAdmin(): bool
     {
         return $this->role === 'super_admin';
+    }
+
+    public function hasSaasAccess(): bool
+    {
+        if ($this->isSuperAdmin()) {
+            return true;
+        }
+
+        return (bool) ($this->saas_access ?? true);
+    }
+
+    public function trainingEnrollments(): HasMany
+    {
+        return $this->hasMany(TrainingEnrollment::class);
     }
 
     public function isDirector(): bool

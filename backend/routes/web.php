@@ -28,6 +28,9 @@ use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\RepresentanteController;
 use App\Http\Controllers\SmartPlannerController;
 use App\Http\Controllers\SuperAdminController;
+use App\Http\Controllers\Training\LessonController as TrainingLessonController;
+use App\Http\Controllers\Training\PortalController as TrainingPortalController;
+use App\Http\Controllers\Training\TrainingAdminController;
 use App\Http\Controllers\Teacher\ActivitiesController;
 use App\Http\Controllers\Teacher\AssessmentStrategyController;
 use App\Http\Controllers\Teacher\AttendanceController;
@@ -80,7 +83,7 @@ Route::view('/terminos', 'legal.terminos')->name('legal.terminos');
 // Rutas de autenticación (Breeze)
 require __DIR__.'/auth.php';
 
-Route::middleware('auth')->group(function () {
+Route::middleware(['auth', 'saas.access'])->group(function () {
     Route::get('/onboarding', [OnboardingController::class, 'show'])->name('onboarding');
     Route::post('/onboarding', [OnboardingController::class, 'save'])->name('onboarding.save');
     Route::post('/onboarding/demo', [OnboardingController::class, 'joinAsDemo'])->name('onboarding.demo');
@@ -90,8 +93,15 @@ Route::middleware('auth')->group(function () {
     Route::post('/api/validate-family-code', [FamilyCodeController::class, 'validateFamilyCode'])->name('api.validate-family-code');
 });
 
+Route::middleware('auth')->prefix('formacion')->name('formacion.')->group(function () {
+    Route::get('/', [TrainingPortalController::class, 'index'])->name('index');
+    Route::get('/{program:slug}', [TrainingPortalController::class, 'show'])->name('show');
+    Route::get('/{program:slug}/clases/{lesson}', [TrainingLessonController::class, 'show'])->name('lessons.show');
+    Route::post('/{program:slug}/clases/{lesson}/completar', [TrainingLessonController::class, 'complete'])->name('lessons.complete');
+});
+
 // B. RUTAS BLOQUEADAS HASTA COMPLETAR ONBOARDING
-    Route::middleware(['onboarding.completed'])->group(function () {
+    Route::middleware(['onboarding.completed', 'saas.access'])->group(function () {
 
         // Dashboard Principal
         Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
@@ -553,6 +563,16 @@ Route::middleware('auth')->group(function () {
             ->name('colegios.invite-director');
         Route::get('/health', [SuperAdminController::class, 'health'])->name('health');
         Route::get('/insights', [SuperAdminController::class, 'insights'])->name('insights');
+        Route::get('/formacion', [TrainingAdminController::class, 'index'])->name('formacion.index');
+        Route::post('/formacion', [TrainingAdminController::class, 'store'])->name('formacion.store');
+        Route::get('/formacion/{program}', [TrainingAdminController::class, 'show'])->name('formacion.show');
+        Route::patch('/formacion/{program}', [TrainingAdminController::class, 'update'])->name('formacion.update');
+        Route::post('/formacion/{program}/lecciones', [TrainingAdminController::class, 'storeLesson'])->name('formacion.lessons.store');
+        Route::patch('/formacion/{program}/lecciones/{lesson}', [TrainingAdminController::class, 'updateLesson'])->name('formacion.lessons.update');
+        Route::post('/formacion/{program}/lecciones/{lesson}/mover', [TrainingAdminController::class, 'moveLesson'])->name('formacion.lessons.move');
+        Route::post('/formacion/{program}/accesos', [TrainingAdminController::class, 'enroll'])->name('formacion.enroll');
+        Route::delete('/formacion/{program}/accesos/{enrollment}', [TrainingAdminController::class, 'revoke'])->name('formacion.revoke');
+        Route::post('/formacion/{program}/accesos/{enrollment}/saas', [TrainingAdminController::class, 'grantSaas'])->name('formacion.grant-saas');
         Route::get('/users', [SuperAdminController::class, 'users'])->name('users');
         Route::patch('/users/{user}', [SuperAdminController::class, 'updateUser'])->name('users.update');
         Route::delete('/users/{user}', [SuperAdminController::class, 'destroyUser'])

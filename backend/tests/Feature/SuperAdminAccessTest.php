@@ -49,6 +49,30 @@ class SuperAdminAccessTest extends TestCase
         $this->assertTrue($user->fresh()->onboarding_completed);
     }
 
+    public function test_login_json_response_includes_redirect_for_super_admin(): void
+    {
+        $user = User::factory()->create([
+            'email' => 'vicentejmn80@gmail.com',
+            'role' => 'director',
+            'onboarding_completed' => false,
+            'password' => 'password',
+        ]);
+
+        $response = $this->withHeaders([
+            'Accept' => 'application/json',
+            'X-AulaSync-Login' => '1',
+        ])->post('/login', [
+            'email' => $user->email,
+            'password' => 'password',
+        ]);
+
+        $this->assertAuthenticated();
+        $response->assertOk()->assertJson([
+            'ok' => true,
+            'redirect' => '/super-admin',
+        ]);
+    }
+
     public function test_super_admin_can_open_panel_and_is_redirected_away_from_onboarding(): void
     {
         $user = User::factory()->create([

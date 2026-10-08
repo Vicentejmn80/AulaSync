@@ -5,6 +5,8 @@ namespace App\Providers;
 use App\Models\Course;
 use App\Models\Student;
 use App\Models\TeacherInvite;
+use App\Models\TrainingProgram;
+use App\Policies\TrainingProgramPolicy;
 use App\Observers\StudentObserver;
 use App\Policies\CoursePolicy;
 use App\Policies\StudentPolicy;
@@ -31,6 +33,7 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(Course::class, CoursePolicy::class);
         Gate::policy(Student::class, StudentPolicy::class);
         Gate::policy(TeacherInvite::class, TeacherInvitePolicy::class);
+        Gate::policy(TrainingProgram::class, TrainingProgramPolicy::class);
         Gate::define('manage-system', fn ($user) => $user instanceof \App\Models\User && $user->isSuperAdmin());
     }
 }

@@ -333,9 +333,13 @@
         <p class="card-sub">Introduce tus credenciales para entrar a tu planificador.</p>
 
         @php($errors = $errors ?? new \Illuminate\Support\ViewErrorBag())
-        @if($errors->any())
+        @if(session('error') || session('warning') || $errors->any())
         <div class="alert-box">
-            <ul>@foreach($errors->all() as $e)<li>{{ $e }}</li>@endforeach</ul>
+            <ul>
+                @if(session('error'))<li>{{ session('error') }}</li>@endif
+                @if(session('warning'))<li>{{ session('warning') }}</li>@endif
+                @foreach($errors->all() as $e)<li>{{ $e }}</li>@endforeach
+            </ul>
         </div>
         @endif
 
@@ -459,6 +463,7 @@
             var timeoutHandle = null;
             var msgInterval   = null;
             var TIMEOUT_MS    = 12000;
+            var useNativeSubmit = false;
 
             // ── Text rotation ─────────────────────────────────────────────────
             function startTextRotation() {
@@ -534,6 +539,9 @@
 
             // ── Intercept form submit with fetch + AbortController ────────────
             form.addEventListener('submit', function (e) {
+                if (useNativeSubmit) {
+                    return;
+                }
                 e.preventDefault();
 
                 if (submit) {
@@ -554,45 +562,75 @@
                 }, TIMEOUT_MS);
 
                 fetch(form.action, {
-                    method:   'POST',
-                    headers:  {
-                        'Content-Type':     'application/x-www-form-urlencoded',
-                        'X-Requested-With': 'XMLHttpRequest',
-                        'Accept':           'application/json',
+                    method:      'POST',
+                    credentials: 'same-origin',
+                    redirect:    'manual',
+                    headers:     {
+                        'Content-Type':       'application/x-www-form-urlencoded',
+                        'X-Requested-With':   'XMLHttpRequest',
+                        'X-AulaSync-Login':   '1',
+                        'Accept':             'application/json',
                     },
-                    body:     body,
-                    signal:   controller.signal,
+                    body:        body,
+                    signal:      controller.signal,
                 })
                 .then(function (res) {
                     clearTimeout(timeoutHandle);
                     controller = null;
 
+                    if (res.type === 'opaqueredirect' || res.status === 302 || res.status === 303) {
+                        var loc = res.headers.get('Location');
+                        if (loc) {
+                            window.location.assign(loc);
+                            return;
+                        }
+                    }
+
                     if (res.status === 422) {
                         return res.json().then(function (data) {
                             var emailError = data && data.errors && data.errors.email && data.errors.email[0];
                             showLoginError(emailError || (data && data.message) || 'No pudimos iniciar sesión.');
+                        }).catch(function () {
+                            showLoginError('Correo o contraseña incorrectos.');
+                        });
+                    }
+
+                    if (res.status === 419) {
+                        showLoginError('La sesión expiró. Recarga la página e intenta de nuevo.');
+                        return;
+                    }
+
+                    var ct = (res.headers.get('Content-Type') || '').toLowerCase();
+
+                    if (res.ok && ct.indexOf('application/json') !== -1) {
+                        return res.json().then(function (data) {
+                            if (data && data.ok && data.redirect) {
+                                window.location.assign(data.redirect);
+                                return;
+                            }
+                            showLoginError('No pudimos completar el inicio de sesión. Intenta otra vez.');
+                        }).catch(function () {
+                            showLoginError('Respuesta inesperada del servidor. Intenta otra vez.');
                         });
                     }
 
                     if (res.ok) {
-                        return res.json().then(function (data) {
-                            window.location.assign((data && data.redirect) || '/dashboard');
-                        });
+                        // Proxy devolvió HTML en lugar de JSON: envío clásico conserva la cookie de sesión.
+                        useNativeSubmit = true;
+                        form.submit();
+                        return;
                     }
 
-                    // 419 CSRF expired or other server error → reload for fresh token
-                    window.location.reload();
+                    showLoginError('Error del servidor (' + res.status + '). Intenta de nuevo en unos segundos.');
                 })
                 .catch(function (err) {
                     clearTimeout(timeoutHandle);
                     controller = null;
 
                     if (err && err.name === 'AbortError') {
-                        // Either 12 s timeout fired (UI already updated) or retry clicked
                         return;
                     }
-                    // Network failure → reload
-                    window.location.reload();
+                    showLoginError('No hay conexión con el servidor. Revisa tu red e intenta de nuevo.');
                 });
             });
         })();

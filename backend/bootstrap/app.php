@@ -1,8 +1,10 @@
 <?php
 
+use App\Support\AuthHome;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Http\Request;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -18,12 +20,19 @@ return Application::configure(basePath: dirname(__DIR__))
             \App\Http\Middleware\PrefetchHotRoutes::class,
         ]);
 
+        $middleware->redirectUsersTo(function (Request $request) {
+            $user = $request->user();
+
+            return $user ? AuthHome::pathFor($user) : '/';
+        });
+
         $middleware->alias([
             'onboarding.completed' => \App\Http\Middleware\EnsureOnboardingCompleted::class,
             'role.director'        => \App\Http\Middleware\EnsureDirectorRole::class,
             'role.teacher'         => \App\Http\Middleware\EnsureTeacherRole::class,
             'role.representante'   => \App\Http\Middleware\EnsureRepresentanteRole::class,
             'role.super_admin'     => \App\Http\Middleware\EnsureSuperAdminRole::class,
+            'saas.access'          => \App\Http\Middleware\EnsureSaasAccess::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
