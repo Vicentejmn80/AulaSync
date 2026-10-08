@@ -4,7 +4,7 @@
 
 @section('content')
     <h1>Gestión de Usuarios</h1>
-    <p class="sub">Usuarios agrupados por colegio. Cambia el rol, el plantel y si ya completaron onboarding.</p>
+    <p class="sub">Editas la cuenta existente (mismo ID). Cambiar el correo o la contraseña pide confirmación: el correo anterior deja de servir para entrar y el historial de esa cuenta se conserva.</p>
 
     @php
         $grouped = $users->groupBy(fn ($user) => $user->colegio?->name ?: ($user->isSuperAdmin() ? 'Super admin' : 'Sin colegio'));
@@ -48,15 +48,24 @@
                                     <td>{{ $user->email }}</td>
                                     <td>
                                         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
-                                            <form method="POST" action="{{ url('/super-admin/users/'.$user->id) }}" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;background:#f8fafc;border:1px solid #e2e8f0;padding:7px 8px;border-radius:12px;">
+                                            <form method="POST"
+                                                  action="{{ url('/super-admin/users/'.$user->id) }}"
+                                                  data-original-email="{{ $user->email }}"
+                                                  data-user-id="{{ $user->id }}"
+                                                  @submit="askCredentials($event)"
+                                                  style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;background:#f8fafc;border:1px solid #e2e8f0;padding:7px 8px;border-radius:12px;">
                                                 @csrf
                                                 @method('PATCH')
-                                                <select name="role">
-                                                    @foreach (['super_admin' => 'Super admin', 'director' => 'Director', 'profesor' => 'Docente', 'representante' => 'Representante'] as $value => $label)
+                                                <input type="hidden" name="confirm_sensitive" value="0">
+                                                <input type="text" name="name" value="{{ $user->name }}" required maxlength="180" aria-label="Nombre" style="min-width:140px;">
+                                                <input type="email" name="email" value="{{ $user->email }}" required maxlength="180" aria-label="Correo" style="min-width:180px;">
+                                                <input type="password" name="password" placeholder="Nueva contraseña" autocomplete="new-password" minlength="8" aria-label="Nueva contraseña" style="min-width:150px;">
+                                                <select name="role" aria-label="Rol">
+                                                    @foreach (['super_admin' => 'Super admin', 'director' => 'Director', 'profesor' => 'Docente', 'representante' => 'Representante', 'formacion' => 'Formación'] as $value => $label)
                                                         <option value="{{ $value }}" @selected($user->role === $value)>{{ $label }}</option>
                                                     @endforeach
                                                 </select>
-                                                <select name="colegio_id">
+                                                <select name="colegio_id" aria-label="Colegio">
                                                     <option value="">Sin colegio</option>
                                                     @foreach ($colegios as $colegio)
                                                         <option value="{{ $colegio->id }}" @selected((int) $user->colegio_id === (int) $colegio->id)>{{ $colegio->name }}</option>
@@ -88,4 +97,6 @@
             </article>
         @endforeach
     </div>
+
+    @include('super-admin.partials.audit-log')
 @endsection

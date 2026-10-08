@@ -547,11 +547,11 @@
     </div>
     <div class="sa-overlay" x-cloak x-show="open" x-transition @click.self="open = false" role="dialog" aria-modal="true">
         <div class="sa-dialog">
-            <h3>Confirmar eliminación</h3>
+            <h3 x-text="mode === 'credentials' ? 'Confirmar cambio de acceso' : 'Confirmar eliminación'"></h3>
             <p x-text="message"></p>
             <div class="sa-actions">
                 <button type="button" class="btn btn-ghost" @click="open = false">Cancelar</button>
-                <button type="button" class="btn btn-danger" @click="confirm()">Eliminar</button>
+                <button type="button" class="btn btn-danger" @click="confirm()" x-text="mode === 'credentials' ? 'Guardar cambio' : 'Eliminar'"></button>
             </div>
         </div>
     </div>
@@ -559,15 +559,41 @@
         function superAdminConfirm() {
             return {
                 open: false,
+                mode: 'delete',
                 message: '',
                 form: null,
                 ask(event, message) {
                     event.preventDefault();
+                    this.mode = 'delete';
                     this.form = event.target;
                     this.message = message;
                     this.open = true;
                 },
+                askCredentials(event) {
+                    const form = event.target;
+                    const email = (form.email.value || '').trim();
+                    const password = form.password ? form.password.value : '';
+                    const original = form.dataset.originalEmail || '';
+                    if (email === original && password === '') {
+                        return;
+                    }
+                    event.preventDefault();
+                    this.mode = 'credentials';
+                    this.form = form;
+                    if (email !== original && password !== '') {
+                        this.message = 'Vas a cambiar el correo y la contraseña de esta misma cuenta (ID ' + form.dataset.userId + '). ' + original + ' dejará de servir para entrar. La próxima sesión será con ' + email + ' y la contraseña nueva, conservando rol, colegio e historial.';
+                    } else if (email !== original) {
+                        this.message = 'Vas a cambiar el correo de esta misma cuenta (ID ' + form.dataset.userId + '). ' + original + ' dejará de servir para entrar. La próxima sesión será con ' + email + ', con el mismo rol, colegio e historial.';
+                    } else {
+                        this.message = 'Vas a reemplazar la contraseña de esta misma cuenta (ID ' + form.dataset.userId + '). La contraseña anterior dejará de funcionar.';
+                    }
+                    this.open = true;
+                },
                 confirm() {
+                    if (this.mode === 'credentials' && this.form) {
+                        const flag = this.form.querySelector('[name=confirm_sensitive]');
+                        if (flag) flag.value = '1';
+                    }
                     if (this.form) {
                         this.form.submit();
                     }

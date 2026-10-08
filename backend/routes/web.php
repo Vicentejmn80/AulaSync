@@ -557,6 +557,12 @@ Route::middleware('auth')->prefix('formacion')->name('formacion.')->group(functi
         Route::post('/schools', [SuperAdminController::class, 'storeSchool'])
             ->middleware('can:manage-system')
             ->name('schools.store');
+        Route::get('/colegios/{colegio}/respaldo', [SuperAdminController::class, 'backupSchool'])
+            ->middleware('can:manage-system')
+            ->name('colegios.backup');
+        Route::delete('/colegios/{colegio}', [SuperAdminController::class, 'destroySchool'])
+            ->middleware('can:manage-system')
+            ->name('colegios.destroy');
         Route::get('/colegios/{colegio}', [SuperAdminController::class, 'school'])->name('colegios.show');
         Route::post('/colegios/{colegio}/invite-director', [SuperAdminController::class, 'inviteDirector'])
             ->middleware('can:manage-system')
@@ -574,7 +580,9 @@ Route::middleware('auth')->prefix('formacion')->name('formacion.')->group(functi
         Route::delete('/formacion/{program}/accesos/{enrollment}', [TrainingAdminController::class, 'revoke'])->name('formacion.revoke');
         Route::post('/formacion/{program}/accesos/{enrollment}/saas', [TrainingAdminController::class, 'grantSaas'])->name('formacion.grant-saas');
         Route::get('/users', [SuperAdminController::class, 'users'])->name('users');
-        Route::patch('/users/{user}', [SuperAdminController::class, 'updateUser'])->name('users.update');
+        Route::patch('/users/{user}', [SuperAdminController::class, 'updateUser'])
+            ->middleware('can:manage-system')
+            ->name('users.update');
         Route::delete('/users/{user}', [SuperAdminController::class, 'destroyUser'])
             ->middleware('can:manage-system')
             ->name('users.destroy');

@@ -244,6 +244,8 @@ class SuperAdminAnalyticsService
             ->withCount([
                 'users',
                 'users as docentes_count' => fn ($q) => $q->where('role', 'profesor'),
+                'students',
+                'courses',
             ])
             ->orderBy('name')
             ->get();
@@ -297,6 +299,8 @@ class SuperAdminAnalyticsService
                 'director' => $colegio->director?->name,
                 'usuarios' => (int) $colegio->users_count,
                 'docentes' => (int) $colegio->docentes_count,
+                'alumnos' => (int) $colegio->students_count,
+                'cursos' => (int) $colegio->courses_count,
                 'actividad' => (int) ($activityCounts[$colegio->id] ?? 0),
                 'eventos' => (int) ($events->total ?? 0),
                 'errores' => (int) ($events->fail ?? 0),

@@ -31,6 +31,16 @@ class Colegio extends Model
         return $this->hasMany(User::class, 'colegio_id');
     }
 
+    public function students(): HasMany
+    {
+        return $this->hasMany(Student::class, 'colegio_id');
+    }
+
+    public function courses(): HasMany
+    {
+        return $this->hasMany(Course::class, 'colegio_id');
+    }
+
     public static function defaultPinFromInvite(?string $inviteCode): string
     {
         $digits = preg_replace('/\D+/', '', (string) $inviteCode) ?: '0000';

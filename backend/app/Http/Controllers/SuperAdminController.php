@@ -8,19 +8,25 @@ use App\Models\Course;
 use App\Models\Invitation;
 use App\Models\Student;
 use App\Models\User;
+use App\Services\FounderAudit;
 use App\Services\InvitationService;
+use App\Services\SchoolPurgeService;
 use App\Services\SuperAdminAnalyticsService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Validation\Rule;
 use Illuminate\View\View;
+use Symfony\Component\HttpFoundation\Response;
 
 class SuperAdminController extends Controller
 {
     public function __construct(
         private SuperAdminAnalyticsService $analytics,
         private InvitationService $invitations,
+        private SchoolPurgeService $schoolPurge,
+        private FounderAudit $founderAudit,
     ) {}
 
     public function index(Request $request): View
@@ -57,7 +63,59 @@ class SuperAdminController extends Controller
     {
         return $this->section($request, 'schools', 'super-admin.schools', [
             'schools' => $this->analytics->schools($this->analytics->filters($request->all())),
+            'auditLogs' => $this->founderAudit->recent(),
         ]);
+    }
+
+    public function backupSchool(Colegio $colegio): Response
+    {
+        $this->assertCanManage();
+
+        $payload = $this->schoolPurge->export($colegio);
+        $filename = 'colegio-'.$colegio->id.'-respaldo.json';
+
+        return response(
+            json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            200,
+            [
+                'Content-Type' => 'application/json; charset=UTF-8',
+                'Content-Disposition' => 'attachment; filename="'.$filename.'"',
+            ]
+        );
+    }
+
+    public function destroySchool(Request $request, Colegio $colegio): RedirectResponse
+    {
+        $this->assertCanManage();
+
+        $data = $request->validate([
+            'confirm_name' => ['required', 'string', 'max:180'],
+        ]);
+
+        if ($data['confirm_name'] !== $colegio->name) {
+            return back()->with('error', 'El nombre no coincide. Escribe el nombre exacto del colegio para eliminarlo.');
+        }
+
+        $snapshot = [
+            'name' => $colegio->name,
+            'id' => $colegio->id,
+            'counts' => $this->schoolPurge->counts($colegio),
+        ];
+
+        $this->schoolPurge->destroy($colegio);
+
+        $this->founderAudit->record(
+            $request->user(),
+            'school.deleted',
+            'Eliminó el colegio '.$snapshot['name'].'.',
+            $snapshot,
+            'colegio',
+            (int) $snapshot['id'],
+        );
+
+        return redirect()
+            ->route('super-admin.schools')
+            ->with('success', 'Eliminé el colegio '.$snapshot['name'].' y todos sus datos asociados.');
     }
 
     public function school(Request $request, Colegio $colegio): View
@@ -154,16 +212,34 @@ class SuperAdminController extends Controller
             'filterOptions' => $this->analytics->filterOptions(),
             'users' => $users,
             'colegios' => Colegio::query()->orderBy('name')->get(['id', 'name']),
+            'auditLogs' => $this->founderAudit->recent(),
         ]);
     }
 
     public function updateUser(Request $request, User $user): RedirectResponse
     {
+        $this->assertCanManage();
+
         $data = $request->validate([
-            'role' => ['required', 'in:super_admin,director,profesor,representante'],
+            'name' => ['required', 'string', 'max:180'],
+            'email' => ['required', 'email', 'max:180', Rule::unique('users', 'email')->ignore($user->id)],
+            'role' => ['required', 'in:super_admin,director,profesor,representante,formacion'],
+            'password' => ['nullable', 'string', 'min:8', 'max:200'],
             'colegio_id' => ['nullable', 'integer', 'exists:colegios,id'],
             'onboarding_completed' => ['nullable', 'boolean'],
+            'confirm_sensitive' => ['nullable', 'boolean'],
         ]);
+
+        $email = trim($data['email']);
+        $password = trim((string) ($data['password'] ?? ''));
+        $emailChanged = strcasecmp($email, (string) $user->email) !== 0;
+        $passwordChanged = $password !== '';
+
+        if (($emailChanged || $passwordChanged) && ! $request->boolean('confirm_sensitive')) {
+            return back()
+                ->withInput()
+                ->with('error', 'Confirma el cambio de correo o contraseña antes de guardar. Esa cuenta es la misma; solo cambia quién puede entrar.');
+        }
 
         if ($user->isSuperAdmin() && $data['role'] !== 'super_admin') {
             $otherAdmins = User::where('role', 'super_admin')->where('id', '!=', $user->id)->count();
@@ -172,22 +248,58 @@ class SuperAdminController extends Controller
             }
         }
 
-        $user->forceFill([
+        $before = [
+            'name' => $user->name,
+            'email' => $user->email,
+            'role' => $user->role,
+            'colegio_id' => $user->colegio_id,
+            'onboarding_completed' => (bool) $user->onboarding_completed,
+        ];
+
+        $boolOnboarding = $request->boolean('onboarding_completed');
+        $updates = [
+            'name' => trim($data['name']),
+            'email' => $email,
             'role' => $data['role'],
-            'colegio_id' => $data['colegio_id'] ?: null,
-        ])->save();
-
-        $boolOnboarding = ! empty($data['onboarding_completed']) ?? false;
-        $user->forceFill([
+            'colegio_id' => ($data['colegio_id'] ?? null) ?: null,
             'onboarding_completed' => $boolOnboarding,
-        ])->save();
+        ];
+        if ($passwordChanged) {
+            $updates['password'] = $password;
+        }
 
-        DB::table('users')->where('id', $user->id)->update([
-            'onboarding_completed' => $boolOnboarding ? true : false,
-            'updated_at' => now(),
-        ]);
+        $user->forceFill($updates)->save();
 
-        return back()->with('success', "Actualicé a {$user->name}.");
+        $after = [
+            'name' => $user->name,
+            'email' => $user->email,
+            'role' => $user->role,
+            'colegio_id' => $user->colegio_id,
+            'onboarding_completed' => (bool) $user->onboarding_completed,
+        ];
+
+        $changes = [];
+        foreach ($after as $key => $value) {
+            if ($before[$key] != $value) {
+                $changes[$key] = ['from' => $before[$key], 'to' => $value];
+            }
+        }
+        if ($passwordChanged) {
+            $changes['password'] = 'replaced';
+        }
+
+        if ($changes !== []) {
+            $this->founderAudit->record(
+                $request->user(),
+                'user.updated',
+                'Editó la cuenta #'.$user->id.' ('.$user->email.').',
+                $changes,
+                'user',
+                (int) $user->id,
+            );
+        }
+
+        return back()->with('success', "Actualicé la cuenta existente de {$user->name} (ID {$user->id}).");
     }
 
     public function destroyUser(Request $request, User $user): RedirectResponse
