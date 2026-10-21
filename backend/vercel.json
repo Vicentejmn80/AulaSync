@@ -27,7 +27,7 @@
       "dest": "/public/.well-known/$1"
     },
     {
-      "src": "/(.*\\.(?:css|js|mjs|map|ico|png|jpg|jpeg|gif|svg|webp|woff2?|ttf|eot|json|webmanifest))$",
+      "src": "/(.*\\.(?:css|js|mjs|map|ico|png|jpg|jpeg|gif|svg|webp|mp4|webm|mov|woff2?|ttf|eot|json|webmanifest))$",
       "dest": "/public/$1"
     },
     {

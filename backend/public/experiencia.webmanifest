@@ -1,0 +1,9 @@
+{
+  "name": "AulaSync Experiencia",
+  "short_name": "AulaSync",
+  "start_url": "/experiencia",
+  "display": "fullscreen",
+  "background_color": "#F7F2FF",
+  "theme_color": "#6C5CE7",
+  "lang": "es"
+}

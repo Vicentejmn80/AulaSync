@@ -1197,6 +1197,26 @@
             flex-wrap: wrap;
         }
 
+        .az-experiencia-entry {
+            margin: 14px 0 0;
+            text-align: center;
+        }
+
+        .az-experiencia-entry a {
+            color: var(--az-text-tertiary);
+            font-size: 11.5px;
+            font-weight: 500;
+            letter-spacing: 0.02em;
+            text-decoration: none;
+            opacity: 0.8;
+        }
+
+        .az-experiencia-entry a:hover,
+        .az-experiencia-entry a:focus-visible {
+            color: var(--az-indigo-600);
+            opacity: 1;
+        }
+
         @media (max-width: 900px) {
             .az-footer-top { grid-template-columns: repeat(2, 1fr); }
         }
@@ -1986,6 +2006,9 @@
                     <a href="{{ route('legal.terminos') }}">Términos</a>
                 </div>
             </div>
+            <p class="az-experiencia-entry">
+                <a href="{{ route('experiencia') }}">Experiencia interactiva</a>
+            </p>
         </div>
     </footer>
 

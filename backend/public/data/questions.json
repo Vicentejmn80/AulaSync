@@ -1,0 +1,126 @@
+{
+  "profesor": [
+    {
+      "q": "¿Qué es un prompt en IA?",
+      "options": ["Una instrucción que le das a la IA", "Un virus", "Un tipo de pizarra", "Un formato de examen"],
+      "answer": 0,
+      "fact": "Un buen prompt incluye contexto, tarea y formato."
+    },
+    {
+      "q": "Para que la IA te dé una mejor planificación de clase, lo mejor es…",
+      "options": ["Darle grado, tema, duración y objetivo", "Pedirle solo hazme una clase", "Escribir en mayúsculas", "Repetir la pregunta tres veces"],
+      "answer": 0,
+      "fact": "Mientras más contexto das, más útil es el resultado."
+    },
+    {
+      "q": "¿Cuál es una buena práctica al usar IA con tus alumnos?",
+      "options": ["Revisar siempre lo que genera antes de usarlo", "Copiar sin leer", "Darle datos personales de los alumnos", "Usarla para calificar sin revisar"],
+      "answer": 0,
+      "fact": "La IA propone. El docente decide."
+    },
+    {
+      "q": "¿Qué ayuda a ahorrar más tiempo a un docente?",
+      "options": ["Automatizar tareas repetitivas como boletines y comunicados", "Hacer más reuniones", "Imprimir todo", "Calificar a mano"],
+      "answer": 0,
+      "fact": "El tiempo recuperado se puede devolver a la clase."
+    },
+    {
+      "q": "Una rúbrica sirve para…",
+      "options": ["Evaluar con criterios claros y transparentes", "Decorar el cuaderno", "Medir asistencia", "Castigar"],
+      "answer": 0,
+      "fact": "Los criterios claros hacen la evaluación más justa."
+    },
+    {
+      "q": "¿Cuál dato NO deberías ingresar en una herramienta de IA pública?",
+      "options": ["Datos personales de estudiantes", "Un tema de clase", "Una pregunta de matemáticas", "Un poema de dominio público"],
+      "answer": 0,
+      "fact": "Los datos de los estudiantes se quedan en el colegio."
+    },
+    {
+      "q": "Si la IA inventa un dato que suena real, eso se llama…",
+      "options": ["Alucinación", "Resumen", "Traducción", "Calibración"],
+      "answer": 0,
+      "fact": "Por eso conviene verificar los datos antes de usarlos."
+    },
+    {
+      "q": "La mejor forma de comunicar rápido a todos los representantes es…",
+      "options": ["Una plataforma escolar con comunicados centralizados", "Cadenas de mensajes sueltas", "Papelitos en la mochila", "Esperar a la reunión"],
+      "answer": 0,
+      "fact": "Un solo canal evita que la información se pierda."
+    },
+    {
+      "q": "¿Qué significa personalizar un prompt?",
+      "options": ["Adaptarlo al grado, la materia y el objetivo", "Cambiar el color de la letra", "Traducirlo al latín", "Borrarlo"],
+      "answer": 0,
+      "fact": "El mismo prompt funciona mejor cuando habla de tu clase."
+    },
+    {
+      "q": "Un comunicado claro para las familias debería…",
+      "options": ["Decir qué pasa, cuándo y qué se espera de ellos", "Ser lo más largo posible", "Ir solo por un chat suelto", "No incluir fecha"],
+      "answer": 0,
+      "fact": "Qué, cuándo y qué hacer: con eso una familia puede responder."
+    }
+  ],
+  "director": [
+    {
+      "q": "¿Qué ayuda más a reducir la carga administrativa de un colegio?",
+      "options": ["Centralizar notas, asistencia y comunicados en una plataforma", "Más archivadores", "Más hojas de cálculo separadas", "Más reuniones"],
+      "answer": 0,
+      "fact": "Centralizar evita repetir el mismo dato en varios lugares."
+    },
+    {
+      "q": "¿Cuál es una ventaja de que los representantes vean las notas en línea?",
+      "options": ["Transparencia y menos consultas repetitivas en secretaría", "Más impresiones", "Menos comunicación", "Nada cambia"],
+      "answer": 0,
+      "fact": "Cuando la familia ya vio la nota, secretaría responde menos veces lo mismo."
+    },
+    {
+      "q": "Antes de implementar una nueva herramienta digital, lo ideal es…",
+      "options": ["Hacer un piloto con un grupo pequeño", "Imponerla a todos de golpe", "No capacitar", "Ignorar al personal docente"],
+      "answer": 0,
+      "fact": "Un piloto corto enseña qué ajustar antes de crecer."
+    },
+    {
+      "q": "¿Qué dato escolar es más sensible y requiere cuidado especial?",
+      "options": ["Datos personales y académicos de los estudiantes", "Horario del recreo", "Fecha de vacaciones", "Nombre del colegio"],
+      "answer": 0,
+      "fact": "Esa información solo debe verla quien la necesita."
+    },
+    {
+      "q": "¿Cuál es un indicador útil para la gestión escolar?",
+      "options": ["Asistencia, rendimiento y comunicación con representantes", "Cantidad de carpetas", "Cantidad de impresoras", "Color del uniforme"],
+      "answer": 0,
+      "fact": "Esos tres datos muestran cómo está el colegio esta semana."
+    },
+    {
+      "q": "La IA en la gestión escolar sirve mejor para…",
+      "options": ["Apoyar decisiones y automatizar tareas, con supervisión humana", "Reemplazar al personal", "Decidir sanciones sola", "Nada útil"],
+      "answer": 0,
+      "fact": "La herramienta propone. La dirección sigue decidiendo."
+    },
+    {
+      "q": "¿Qué mejora más la relación colegio-familia?",
+      "options": ["Comunicación oportuna, clara y constante", "Comunicados solo a fin de año", "Mensajes confusos", "Ninguna comunicación"],
+      "answer": 0,
+      "fact": "Las familias responden mejor cuando se enteran a tiempo."
+    },
+    {
+      "q": "Una buena capacitación docente en tecnología debe ser…",
+      "options": ["Práctica, corta y con acompañamiento", "Solo teórica", "Una sola vez al año", "Obligatoria y sin apoyo"],
+      "answer": 0,
+      "fact": "Se aprende usándola, con alguien cerca para la primera vez."
+    },
+    {
+      "q": "¿Qué conviene revisar cada semana en la gestión del colegio?",
+      "options": ["Asistencia, pendientes y comunicados importantes", "Solo el inventario de tizas", "El color de las paredes", "Nada en especial"],
+      "answer": 0,
+      "fact": "Una revisión corta evita que los pendientes se acumulen."
+    },
+    {
+      "q": "Si un piloto de una herramienta funciona bien, el siguiente paso es…",
+      "options": ["Ampliarlo por etapas y capacitar a quien la usa", "Instalarla en todo el país al día siguiente", "Olvidarla", "Quitar la capacitación"],
+      "answer": 0,
+      "fact": "Crecer por etapas mantiene el control y al equipo acompañado."
+    }
+  ]
+}

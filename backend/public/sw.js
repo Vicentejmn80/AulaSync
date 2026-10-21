@@ -1,4 +1,4 @@
-const CACHE_NAME = "laravel-pwa-v4-auth-network-only";
+const CACHE_NAME = "laravel-pwa-v5-experiencia";
 const OFFLINE_URL = "/offline.html";
 
 /** Auth nunca se cachea. El navegador (o navigation preload) va directo a red. */
@@ -61,6 +61,16 @@ self.addEventListener("message", (event) => {
     }
 });
 
+function isExperienciaData(pathname) {
+    return pathname.startsWith("/data/");
+}
+
+function isExperienciaAsset(pathname) {
+    return pathname.startsWith("/videos/experiencia/")
+        || pathname === "/css/experiencia.css"
+        || pathname.startsWith("/js/experiencia");
+}
+
 self.addEventListener("fetch", (event) => {
     const request = event.request;
 
@@ -95,6 +105,35 @@ self.addEventListener("fetch", (event) => {
             } catch (e) {}
             return fetch(request, { cache: "no-store", credentials: "same-origin" });
         })());
+        return;
+    }
+
+    if (isExperienciaData(url.pathname)) {
+        event.respondWith(
+            fetch(request).then((response) => {
+                if (response.ok) {
+                    const clone = response.clone();
+                    caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+                }
+                return response;
+            }).catch(() => caches.match(request))
+        );
+        return;
+    }
+
+    if (isExperienciaAsset(url.pathname)) {
+        event.respondWith(
+            caches.match(request).then((cached) => {
+                const network = fetch(request).then((response) => {
+                    if (response.ok) {
+                        const clone = response.clone();
+                        caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+                    }
+                    return response;
+                }).catch(() => cached);
+                return cached || network;
+            })
+        );
         return;
     }
 
