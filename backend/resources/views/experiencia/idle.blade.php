@@ -15,13 +15,11 @@
 </head>
 <body>
     <div class="sky" aria-hidden="true">
-        <span class="blob blob-a"></span>
-        <span class="blob blob-b"></span>
         <span class="float f1">✏️</span>
-        <span class="float far f2">📚</span>
+        <span class="float f2">📚</span>
         <span class="float f3">🎓</span>
-        <span class="float far f4">⭐</span>
-        <span class="float f5">⚙️</span>
+        <span class="float f4">⭐</span>
+        <span class="float f5">💬</span>
     </div>
     <div class="loader" id="experiencia-loader">Preparando a Aulo…</div>
     <h1 class="sr-only">Experiencia interactiva de AulaSync</h1>
@@ -37,21 +35,37 @@
         <div class="shell">
             <div class="camera-wrap">
                 <div class="camera" id="experiencia-camera">
-                    @if ($celebrateVideoUrl)
-                        <video id="experiencia-celebrate-fill" class="scene-fill" src="{{ $celebrateVideoUrl }}" muted playsinline webkit-playsinline preload="auto" aria-hidden="true"></video>
+                    <div class="halo" aria-hidden="true"></div>
+                    <div class="floor-shadow" aria-hidden="true"></div>
+                    <div class="confetti confetti-back" id="confeti-atras" aria-hidden="true"></div>
+                    @if (!empty($typing['poster']))
+                        <img id="experiencia-poster" class="scene-still is-on" src="{{ $typing['poster'] }}" alt="">
                     @endif
-                    @if ($typingVideoUrl)
-                        <video id="experiencia-idle-video" class="scene-video is-on" src="{{ $typingVideoUrl }}" autoplay loop muted playsinline webkit-playsinline preload="auto" disablepictureinpicture aria-hidden="true"></video>
+                    @if (!empty($typing['mp4']) || !empty($typing['webm']) || !empty($typing['mov']))
+                        <video id="experiencia-idle-video" class="scene-video is-on {{ empty($typing['webm']) && empty($typing['mov']) ? 'is-matte' : '' }}" autoplay loop muted playsinline webkit-playsinline preload="auto" disablepictureinpicture aria-hidden="true">
+                            @if (!empty($typing['webm']))<source src="{{ $typing['webm'] }}" type="video/webm">@endif
+                            @if (!empty($typing['mov']))<source src="{{ $typing['mov'] }}" type="video/quicktime">@endif
+                            @if (!empty($typing['mp4']))<source src="{{ $typing['mp4'] }}" type="video/mp4">@endif
+                        </video>
                     @endif
-                    @if ($waveVideoUrl)
-                        <video id="experiencia-wave-video" class="scene-video" src="{{ $waveVideoUrl }}" playsinline webkit-playsinline preload="auto" disablepictureinpicture aria-hidden="true"></video>
+                    @if (!empty($wave['mp4']) || !empty($wave['webm']) || !empty($wave['mov']))
+                        <video id="experiencia-wave-video" class="scene-video {{ empty($wave['webm']) && empty($wave['mov']) ? 'is-matte' : '' }}" playsinline webkit-playsinline preload="auto" disablepictureinpicture aria-hidden="true">
+                            @if (!empty($wave['webm']))<source src="{{ $wave['webm'] }}" type="video/webm">@endif
+                            @if (!empty($wave['mov']))<source src="{{ $wave['mov'] }}" type="video/quicktime">@endif
+                            @if (!empty($wave['mp4']))<source src="{{ $wave['mp4'] }}" type="video/mp4">@endif
+                        </video>
                     @endif
-                    @if ($celebrateVideoUrl)
-                        <video id="experiencia-celebrate-video" class="scene-video" src="{{ $celebrateVideoUrl }}" playsinline webkit-playsinline preload="auto" disablepictureinpicture aria-hidden="true"></video>
+                    @if (!empty($celebrate['mp4']) || !empty($celebrate['webm']) || !empty($celebrate['mov']))
+                        <video id="experiencia-celebrate-video" class="scene-video {{ empty($celebrate['webm']) && empty($celebrate['mov']) ? 'is-matte' : '' }}" playsinline webkit-playsinline preload="auto" disablepictureinpicture aria-hidden="true">
+                            @if (!empty($celebrate['webm']))<source src="{{ $celebrate['webm'] }}" type="video/webm">@endif
+                            @if (!empty($celebrate['mov']))<source src="{{ $celebrate['mov'] }}" type="video/quicktime">@endif
+                            @if (!empty($celebrate['mp4']))<source src="{{ $celebrate['mp4'] }}" type="video/mp4">@endif
+                        </video>
                     @endif
-                    @unless ($typingVideoUrl)
+                    @if (empty($typing['mp4']) && empty($typing['webm']) && empty($typing['mov']))
                         <p class="fallback">El video del robot se incorpora en config/experiencia.php.</p>
-                    @endunless
+                    @endif
+                    <div class="confetti confetti-front" id="confeti-frente" aria-hidden="true"></div>
                 </div>
             </div>
 
@@ -70,7 +84,6 @@
                 <section class="panel" id="panel-quiz" aria-label="Trivia">
                     <div class="quiz-head">
                         <p class="quiz-progress" id="quiz-progress">1/3</p>
-                        <div class="timer" id="quiz-timer" aria-hidden="true"></div>
                         <p class="streak" id="quiz-streak"></p>
                     </div>
                     <h2 class="question" id="quiz-question"></h2>

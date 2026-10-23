@@ -103,7 +103,7 @@
         },
         toCsv: function () {
             return all().then(function (rows) {
-                var headers = ["createdAt", "tabletId", "rol", "nombre", "colegio", "whatsapp", "puntaje", "premio", "codigo", "consentimiento", "sync"];
+                var headers = ["createdAt", "tabletId", "rol", "nombre", "colegio", "whatsapp", "puntaje", "premio", "codigo", "consentimiento", "reto_principal", "sync"];
                 var lines = [headers.join(",")];
                 rows.forEach(function (row) {
                     lines.push(headers.map(function (key) {

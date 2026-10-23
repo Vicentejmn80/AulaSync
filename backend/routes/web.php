@@ -80,6 +80,7 @@ Route::post('/e/{token}', [EvaluationController::class, 'submitTake'])->name('ev
 
 Route::view('/privacidad', 'legal.privacidad')->name('legal.privacidad');
 Route::view('/terminos', 'legal.terminos')->name('legal.terminos');
+
 Route::get('/experiencia', [ExperienciaController::class, 'idle'])->name('experiencia');
 
 // Rutas de autenticación (Breeze)

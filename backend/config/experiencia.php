@@ -9,16 +9,23 @@
 | wave_video       Robot saludando.    Purple_robot_waving_with_laptop_20261020185721.mp4
 | celebrate_video  Robot festejando.   Character_celebrating_with_confetti_20261020194433.mp4
 |
-| Los tres viven en backend/public/videos/experiencia/.
-| El fondo de los clips es blanco. stage_background debe seguir ese color.
+| Los mp4 originales se conservan. Si existen los .webm con alfa, el quiosco
+| los usa en Chrome y Android. El .mov con alfa es para Safari/iPad.
 |
 */
 
 return [
     'idle_video' => 'videos/experiencia/robot-escribiendo.mp4',
+    'idle_webm' => 'videos/experiencia/robot-escribiendo.webm',
+    'idle_mov' => 'videos/experiencia/robot-escribiendo.mov',
+    'idle_poster' => 'videos/experiencia/aulo-espera.png',
     'wave_video' => 'videos/experiencia/robot-saludando.mp4',
+    'wave_webm' => 'videos/experiencia/robot-saludando.webm',
+    'wave_mov' => 'videos/experiencia/robot-saludando.mov',
     'celebrate_video' => 'videos/experiencia/robot-festejando.mp4',
-    'stage_background' => '#ffffff',
+    'celebrate_webm' => 'videos/experiencia/robot-festejando.webm',
+    'celebrate_mov' => 'videos/experiencia/robot-festejando.mov',
+    'stage_background' => '#f6f1ff',
     'kiosk' => [
         'tabletId' => env('EXPERIENCIA_TABLET_ID', 'tablet-1'),
         'webhookUrl' => env('EXPERIENCIA_WEBHOOK_URL', ''),

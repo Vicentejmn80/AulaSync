@@ -6,22 +6,20 @@
     var config = configNode ? JSON.parse(configNode.textContent) : {};
     var tabletId = config.tabletId || "tablet-1";
     var idleMs = Number(config.idleMs) || 45000;
-    var questionMs = Number(config.questionMs) || 15000;
     AulaAudio.setVolume(config.volume == null ? 0.85 : config.volume);
 
     var camera = document.getElementById("experiencia-camera");
     var typing = document.getElementById("experiencia-idle-video");
     var wave = document.getElementById("experiencia-wave-video");
     var celebrate = document.getElementById("experiencia-celebrate-video");
-    var celebrateFill = document.getElementById("experiencia-celebrate-fill");
-    var videos = [typing, wave, celebrate, celebrateFill].filter(Boolean);
+    var poster = document.getElementById("experiencia-poster");
+    var videos = [typing, wave, celebrate].filter(Boolean);
     var start = document.getElementById("experiencia-comenzar");
     var questionEl = document.getElementById("quiz-question");
     var optionsEl = document.getElementById("quiz-options");
     var progressEl = document.getElementById("quiz-progress");
     var streakEl = document.getElementById("quiz-streak");
     var factEl = document.getElementById("quiz-fact");
-    var timerEl = document.getElementById("quiz-timer");
     var reactionEl = document.getElementById("quiz-reaction");
     var wheelHost = document.getElementById("ruleta");
     var pointer = document.getElementById("puntero");
@@ -53,10 +51,19 @@
     var sectors = [];
     var slice = 45;
     var reserved = null;
+    var retoPrincipal = "";
+    var resultLocked = false;
     var audioOn = false;
     var lastTap = 0;
 
-    videos.forEach(function (video) { video.preload = "auto"; });
+    videos.forEach(function (video) {
+        video.preload = "auto";
+        video.addEventListener("loadeddata", function () {
+            var alpha = /\.(webm|mov)(\?|$)/i.test(video.currentSrc || "");
+            video.classList.toggle("is-matte", !alpha);
+            if (poster && video === typing) poster.classList.toggle("is-on", !alpha ? false : typing.readyState < 2);
+        });
+    });
 
     function setState(next) {
         if (next !== state) AulaAudio.whoosh();
@@ -72,12 +79,10 @@
         video.loop = !!loop;
         video.playsInline = true;
         video.volume = config.volume == null ? 0.85 : Number(config.volume);
-        if (video === celebrateFill) video.muted = true;
-        else video.muted = !audioOn;
+        video.muted = !audioOn;
         var attempt = video.play();
         if (attempt && attempt.catch) {
             attempt.catch(function () {
-                if (video === celebrateFill) return;
                 video.muted = true;
                 video.play().catch(function () {});
             });
@@ -85,18 +90,12 @@
     }
 
     function show(video) {
-        [typing, wave, celebrate].forEach(function (item) {
-            if (!item || item === celebrateFill) return;
+        videos.forEach(function (item) {
             var active = item === video;
             item.classList.toggle("is-on", active);
             if (!active) item.pause();
         });
-        if (celebrateFill) {
-            var fill = video === celebrate;
-            celebrateFill.classList.toggle("is-on", fill);
-            if (fill) play(celebrateFill, true);
-            else celebrateFill.pause();
-        }
+        if (poster) poster.classList.toggle("is-on", video === typing && typing.classList.contains("is-matte") === false && typing.readyState < 2);
     }
 
     function unlockAudio() {
@@ -104,7 +103,6 @@
         audioOn = true;
         AulaAudio.unlock();
         videos.forEach(function (video) {
-            if (video === celebrateFill) return;
             video.muted = false;
         });
     }
@@ -133,14 +131,20 @@
     }
 
     function prepareQuestion(item) {
+        var opinion = item.type === "opinion" || item.answer == null || item.answer < 0;
         var options = item.options.map(function (text, index) {
-            return { text: text, correct: index === item.answer };
+            return { text: text, correct: !opinion && index === item.answer };
         });
-        return { q: item.q, fact: item.fact, options: shuffle(options) };
+        return { q: item.q, fact: item.fact, opinion: opinion, options: shuffle(options) };
+    }
+
+    function pickTyped(type) {
+        var pool = (banks[role] || []).filter(function (item) { return item.type === type; });
+        if (!pool.length) pool = banks[role] || [];
+        return prepareQuestion(shuffle(pool)[0]);
     }
 
     function renderQuestion() {
-        window.clearInterval(timerId);
         answering = false;
         var item = round[questionIndex];
         progressEl.textContent = (questionIndex + 1) + "/3";
@@ -154,50 +158,44 @@
             button.type = "button";
             button.className = "option";
             button.textContent = option.text;
-            button.addEventListener("click", function () { answer(button, option.correct); });
+            button.addEventListener("click", function () { answer(button, option); });
             optionsEl.appendChild(button);
         });
-        var started = Date.now();
-        timerEl.style.setProperty("--p", "1");
-        timerEl.dataset.tone = "ok";
-        timerId = window.setInterval(function () {
-            var left = questionMs - (Date.now() - started);
-            var ratio = Math.max(0, left / questionMs);
-            timerEl.style.setProperty("--p", String(ratio));
-            timerEl.dataset.tone = ratio > 0.45 ? "ok" : ratio > 0.2 ? "warn" : "late";
-            if (ratio < 0.34 && Math.floor(left / 180) !== Math.floor((left + 100) / 180)) AulaAudio.tick();
-            if (left <= 0) {
-                window.clearInterval(timerId);
-                answer(null, false);
-            }
-        }, 100);
     }
 
-    function answer(button, correct) {
-        if (answering || state !== "quiz") return;
+    function answer(button, option) {
+        if (answering || state !== "quiz" || !button) return;
         answering = true;
-        window.clearInterval(timerId);
-        if (button) button.classList.add(correct ? "is-correct" : "is-wrong");
-        if (correct) {
+        var item = round[questionIndex];
+        var wait = 1100;
+        if (item.opinion) {
+            button.classList.add("is-chosen");
+            retoPrincipal = button.textContent;
+            reactionEl.textContent = "🤖";
+            factEl.textContent = "¡Gracias! Esto me ayuda a conocerte mejor.";
+            AulaAudio.click();
+            wait = 1400;
+        } else if (option.correct) {
             score += 1;
             streak += 1;
+            button.classList.add("is-correct");
             reactionEl.textContent = "😄";
             AulaAudio.ding();
-            document.body.classList.add("festive");
+            factEl.textContent = item.fact;
         } else {
             streak = 0;
+            button.classList.add("is-wrong");
             reactionEl.textContent = "💡";
             AulaAudio.miss();
+            factEl.textContent = item.fact;
         }
         camera.classList.add("is-react");
-        factEl.textContent = round[questionIndex].fact;
         window.setTimeout(function () {
             camera.classList.remove("is-react");
-            document.body.classList.remove("festive");
             questionIndex += 1;
             if (questionIndex >= 3) openRoulette();
             else renderQuestion();
-        }, 1100);
+        }, wait);
     }
 
     function availableSectors() {
@@ -214,8 +212,7 @@
         var weights = sectors.map(function (prize) {
             var group = sectors.filter(function (item) { return item.tier === prize.tier; }).length || 1;
             var base = prize.tier === "raro" ? 0.07 : prize.tier === "medio" ? 0.28 : 0.65;
-            var boost = prize.tier === "raro" ? 1 + (score / 3) * 0.5 : prize.tier === "medio" ? 1 + (score / 3) * 0.2 : 1;
-            return (base / group) * boost;
+            return base / group;
         });
         var total = weights.reduce(function (sum, value) { return sum + value; }, 0);
         var cursor = Math.random() * total;
@@ -226,7 +223,24 @@
         return 0;
     }
 
+    function burst() {
+        ["confeti-atras", "confeti-frente"].forEach(function (id) {
+            var layer = document.getElementById(id);
+            if (!layer) return;
+            layer.innerHTML = "";
+            for (var i = 0; i < 16; i += 1) {
+                var bit = document.createElement("i");
+                bit.style.left = (6 + Math.random() * 88) + "%";
+                bit.style.animationDelay = (Math.random() * 0.35) + "s";
+                bit.style.animationDuration = (2.6 + Math.random() * 1.2) + "s";
+                bit.style.background = ["#7C3AED", "#EC4899", "#F59E0B", "#C455ED"][i % 4];
+                layer.appendChild(bit);
+            }
+        });
+    }
+
     function openRoulette() {
+        resultLocked = false;
         sectors = availableSectors();
         slice = AulaWheel.draw(wheelHost, sectors);
         AulaWheel.lights(lamps, 18);
@@ -235,9 +249,11 @@
     }
 
     function finishSpin(prize) {
+        if (state !== "roulette") return;
         prizeName.textContent = prize.name;
         prizeText.textContent = prize.description;
         prizeIcon.textContent = prize.icon;
+        burst();
         setState("celebrate");
         celebrate.currentTime = 0;
         show(celebrate);
@@ -248,7 +264,8 @@
     }
 
     function spin() {
-        if (!guard() || AulaWheel.busy() || state !== "roulette") return;
+        if (resultLocked || !guard() || AulaWheel.busy() || state !== "roulette") return;
+        resultLocked = true;
         spinBtn.disabled = true;
         var index = pickSector();
         var prize = sectors[index];
@@ -259,8 +276,7 @@
         AulaWheel.spin(wheelHost, pointer, lamps, index, slice, function () {
             AulaAudio.tick();
         }, function () {
-            wheelHost.classList.add("is-winner");
-            window.setTimeout(function () { finishSpin(prize); }, 700);
+            window.setTimeout(function () { finishSpin(prize); }, 500);
         });
     }
 
@@ -276,6 +292,8 @@
         window.clearTimeout(idleTimer);
         if (reserved) AulaStore.release(tabletId, reserved);
         reserved = null;
+        retoPrincipal = "";
+        resultLocked = false;
         role = null;
         score = 0;
         streak = 0;
@@ -283,7 +301,12 @@
         answering = false;
         if (form) form.reset();
         if (formError) formError.textContent = "";
-        if (wheelHost) wheelHost.classList.remove("is-winner");
+        if (wheelHost) wheelHost.style.transform = "rotate(0deg)";
+        if (wheelHost) wheelHost.dataset.rotation = "0";
+        ["confeti-atras", "confeti-frente"].forEach(function (id) {
+            var layer = document.getElementById(id);
+            if (layer) layer.innerHTML = "";
+        });
         camera.classList.remove("is-close", "is-wide", "is-react");
         if (start) start.classList.remove("is-leaving");
         show(typing);
@@ -364,7 +387,7 @@
             if (state !== "role_selection" || !guard()) return;
             AulaAudio.click();
             role = button.getAttribute("data-role");
-            round = shuffle(banks[role]).slice(0, 3).map(prepareQuestion);
+            round = [pickTyped("conocimiento"), pickTyped("caso"), pickTyped("opinion")];
             questionIndex = 0;
             score = 0;
             streak = 0;
@@ -402,9 +425,10 @@
                 nombre: nombre,
                 colegio: colegio,
                 whatsapp: codigoPais + numero,
-                puntaje: score + "/3",
+                puntaje: score + "/2",
                 premio: prizeName.textContent,
                 codigo: prizeCode,
+                reto_principal: retoPrincipal,
                 consentimiento: "si"
             };
             reserved = null;

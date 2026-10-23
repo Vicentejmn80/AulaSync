@@ -8,8 +8,10 @@ function doPost(e) {
   if (sheet.getLastRow() === 0) {
     sheet.appendRow([
       "fecha", "tablet", "rol", "nombre", "colegio", "whatsapp",
-      "puntaje", "premio", "codigo", "consentimiento"
+      "puntaje", "premio", "codigo", "consentimiento", "reto_principal"
     ]);
+  } else if (sheet.getRange(1, 1).getValue() === "fecha" && String(sheet.getRange(1, 11).getValue()) !== "reto_principal") {
+    sheet.getRange(1, 11).setValue("reto_principal");
   }
   sheet.appendRow([
     data.createdAt || "",
@@ -21,7 +23,8 @@ function doPost(e) {
     data.puntaje || "",
     data.premio || "",
     data.codigo || "",
-    data.consentimiento || ""
+    data.consentimiento || "",
+    data.reto_principal || ""
   ]);
   return ContentService
     .createTextOutput(JSON.stringify({ ok: true }))

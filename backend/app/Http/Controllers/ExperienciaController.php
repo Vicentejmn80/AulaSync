@@ -11,12 +11,26 @@ class ExperienciaController extends Controller
     public function idle()
     {
         return view('experiencia.idle', [
-            'typingVideoUrl' => $this->publicVideoUrl(config('experiencia.idle_video')),
-            'waveVideoUrl' => $this->publicVideoUrl(config('experiencia.wave_video')),
-            'celebrateVideoUrl' => $this->publicVideoUrl(config('experiencia.celebrate_video')),
-            'stageBackground' => $this->stageBackground(),
+            'typing' => $this->clip('idle'),
+            'wave' => $this->clip('wave'),
+            'celebrate' => $this->clip('celebrate'),
             'kiosk' => config('experiencia.kiosk'),
         ]);
+    }
+
+    private function clip(string $base): array
+    {
+        $mp4 = config('experiencia.'.$base.'_video');
+        if ($mp4 === null) {
+            return ['mp4' => null, 'webm' => null, 'mov' => null, 'poster' => null];
+        }
+
+        return [
+            'mp4' => $this->publicVideoUrl($mp4),
+            'webm' => $this->publicVideoUrl(config('experiencia.'.$base.'_webm')),
+            'mov' => $this->publicVideoUrl(config('experiencia.'.$base.'_mov')),
+            'poster' => $base === 'idle' ? $this->publicVideoUrl(config('experiencia.idle_poster')) : null,
+        ];
     }
 
     private function publicVideoUrl(mixed $relative): ?string
