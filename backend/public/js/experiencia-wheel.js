@@ -27,7 +27,8 @@
 
             var mid = index * slice + slice / 2;
             var rad = (mid - 90) * Math.PI / 180;
-            [["8", 34, sector.icon, "wheel-icon"], ["4.2", 22, String(sector.short || "").slice(0, 12), "wheel-label"]].forEach(function (part) {
+            var labelSize = sectors.length > 5 ? "3.1" : "4.2";
+            [["8", 34, sector.icon, "wheel-icon"], [labelSize, 22, String(sector.short || "").slice(0, 12), "wheel-label"]].forEach(function (part) {
                 var tx = 50 + part[1] * Math.cos(rad);
                 var ty = 50 + part[1] * Math.sin(rad);
                 var text = el("text");
@@ -37,7 +38,7 @@
                 text.setAttribute("dominant-baseline", "middle");
                 text.setAttribute("transform", "rotate(" + mid + " " + tx.toFixed(2) + " " + ty.toFixed(2) + ")");
                 text.setAttribute("font-size", part[0]);
-                text.setAttribute("class", part[3]);
+                text.setAttribute("class", part[3] + (sector.kind === "exclusive" ? " is-exclusive" : ""));
                 text.textContent = part[2];
                 svg.appendChild(text);
             });

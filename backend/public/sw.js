@@ -1,4 +1,4 @@
-const CACHE_NAME = "laravel-pwa-v5-experiencia";
+const CACHE_NAME = "laravel-pwa-v7-experiencia-tally";
 const OFFLINE_URL = "/offline.html";
 
 /** Auth nunca se cachea. El navegador (o navigation preload) va directo a red. */

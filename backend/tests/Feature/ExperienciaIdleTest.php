@@ -23,13 +23,19 @@ class ExperienciaIdleTest extends TestCase
         $response->assertOk();
         $response->assertSee('data-state="idle"', false);
         $response->assertSee('Toca para jugar y gana un premio', false);
-        $response->assertSee('Acepto que AulaSync me contacte por WhatsApp', false);
+        $response->assertSee('https://tally.so/embed/VpLqka', false);
+        $response->assertSee('AulaSync - Registro de Participación', false);
+        $response->assertDontSee('id="premio-form"', false);
         $response->assertSee('questions.json', false);
-        $response->assertSee('prizes.json', false);
+        $response->assertSee('Kit digital de IA para docentes', false);
+        $response->assertDontSee('name="email"', false);
+        $response->assertDontSee('name="cargo"', false);
+        $response->assertDontSee('video/webm', false);
+        $response->assertDontSee('is-matte', false);
         $response->assertSee('Eres Profesor?', false);
         $response->assertSee('Eres Director?', false);
         $response->assertSee('¡Girar Ruleta!', false);
-        $response->assertSee('Reclamar mi premio', false);
+        $response->assertDontSee('Reclamar mi premio', false);
         $response->assertSee('id="experiencia-idle-video"', false);
         $response->assertSee('id="experiencia-wave-video"', false);
         $response->assertSee('id="experiencia-celebrate-video"', false);
@@ -40,7 +46,6 @@ class ExperienciaIdleTest extends TestCase
         $response->assertSee('muted', false);
         $response->assertSee('autoplay', false);
         $response->assertSee('playsinline', false);
-        $response->assertDontSee('name="email"', false);
     }
 
     public function test_idle_screen_shows_a_fallback_when_the_videos_are_missing(): void

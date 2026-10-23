@@ -82,6 +82,8 @@ Route::view('/privacidad', 'legal.privacidad')->name('legal.privacidad');
 Route::view('/terminos', 'legal.terminos')->name('legal.terminos');
 
 Route::get('/experiencia', [ExperienciaController::class, 'idle'])->name('experiencia');
+Route::post('/experiencia/giro', [ExperienciaController::class, 'spin'])->name('experiencia.spin');
+Route::post('/experiencia/contacto', [ExperienciaController::class, 'store'])->name('experiencia.contacto');
 
 // Rutas de autenticación (Breeze)
 require __DIR__.'/auth.php';

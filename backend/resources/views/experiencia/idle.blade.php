@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
     <meta name="robots" content="noindex, nofollow">
     <meta name="theme-color" content="#6C5CE7">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>Experiencia interactiva · AulaSync</title>
     <link rel="manifest" href="/experiencia.webmanifest">
     <link rel="icon" href="/favicon.ico?v=3" sizes="any">
@@ -38,31 +39,22 @@
                     <div class="halo" aria-hidden="true"></div>
                     <div class="floor-shadow" aria-hidden="true"></div>
                     <div class="confetti confetti-back" id="confeti-atras" aria-hidden="true"></div>
-                    @if (!empty($typing['poster']))
-                        <img id="experiencia-poster" class="scene-still is-on" src="{{ $typing['poster'] }}" alt="">
-                    @endif
-                    @if (!empty($typing['mp4']) || !empty($typing['webm']) || !empty($typing['mov']))
-                        <video id="experiencia-idle-video" class="scene-video is-on {{ empty($typing['webm']) && empty($typing['mov']) ? 'is-matte' : '' }}" autoplay loop muted playsinline webkit-playsinline preload="auto" disablepictureinpicture aria-hidden="true">
-                            @if (!empty($typing['webm']))<source src="{{ $typing['webm'] }}" type="video/webm">@endif
-                            @if (!empty($typing['mov']))<source src="{{ $typing['mov'] }}" type="video/quicktime">@endif
-                            @if (!empty($typing['mp4']))<source src="{{ $typing['mp4'] }}" type="video/mp4">@endif
+                    @if ($typing)
+                        <video id="experiencia-idle-video" class="scene-video is-on" autoplay loop muted playsinline webkit-playsinline preload="auto" disablepictureinpicture aria-hidden="true">
+                            <source src="{{ $typing }}" type="video/mp4">
                         </video>
                     @endif
-                    @if (!empty($wave['mp4']) || !empty($wave['webm']) || !empty($wave['mov']))
-                        <video id="experiencia-wave-video" class="scene-video {{ empty($wave['webm']) && empty($wave['mov']) ? 'is-matte' : '' }}" playsinline webkit-playsinline preload="auto" disablepictureinpicture aria-hidden="true">
-                            @if (!empty($wave['webm']))<source src="{{ $wave['webm'] }}" type="video/webm">@endif
-                            @if (!empty($wave['mov']))<source src="{{ $wave['mov'] }}" type="video/quicktime">@endif
-                            @if (!empty($wave['mp4']))<source src="{{ $wave['mp4'] }}" type="video/mp4">@endif
+                    @if ($wave)
+                        <video id="experiencia-wave-video" class="scene-video" playsinline webkit-playsinline preload="auto" disablepictureinpicture aria-hidden="true">
+                            <source src="{{ $wave }}" type="video/mp4">
                         </video>
                     @endif
-                    @if (!empty($celebrate['mp4']) || !empty($celebrate['webm']) || !empty($celebrate['mov']))
-                        <video id="experiencia-celebrate-video" class="scene-video {{ empty($celebrate['webm']) && empty($celebrate['mov']) ? 'is-matte' : '' }}" playsinline webkit-playsinline preload="auto" disablepictureinpicture aria-hidden="true">
-                            @if (!empty($celebrate['webm']))<source src="{{ $celebrate['webm'] }}" type="video/webm">@endif
-                            @if (!empty($celebrate['mov']))<source src="{{ $celebrate['mov'] }}" type="video/quicktime">@endif
-                            @if (!empty($celebrate['mp4']))<source src="{{ $celebrate['mp4'] }}" type="video/mp4">@endif
+                    @if ($celebrate)
+                        <video id="experiencia-celebrate-video" class="scene-video" playsinline webkit-playsinline preload="auto" disablepictureinpicture aria-hidden="true">
+                            <source src="{{ $celebrate }}" type="video/mp4">
                         </video>
                     @endif
-                    @if (empty($typing['mp4']) && empty($typing['webm']) && empty($typing['mov']))
+                    @if (! $typing)
                         <p class="fallback">El video del robot se incorpora en config/experiencia.php.</p>
                     @endif
                     <div class="confetti confetti-front" id="confeti-frente" aria-hidden="true"></div>
@@ -95,39 +87,69 @@
                 <section class="panel" id="panel-roulette" aria-label="Ruleta de premios">
                     <p class="badge">Ruleta de AulaSync</p>
                     <p class="roulette-title">Gira y descubre tu premio</p>
+                    <p class="roulette-note">
+                        @if ($exclusivePrizes)
+                            Las experiencias en vivo se confirman según el cupo disponible. No quedan agendadas hasta que te contactemos.
+                        @else
+                            Hoy la ruleta entrega recursos digitales de AulaSync. El taller, el acceso anticipado, la sesión y la auditoría se activan solo cuando hay cupo real.
+                        @endif
+                    </p>
                     <div class="roulette-stage">
                         <div class="wheel-spin" id="ruleta"></div>
                         <div class="leds" id="leds" aria-hidden="true"></div>
                         <div class="pointer" id="puntero" aria-hidden="true"></div>
                         <button type="button" class="spin-btn" id="girar-ruleta">¡Girar Ruleta!</button>
                     </div>
+                    <p class="form-error" id="ruleta-error"></p>
                 </section>
             </div>
 
             <div class="celebrate-card">
             <div class="prize-card">
+                <p class="prize-kicker" id="premio-tipo"></p>
                 <p class="prize-icon" id="premio-icono"></p>
                 <h2 id="premio-nombre"></h2>
                 <p id="premio-texto"></p>
-                <p class="win-ask">¡Ganaste! Para enviártelo, dinos a dónde mandarlo</p>
+                <p class="prize-note" id="premio-condicion"></p>
+                <p class="win-ask">Completa el registro para recibir tu premio</p>
+                <div class="tally-wrap">
+                    <iframe id="premio-tally" data-tally-src="https://tally.so/embed/VpLqka?alignLeft=1&hideTitle=1&transparentBackground=1&dynamicHeight=1" loading="lazy" width="100%" height="720" frameborder="0" marginheight="0" marginwidth="0" title="AulaSync - Registro de Participación"></iframe>
+                </div>
+                {{-- Formulario propio desactivado. El registro lo hace Tally: https://tally.so/r/VpLqka --}}
+                @if (false)
                 <form id="premio-form">
                     <div class="fields">
-                        <label>Nombre <input name="nombre" autocomplete="name" required></label>
+                        <label>Nombre <input name="nombre" autocomplete="given-name" required></label>
+                        <label>Apellido <input name="apellido" autocomplete="family-name"></label>
+                        <label>Correo <input name="email" type="email" autocomplete="email" placeholder="opcional si dejas teléfono"></label>
                         <label>Colegio <input name="colegio" autocomplete="organization" required></label>
-                        <label>WhatsApp
+                        <label>Cargo
+                            <select name="cargo" required>
+                                <option value="">Selecciona</option>
+                                <option value="director">Director</option>
+                                <option value="coordinador">Coordinador</option>
+                                <option value="docente">Docente</option>
+                                <option value="otro">Otro</option>
+                            </select>
+                        </label>
+                        <label>Principal problema administrativo
+                            <textarea name="problema" maxlength="500" placeholder="Opcional. Por ejemplo: planificaciones, boletines, circulares…"></textarea>
+                        </label>
+                        <label>Teléfono (opcional)
                             <span class="phone">
-                                <input name="codigo" value="+58" inputmode="tel" aria-label="Código de país" required>
-                                <input name="whatsapp" inputmode="numeric" placeholder="4141234567" required>
+                                <input name="codigo" value="+58" inputmode="tel" aria-label="Código de país">
+                                <input name="whatsapp" inputmode="numeric" placeholder="4141234567">
                             </span>
                         </label>
                         <label class="consent">
                             <input type="checkbox" name="consentimiento" required>
-                            <span>Acepto que AulaSync me contacte por WhatsApp para entregarme mi premio e información</span>
+                            <span>Acepto que AulaSync guarde estos datos para entregarme el premio y contactarme sobre la plataforma. <a href="{{ route('legal.privacidad') }}" target="_blank" rel="noopener">Aviso de privacidad</a></span>
                         </label>
                     </div>
                     <p class="form-error" id="form-error"></p>
                     <button type="submit" class="claim-btn">Reclamar mi premio</button>
                 </form>
+                @endif
                 <p class="confirm-copy" id="confirm-text"></p>
                 <p class="code" id="confirm-code"></p>
             </div>
@@ -140,5 +162,25 @@
     <script src="{{ asset('js/experiencia-store.js') }}?v={{ filemtime(public_path('js/experiencia-store.js')) }}"></script>
     <script src="{{ asset('js/experiencia-wheel.js') }}?v={{ filemtime(public_path('js/experiencia-wheel.js')) }}"></script>
     <script src="{{ asset('js/experiencia.js') }}?v={{ filemtime(public_path('js/experiencia.js')) }}"></script>
+    <script>
+        (function () {
+            var widget = "https://tally.so/widgets/embed.js";
+            function load() {
+                if (typeof Tally !== "undefined") Tally.loadEmbeds();
+                else document.querySelectorAll("iframe[data-tally-src]:not([src])").forEach(function (frame) {
+                    frame.src = frame.dataset.tallySrc;
+                });
+            }
+            if (typeof Tally !== "undefined") load();
+            else if (!document.querySelector('script[src="' + widget + '"]')) {
+                var script = document.createElement("script");
+                script.src = widget;
+                script.onload = load;
+                script.onerror = load;
+                document.body.appendChild(script);
+            }
+            window.AulaTally = { load: load };
+        })();
+    </script>
 </body>
 </html>

@@ -12,7 +12,6 @@
     var typing = document.getElementById("experiencia-idle-video");
     var wave = document.getElementById("experiencia-wave-video");
     var celebrate = document.getElementById("experiencia-celebrate-video");
-    var poster = document.getElementById("experiencia-poster");
     var videos = [typing, wave, celebrate].filter(Boolean);
     var start = document.getElementById("experiencia-comenzar");
     var questionEl = document.getElementById("quiz-question");
@@ -30,6 +29,8 @@
     var prizeName = document.getElementById("premio-nombre");
     var prizeText = document.getElementById("premio-texto");
     var prizeIcon = document.getElementById("premio-icono");
+    var prizeKind = document.getElementById("premio-tipo");
+    var prizeCondition = document.getElementById("premio-condicion");
     var confirmText = document.getElementById("confirm-text");
     var confirmCode = document.getElementById("confirm-code");
     var syncDot = document.getElementById("sync-dot");
@@ -53,16 +54,13 @@
     var reserved = null;
     var retoPrincipal = "";
     var resultLocked = false;
+    var activePrize = null;
+    var spinId = "";
     var audioOn = false;
     var lastTap = 0;
 
     videos.forEach(function (video) {
         video.preload = "auto";
-        video.addEventListener("loadeddata", function () {
-            var alpha = /\.(webm|mov)(\?|$)/i.test(video.currentSrc || "");
-            video.classList.toggle("is-matte", !alpha);
-            if (poster && video === typing) poster.classList.toggle("is-on", !alpha ? false : typing.readyState < 2);
-        });
     });
 
     function setState(next) {
@@ -71,6 +69,7 @@
         app.dataset.state = next;
         if (next === "celebrate" || next === "confirm") document.body.classList.add("festive");
         else document.body.classList.remove("festive");
+        if (next === "prize" && window.AulaTally) window.AulaTally.load();
         armIdle();
     }
 
@@ -95,7 +94,6 @@
             item.classList.toggle("is-on", active);
             if (!active) item.pause();
         });
-        if (poster) poster.classList.toggle("is-on", video === typing && typing.classList.contains("is-matte") === false && typing.readyState < 2);
     }
 
     function unlockAudio() {
@@ -199,28 +197,31 @@
     }
 
     function availableSectors() {
-        return catalog[role].map(function (prize) {
-            if (prize.quotaKey && AulaStore.used(tabletId, prize.quotaKey) >= prize.quota) {
-                var medium = catalog[role].filter(function (item) { return item.tier === "medio"; })[0];
-                return Object.assign({}, medium, { icon: "⭐" });
-            }
-            return prize;
-        });
+        return (catalog[role] || []).slice();
     }
 
-    function pickSector() {
-        var weights = sectors.map(function (prize) {
-            var group = sectors.filter(function (item) { return item.tier === prize.tier; }).length || 1;
-            var base = prize.tier === "raro" ? 0.07 : prize.tier === "medio" ? 0.28 : 0.65;
-            return base / group;
+    function csrfToken() {
+        var meta = document.querySelector('meta[name="csrf-token"]');
+        return meta ? meta.getAttribute("content") : "";
+    }
+
+    function postJson(url, payload) {
+        return fetch(url, {
+            method: "POST",
+            credentials: "same-origin",
+            headers: {
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "X-CSRF-TOKEN": csrfToken()
+            },
+            body: JSON.stringify(payload)
+        }).then(function (response) {
+            return response.json().catch(function () { return {}; }).then(function (body) {
+                body.status = response.status;
+                body.okHttp = response.ok;
+                return body;
+            });
         });
-        var total = weights.reduce(function (sum, value) { return sum + value; }, 0);
-        var cursor = Math.random() * total;
-        for (var i = 0; i < weights.length; i += 1) {
-            cursor -= weights[i];
-            if (cursor <= 0) return i;
-        }
-        return 0;
     }
 
     function burst() {
@@ -253,6 +254,11 @@
         prizeName.textContent = prize.name;
         prizeText.textContent = prize.description;
         prizeIcon.textContent = prize.icon;
+        if (prizeKind) {
+            prizeKind.textContent = prize.kind === "exclusive" ? "Experiencia con cupo" : "Recurso digital";
+            prizeKind.classList.toggle("is-exclusive", prize.kind === "exclusive");
+        }
+        if (prizeCondition) prizeCondition.textContent = prize.condition || "";
         burst();
         setState("celebrate");
         celebrate.currentTime = 0;
@@ -265,26 +271,29 @@
 
     function spin() {
         if (resultLocked || !guard() || AulaWheel.busy() || state !== "roulette") return;
+        var note = document.getElementById("ruleta-error");
+        if (note) note.textContent = "";
         resultLocked = true;
         spinBtn.disabled = true;
-        var index = pickSector();
-        var prize = sectors[index];
-        if (prize.quotaKey) {
-            AulaStore.reserve(tabletId, prize.quotaKey);
-            reserved = prize.quotaKey;
-        }
-        AulaWheel.spin(wheelHost, pointer, lamps, index, slice, function () {
-            AulaAudio.tick();
-        }, function () {
-            window.setTimeout(function () { finishSpin(prize); }, 500);
+        postJson(config.spinUrl, { rol: role }).then(function (body) {
+            if (!body.okHttp || !body.prize) throw new Error("giro");
+            var index = -1;
+            sectors.forEach(function (sector, i) {
+                if (sector.id === body.prize.id) index = i;
+            });
+            if (index < 0) throw new Error("premio");
+            activePrize = body.prize;
+            spinId = body.spin_id;
+            AulaWheel.spin(wheelHost, pointer, lamps, index, slice, function () {
+                AulaAudio.tick();
+            }, function () {
+                window.setTimeout(function () { finishSpin(activePrize); }, 500);
+            });
+        }).catch(function () {
+            resultLocked = false;
+            spinBtn.disabled = false;
+            if (note) note.textContent = "No pudimos preparar el premio. Intenta girar otra vez.";
         });
-    }
-
-    function code() {
-        var alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-        var value = "AULA-";
-        for (var i = 0; i < 4; i += 1) value += alphabet[Math.floor(Math.random() * alphabet.length)];
-        return value;
     }
 
     function resetExperience() {
@@ -294,6 +303,8 @@
         reserved = null;
         retoPrincipal = "";
         resultLocked = false;
+        activePrize = null;
+        spinId = "";
         role = null;
         score = 0;
         streak = 0;
@@ -366,7 +377,8 @@
     }
 
     function validPhone(codeValue, number) {
-        return /^\+\d{1,4}$/.test(codeValue.trim()) && /^\d{7,14}$/.test(number.trim());
+        if (!String(number || "").trim()) return true;
+        return /^\+\d{1,4}$/.test(String(codeValue || "").trim()) && /^\d{7,14}$/.test(String(number).trim());
     }
 
     app.addEventListener("pointerdown", function () {
@@ -408,39 +420,77 @@
             if (!guard()) return;
             var data = new FormData(form);
             var nombre = String(data.get("nombre") || "").trim();
+            var apellido = String(data.get("apellido") || "").trim();
+            var email = String(data.get("email") || "").trim();
             var colegio = String(data.get("colegio") || "").trim();
+            var cargo = String(data.get("cargo") || "").trim();
+            var problema = String(data.get("problema") || "").trim();
             var codigoPais = String(data.get("codigo") || "").trim();
             var numero = String(data.get("whatsapp") || "").trim();
-            if (!nombre || !colegio || !validPhone(codigoPais, numero) || !data.get("consentimiento")) {
-                formError.textContent = "Revisa tu nombre, tu colegio, el WhatsApp con código de país y la casilla de aceptación.";
+            if (!nombre || !colegio || !cargo || !data.get("consentimiento") || !validPhone(codigoPais, numero)) {
+                formError.textContent = "Revisa nombre, colegio, cargo y, si dejas teléfono, el código de país.";
+                return;
+            }
+            if (!email && !numero) {
+                formError.textContent = "Indica un correo o un teléfono para poder entregarte el premio.";
+                return;
+            }
+            if (!activePrize || !spinId) {
+                formError.textContent = "Gira la ruleta otra vez para registrar el premio.";
                 return;
             }
             formError.textContent = "";
-            var prizeCode = code();
-            var record = {
-                id: tabletId + "-" + Date.now(),
-                createdAt: new Date().toISOString(),
-                tabletId: tabletId,
-                rol: role,
+            var submitBtn = form.querySelector('[type="submit"]');
+            if (submitBtn) submitBtn.disabled = true;
+            postJson(config.contactUrl, {
+                spin_id: spinId,
                 nombre: nombre,
+                apellido: apellido,
+                email: email,
                 colegio: colegio,
-                whatsapp: codigoPais + numero,
+                cargo: cargo,
+                telefono: numero ? (codigoPais + numero) : "",
+                problema: problema || retoPrincipal,
+                rol: role,
                 puntaje: score + "/2",
-                premio: prizeName.textContent,
-                codigo: prizeCode,
-                reto_principal: retoPrincipal,
-                consentimiento: "si"
-            };
-            reserved = null;
-            AulaStore.saveLead(record).then(function () {
+                consentimiento: true
+            }).then(function (body) {
+                if (submitBtn) submitBtn.disabled = false;
+                if (!body.okHttp || !body.ok) {
+                    formError.textContent = body.message || "No pudimos guardar tus datos. Inténtalo de nuevo.";
+                    return;
+                }
+                reserved = null;
+                var record = {
+                    id: spinId,
+                    createdAt: new Date().toISOString(),
+                    tabletId: tabletId,
+                    rol: role,
+                    nombre: nombre,
+                    apellido: apellido,
+                    email: email,
+                    colegio: colegio,
+                    cargo: cargo,
+                    whatsapp: numero ? (codigoPais + numero) : "",
+                    puntaje: score + "/2",
+                    premio: body.premio || activePrize.name,
+                    codigo: body.codigo,
+                    reto_principal: problema || retoPrincipal,
+                    consentimiento: "si",
+                    sync: "synced"
+                };
+                AulaStore.saveLead(record).catch(function () {});
                 refreshSync();
-                confirmText.textContent = "¡Listo, " + nombre + "! Te escribiremos por WhatsApp con tu premio.";
-                confirmCode.textContent = prizeCode;
+                confirmText.textContent = "¡Listo, " + nombre + "! Guardamos tu premio: " + (body.premio || activePrize.name) + ".";
+                confirmCode.textContent = body.codigo || "";
                 show(wave);
                 wave.currentTime = Math.max(0, (wave.duration || 4) - 2.5);
                 play(wave, false);
                 AulaAudio.ding();
                 setState("confirm");
+            }).catch(function () {
+                if (submitBtn) submitBtn.disabled = false;
+                formError.textContent = "No pudimos guardar tus datos. Revisa la conexión e inténtalo de nuevo.";
             });
         });
     }
@@ -484,12 +534,13 @@
         navigator.serviceWorker.register("/sw.js").catch(function () {});
     }
 
-    Promise.all([
-        fetch(config.questionsUrl).then(function (response) { return response.json(); }),
-        fetch(config.prizesUrl).then(function (response) { return response.json(); })
-    ]).then(function (payload) {
-        banks = payload[0];
-        catalog = payload[1];
+    catalog = {
+        profesor: config.prizes || [],
+        director: config.prizes || []
+    };
+
+    fetch(config.questionsUrl).then(function (response) { return response.json(); }).then(function (payload) {
+        banks = payload;
     }).catch(function () {});
 
     show(typing);

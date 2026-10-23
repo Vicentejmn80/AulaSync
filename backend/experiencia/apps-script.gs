@@ -5,26 +5,29 @@
 function doPost(e) {
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheets()[0];
   var data = JSON.parse(e.postData.contents);
+  var headers = [
+    "fecha", "tablet", "rol", "nombre", "apellido", "email", "colegio", "cargo",
+    "whatsapp", "problema", "puntaje", "premio", "premio_id", "codigo", "consentimiento"
+  ];
   if (sheet.getLastRow() === 0) {
-    sheet.appendRow([
-      "fecha", "tablet", "rol", "nombre", "colegio", "whatsapp",
-      "puntaje", "premio", "codigo", "consentimiento", "reto_principal"
-    ]);
-  } else if (sheet.getRange(1, 1).getValue() === "fecha" && String(sheet.getRange(1, 11).getValue()) !== "reto_principal") {
-    sheet.getRange(1, 11).setValue("reto_principal");
+    sheet.appendRow(headers);
   }
   sheet.appendRow([
     data.createdAt || "",
     data.tabletId || "",
     data.rol || "",
     data.nombre || "",
+    data.apellido || "",
+    data.email || "",
     data.colegio || "",
+    data.cargo || "",
     data.whatsapp || "",
+    data.problema || data.reto_principal || "",
     data.puntaje || "",
     data.premio || "",
+    data.premio_id || "",
     data.codigo || "",
-    data.consentimiento || "",
-    data.reto_principal || ""
+    data.consentimiento || ""
   ]);
   return ContentService
     .createTextOutput(JSON.stringify({ ok: true }))

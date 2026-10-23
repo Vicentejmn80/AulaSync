@@ -72,7 +72,7 @@
             writeQuotas(tabletId, data);
         },
         saveLead: function (record) {
-            record.sync = "pending";
+            if (!record.sync) record.sync = "pending";
             return put(record);
         },
         all: all,
@@ -103,7 +103,7 @@
         },
         toCsv: function () {
             return all().then(function (rows) {
-                var headers = ["createdAt", "tabletId", "rol", "nombre", "colegio", "whatsapp", "puntaje", "premio", "codigo", "consentimiento", "reto_principal", "sync"];
+                var headers = ["createdAt", "tabletId", "rol", "nombre", "apellido", "email", "colegio", "cargo", "whatsapp", "puntaje", "premio", "codigo", "consentimiento", "reto_principal", "sync"];
                 var lines = [headers.join(",")];
                 rows.forEach(function (row) {
                     lines.push(headers.map(function (key) {

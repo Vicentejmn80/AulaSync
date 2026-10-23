@@ -1,22 +1,32 @@
-{
-  "profesor": [
-    {"id": "pack-50", "tier": "comun", "icon": "⚡", "short": "Prompts", "name": "Pack 50 Prompts", "description": "Pack de 50 prompts de IA listos para usar en tus clases", "color": "#7C3AED"},
-    {"id": "plantillas-pro", "tier": "comun", "icon": "📚", "short": "Plantilla", "name": "Plantillas Pro", "description": "Plantillas de planificación, rúbricas y circulares", "color": "#C455ED"},
-    {"id": "guia-ia", "tier": "comun", "icon": "📘", "short": "Guía", "name": "Guía IA Escolar", "description": "Guía PDF: 10 usos de la IA en tu aula", "color": "#8B5CF6"},
-    {"id": "cert-aulo", "tier": "comun", "icon": "🎓", "short": "Diploma", "name": "Certificado Aulo", "description": "Certificado digital de Educador Innovador", "color": "#A855F7"},
-    {"id": "seminario", "tier": "medio", "icon": "⭐", "short": "VIP", "name": "Seminario VIP", "description": "Acceso prioritario al seminario gratuito y su grabación", "color": "#EC4899"},
-    {"id": "canal", "tier": "medio", "icon": "💬", "short": "Canal", "name": "Canal Exclusivo", "description": "Acceso al canal de WhatsApp con contenido exclusivo", "color": "#DB2777"},
-    {"id": "mes-gratis", "tier": "raro", "quotaKey": "mes-gratis", "quota": 5, "icon": "🎁", "short": "1 mes", "name": "1 Mes Gratis", "description": "1 mes gratis de AulaSync", "color": "#F59E0B"},
-    {"id": "asesoria", "tier": "raro", "quotaKey": "asesoria", "quota": 4, "icon": "🏆", "short": "Asesoría", "name": "Asesoría 15 min", "description": "Asesoría personalizada de 15 minutos por videollamada", "color": "#7C3AED"}
-  ],
-  "director": [
-    {"id": "prompts-dir", "tier": "comun", "icon": "⚡", "short": "Prompts", "name": "Pack Prompts Directivos", "description": "Prompts para comunicados, reuniones con representantes e informes", "color": "#7C3AED"},
-    {"id": "plantillas-gestion", "tier": "comun", "icon": "📚", "short": "Plantillas", "name": "Plantillas de Gestión", "description": "Plantillas de informes, circulares y protocolos", "color": "#C455ED"},
-    {"id": "guia-digital", "tier": "comun", "icon": "📘", "short": "Digital", "name": "Guía de Digitalización", "description": "Guía PDF: cómo digitalizar tu colegio paso a paso", "color": "#8B5CF6"},
-    {"id": "cert-dir", "tier": "comun", "icon": "🎓", "short": "Diploma", "name": "Certificado Directivo", "description": "Certificado digital de Líder Educativo Innovador", "color": "#A855F7"},
-    {"id": "diagnostico", "tier": "medio", "icon": "🔎", "short": "Revisión", "name": "Diagnóstico Exprés", "description": "Diagnóstico gratuito: qué tan digital está tu colegio", "color": "#EC4899"},
-    {"id": "seminario-dir", "tier": "medio", "icon": "⭐", "short": "VIP", "name": "Seminario VIP", "description": "Acceso prioritario al seminario gratuito y su grabación", "color": "#DB2777"},
-    {"id": "piloto", "tier": "raro", "quotaKey": "piloto", "quota": 5, "icon": "🚀", "short": "Piloto", "name": "Piloto Gratis", "description": "Piloto gratuito de AulaSync para tu colegio", "color": "#F59E0B"},
-    {"id": "asesoria-dir", "tier": "raro", "quotaKey": "asesoria", "quota": 4, "icon": "🏆", "short": "Asesoría", "name": "Asesoría 15 min", "description": "Asesoría personalizada de 15 minutos por videollamada", "color": "#6C5CE7"}
-  ]
-}
+[
+  {
+    "id": "kit-ia-docentes",
+    "kind": "digital",
+    "icon": "✨",
+    "short": "Kit IA",
+    "name": "Kit digital de IA para docentes",
+    "description": "Prompts y recursos para preparar clases, crear evaluaciones, diseñar rúbricas y reducir tareas repetitivas.",
+    "condition": "Recurso digital. Te lo enviamos al correo o al teléfono que indiques.",
+    "color": "#6C5CE7"
+  },
+  {
+    "id": "kit-plantillas",
+    "kind": "digital",
+    "icon": "📋",
+    "short": "Plantillas",
+    "name": "Kit de plantillas docentes",
+    "description": "Plantillas prácticas para planificación, evaluaciones, rúbricas y organización del trabajo académico.",
+    "condition": "Recurso digital. Te lo enviamos al correo o al teléfono que indiques.",
+    "color": "#7C3AED"
+  },
+  {
+    "id": "guia-ia-colegios",
+    "kind": "digital",
+    "icon": "📘",
+    "short": "Guía IA",
+    "name": "Guía exclusiva de IA para colegios",
+    "description": "Ideas prácticas para aplicar inteligencia artificial en la gestión escolar y reducir el trabajo administrativo.",
+    "condition": "Recurso digital. Te lo enviamos al correo o al teléfono que indiques.",
+    "color": "#8B5CF6"
+  }
+]
