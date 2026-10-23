@@ -87,13 +87,7 @@
                 <section class="panel" id="panel-roulette" aria-label="Ruleta de premios">
                     <p class="badge">Ruleta de AulaSync</p>
                     <p class="roulette-title">Gira y descubre tu premio</p>
-                    <p class="roulette-note">
-                        @if ($exclusivePrizes)
-                            Las experiencias en vivo se confirman según el cupo disponible. No quedan agendadas hasta que te contactemos.
-                        @else
-                            Hoy la ruleta entrega recursos digitales de AulaSync. El taller, el acceso anticipado, la sesión y la auditoría se activan solo cuando hay cupo real.
-                        @endif
-                    </p>
+                    <p class="roulette-note">AulaSync entrega estos premios a la persona que juegue en la ruleta.</p>
                     <div class="roulette-stage">
                         <div class="wheel-spin" id="ruleta"></div>
                         <div class="leds" id="leds" aria-hidden="true"></div>

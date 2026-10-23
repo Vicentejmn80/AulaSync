@@ -48,7 +48,6 @@
     var answering = false;
     var timerId = 0;
     var idleTimer = 0;
-    var glanceTimer = 0;
     var sectors = [];
     var slice = 45;
     var reserved = null;
@@ -323,30 +322,12 @@
         show(typing);
         play(typing, true);
         setState("idle");
-        scheduleGlance();
         refreshSync();
-    }
-
-    function scheduleGlance() {
-        window.clearTimeout(glanceTimer);
-        glanceTimer = window.setTimeout(function () {
-            if (state !== "idle" || !wave) return;
-            show(wave);
-            wave.currentTime = 0;
-            play(wave, false);
-            window.setTimeout(function () {
-                if (state !== "idle") return;
-                show(typing);
-                play(typing, true);
-                scheduleGlance();
-            }, 2800);
-        }, 40000);
     }
 
     function onComenzarExperiencia() {
         if (state !== "idle" || !wave || !guard()) return;
         unlockAudio();
-        window.clearTimeout(glanceTimer);
         if (start) start.classList.add("is-leaving");
         setState("greeting");
         camera.classList.add("is-close");
@@ -545,7 +526,6 @@
 
     show(typing);
     play(typing, true);
-    scheduleGlance();
     refreshSync();
     window.setInterval(refreshSync, 20000);
     window.setTimeout(function () {

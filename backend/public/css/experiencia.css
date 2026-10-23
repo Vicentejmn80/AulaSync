@@ -14,7 +14,7 @@ html, body {
     margin: 0;
     height: 100%;
     overflow: hidden;
-    background: #f7f2ff;
+    background: #ffffff;
     color: var(--ink);
     font-family: "Manrope", "Segoe UI", sans-serif;
     touch-action: manipulation;
@@ -40,9 +40,7 @@ button, input { font: inherit; }
     z-index: 0;
     overflow: hidden;
     pointer-events: none;
-    background:
-        radial-gradient(circle, rgba(108, 92, 231, 0.16) 1.1px, transparent 1.3px) 0 0 / 26px 26px,
-        linear-gradient(165deg, #f4ecff 0%, #ffffff 46%, #eef3ff 100%);
+    background: #ffffff;
 }
 
 .float {
@@ -68,7 +66,7 @@ button, input { font: inherit; }
     z-index: 8;
     display: grid;
     place-items: center;
-    background: rgba(247, 242, 255, 0.92);
+    background: #ffffff;
     color: var(--violet-deep);
     font-weight: 800;
     transition: opacity 0.3s ease;
@@ -91,6 +89,9 @@ button, input { font: inherit; }
     max-width: calc(100vw - 28px);
     aspect-ratio: 720 / 1280;
     flex: 0 1 auto;
+    background: #ffffff;
+    border: 0;
+    box-shadow: none;
 }
 
 .camera {
@@ -98,7 +99,10 @@ button, input { font: inherit; }
     width: 100%;
     height: 100%;
     overflow: hidden;
-    background: transparent;
+    background: #ffffff;
+    border: 0;
+    box-shadow: none;
+    border-radius: 0;
     transform: scale(1);
     transform-origin: center 42%;
     transition: transform 1.05s cubic-bezier(.22, .8, .24, 1);
@@ -107,26 +111,8 @@ button, input { font: inherit; }
 .camera.is-wide { transform: scale(0.96); }
 .camera.is-react { transform: scale(1.03); }
 
-.halo, .floor-shadow, .confetti { position: absolute; pointer-events: none; }
-.halo {
-    left: 50%;
-    top: 42%;
-    z-index: 0;
-    width: 78%;
-    height: 42%;
-    transform: translate(-50%, -50%);
-    background: radial-gradient(circle, rgba(196, 85, 237, 0.22), rgba(196, 85, 237, 0) 70%);
-}
-.floor-shadow {
-    left: 50%;
-    bottom: 7%;
-    z-index: 0;
-    width: 48%;
-    height: 8%;
-    transform: translateX(-50%);
-    background: radial-gradient(ellipse, rgba(42, 24, 72, 0.2), rgba(42, 24, 72, 0) 72%);
-}
-.confetti { inset: 0; z-index: 0; overflow: hidden; display: none; }
+.halo, .floor-shadow { display: none; }
+.confetti { position: absolute; inset: 0; z-index: 0; overflow: hidden; display: none; pointer-events: none; }
 .confetti-front { z-index: 3; }
 .app[data-state="celebrate"] .confetti { display: block; }
 .confetti i {
@@ -147,11 +133,20 @@ button, input { font: inherit; }
     width: 100%;
     height: 100%;
     object-fit: contain;
-    background: transparent;
+    background: #ffffff;
+    border: 0;
     opacity: 0;
     pointer-events: none;
 }
 .scene-video.is-on, .scene-still.is-on { opacity: 1; }
+.scene-video.is-on {
+    inset: auto;
+    left: 50%;
+    top: 50%;
+    width: 100%;
+    height: 100%;
+    transform: translate(-50%, -50%) scale(1.04);
+}
 
 .ui {
     position: relative;
@@ -169,15 +164,17 @@ button, input { font: inherit; }
 }
 .start-btn, .role-btn, .option, .claim-btn { min-height: 64px; }
 
+.app[data-state="idle"] .ui { order: 2; }
 .start-btn {
-    padding: 14px 28px;
-    border-radius: 999px;
-    background: var(--violet);
+    min-width: min(420px, 92vw);
+    padding: 16px 22px;
+    border-radius: 16px;
+    background: #24143f;
     color: #fff;
     font-weight: 800;
-    font-size: clamp(1rem, 2vw, 1.2rem);
-    box-shadow: 0 10px 28px rgba(108, 92, 231, 0.28);
-    animation: pulse 2.2s ease-out infinite;
+    font-size: clamp(1rem, 2vw, 1.15rem);
+    box-shadow: none;
+    animation: none;
 }
 .start-btn.is-leaving, .app[data-state="greeting"] .start-btn,
 .app[data-state="role_selection"] .start-btn,
@@ -205,7 +202,7 @@ button, input { font: inherit; }
     box-shadow: 0 10px 28px rgba(108, 92, 231, 0.12);
 }
 .subtitle, .roulette-title { margin-top: 10px; color: #5b4b72; font-weight: 700; }
-.roulette-note { margin: 8px auto 0; max-width: 36rem; color: #5b4b72; font-size: 0.92rem; font-weight: 700; }
+.roulette-note { margin: 8px auto 0; max-width: 34rem; color: #5b4b72; font-weight: 700; }
 .quiz-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .quiz-progress, .streak { color: var(--violet); font-weight: 800; }
 .timer {
@@ -377,10 +374,20 @@ input, textarea { user-select: text; -webkit-user-select: text; }
     height: min(88dvh, calc((100vw - 24px) * 1280 / 720));
     max-width: calc(100vw - 24px);
     aspect-ratio: 720 / 1280;
-    background: transparent;
+    background: #ffffff;
+    border: 0;
+    box-shadow: none;
 }
-.app[data-state="celebrate"] .halo,
-.app[data-state="celebrate"] .floor-shadow { display: none; }
+.app[data-state="celebrate"] .scene-video.is-on {
+    inset: auto;
+    left: 50%;
+    top: 50%;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    background: #ffffff;
+    transform: translate(-50%, -50%) scale(1.02);
+}
 .app[data-state="role_selection"] .camera-wrap,
 .app[data-state="quiz"] .camera-wrap,
 .app[data-state="roulette"] .camera-wrap {
@@ -416,13 +423,6 @@ input, textarea { user-select: text; -webkit-user-select: text; }
     width: min(640px, 100%);
     max-height: 56dvh;
     overflow: auto;
-}
-
-.app[data-state="celebrate"] .scene-video.is-on {
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
-    background: transparent;
 }
 
 .sync {
